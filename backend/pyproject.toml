@@ -1,0 +1,70 @@
+[project]
+name = "arkhitektor-backend"
+version = "0.1.0"
+description = "Архитектор BPMN-диаграмм: API (сейчас — mock-реализация, см. docs/backend/mock.md)"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "fastapi",
+  "uvicorn[standard]",
+  "pydantic",
+  "pydantic-settings",
+  "sse-starlette",
+  "python-multipart",
+]
+
+[dependency-groups]
+dev = [
+  "pytest",
+  "pytest-asyncio",
+  "pytest-cov",
+  "httpx",
+  "ruff",
+  "import-linter",
+  "vulture",
+  "pip-audit",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "S", "SIM", "RUF", "N", "ASYNC", "PT", "RET", "ARG", "PTH", "ERA", "PL"]
+ignore = ["RUF001", "RUF002", "RUF003", "PLR0913"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "PLR2004", "ARG"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q --strict-markers"
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/openapi_export.py"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_covered = true
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError"]
+
+[tool.importlinter]
+root_package = "app"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Слои: api → services → (domain, llm, ingest, infra)"
+type = "layers"
+layers = ["app.api", "app.services", "app.llm | app.ingest | app.infra", "app.domain"]
+
+[[tool.importlinter.contracts]]
+name = "domain не зависит от внешнего мира"
+type = "forbidden"
+source_modules = ["app.domain"]
+forbidden_modules = ["app.api", "app.services", "app.llm", "app.ingest", "app.infra", "fastapi", "httpx", "sqlalchemy"]

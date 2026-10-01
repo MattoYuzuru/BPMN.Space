@@ -1,0 +1,22 @@
+# Локальный и демо-стенд: статика фронтенда + прокси API.
+:80 {
+	encode zstd gzip
+
+	# API и SSE: flush_interval -1 отдаёт события прогона сразу, без буферизации.
+	handle /api/* {
+		reverse_proxy backend:8000 {
+			flush_interval -1
+		}
+	}
+	handle /health {
+		reverse_proxy backend:8000
+	}
+
+	handle {
+		root * /srv
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		try_files {path} /index.html
+		file_server
+	}
+}

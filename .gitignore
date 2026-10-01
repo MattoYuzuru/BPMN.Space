@@ -65,3 +65,7 @@ logs/
 *.swp
 .DS_Store
 Thumbs.db
+
+# --- Отчёты verify/e2e и кэш роутера ---
+reports/
+.tanstack/

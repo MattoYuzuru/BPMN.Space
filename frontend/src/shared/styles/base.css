@@ -1,0 +1,294 @@
+/*
+ * Глобальная база: шрифт, фон, выделение, фокус, скроллбары, сокращённое движение.
+ * Плюс утилиты дизайн-системы: типографические роли (type-*), анимации поповеров (motion-*)
+ * и фирменные приёмы (pattern-*, mask-fade-*, skeleton-shimmer).
+ */
+
+@layer base {
+  html {
+    /* Только десктоп: уже 1024px окно прокручивается по горизонтали, а не ломает вёрстку. */
+    min-width: 64rem;
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-size: 100%;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    min-height: 100dvh;
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    background-color: var(--color-bg);
+  }
+
+  #root {
+    isolation: isolate;
+    min-height: 100dvh;
+  }
+
+  ::selection {
+    background-color: var(--selection);
+  }
+
+  /* Единое кольцо фокуса для клавиатуры. Мышь его не вызывает (focus-visible). */
+  :focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* Кастомные скроллбары: тонкие, проявляются, когда курсор над контейнером. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+  *:hover,
+  *:focus-within {
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+  @supports not (scrollbar-color: auto) {
+    ::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    ::-webkit-scrollbar-track,
+    ::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      border: 3px solid transparent;
+      border-radius: 999px;
+      background-clip: content-box;
+      background-color: transparent;
+    }
+    *:hover::-webkit-scrollbar-thumb {
+      background-color: var(--scrollbar-thumb);
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background-color: var(--scrollbar-thumb-hover);
+    }
+  }
+
+  /* Числа в таблицах, счётчиках и прогрессе не прыгают. */
+  time,
+  data,
+  [data-numeric] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+  }
+
+  /* Плавная смена темы там, где нет View Transitions API (см. shared/lib/theme). */
+  html[data-theme-transition],
+  html[data-theme-transition] *,
+  html[data-theme-transition] *::before,
+  html[data-theme-transition] *::after {
+    transition-property:
+      background-color, border-color, color, fill, stroke, box-shadow, outline-color !important;
+    transition-duration: var(--duration-slow) !important;
+    transition-timing-function: var(--ease-soft) !important;
+    transition-delay: 0s !important;
+  }
+}
+
+/* Смена темы через View Transitions: мягкое перетекание всего экрана. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--duration-slow);
+  animation-timing-function: var(--ease-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+/* ---------- Типографические роли. Предпочтительный способ задавать текст. ---------- */
+
+@utility type-display {
+  font-size: var(--text-3xl);
+  line-height: var(--text-3xl--line-height);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-tighter);
+}
+@utility type-title {
+  font-size: var(--text-2xl);
+  line-height: var(--text-2xl--line-height);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-tighter);
+}
+@utility type-heading {
+  font-size: var(--text-lg);
+  line-height: var(--text-lg--line-height);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-tight);
+}
+@utility type-subheading {
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-normal);
+}
+@utility type-body {
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
+  font-weight: var(--font-weight-normal);
+}
+@utility type-ui {
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-weight: var(--font-weight-normal);
+}
+@utility type-label {
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--tracking-normal);
+}
+@utility type-caption {
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+  font-weight: var(--font-weight-normal);
+}
+@utility type-code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Длительности-токены: duration-fast / duration-base / duration-slow ---------- */
+
+@utility duration-fast {
+  --tw-duration: var(--duration-fast);
+  transition-duration: var(--duration-fast);
+}
+@utility duration-base {
+  --tw-duration: var(--duration-base);
+  transition-duration: var(--duration-base);
+}
+@utility duration-slow {
+  --tw-duration: var(--duration-slow);
+  transition-duration: var(--duration-slow);
+}
+
+/* ---------- Движение всплывающих слоёв (Radix ставит data-state и data-side) ---------- */
+
+@utility motion-pop {
+  transform-origin: var(
+    --radix-popper-transform-origin,
+    var(--radix-dropdown-menu-content-transform-origin, center)
+  );
+  &[data-state="open"],
+  &[data-state="delayed-open"] {
+    animation: var(--animate-pop-in);
+  }
+  &[data-state="instant-open"] {
+    animation: var(--animate-fade-in);
+  }
+  &[data-state="closed"] {
+    animation: var(--animate-pop-out);
+  }
+  &[data-side="bottom"] {
+    --pop-y: -4px;
+  }
+  &[data-side="top"] {
+    --pop-y: 4px;
+  }
+  &[data-side="left"] {
+    --pop-x: 4px;
+  }
+  &[data-side="right"] {
+    --pop-x: -4px;
+  }
+}
+@utility motion-overlay {
+  &[data-state="open"] {
+    animation: var(--animate-fade-in);
+  }
+  &[data-state="closed"] {
+    animation: var(--animate-fade-out);
+  }
+}
+@utility motion-dialog {
+  &[data-state="open"] {
+    animation: var(--animate-dialog-in);
+  }
+  &[data-state="closed"] {
+    animation: var(--animate-dialog-out);
+  }
+}
+@utility motion-sheet {
+  &[data-state="open"] {
+    animation: var(--animate-sheet-in);
+  }
+  &[data-state="closed"] {
+    animation: var(--animate-sheet-out);
+  }
+}
+
+/* ---------- Фирменные приёмы ---------- */
+
+/* Сетка-подложка: тонкие линии чертёжной сетки — как холст BPMN. */
+@utility pattern-grid {
+  background-image:
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: var(--grid-size) var(--grid-size);
+  background-position: -1px -1px;
+}
+/* Точечная сетка — для мест, где линии спорили бы с содержимым. */
+@utility pattern-dots {
+  background-image: radial-gradient(circle at 1px 1px, var(--grid-dot) 1px, transparent 0);
+  background-size: var(--grid-size) var(--grid-size);
+}
+/* Мягкое затухание к краям, чтобы подложка не упиралась в границы. */
+@utility mask-fade-radial {
+  mask-image: radial-gradient(ellipse 72% 64% at 50% 45%, black 20%, transparent 100%);
+}
+@utility mask-fade-x {
+  mask-image: linear-gradient(to right, transparent, black 12%, black 88%, transparent);
+}
+@utility mask-fade-y {
+  mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+}
+
+/* Скелетон: спокойный блик по нейтральной заливке. */
+@utility skeleton-shimmer {
+  background-color: var(--color-hover);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--color-hover) 40%,
+    var(--color-pressed) 50%,
+    var(--color-hover) 60%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: var(--animate-shimmer);
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}

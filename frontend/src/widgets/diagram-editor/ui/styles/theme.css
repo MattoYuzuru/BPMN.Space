@@ -1,0 +1,127 @@
+/*
+ * Тема bpmn.io → токены дизайн-системы.
+ *
+ * Все компоненты bpmn.io (холст, палитра, меню, мини-карта, панель свойств, симуляция) красятся
+ * семантическими переменными @bpmn-io/theme (--bio-*), объявленными на .bio-theme-parent.
+ * Переопределяем их нашими токенами — и тёмная тема работает сама, через [data-theme="dark"].
+ * Селектор усилен (:root …), чтобы не зависеть от порядка подключения CSS библиотек.
+ */
+:root .bio-theme-parent {
+  --bio-surface: var(--color-surface);
+  --bio-surface-overlay: var(--color-surface-raised);
+  --bio-surface-subtle: var(--color-bg-subtle);
+  --bio-surface-medium: var(--color-bg-subtle);
+  --bio-surface-strong: var(--color-border);
+  --bio-surface-inverted: var(--color-fg);
+  --bio-surface-inverted-subtle: var(--color-fg-muted);
+  --bio-text: var(--color-fg);
+  --bio-text-subtle: var(--color-fg-muted);
+  --bio-text-subtlest: var(--color-fg-subtle);
+  --bio-text-on-primary: var(--color-fg-on-accent);
+  --bio-text-on-inverted: var(--color-surface);
+  --bio-border: var(--color-border);
+  --bio-border-subtle: var(--color-border);
+  --bio-border-disabled: var(--color-border);
+  --bio-border-input: var(--color-border-strong);
+  --bio-primary: var(--color-accent);
+  --bio-primary-hover: var(--color-accent-hover);
+  --bio-primary-surface: var(--color-accent-subtle);
+  --bio-primary-surface-strong: var(--color-accent-subtle);
+  --bio-neutral: var(--color-fg-muted);
+  --bio-danger: var(--color-danger);
+  --bio-danger-hover: var(--color-danger);
+  --bio-danger-surface: var(--color-danger-subtle);
+  --bio-danger-surface-subtle: var(--color-danger-subtle);
+  --bio-danger-marker: var(--color-danger);
+  --bio-warning: var(--color-amber);
+  --bio-warning-hover: var(--color-amber);
+  --bio-warning-text: var(--color-amber-fg);
+  --bio-warning-surface: var(--color-amber-subtle);
+  --bio-info: var(--color-accent);
+  --bio-info-marker: var(--color-accent);
+  --bio-info-on-inverted: var(--color-accent-subtle);
+  --bio-selected-surface: var(--color-accent-subtle);
+  --bio-selected-text: var(--color-accent-fg);
+  --bio-focus: var(--color-focus-ring);
+  --bio-focus-surface: var(--color-surface);
+  --bio-focus-ring: var(--color-focus-ring);
+  --bio-focus-ring-danger: var(--color-danger);
+  --bio-focus-ring-warning: var(--color-amber);
+  --bio-canvas-accent: var(--color-accent);
+  --bio-canvas-accent-subtle: var(--color-accent-subtle);
+  --bio-shadow: var(--color-overlay);
+  --bio-shadow-subtle: var(--color-overlay);
+  --bio-radius-sm: var(--radius-sm);
+  --bio-radius-md: var(--radius-sm);
+  --bio-radius-lg: var(--radius-md);
+}
+
+/*
+ * Общие значения виджета. Тени — токены дизайн-системы (--shadow-*), с запасным
+ * вариантом на контрактных токенах, если теней в теме нет.
+ */
+.de-root,
+.de-properties {
+  --de-shadow-raised: var(--shadow-md, 0 0 0 1px var(--color-border));
+  --de-shadow-control: var(--shadow-sm, none);
+  --de-hover: var(--color-hover, var(--color-bg-subtle));
+  --de-ease: var(--ease-soft, ease-out);
+  --de-fast: var(--duration-fast, 120ms);
+  --de-base: var(--duration-base, 200ms);
+  --de-slow: var(--duration-slow, 320ms);
+}
+
+/* Переменные шрифта у компонентов bpmn.io: подставляем токен вместо их Arial/IBM Plex. */
+.de-root .bjs-container {
+  --bjs-font-family: var(--font-sans); /* design-lint-ignore */
+}
+
+.de-root .djs-parent {
+  --popup-font-family: var(--font-sans); /* design-lint-ignore */
+  --search-font-family: var(--font-sans); /* design-lint-ignore */
+  --hover-tooltip-font-family: var(--font-sans); /* design-lint-ignore */
+  --popup-font-size: 13px;
+  --popup-border-color: var(--color-border);
+  --popup-scrollbar-thumb-color: var(--scrollbar-thumb, var(--color-border-strong));
+  --popup-header-font-weight: 500;
+  --search-font-size: 13px;
+  --hover-tooltip-font-size: 12px;
+  --lasso-fill-color: transparent;
+  --snap-line-stroke-color: var(--color-accent-subtle);
+}
+
+/* Корень виджета: занимает контейнер экрана, фон — холст приложения. */
+.de-root {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--color-fg);
+  background-color: var(--color-bg);
+}
+
+/*
+ * Сетка-подложка: точки на узлах сетки схемы. Шаг и сдвиг выставляет контроллер
+ * (--de-grid-*) при каждом перемещении и масштабировании, поэтому сетка движется вместе со схемой.
+ */
+.de-root .djs-container {
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    var(--grid-line, var(--color-border)) 1px,
+    transparent 1.5px
+  );
+  background-size: var(--de-grid-step, 24px) var(--de-grid-step, 24px);
+  background-position: var(--de-grid-x, 0) var(--de-grid-y, 0);
+}
+
+/* Фокус холста с клавиатуры: кольцо внутри, чтобы не обрезалось. */
+.de-root .djs-container svg:focus {
+  outline: none;
+}
+
+.de-root .djs-container svg:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
+}

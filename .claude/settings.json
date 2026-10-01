@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "yuzuru-engineering": {
+      "source": {
+        "source": "github",
+        "repo": "MattoYuzuru/yuzuru-skills"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "cleaner-agent@yuzuru-engineering": true
+  }
+}

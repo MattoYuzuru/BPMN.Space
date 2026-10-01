@@ -1,0 +1,330 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_repair_outage" targetNamespace="http://arkhitektor.local/bpmn" exporter="Архитектор BPMN-диаграмм" exporterVersion="0.1.0">
+  <bpmn:collaboration id="Collaboration_repair_outage">
+    <bpmn:participant id="Participant_repair_outage" name="Вывод оборудования в ремонт" processRef="Process_repair_outage" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_repair_outage" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_repair_outage">
+      <bpmn:lane id="Lane_Owner" name="Собственник оборудования">
+        <bpmn:flowNodeRef>StartEvent_Planned</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_PrepareRequest</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_SubmitRequest</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ExtendRequest</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ReportReady</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Dispatch" name="Диспетчерский центр">
+        <bpmn:flowNodeRef>Task_ReviewRequest</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Approved</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_NotifyRefusal</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Refused</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_CommandOutage</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ApproveExtension</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_CommandReturn</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Operators" name="Оперативный персонал">
+        <bpmn:flowNodeRef>Task_Switching</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_PrepareWorkplace</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ReturnToService</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_InService</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Brigade" name="Ремонтная бригада">
+        <bpmn:flowNodeRef>Gateway_WorksMerge</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_RepairWorks</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_InTime</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="StartEvent_Planned" name="Ремонт включён в график">
+      <bpmn:outgoing>Flow_Planned_PrepareRequest</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="Task_PrepareRequest" name="Подготовить диспетчерскую заявку">
+      <bpmn:incoming>Flow_Planned_PrepareRequest</bpmn:incoming>
+      <bpmn:outgoing>Flow_PrepareRequest_SubmitRequest</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sendTask id="Task_SubmitRequest" name="Подать заявку в диспетчерский центр">
+      <bpmn:incoming>Flow_PrepareRequest_SubmitRequest</bpmn:incoming>
+      <bpmn:outgoing>Flow_SubmitRequest_ReviewRequest</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:userTask id="Task_ReviewRequest" name="Рассмотреть заявку с учётом режимов">
+      <bpmn:incoming>Flow_SubmitRequest_ReviewRequest</bpmn:incoming>
+      <bpmn:outgoing>Flow_ReviewRequest_Approved</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_Approved" name="Вывод в ремонт допустим?">
+      <bpmn:incoming>Flow_ReviewRequest_Approved</bpmn:incoming>
+      <bpmn:outgoing>Flow_Approved_NotifyRefusal</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Approved_CommandOutage</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:sendTask id="Task_NotifyRefusal" name="Сообщить об отказе и причинах">
+      <bpmn:incoming>Flow_Approved_NotifyRefusal</bpmn:incoming>
+      <bpmn:outgoing>Flow_NotifyRefusal_Refused</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:endEvent id="EndEvent_Refused" name="Заявка отклонена">
+      <bpmn:incoming>Flow_NotifyRefusal_Refused</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:userTask id="Task_CommandOutage" name="Дать команду на вывод в ремонт">
+      <bpmn:incoming>Flow_Approved_CommandOutage</bpmn:incoming>
+      <bpmn:outgoing>Flow_CommandOutage_Switching</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:manualTask id="Task_Switching" name="Выполнить переключения по бланку">
+      <bpmn:incoming>Flow_CommandOutage_Switching</bpmn:incoming>
+      <bpmn:outgoing>Flow_Switching_PrepareWorkplace</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:manualTask id="Task_PrepareWorkplace" name="Подготовить рабочее место и допустить бригаду">
+      <bpmn:incoming>Flow_Switching_PrepareWorkplace</bpmn:incoming>
+      <bpmn:outgoing>Flow_PrepareWorkplace_WorksMerge</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:exclusiveGateway id="Gateway_WorksMerge">
+      <bpmn:incoming>Flow_PrepareWorkplace_WorksMerge</bpmn:incoming>
+      <bpmn:incoming>Flow_ApproveExtension_WorksMerge</bpmn:incoming>
+      <bpmn:outgoing>Flow_WorksMerge_RepairWorks</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:manualTask id="Task_RepairWorks" name="Выполнить ремонтные работы">
+      <bpmn:incoming>Flow_WorksMerge_RepairWorks</bpmn:incoming>
+      <bpmn:outgoing>Flow_RepairWorks_InTime</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:exclusiveGateway id="Gateway_InTime" name="Работы укладываются в срок?">
+      <bpmn:incoming>Flow_RepairWorks_InTime</bpmn:incoming>
+      <bpmn:outgoing>Flow_InTime_ExtendRequest</bpmn:outgoing>
+      <bpmn:outgoing>Flow_InTime_ReportReady</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:sendTask id="Task_ExtendRequest" name="Запросить продление заявки">
+      <bpmn:incoming>Flow_InTime_ExtendRequest</bpmn:incoming>
+      <bpmn:outgoing>Flow_ExtendRequest_ApproveExtension</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:userTask id="Task_ApproveExtension" name="Согласовать продление">
+      <bpmn:incoming>Flow_ExtendRequest_ApproveExtension</bpmn:incoming>
+      <bpmn:outgoing>Flow_ApproveExtension_WorksMerge</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sendTask id="Task_ReportReady" name="Сообщить о готовности к вводу">
+      <bpmn:incoming>Flow_InTime_ReportReady</bpmn:incoming>
+      <bpmn:outgoing>Flow_ReportReady_CommandReturn</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:userTask id="Task_CommandReturn" name="Дать команду на ввод в работу">
+      <bpmn:incoming>Flow_ReportReady_CommandReturn</bpmn:incoming>
+      <bpmn:outgoing>Flow_CommandReturn_ReturnToService</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:manualTask id="Task_ReturnToService" name="Ввести оборудование в работу">
+      <bpmn:incoming>Flow_CommandReturn_ReturnToService</bpmn:incoming>
+      <bpmn:outgoing>Flow_ReturnToService_InService</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:endEvent id="EndEvent_InService" name="Оборудование в работе">
+      <bpmn:incoming>Flow_ReturnToService_InService</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_Planned_PrepareRequest" sourceRef="StartEvent_Planned" targetRef="Task_PrepareRequest" />
+    <bpmn:sequenceFlow id="Flow_PrepareRequest_SubmitRequest" sourceRef="Task_PrepareRequest" targetRef="Task_SubmitRequest" />
+    <bpmn:sequenceFlow id="Flow_SubmitRequest_ReviewRequest" sourceRef="Task_SubmitRequest" targetRef="Task_ReviewRequest" />
+    <bpmn:sequenceFlow id="Flow_ReviewRequest_Approved" sourceRef="Task_ReviewRequest" targetRef="Gateway_Approved" />
+    <bpmn:sequenceFlow id="Flow_Approved_NotifyRefusal" name="Нет" sourceRef="Gateway_Approved" targetRef="Task_NotifyRefusal">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">вывод недопустим по режиму</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_NotifyRefusal_Refused" sourceRef="Task_NotifyRefusal" targetRef="EndEvent_Refused" />
+    <bpmn:sequenceFlow id="Flow_Approved_CommandOutage" name="Да" sourceRef="Gateway_Approved" targetRef="Task_CommandOutage">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">заявка разрешена</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_CommandOutage_Switching" sourceRef="Task_CommandOutage" targetRef="Task_Switching" />
+    <bpmn:sequenceFlow id="Flow_Switching_PrepareWorkplace" sourceRef="Task_Switching" targetRef="Task_PrepareWorkplace" />
+    <bpmn:sequenceFlow id="Flow_PrepareWorkplace_WorksMerge" sourceRef="Task_PrepareWorkplace" targetRef="Gateway_WorksMerge" />
+    <bpmn:sequenceFlow id="Flow_WorksMerge_RepairWorks" sourceRef="Gateway_WorksMerge" targetRef="Task_RepairWorks" />
+    <bpmn:sequenceFlow id="Flow_RepairWorks_InTime" sourceRef="Task_RepairWorks" targetRef="Gateway_InTime" />
+    <bpmn:sequenceFlow id="Flow_InTime_ExtendRequest" name="Нет" sourceRef="Gateway_InTime" targetRef="Task_ExtendRequest">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">срок не выдерживается</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_ExtendRequest_ApproveExtension" sourceRef="Task_ExtendRequest" targetRef="Task_ApproveExtension" />
+    <bpmn:sequenceFlow id="Flow_ApproveExtension_WorksMerge" sourceRef="Task_ApproveExtension" targetRef="Gateway_WorksMerge" />
+    <bpmn:sequenceFlow id="Flow_InTime_ReportReady" name="Да" sourceRef="Gateway_InTime" targetRef="Task_ReportReady">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">работы завершены в срок</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_ReportReady_CommandReturn" sourceRef="Task_ReportReady" targetRef="Task_CommandReturn" />
+    <bpmn:sequenceFlow id="Flow_CommandReturn_ReturnToService" sourceRef="Task_CommandReturn" targetRef="Task_ReturnToService" />
+    <bpmn:sequenceFlow id="Flow_ReturnToService_InService" sourceRef="Task_ReturnToService" targetRef="EndEvent_InService" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_Collaboration_repair_outage">
+    <bpmndi:BPMNPlane id="BPMNPlane_Collaboration_repair_outage" bpmnElement="Collaboration_repair_outage">
+      <bpmndi:BPMNShape id="BPMNShape_Participant_repair_outage" bpmnElement="Participant_repair_outage" isHorizontal="true">
+        <dc:Bounds x="80" y="80" width="2732" height="1600" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Lane_Owner" bpmnElement="Lane_Owner" isHorizontal="true">
+        <dc:Bounds x="110" y="80" width="2702" height="560" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Lane_Dispatch" bpmnElement="Lane_Dispatch" isHorizontal="true">
+        <dc:Bounds x="110" y="640" width="2702" height="560" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Lane_Operators" bpmnElement="Lane_Operators" isHorizontal="true">
+        <dc:Bounds x="110" y="1200" width="2702" height="240" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Lane_Brigade" bpmnElement="Lane_Brigade" isHorizontal="true">
+        <dc:Bounds x="110" y="1440" width="2702" height="240" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_StartEvent_Planned" bpmnElement="StartEvent_Planned">
+        <dc:Bounds x="150" y="182" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="136" y="223" width="64" height="42" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_PrepareRequest" bpmnElement="Task_PrepareRequest">
+        <dc:Bounds x="286" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_SubmitRequest" bpmnElement="Task_SubmitRequest">
+        <dc:Bounds x="486" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_ReviewRequest" bpmnElement="Task_ReviewRequest">
+        <dc:Bounds x="686" y="720" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Gateway_Approved" bpmnElement="Gateway_Approved" isMarkerVisible="true">
+        <dc:Bounds x="886" y="735" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="878" y="688" width="67" height="42" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_NotifyRefusal" bpmnElement="Task_NotifyRefusal">
+        <dc:Bounds x="1036" y="720" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_EndEvent_Refused" bpmnElement="EndEvent_Refused">
+        <dc:Bounds x="1268" y="742" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1253" y="783" width="67" height="28" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_CommandOutage" bpmnElement="Task_CommandOutage">
+        <dc:Bounds x="1036" y="880" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_Switching" bpmnElement="Task_Switching">
+        <dc:Bounds x="1236" y="1280" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_PrepareWorkplace" bpmnElement="Task_PrepareWorkplace">
+        <dc:Bounds x="1436" y="1280" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Gateway_WorksMerge" bpmnElement="Gateway_WorksMerge" isMarkerVisible="true">
+        <dc:Bounds x="1636" y="1535" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_RepairWorks" bpmnElement="Task_RepairWorks">
+        <dc:Bounds x="1786" y="1520" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Gateway_InTime" bpmnElement="Gateway_InTime" isMarkerVisible="true">
+        <dc:Bounds x="1986" y="1535" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2041" y="1539" width="88" height="42" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_ExtendRequest" bpmnElement="Task_ExtendRequest">
+        <dc:Bounds x="2136" y="480" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_ApproveExtension" bpmnElement="Task_ApproveExtension">
+        <dc:Bounds x="2336" y="1040" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_ReportReady" bpmnElement="Task_ReportReady">
+        <dc:Bounds x="2136" y="320" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_CommandReturn" bpmnElement="Task_CommandReturn">
+        <dc:Bounds x="2336" y="880" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_ReturnToService" bpmnElement="Task_ReturnToService">
+        <dc:Bounds x="2536" y="1280" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_EndEvent_InService" bpmnElement="EndEvent_InService">
+        <dc:Bounds x="2736" y="1302" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2710" y="1343" width="88" height="28" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Planned_PrepareRequest" bpmnElement="Flow_Planned_PrepareRequest">
+        <di:waypoint x="186" y="200" />
+        <di:waypoint x="286" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_PrepareRequest_SubmitRequest" bpmnElement="Flow_PrepareRequest_SubmitRequest">
+        <di:waypoint x="386" y="200" />
+        <di:waypoint x="486" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_SubmitRequest_ReviewRequest" bpmnElement="Flow_SubmitRequest_ReviewRequest">
+        <di:waypoint x="586" y="200" />
+        <di:waypoint x="736" y="200" />
+        <di:waypoint x="736" y="720" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_ReviewRequest_Approved" bpmnElement="Flow_ReviewRequest_Approved">
+        <di:waypoint x="786" y="760" />
+        <di:waypoint x="886" y="760" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Approved_NotifyRefusal" bpmnElement="Flow_Approved_NotifyRefusal">
+        <di:waypoint x="936" y="760" />
+        <di:waypoint x="1036" y="760" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="974" y="738" width="25" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_NotifyRefusal_Refused" bpmnElement="Flow_NotifyRefusal_Refused">
+        <di:waypoint x="1136" y="760" />
+        <di:waypoint x="1268" y="760" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_InTime_ReportReady" bpmnElement="Flow_InTime_ReportReady">
+        <di:waypoint x="2011" y="1535" />
+        <di:waypoint x="2011" y="360" />
+        <di:waypoint x="2136" y="360" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2017" y="433" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_ReportReady_CommandReturn" bpmnElement="Flow_ReportReady_CommandReturn">
+        <di:waypoint x="2236" y="360" />
+        <di:waypoint x="2386" y="360" />
+        <di:waypoint x="2386" y="880" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_CommandReturn_ReturnToService" bpmnElement="Flow_CommandReturn_ReturnToService">
+        <di:waypoint x="2436" y="920" />
+        <di:waypoint x="2586" y="920" />
+        <di:waypoint x="2586" y="1280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_ReturnToService_InService" bpmnElement="Flow_ReturnToService_InService">
+        <di:waypoint x="2636" y="1320" />
+        <di:waypoint x="2736" y="1320" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Approved_CommandOutage" bpmnElement="Flow_Approved_CommandOutage">
+        <di:waypoint x="911" y="785" />
+        <di:waypoint x="911" y="920" />
+        <di:waypoint x="1036" y="920" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="917" y="846" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_InTime_ExtendRequest" bpmnElement="Flow_InTime_ExtendRequest">
+        <di:waypoint x="2011" y="1535" />
+        <di:waypoint x="2011" y="520" />
+        <di:waypoint x="2136" y="520" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2061" y="498" width="25" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_CommandOutage_Switching" bpmnElement="Flow_CommandOutage_Switching">
+        <di:waypoint x="1136" y="920" />
+        <di:waypoint x="1286" y="920" />
+        <di:waypoint x="1286" y="1280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Switching_PrepareWorkplace" bpmnElement="Flow_Switching_PrepareWorkplace">
+        <di:waypoint x="1336" y="1320" />
+        <di:waypoint x="1436" y="1320" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_PrepareWorkplace_WorksMerge" bpmnElement="Flow_PrepareWorkplace_WorksMerge">
+        <di:waypoint x="1536" y="1320" />
+        <di:waypoint x="1661" y="1320" />
+        <di:waypoint x="1661" y="1535" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_WorksMerge_RepairWorks" bpmnElement="Flow_WorksMerge_RepairWorks">
+        <di:waypoint x="1686" y="1560" />
+        <di:waypoint x="1786" y="1560" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_RepairWorks_InTime" bpmnElement="Flow_RepairWorks_InTime">
+        <di:waypoint x="1886" y="1560" />
+        <di:waypoint x="1986" y="1560" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_ExtendRequest_ApproveExtension" bpmnElement="Flow_ExtendRequest_ApproveExtension">
+        <di:waypoint x="2186" y="560" />
+        <di:waypoint x="2186" y="1080" />
+        <di:waypoint x="2336" y="1080" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_ApproveExtension_WorksMerge" bpmnElement="Flow_ApproveExtension_WorksMerge">
+        <di:waypoint x="2386" y="1120" />
+        <di:waypoint x="2386" y="1605" />
+        <di:waypoint x="1661" y="1605" />
+        <di:waypoint x="1661" y="1585" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

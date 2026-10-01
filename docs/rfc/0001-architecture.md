@@ -442,22 +442,27 @@ erDiagram
 
 `LLM_CALL` — бесплатная наблюдаемость (лог вызовов модели) вместо Langfuse. Если понадобится UI, поднимем Arize Phoenix одним контейнером.
 
-### 5.8. API (черновик контракта)
+### 5.8. API
+
+Контракт v1 реализован в mock-бэкенде (#2, `docs/backend/mock.md`); точные схемы — `docs/api/openapi.json`. Поля — `snake_case`, id — UUID, даты — ISO 8601, ошибки — `{"detail": "…"}` на русском.
 
 | Метод | Путь | Что делает |
 |---|---|---|
-| POST / GET | `/api/v1/projects` | создать проект / список проектов |
-| GET | `/api/v1/projects/{id}` | проект: источники, вопросы, последняя версия |
-| POST | `/api/v1/projects/{id}/sources` | добавить источник: `text` или multipart-файл (`docx/pdf/md/txt`) |
-| PATCH / DELETE | `/api/v1/sources/{id}` | поправить извлечённый текст / выключить источник |
-| POST | `/api/v1/transcriptions` | аудио → текст (превью, аналитик правит перед отправкой) |
-| POST | `/api/v1/projects/{id}/runs` | запустить прогон `{mode: analyze \| build}` → `202 {run_id}` |
-| GET | `/api/v1/runs/{id}` · `/runs/{id}/events` | статус прогона · SSE-поток прогресса |
+| GET | `/api/v1/projects?cursor=&limit=20&q=` | список проектов: курсорная пагинация, поиск по названию → `{items, next_cursor, total}` |
+| POST | `/api/v1/projects` · `/projects/from-example` | создать проект · создать из примера (текст примера — первый источник) |
+| GET / PATCH / DELETE | `/api/v1/projects/{id}` | проект целиком: источники, вопросы, последняя версия без XML, активный прогон, сводка вопросов · правка · удаление (`409`, если идёт прогон) |
+| POST | `/api/v1/projects/{id}/sources/text` | текст или проверенная расшифровка голоса (`kind: text \| voice`) |
+| POST | `/api/v1/projects/{id}/sources/file` | multipart-файл `txt/md/docx/pdf`; `docx/pdf` разбираются в фоне (`processing` → `ready \| failed`) |
+| PATCH / DELETE | `/api/v1/sources/{id}` | поправить название или текст, включить/выключить · удалить |
+| POST | `/api/v1/transcriptions` | аудио → `{text, duration_sec, language}` (аналитик правит перед отправкой) |
+| POST | `/api/v1/projects/{id}/runs` | запустить прогон `{mode: analyze \| build}` → `202 Run`; `409`, если прогон уже идёт или нет источников |
+| GET | `/api/v1/runs/{id}` · `/runs/{id}/events` | статус прогона · SSE: `stage`, `question`, `summary`, `version`, `error`, `done` |
+| GET | `/api/v1/projects/{id}/questions?status=` | вопросы проекта |
 | POST | `/api/v1/questions/{id}/answer` | ответ текстом (голос — через `/transcriptions`) → источник `answer` |
-| POST | `/api/v1/questions/{id}/ignore` · `/reopen` | принять допущение · вернуть вопрос |
-| GET | `/api/v1/projects/{id}/versions` | версии схемы с диффом |
-| PUT | `/api/v1/projects/{id}/diagram` | сохранить ручную правку из bpmn-js (XSD-проверка → новая версия `manual`) |
-| GET | `/api/v1/versions/{id}/download?format=bpmn\|svg` | скачать |
+| POST | `/api/v1/questions/{id}/ignore` · `/reopen` | принять допущение · вернуть вопрос; недопустимый переход → `409` |
+| GET | `/api/v1/projects/{id}/versions` · `/versions/{id}` | версии с диффом и отчётом · версия с XML |
+| GET | `/api/v1/versions/{id}/xml` | скачать `.bpmn` (SVG/PNG экспортирует bpmn-js на фронтенде) |
+| PUT | `/api/v1/projects/{id}/diagram` | сохранить ручную правку из bpmn-js → новая версия `manual` |
 | GET | `/api/v1/examples` · `/health` | демо-примеры · healthcheck |
 
 - OpenAPI генерирует FastAPI. Он коммитится в `docs/api/openapi.json` (`make openapi`).

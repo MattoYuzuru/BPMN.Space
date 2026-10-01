@@ -10,7 +10,7 @@ NPM_FRONT := npm run --workspace frontend
 
 .PHONY: help setup up down logs dev-backend dev-frontend \
         format lint typecheck design-lint check-fast test test-backend test-frontend \
-        build contract-check openapi gen-api check e2e screenshots secrets verify mr-report
+        build contract-check openapi gen-api fixtures check e2e screenshots secrets verify mr-report
 
 help: ## Список команд
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -72,6 +72,9 @@ openapi: ## Выгрузить OpenAPI из backend в docs/api/openapi.json
 
 gen-api: openapi ## OpenAPI + TS-типы фронтенда
 	$(NPM_FRONT) gen:api
+
+fixtures: ## Пересобрать BPMN-фикстуры и examples/ (Node, XSD, bpmnlint)
+	$(UV) python scripts/build_fixtures.py
 
 contract-check: ## Контракт API: backend ↔ docs/api/openapi.json ↔ TS-типы
 	scripts/contract-check.sh

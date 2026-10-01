@@ -1,0 +1,111 @@
+"""Сборка приложения из реализаций (composition root). Единственное место, где выбирается,
+какая реализация стоит за каждым интерфейсом.
+
+Сейчас всё — mock (#2): in-memory хранилище с сидом, записанные ответы модели, mock STT,
+mock bpmn-tools. Замена на настоящие реализации — здесь, без правок сервисов и API
+(пошагово — `docs/backend/mock.md`).
+"""
+
+import asyncio
+from dataclasses import dataclass
+
+from app.config import Settings
+from app.domain.models import RunStage
+from app.fixtures import read_bpmn
+from app.fixtures.examples import EXAMPLES
+from app.fixtures.playbook import PLAYBOOK
+from app.infra.bpmn_tools import MockBpmnTools
+from app.infra.events import InMemoryRunEventBus
+from app.infra.repositories.base import Repositories
+from app.infra.repositories.memory import InMemoryStore
+from app.infra.seed import build_seed
+from app.infra.storage import InMemoryFileStorage
+from app.infra.tasks import AsyncioTaskSpawner
+from app.ingest.parsers import MockDocumentParser
+from app.ingest.stt import MockSpeechToText
+from app.llm.mock import MockPipeline
+from app.services.catalog import ExampleService, TranscriptionService
+from app.services.common import Runtime
+from app.services.projects import ProjectService
+from app.services.questions import QuestionService
+from app.services.runs import RunService
+from app.services.sources import SourceService
+from app.services.versions import VersionService
+
+
+@dataclass(frozen=True, slots=True)
+class Container:
+    settings: Settings
+    repos: Repositories
+    spawner: AsyncioTaskSpawner
+    projects: ProjectService
+    sources: SourceService
+    questions: QuestionService
+    runs: RunService
+    versions: VersionService
+    examples: ExampleService
+    transcriptions: TranscriptionService
+
+
+def build_container(settings: Settings, *, runtime: Runtime | None = None) -> Container:
+    runtime = runtime or Runtime()
+
+    # TODO(real): #6 Postgres-репозитории вместо InMemoryStore; сид — отдельной командой.
+    store = InMemoryStore()
+    if settings.seed_demo_data:
+        seed = build_seed()
+        store.load(
+            projects=seed.projects,
+            sources=seed.sources,
+            questions=seed.questions,
+            runs=seed.runs,
+            versions=seed.versions,
+        )
+    repos = store.repositories()
+    spawner = AsyncioTaskSpawner()
+    # TODO(real): #6 HTTP-клиент bpmn-tools, SpeechKit, python-docx/pypdf.
+    # TODO(real): #5 пайплайн на Pydantic AI вместо записанных ответов.
+    bpmn_tools = MockBpmnTools()
+    pipeline = MockPipeline(playbook=PLAYBOOK, read_bpmn=read_bpmn)
+    stt = MockSpeechToText(delay_sec=settings.mock_delay(settings.mock_transcription_delay_sec))
+
+    async def mock_pace(stage: RunStage) -> None:
+        # TODO(real): #5 убрать: настоящие этапы занимают время сами.
+        delay = settings.mock_delay(settings.mock_stage_delays.get(stage.value, 0.0))
+        if delay:
+            await asyncio.sleep(delay)
+
+    return Container(
+        settings=settings,
+        repos=repos,
+        spawner=spawner,
+        projects=ProjectService(repos, examples=EXAMPLES, runtime=runtime),
+        sources=SourceService(
+            repos,
+            parser=MockDocumentParser(),
+            storage=InMemoryFileStorage(),
+            runtime=runtime,
+            max_text_chars=settings.max_text_chars,
+            max_upload_bytes=settings.max_upload_bytes,
+            parse_delay_sec=settings.mock_delay(settings.mock_parse_delay_sec),
+        ),
+        questions=QuestionService(repos, runtime=runtime),
+        runs=RunService(
+            repos,
+            pipeline=pipeline,
+            bpmn_tools=bpmn_tools,
+            events=InMemoryRunEventBus(),
+            spawner=spawner,
+            runtime=runtime,
+            max_concurrent=settings.max_concurrent_runs,
+            pace=mock_pace,
+        ),
+        versions=VersionService(
+            repos,
+            bpmn_tools=bpmn_tools,
+            runtime=runtime,
+            max_diagram_bytes=settings.max_diagram_bytes,
+        ),
+        examples=ExampleService(EXAMPLES),
+        transcriptions=TranscriptionService(stt, max_audio_bytes=settings.max_audio_bytes),
+    )

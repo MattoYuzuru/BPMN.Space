@@ -40,6 +40,43 @@ describe('design-lint', () => {
     expect(rules('src/features/a.ts', 'if (confirm("Удалить?")) {}')).toContain('browser-dialog')
   })
 
+  it('запрещает прокрутку мимо ScrollArea', () => {
+    expect(rules('src/widgets/a.tsx', "<div className='h-full overflow-y-auto' />")).toContain(
+      'raw-scroll',
+    )
+    expect(rules('src/widgets/a.tsx', '<div className="hover:overflow-scroll" />')).toContain(
+      'raw-scroll',
+    )
+    expect(rules('src/widgets/a.css', '.x { overflow-x: auto }')).toContain('raw-scroll')
+    expect(rules('src/widgets/a.tsx', "<div className='overflow-hidden' />")).toEqual([])
+    expect(rules('src/shared/ui/dialog/dialog.tsx', "'overflow-y-auto'")).toEqual([])
+  })
+
+  it('запрещает браузерные подсказки title и SVG в разметке экранов', () => {
+    expect(rules('src/features/a.tsx', '<span title="Удалить">x</span>')).toContain('native-title')
+    expect(rules('src/features/a.tsx', '<EmptyState title="Пусто" icon="folder" />')).toEqual([])
+    expect(rules('src/features/a.tsx', '<svg viewBox="0 0 16 16">')).toContain('inline-svg')
+  })
+
+  it('запрещает произвольные значения для визуальных свойств', () => {
+    expect(rules('src/features/a.tsx', "<p className='text-[13px]' />")).toContain(
+      'arbitrary-visual',
+    )
+    expect(rules('src/features/a.tsx', "<p className='hover:bg-[var(--x)]' />")).toContain(
+      'arbitrary-visual',
+    )
+    expect(rules('src/features/a.tsx', "<p className='rounded-t-[3px] shadow-(--x)' />")).toContain(
+      'arbitrary-visual',
+    )
+    expect(rules('src/features/a.tsx', "<p className='duration-[400ms]' />")).toContain(
+      'arbitrary-visual',
+    )
+    expect(rules('src/features/a.tsx', "<p className='w-[22rem] text-sm rounded-md' />")).toEqual(
+      [],
+    )
+    expect(rules('src/features/a.tsx', "<p className='data-[state=open]:bg-hover' />")).toEqual([])
+  })
+
   it('пропускает строки с design-lint-ignore и чужие расширения', () => {
     expect(rules('src/features/a.tsx', '<button /> // design-lint-ignore')).toEqual([])
     expect(rules('src/features/a.md', '<button />')).toEqual([])

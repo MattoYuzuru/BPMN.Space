@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { buildLocalBpmn, saveLocalProject } from '@/features/local-bpmn'
 import { Button, Card, FileInput, Icon, Input, Textarea } from '@/shared/ui'
 import './home.css'
@@ -20,6 +20,14 @@ export const Route = createFileRoute('/new')({
 const exampleText =
   'Заявитель подаёт заявку на технологическое присоединение. Сетевая организация проверяет комплектность документов. Если документов не хватает, она просит заявителя дополнить заявку. После проверки организация направляет договор и технические условия. Заявитель и сетевая организация выполняют свои мероприятия. Затем специалисты осматривают объект, подписывают акт и подключают объект к электросети.'
 
+type VoiceState = 'idle' | 'recording' | 'transcribing'
+
+interface TranscriptionResponse {
+  text: string
+  duration_sec: number
+  language: string
+}
+
 async function request<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
     method: 'POST',
@@ -37,7 +45,104 @@ function NewProjectPage() {
   const [file, setFile] = useState<File | null>(null)
   const [working, setWorking] = useState(false)
   const [notice, setNotice] = useState('')
+  const [voiceState, setVoiceState] = useState<VoiceState>('idle')
   const fileRef = useRef<HTMLInputElement>(null)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+
+  useEffect(
+    () => () => {
+      recorderRef.current?.stream?.getTracks().forEach((track) => {
+        track.stop()
+      })
+      streamRef.current?.getTracks().forEach((track) => {
+        track.stop()
+      })
+    },
+    [],
+  )
+
+  async function transcribeRecording(blob: Blob) {
+    if (blob.size === 0) {
+      setVoiceState('idle')
+      setNotice('Запись пустая. Попробуйте ещё раз.')
+      return
+    }
+
+    const form = new FormData()
+    form.append('file', blob, 'voice-note.webm')
+    try {
+      const response = await fetch('/api/v1/transcriptions', { method: 'POST', body: form })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const result = (await response.json()) as TranscriptionResponse
+      if (!result.text?.trim()) throw new Error('Пустая расшифровка')
+      setSource((current) => [current.trim(), result.text.trim()].filter(Boolean).join('\n'))
+      setNotice('Расшифровка добавлена в описание. Проверьте текст перед сборкой схемы.')
+    } catch {
+      setNotice(
+        'Не удалось расшифровать запись. Проверьте, что backend запущен и настроен на Deepgram.',
+      )
+    } finally {
+      setVoiceState('idle')
+    }
+  }
+
+  async function startRecording() {
+    setNotice('')
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      setNotice('Этот браузер не поддерживает запись аудио. Можно загрузить готовую расшифровку.')
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      streamRef.current = stream
+      audioChunksRef.current = []
+      const recorder = new MediaRecorder(stream)
+      recorderRef.current = recorder
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data)
+      }
+      recorder.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, {
+          type: recorder.mimeType || 'audio/webm',
+        })
+        audioChunksRef.current = []
+        stream.getTracks().forEach((track) => {
+          track.stop()
+        })
+        streamRef.current = null
+        void transcribeRecording(blob)
+      }
+      recorder.onerror = () => {
+        stream.getTracks().forEach((track) => {
+          track.stop()
+        })
+        streamRef.current = null
+        setVoiceState('idle')
+        setNotice('Запись прервалась. Проверьте микрофон и попробуйте ещё раз.')
+      }
+      recorder.start()
+      setVoiceState('recording')
+      setNotice('Идёт запись. Нажмите «Остановить запись», когда закончите.')
+    } catch {
+      streamRef.current?.getTracks().forEach((track) => {
+        track.stop()
+      })
+      streamRef.current = null
+      setVoiceState('idle')
+      setNotice('Нет доступа к микрофону. Разрешите его для этой страницы и попробуйте ещё раз.')
+    }
+  }
+
+  function stopRecording() {
+    const recorder = recorderRef.current
+    if (!recorder || recorder.state === 'inactive') return
+    setVoiceState('transcribing')
+    setNotice('Расшифровываем запись…')
+    recorder.stop()
+  }
 
   async function createProject() {
     if (!source.trim() && !file) {
@@ -175,15 +280,17 @@ function NewProjectPage() {
               />
               <Button
                 size="sm"
-                variant="ghost"
-                leadingIcon="microphone"
-                onClick={() =>
-                  setNotice(
-                    'Голосовой ввод подключается через серверное распознавание. Для этой сборки добавьте новый Deepgram-ключ в backend/.env после его перевыпуска.',
-                  )
-                }
+                variant={voiceState === 'recording' ? 'secondary' : 'ghost'}
+                leadingIcon={voiceState === 'recording' ? 'player-stop' : 'microphone'}
+                loading={voiceState === 'transcribing'}
+                disabled={working || voiceState === 'transcribing'}
+                onClick={voiceState === 'recording' ? stopRecording : startRecording}
               >
-                Надиктовать
+                {voiceState === 'recording'
+                  ? 'Остановить запись'
+                  : voiceState === 'transcribing'
+                    ? 'Расшифровываем…'
+                    : 'Надиктовать'}
               </Button>
               {file && (
                 <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setFile(null)}>
@@ -200,6 +307,7 @@ function NewProjectPage() {
                 size="lg"
                 trailingIcon="arrow-right"
                 loading={working}
+                disabled={voiceState !== 'idle'}
                 onClick={createProject}
               >
                 Собрать черновик

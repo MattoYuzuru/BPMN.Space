@@ -1,0 +1,55 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": {
+    "includes": [
+      "frontend/**",
+      "scripts/**/*.mjs",
+      "!frontend/src/routeTree.gen.ts",
+      "!frontend/playwright-report",
+      "!frontend/test-results",
+      "!**/*.gen.ts"
+    ]
+  },
+  "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
+  "javascript": {
+    "formatter": { "quoteStyle": "single", "semicolons": "asNeeded", "trailingCommas": "all" }
+  },
+  "css": { "parser": { "tailwindDirectives": true } },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "correctness": {
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error",
+        "useExhaustiveDependencies": "error",
+        "useHookAtTopLevel": "error"
+      },
+      "style": {
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "paths": {
+              "@tabler/icons-react": "Иконки — только через @/shared/ui/icon (см. docs/frontend/styleguide.md).",
+              "lucide-react": "Используем Tabler Icons через @/shared/ui/icon.",
+              "@phosphor-icons/react": "Используем Tabler Icons через @/shared/ui/icon."
+            }
+          }
+        }
+      },
+      "suspicious": { "noConsole": { "level": "error", "options": { "allow": ["error", "warn"] } } }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["frontend/src/shared/ui/icon/**"],
+      "linter": { "rules": { "style": { "noRestrictedImports": "off" } } }
+    },
+    {
+      "includes": ["scripts/**", "frontend/scripts/**", "frontend/e2e/**", "frontend/*.config.ts"],
+      "linter": { "rules": { "suspicious": { "noConsole": "off" } } }
+    }
+  ],
+  "assist": { "enabled": true, "actions": { "source": { "organizeImports": "on" } } }
+}

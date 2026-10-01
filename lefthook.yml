@@ -1,0 +1,24 @@
+# Git-хуки — замена CI (RFC-0001 §9). Ставятся автоматически при `npm ci` (скрипт prepare).
+# pre-commit — быстро и только по изменённым файлам; pre-push — полная проверка всего репозитория.
+
+pre-commit:
+  parallel: true
+  commands:
+    biome:
+      glob: "*.{ts,tsx,js,mjs,json,jsonc,css}"
+      run: npx biome check --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
+    design-lint:
+      root: "frontend/"
+      glob: "*.{ts,tsx,css}"
+      run: node scripts/design-lint.mjs {staged_files}
+    ruff:
+      root: "backend/"
+      glob: "*.py"
+      run: uv run ruff format --check {staged_files} && uv run ruff check {staged_files}
+    secrets:
+      run: npx secretlint --maskSecrets {staged_files}
+
+pre-push:
+  commands:
+    check:
+      run: make check

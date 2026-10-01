@@ -26,6 +26,7 @@ import {
   type Box,
   fitViewbox,
   focusViewbox,
+  gridStep,
   interpolateViewbox,
   unionBox,
   zoomViewbox,
@@ -54,8 +55,6 @@ const ZOOM_STEP = 1.25
 const FONT_TIMEOUT_MS = 2000
 /** Шаг сетки-подложки в единицах схемы, если нет токена `--grid-size`. */
 const DEFAULT_GRID = 24
-/** Сетка мельче этого шага в пикселях превращается в шум — шаг удваивается. */
-const MIN_GRID_PX = 12
 
 const SIMULATION_TOGGLE_EVENT = 'tokenSimulation.toggleMode'
 
@@ -144,14 +143,6 @@ async function fontsReady(fontFamily: string): Promise<void> {
   if (!family || !document.fonts?.load) return
   const loading = document.fonts.load(`12px "${family}"`, 'Аа Zz 09').catch(() => undefined)
   await Promise.race([loading, delay(FONT_TIMEOUT_MS)])
-}
-
-/** Шаг сетки в пикселях экрана: удваиваем, пока точки не перестанут сливаться. */
-export function gridStep(pixels: number): number {
-  if (!(pixels > 0)) return MIN_GRID_PX
-  let step = pixels
-  while (step < MIN_GRID_PX) step *= 2
-  return step
 }
 
 /**

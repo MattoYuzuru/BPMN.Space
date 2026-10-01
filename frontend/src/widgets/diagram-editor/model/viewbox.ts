@@ -72,6 +72,17 @@ export function zoomViewbox(outer: Size, current: Box, factor: number): Box {
   return around(outer, current.x + current.width / 2, current.y + current.height / 2, scale)
 }
 
+/** Сетка мельче этого шага в пикселях превращается в шум. */
+const MIN_GRID_PX = 12
+
+/** Шаг сетки-подложки в пикселях экрана: удваиваем, пока точки не перестанут сливаться. */
+export function gridStep(pixels: number): number {
+  if (!(pixels > 0)) return MIN_GRID_PX
+  let step = pixels
+  while (step < MIN_GRID_PX) step *= 2
+  return step
+}
+
 /** Объединённый bbox нескольких прямоугольников. */
 export function unionBox(boxes: readonly Box[]): Box | null {
   if (boxes.length === 0) return null

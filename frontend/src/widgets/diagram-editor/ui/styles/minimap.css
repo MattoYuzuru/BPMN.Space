@@ -1,0 +1,32 @@
+/*
+ * Мини-карта: карточка в правом верхнем углу. Открывает и закрывает её экран
+ * (handle.toggleMinimap), поэтому встроенная кнопка-переключатель скрыта, а закрытая карта не видна.
+ * Правый нижний угол свободен: там водяной знак bpmn.io.
+ */
+.de-root .djs-minimap {
+  --minimap-background-color: var(--color-surface-raised);
+  --minimap-border-color: var(--color-border);
+  --minimap-border-radius: var(--radius-md);
+  --minimap-overlay-background-color: transparent;
+  --minimap-viewport-border-color: var(--color-accent);
+
+  top: 12px;
+  right: 12px;
+  box-shadow: var(--de-shadow-raised);
+  animation: de-fade-in var(--de-base) var(--de-ease);
+}
+
+.de-root .djs-minimap:not(.open),
+.de-root .djs-minimap .toggle {
+  display: none;
+}
+
+.de-root .djs-minimap .map {
+  width: 240px;
+  height: 140px;
+}
+
+.de-root .djs-minimap .viewport-dom {
+  border-width: 1.5px;
+  border-radius: var(--radius-xs, 4px);
+}

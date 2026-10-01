@@ -1,0 +1,363 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_TechConnection" targetNamespace="http://arkhitektor.local/bpmn" exporter="arkhitektor" exporterVersion="0.1.0">
+  <bpmn:collaboration id="Collaboration_TechConnection">
+    <bpmn:participant id="Participant_TechConnection" name="Технологическое присоединение (ПП РФ № 861)" processRef="Process_TechConnection" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_TechConnection" name="Технологическое присоединение" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_TechConnection">
+      <bpmn:lane id="Lane_Applicant" name="Заявитель">
+        <bpmn:flowNodeRef>Start_Need</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_SubmitApplication</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_SupplementDocs</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_SignContract</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ApplicantMeasures</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_NotifyReady</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Grid" name="Сетевая организация">
+        <bpmn:flowNodeRef>Task_CheckCompleteness</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Complete</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_NotifyMissing</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Power</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_OfferSmall</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_OfferLarge</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_PowerJoin</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_MeasuresSplit</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_GridMeasures</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_MeasuresJoin</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Inspect</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Connect</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_SignAct</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Supplier" name="Гарантирующий поставщик">
+        <bpmn:flowNodeRef>Task_SupplyContract</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_Supplied</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Start_Need" name="Нужно присоединить объект">
+      <bpmn:outgoing>Flow_Start_Submit</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="Task_SubmitApplication" name="Подать заявку через личный кабинет">
+      <bpmn:incoming>Flow_Start_Submit</bpmn:incoming>
+      <bpmn:outgoing>Flow_Submit_Check</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:task id="Task_CheckCompleteness" name="Проверить полноту заявки">
+      <bpmn:incoming>Flow_Submit_Check</bpmn:incoming>
+      <bpmn:incoming>Flow_Supplement_Check</bpmn:incoming>
+      <bpmn:outgoing>Flow_Check_Complete</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Complete" name="Сведения и документы полные?">
+      <bpmn:incoming>Flow_Check_Complete</bpmn:incoming>
+      <bpmn:outgoing>Flow_Complete_No</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Complete_Yes</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:sendTask id="Task_NotifyMissing" name="Запросить недостающие сведения">
+      <bpmn:incoming>Flow_Complete_No</bpmn:incoming>
+      <bpmn:outgoing>Flow_Notify_Supplement</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:userTask id="Task_SupplementDocs" name="Дополнить сведения и документы">
+      <bpmn:incoming>Flow_Notify_Supplement</bpmn:incoming>
+      <bpmn:outgoing>Flow_Supplement_Check</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_Power" name="Максимальная мощность?">
+      <bpmn:incoming>Flow_Complete_Yes</bpmn:incoming>
+      <bpmn:outgoing>Flow_Power_Small</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Power_Large</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_OfferSmall" name="Разместить договор и ТУ в ЛК (10 р. д.)">
+      <bpmn:incoming>Flow_Power_Small</bpmn:incoming>
+      <bpmn:outgoing>Flow_Small_Join</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_OfferLarge" name="Направить договор и ТУ (20 р. д.)">
+      <bpmn:incoming>Flow_Power_Large</bpmn:incoming>
+      <bpmn:outgoing>Flow_Large_Join</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_PowerJoin">
+      <bpmn:incoming>Flow_Small_Join</bpmn:incoming>
+      <bpmn:incoming>Flow_Large_Join</bpmn:incoming>
+      <bpmn:outgoing>Flow_Join_Sign</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="Task_SignContract" name="Оплатить счёт и заключить договор">
+      <bpmn:incoming>Flow_Join_Sign</bpmn:incoming>
+      <bpmn:outgoing>Flow_Sign_Split</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:parallelGateway id="Gateway_MeasuresSplit">
+      <bpmn:incoming>Flow_Sign_Split</bpmn:incoming>
+      <bpmn:outgoing>Flow_Split_Applicant</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Split_Grid</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:task id="Task_ApplicantMeasures" name="Выполнить ТУ на своём участке">
+      <bpmn:incoming>Flow_Split_Applicant</bpmn:incoming>
+      <bpmn:outgoing>Flow_Applicant_Join</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_GridMeasures" name="Выполнить ТУ до границы участка">
+      <bpmn:incoming>Flow_Split_Grid</bpmn:incoming>
+      <bpmn:outgoing>Flow_Grid_Join</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:parallelGateway id="Gateway_MeasuresJoin">
+      <bpmn:incoming>Flow_Applicant_Join</bpmn:incoming>
+      <bpmn:incoming>Flow_Grid_Join</bpmn:incoming>
+      <bpmn:outgoing>Flow_Join_Notify</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:sendTask id="Task_NotifyReady" name="Уведомить о выполнении ТУ">
+      <bpmn:incoming>Flow_Join_Notify</bpmn:incoming>
+      <bpmn:outgoing>Flow_Notify_Inspect</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:task id="Task_Inspect" name="Осмотреть объект и прибор учёта">
+      <bpmn:incoming>Flow_Notify_Inspect</bpmn:incoming>
+      <bpmn:outgoing>Flow_Inspect_Connect</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_Connect" name="Выполнить фактическое подключение">
+      <bpmn:incoming>Flow_Inspect_Connect</bpmn:incoming>
+      <bpmn:outgoing>Flow_Connect_Act</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_SignAct" name="Подписать акт о ТП">
+      <bpmn:incoming>Flow_Connect_Act</bpmn:incoming>
+      <bpmn:outgoing>Flow_Act_Supply</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_SupplyContract" name="Заключить договор поставки">
+      <bpmn:incoming>Flow_Act_Supply</bpmn:incoming>
+      <bpmn:outgoing>Flow_Supply_End</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="End_Supplied" name="Поставка энергии начата">
+      <bpmn:incoming>Flow_Supply_End</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_Start_Submit" sourceRef="Start_Need" targetRef="Task_SubmitApplication" />
+    <bpmn:sequenceFlow id="Flow_Submit_Check" sourceRef="Task_SubmitApplication" targetRef="Task_CheckCompleteness" />
+    <bpmn:sequenceFlow id="Flow_Check_Complete" sourceRef="Task_CheckCompleteness" targetRef="Gateway_Complete" />
+    <bpmn:sequenceFlow id="Flow_Complete_No" name="Нет" sourceRef="Gateway_Complete" targetRef="Task_NotifyMissing" />
+    <bpmn:sequenceFlow id="Flow_Notify_Supplement" sourceRef="Task_NotifyMissing" targetRef="Task_SupplementDocs" />
+    <bpmn:sequenceFlow id="Flow_Supplement_Check" sourceRef="Task_SupplementDocs" targetRef="Task_CheckCompleteness" />
+    <bpmn:sequenceFlow id="Flow_Complete_Yes" name="Да" sourceRef="Gateway_Complete" targetRef="Gateway_Power" />
+    <bpmn:sequenceFlow id="Flow_Power_Small" name="до 150 кВт" sourceRef="Gateway_Power" targetRef="Task_OfferSmall" />
+    <bpmn:sequenceFlow id="Flow_Power_Large" name="свыше 150 кВт" sourceRef="Gateway_Power" targetRef="Task_OfferLarge" />
+    <bpmn:sequenceFlow id="Flow_Small_Join" sourceRef="Task_OfferSmall" targetRef="Gateway_PowerJoin" />
+    <bpmn:sequenceFlow id="Flow_Large_Join" sourceRef="Task_OfferLarge" targetRef="Gateway_PowerJoin" />
+    <bpmn:sequenceFlow id="Flow_Join_Sign" sourceRef="Gateway_PowerJoin" targetRef="Task_SignContract" />
+    <bpmn:sequenceFlow id="Flow_Sign_Split" sourceRef="Task_SignContract" targetRef="Gateway_MeasuresSplit" />
+    <bpmn:sequenceFlow id="Flow_Split_Applicant" sourceRef="Gateway_MeasuresSplit" targetRef="Task_ApplicantMeasures" />
+    <bpmn:sequenceFlow id="Flow_Split_Grid" sourceRef="Gateway_MeasuresSplit" targetRef="Task_GridMeasures" />
+    <bpmn:sequenceFlow id="Flow_Applicant_Join" sourceRef="Task_ApplicantMeasures" targetRef="Gateway_MeasuresJoin" />
+    <bpmn:sequenceFlow id="Flow_Grid_Join" sourceRef="Task_GridMeasures" targetRef="Gateway_MeasuresJoin" />
+    <bpmn:sequenceFlow id="Flow_Join_Notify" sourceRef="Gateway_MeasuresJoin" targetRef="Task_NotifyReady" />
+    <bpmn:sequenceFlow id="Flow_Notify_Inspect" sourceRef="Task_NotifyReady" targetRef="Task_Inspect" />
+    <bpmn:sequenceFlow id="Flow_Inspect_Connect" sourceRef="Task_Inspect" targetRef="Task_Connect" />
+    <bpmn:sequenceFlow id="Flow_Connect_Act" sourceRef="Task_Connect" targetRef="Task_SignAct" />
+    <bpmn:sequenceFlow id="Flow_Act_Supply" sourceRef="Task_SignAct" targetRef="Task_SupplyContract" />
+    <bpmn:sequenceFlow id="Flow_Supply_End" sourceRef="Task_SupplyContract" targetRef="End_Supplied" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_Collaboration_TechConnection">
+    <bpmndi:BPMNPlane id="BPMNPlane_Collaboration_TechConnection" bpmnElement="Collaboration_TechConnection">
+      <bpmndi:BPMNShape id="BPMNShape_Participant_TechConnection" bpmnElement="Participant_TechConnection" isHorizontal="true">
+        <dc:Bounds x="80" y="80" width="3082" height="1200" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Lane_Applicant" bpmnElement="Lane_Applicant" isHorizontal="true">
+        <dc:Bounds x="110" y="80" width="3052" height="400" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Lane_Grid" bpmnElement="Lane_Grid" isHorizontal="true">
+        <dc:Bounds x="110" y="480" width="3052" height="560" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Lane_Supplier" bpmnElement="Lane_Supplier" isHorizontal="true">
+        <dc:Bounds x="110" y="1040" width="3052" height="240" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Start_Need" bpmnElement="Start_Need">
+        <dc:Bounds x="150" y="182" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="144" y="223" width="88" height="42" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_SubmitApplication" bpmnElement="Task_SubmitApplication">
+        <dc:Bounds x="286" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_CheckCompleteness" bpmnElement="Task_CheckCompleteness">
+        <dc:Bounds x="486" y="560" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Gateway_Complete" bpmnElement="Gateway_Complete" isMarkerVisible="true">
+        <dc:Bounds x="686" y="575" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="676" y="528" width="71" height="42" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_NotifyMissing" bpmnElement="Task_NotifyMissing">
+        <dc:Bounds x="836" y="880" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_SupplementDocs" bpmnElement="Task_SupplementDocs">
+        <dc:Bounds x="1036" y="320" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Gateway_Power" bpmnElement="Gateway_Power" isMarkerVisible="true">
+        <dc:Bounds x="861" y="575" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="842" y="542" width="88" height="28" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_OfferSmall" bpmnElement="Task_OfferSmall">
+        <dc:Bounds x="1036" y="560" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_OfferLarge" bpmnElement="Task_OfferLarge">
+        <dc:Bounds x="1036" y="720" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Gateway_PowerJoin" bpmnElement="Gateway_PowerJoin" isMarkerVisible="true">
+        <dc:Bounds x="1236" y="575" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_SignContract" bpmnElement="Task_SignContract">
+        <dc:Bounds x="1386" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Gateway_MeasuresSplit" bpmnElement="Gateway_MeasuresSplit" isMarkerVisible="true">
+        <dc:Bounds x="1586" y="575" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_ApplicantMeasures" bpmnElement="Task_ApplicantMeasures">
+        <dc:Bounds x="1736" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_GridMeasures" bpmnElement="Task_GridMeasures">
+        <dc:Bounds x="1736" y="720" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Gateway_MeasuresJoin" bpmnElement="Gateway_MeasuresJoin" isMarkerVisible="true">
+        <dc:Bounds x="1936" y="575" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_NotifyReady" bpmnElement="Task_NotifyReady">
+        <dc:Bounds x="2086" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_Inspect" bpmnElement="Task_Inspect">
+        <dc:Bounds x="2286" y="560" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_Connect" bpmnElement="Task_Connect">
+        <dc:Bounds x="2486" y="560" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_SignAct" bpmnElement="Task_SignAct">
+        <dc:Bounds x="2686" y="560" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_SupplyContract" bpmnElement="Task_SupplyContract">
+        <dc:Bounds x="2886" y="1120" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_End_Supplied" bpmnElement="End_Supplied">
+        <dc:Bounds x="3086" y="1142" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3074" y="1183" width="60" height="42" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Start_Submit" bpmnElement="Flow_Start_Submit">
+        <di:waypoint x="186" y="200" />
+        <di:waypoint x="286" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Submit_Check" bpmnElement="Flow_Submit_Check">
+        <di:waypoint x="386" y="200" />
+        <di:waypoint x="536" y="200" />
+        <di:waypoint x="536" y="560" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Check_Complete" bpmnElement="Flow_Check_Complete">
+        <di:waypoint x="586" y="600" />
+        <di:waypoint x="686" y="600" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Complete_Yes" bpmnElement="Flow_Complete_Yes">
+        <di:waypoint x="736" y="600" />
+        <di:waypoint x="861" y="600" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="790" y="578" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Power_Small" bpmnElement="Flow_Power_Small">
+        <di:waypoint x="911" y="600" />
+        <di:waypoint x="1036" y="600" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="940" y="578" width="68" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Small_Join" bpmnElement="Flow_Small_Join">
+        <di:waypoint x="1136" y="600" />
+        <di:waypoint x="1236" y="600" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Join_Sign" bpmnElement="Flow_Join_Sign">
+        <di:waypoint x="1286" y="600" />
+        <di:waypoint x="1436" y="600" />
+        <di:waypoint x="1436" y="240" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Sign_Split" bpmnElement="Flow_Sign_Split">
+        <di:waypoint x="1486" y="200" />
+        <di:waypoint x="1611" y="200" />
+        <di:waypoint x="1611" y="575" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Split_Applicant" bpmnElement="Flow_Split_Applicant">
+        <di:waypoint x="1636" y="600" />
+        <di:waypoint x="1786" y="600" />
+        <di:waypoint x="1786" y="240" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Applicant_Join" bpmnElement="Flow_Applicant_Join">
+        <di:waypoint x="1836" y="200" />
+        <di:waypoint x="1961" y="200" />
+        <di:waypoint x="1961" y="575" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Join_Notify" bpmnElement="Flow_Join_Notify">
+        <di:waypoint x="1986" y="600" />
+        <di:waypoint x="2136" y="600" />
+        <di:waypoint x="2136" y="240" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Notify_Inspect" bpmnElement="Flow_Notify_Inspect">
+        <di:waypoint x="2186" y="200" />
+        <di:waypoint x="2336" y="200" />
+        <di:waypoint x="2336" y="560" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Inspect_Connect" bpmnElement="Flow_Inspect_Connect">
+        <di:waypoint x="2386" y="600" />
+        <di:waypoint x="2486" y="600" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Connect_Act" bpmnElement="Flow_Connect_Act">
+        <di:waypoint x="2586" y="600" />
+        <di:waypoint x="2686" y="600" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Act_Supply" bpmnElement="Flow_Act_Supply">
+        <di:waypoint x="2786" y="600" />
+        <di:waypoint x="2936" y="600" />
+        <di:waypoint x="2936" y="1120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Supply_End" bpmnElement="Flow_Supply_End">
+        <di:waypoint x="2986" y="1160" />
+        <di:waypoint x="3086" y="1160" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Complete_No" bpmnElement="Flow_Complete_No">
+        <di:waypoint x="711" y="625" />
+        <di:waypoint x="711" y="920" />
+        <di:waypoint x="836" y="920" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="716" y="766" width="25" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Power_Large" bpmnElement="Flow_Power_Large">
+        <di:waypoint x="886" y="625" />
+        <di:waypoint x="886" y="760" />
+        <di:waypoint x="1036" y="760" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="891" y="686" width="89" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Split_Grid" bpmnElement="Flow_Split_Grid">
+        <di:waypoint x="1611" y="625" />
+        <di:waypoint x="1611" y="760" />
+        <di:waypoint x="1736" y="760" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Notify_Supplement" bpmnElement="Flow_Notify_Supplement">
+        <di:waypoint x="936" y="940" />
+        <di:waypoint x="956" y="940" />
+        <di:waypoint x="956" y="980" />
+        <di:waypoint x="130" y="980" />
+        <di:waypoint x="130" y="140" />
+        <di:waypoint x="1086" y="140" />
+        <di:waypoint x="1086" y="320" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Large_Join" bpmnElement="Flow_Large_Join">
+        <di:waypoint x="1136" y="760" />
+        <di:waypoint x="1261" y="760" />
+        <di:waypoint x="1261" y="625" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Grid_Join" bpmnElement="Flow_Grid_Join">
+        <di:waypoint x="1836" y="760" />
+        <di:waypoint x="1961" y="760" />
+        <di:waypoint x="1961" y="625" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Supplement_Check" bpmnElement="Flow_Supplement_Check">
+        <di:waypoint x="1086" y="320" />
+        <di:waypoint x="1086" y="300" />
+        <di:waypoint x="536" y="300" />
+        <di:waypoint x="536" y="560" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

@@ -1,0 +1,114 @@
+/*
+ * Панель свойств (bpmn-js-properties-panel). Рисуется в контейнере экрана, внутри обёртки .de-properties.
+ * Цвета приходят через --bio-* (theme.css); здесь — плотность, типографика и формы контролов.
+ */
+.de-properties {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--color-fg);
+}
+
+/* В режиме «только просмотр» панель неактивна (inert) и приглушена. */
+.de-properties[inert] {
+  opacity: 0.7;
+}
+
+.de-properties .bio-properties-panel {
+  --font-family: var(--font-sans); /* design-lint-ignore */
+  --font-family-monospace: var(--font-mono); /* design-lint-ignore */
+  --text-size-base: 13px;
+  --text-size-small: 12px;
+  --text-size-smallest: 11px;
+  --text-line-height: 20px;
+  --line-height-condensed: 18px;
+  --input-height: 32px;
+  --input-border-radius: var(--radius-sm);
+  --input-background-color: var(--color-surface);
+  --input-focus-background-color: var(--color-surface);
+  --checkbox-border-radius: var(--radius-xs, 4px);
+  --header-background-color: var(--color-surface);
+  --header-bottom-border-color: var(--color-border);
+  --group-background-color: var(--color-surface);
+  --group-bottom-border-color: var(--color-border);
+  --sticky-group-background-color: var(--color-surface);
+  --placeholder-background-color: var(--color-surface);
+  --description-color: var(--color-fg-subtle);
+
+  background-color: var(--color-surface);
+}
+
+.de-properties .bio-properties-panel-header {
+  padding: 12px 16px;
+  gap: 12px;
+}
+
+.de-properties .bio-properties-panel-header-type {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-fg-subtle);
+}
+
+.de-properties .bio-properties-panel-header-label {
+  margin-top: 2px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-fg);
+}
+
+.de-properties .bio-properties-panel-group-header {
+  height: 40px;
+  padding: 0 16px;
+  transition: background-color var(--de-fast) var(--de-ease);
+}
+
+.de-properties .bio-properties-panel-group-header:hover {
+  background-color: var(--de-hover);
+}
+
+.de-properties .bio-properties-panel-group-header-title {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.de-properties .bio-properties-panel-group-entries.open {
+  padding: 4px 0 12px;
+}
+
+.de-properties .bio-properties-panel-entry {
+  margin: 4px 16px 10px;
+}
+
+.de-properties .bio-properties-panel-label {
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-fg-muted);
+}
+
+.de-properties .bio-properties-panel-input {
+  color: var(--color-fg);
+  border-color: var(--color-border);
+  transition:
+    border-color var(--de-fast) var(--de-ease),
+    box-shadow var(--de-fast) var(--de-ease);
+}
+
+.de-properties .bio-properties-panel-input:hover {
+  border-color: var(--color-border-strong);
+}
+
+.de-properties .bio-properties-panel-input:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-subtle);
+  outline: none;
+}
+
+.de-properties .bio-properties-panel-placeholder {
+  padding: 24px 16px;
+  color: var(--color-fg-subtle);
+}

@@ -1,0 +1,2 @@
+/* Точка входа стилей. Токены и база — в отдельных файлах (задача #3, docs/frontend/styleguide.md). */
+@import "tailwindcss";

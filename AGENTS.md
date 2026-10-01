@@ -1,25 +1,57 @@
 # AGENTS.md
 
-Вход для ИИ-агентов и людей. Короткая карта: что за проект, где что лежит, как работать.
+Вход для ИИ-агентов и людей: что за проект, где что лежит, как работать.
 
 ## Проект
 
 ИИ-ассистент «Архитектор BPMN-диаграмм» (хакатон «ИИ-ассистенты для энергетики», Интер РАО / Codenrock). Аналитик складывает в проект источники (текст, голос, документы), система задаёт уточняющие вопросы и строит BPMN 2.0 (валиден по XSD, редактируется в bpmn.io).
 
-**Каноничный документ архитектуры и плана:** [`docs/rfc/0001-architecture.md`](docs/rfc/0001-architecture.md). Перед любой задачей читай нужные разделы оттуда.
+**Каноничный документ архитектуры и плана:** [`docs/rfc/0001-architecture.md`](docs/rfc/0001-architecture.md). Задачи — GitLab Issues #1–#6.
 
-## Состояние репозитория
+## Карта
 
-Пока только документация и скиллы. Каталоги `backend/`, `bpmn-tools/`, `frontend/`, `Makefile`, `compose.yaml`, `lefthook.yml` будут созданы по RFC §8. Если команда из скилла ещё не существует — сообщи и предложи создать её по RFC, не обходи проверку.
+| Путь | Что |
+|---|---|
+| `backend/` | FastAPI, Python 3.13, uv. Слои `api → services → (llm, ingest, infra) → domain` (проверяет import-linter). Сейчас mock-реализация (#2) |
+| `frontend/` | React 19 + Vite + TS, TanStack Router/Query, Tailwind v4, Radix, bpmn-js |
+| `frontend/scripts/design-lint.mjs` | правила дизайн-системы (нативные контролы, сырые цвета, символы вместо иконок…) |
+| `docs/api/openapi.json` | контракт API, генерируется из backend (`make gen-api`) |
+| `frontend/src/shared/api/schema.gen.ts` | TS-типы из контракта (генерируются, руками не править) |
+| `docs/` | RFC, ADR, стайлгайд и архитектура фронтенда (`docs/frontend/`), бэкенда (`docs/backend/`) |
+| `scripts/` | `contract-check.sh`, `verify.sh`, `mr-report.sh`, `agent-hooks/` |
+| `compose.yaml`, `infra/caddy/` | локальный стек: `make up` → http://localhost:8080 |
+
+## Команды
+
+```bash
+make setup        # npm ci + uv sync + chromium + git-хуки
+make up           # стек в Docker → http://localhost:8080
+make dev-backend  # :8000 с автоперезагрузкой
+make dev-frontend # :5173, /api проксируется на :8000
+make check-fast   # линт + design-lint + типы (после каждой правки)
+make check        # всё: + тесты (backend cov ≥80%) + контракт + сборка (pre-push)
+make gen-api      # после изменения API: OpenAPI + TS-типы
+make e2e          # Playwright против Docker-стека
+make verify       # перед MR: check + e2e + секреты → reports/verify-<sha>.md
+make mr-report    # отчёт verify комментарием в MR
+```
 
 ## Правила
 
+- **Проверяем всё, а не только «свою» часть.** Pre-push и хук агента гоняют фронтенд, бэкенд и контракт вместе. Сломал соседнюю часть — чини её в том же MR.
 - Прямой push в `main` запрещён: ветки `feature/*`, `fix/*`, `docs/*`, `chore/*` → Merge Request (`Closes #N`).
-- CI-раннеров нет: качество подтверждается локальными хуками и отчётом скилла `verify` в MR.
-- Конфигурация — только `backend/app/config.py` + `.env.example`. Секреты — только в `.env` (в git не попадает), никогда не печатать их.
+- Изменил API → `make gen-api` и закоммить оба сгенерированных файла, иначе `contract-check` уронит push.
+- Конфигурация — только `backend/app/config.py` и `.env.example`. Секреты — только в `.env`; не печатать их.
 - XML BPMN генерирует код, а не LLM; LLM возвращает JSON IR (RFC §5).
-- Документация на русском, простым языком; новые термины — в глоссарий.
+- Фронтенд — только из дизайн-системы (`frontend/src/shared/ui`), правила — `docs/frontend/styleguide.md`. Нарушения ловит `design-lint`.
+- Интерфейс — на русском. Комментарии в коде и документация — на русском; идентификаторы — на английском.
 - Definition of Done — в скилле `pickup-task`.
+
+## Хуки
+
+- Git (lefthook, ставится при `npm ci`): pre-commit — biome, design-lint, ruff, secretlint по изменённым файлам; pre-push — `make check`.
+- Claude Code (`.claude/settings.json`): после правки файла — его форматирование и линт; перед завершением ответа — `make check-fast`.
+- Другие агенты: после правок запускайте `make check-fast`, перед MR — `make verify`.
 
 ## Скиллы (`.claude/skills/`)
 
@@ -34,4 +66,4 @@
 | `deploy` | деплой на VM (только по явной команде человека) |
 | `adr` | ADR / RFC |
 
-Агентам без поддержки Claude Code-скиллов: читайте `.claude/skills/<name>/SKILL.md` как инструкцию.
+Агентам без поддержки скиллов Claude Code: читайте `.claude/skills/<name>/SKILL.md` как инструкцию.

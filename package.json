@@ -1,0 +1,24 @@
+{
+  "name": "arkhitektor-bpmn",
+  "private": true,
+  "description": "Архитектор BPMN-диаграмм: инструменты репозитория (хуки, проверки). Код приложения — в frontend/ и backend/.",
+  "workspaces": [
+    "frontend"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "prepare": "lefthook install",
+    "secrets": "secretlint --maskSecrets \"**/*\""
+  },
+  "devDependencies": {
+    "@secretlint/secretlint-rule-preset-recommend": "13.0.6",
+    "lefthook": "2.1.15",
+    "pyright": "1.1.414",
+    "secretlint": "13.0.6"
+  },
+  "allowScripts": {
+    "lefthook": false
+  }
+}

@@ -1,0 +1,445 @@
+/*
+ * Токены дизайн-системы «Архитектор». Единственное место, где живут сырые значения цвета,
+ * размеров и движения. Смысл каждого токена — docs/frontend/styleguide.md.
+ *
+ * Слои:
+ *   1. Примитивы палитры (--palette-*) — шкалы OKLCH. В Tailwind не попадают:
+ *      компоненты и экраны используют только семантику.
+ *   2. Семантика (--color-*, --shadow-*) — значения в блоках тем внизу файла:
+ *      `:root, [data-theme="light"]` (светлая, по умолчанию) и `[data-theme="dark"]`.
+ *      Тема ставится атрибутом на <html>, но работает и на любом вложенном узле.
+ *   3. @theme — регистрирует имена для Tailwind (классы bg-*, text-*, border-*, shadow-*…),
+ *      сбрасывает стандартные шкалы Tailwind (`initial`): bg-red-500 и text-5xl не существуют.
+ *
+ * Имена семантических цветов — контракт между агентами, их не переименовываем.
+ */
+
+:root {
+  /* Иней — светлая нейтральная база: фоны и линии светлой темы, текст тёмной. Холодный оттенок. */
+  --palette-frost-0: oklch(1 0 0);
+  --palette-frost-50: oklch(0.985 0.0025 250);
+  --palette-frost-100: oklch(0.97 0.0035 250);
+  --palette-frost-150: oklch(0.955 0.004 250);
+  --palette-frost-200: oklch(0.93 0.0055 252);
+  --palette-frost-300: oklch(0.875 0.0075 255);
+
+  /* Графит — тёмная нейтральная база: текст светлой темы, поверхности тёмной. */
+  --palette-graphite-300: oklch(0.775 0.01 258);
+  --palette-graphite-400: oklch(0.645 0.012 260);
+  --palette-graphite-500: oklch(0.545 0.014 261);
+  --palette-graphite-600: oklch(0.465 0.015 262);
+  --palette-graphite-700: oklch(0.37 0.014 263);
+  --palette-graphite-750: oklch(0.33 0.013 264);
+  --palette-graphite-800: oklch(0.275 0.011 264);
+  --palette-graphite-850: oklch(0.232 0.01 265);
+  --palette-graphite-900: oklch(0.2 0.009 265);
+  --palette-graphite-925: oklch(0.175 0.008 265);
+  --palette-graphite-950: oklch(0.155 0.007 265);
+
+  /* Ток — акцентный синий, мотив фирменного ярко-синего Интер РАО. */
+  --palette-tok-50: oklch(0.972 0.0125 254);
+  --palette-tok-100: oklch(0.942 0.028 254);
+  --palette-tok-200: oklch(0.885 0.055 255);
+  --palette-tok-300: oklch(0.8 0.1 255);
+  --palette-tok-400: oklch(0.705 0.155 256);
+  --palette-tok-500: oklch(0.625 0.185 257);
+  --palette-tok-600: oklch(0.555 0.2 258);
+  --palette-tok-650: oklch(0.52 0.195 258.5);
+  --palette-tok-700: oklch(0.49 0.185 259);
+  --palette-tok-800: oklch(0.415 0.155 260);
+  --palette-tok-900: oklch(0.33 0.115 261);
+  --palette-tok-950: oklch(0.255 0.075 262);
+
+  /* Янтарь — допущения и внимание. Между оранжевым Интер РАО и жёлтым Яндекса. */
+  --palette-amber-50: oklch(0.982 0.018 85);
+  --palette-amber-100: oklch(0.958 0.04 83);
+  --palette-amber-200: oklch(0.915 0.076 80);
+  --palette-amber-300: oklch(0.865 0.112 76);
+  --palette-amber-400: oklch(0.815 0.145 72);
+  --palette-amber-500: oklch(0.76 0.155 66);
+  --palette-amber-600: oklch(0.655 0.15 57);
+  --palette-amber-700: oklch(0.58 0.135 55);
+  --palette-amber-800: oklch(0.49 0.11 52);
+  --palette-amber-900: oklch(0.39 0.085 50);
+  --palette-amber-950: oklch(0.27 0.055 55);
+
+  /* Хвоя — «решено», успех, добавлено. Глубокий хвойный зелёный. */
+  --palette-pine-50: oklch(0.975 0.018 165);
+  --palette-pine-100: oklch(0.945 0.04 164);
+  --palette-pine-200: oklch(0.89 0.075 163);
+  --palette-pine-300: oklch(0.81 0.11 162);
+  --palette-pine-400: oklch(0.72 0.13 161);
+  --palette-pine-500: oklch(0.635 0.13 160);
+  --palette-pine-600: oklch(0.545 0.115 160);
+  --palette-pine-700: oklch(0.48 0.1 161);
+  --palette-pine-800: oklch(0.41 0.082 162);
+  --palette-pine-900: oklch(0.33 0.062 163);
+  --palette-pine-950: oklch(0.25 0.04 165);
+
+  /* Сурик — служебный: только ошибки и разрушительные действия. */
+  --palette-surik-50: oklch(0.975 0.011 20);
+  --palette-surik-100: oklch(0.945 0.026 22);
+  --palette-surik-200: oklch(0.89 0.055 23);
+  --palette-surik-300: oklch(0.81 0.098 24);
+  --palette-surik-400: oklch(0.72 0.16 27);
+  --palette-surik-500: oklch(0.64 0.19 28);
+  --palette-surik-600: oklch(0.57 0.195 28);
+  --palette-surik-700: oklch(0.5 0.175 27);
+  --palette-surik-800: oklch(0.43 0.145 26);
+  --palette-surik-900: oklch(0.35 0.11 25);
+  --palette-surik-950: oklch(0.26 0.07 25);
+
+  --grid-size: 24px;
+}
+
+/*
+ * Регистрация семантических имён для Tailwind. `reference` — переменные не выводятся в :root:
+ * их значения задают блоки тем ниже, поэтому классы всегда смотрят на текущую тему.
+ */
+@theme reference {
+  --color-*: initial;
+  --shadow-*: initial;
+  --inset-shadow-*: initial;
+  --drop-shadow-*: initial;
+  --text-shadow-*: initial;
+
+  --color-bg: var(--color-bg);
+  --color-bg-subtle: var(--color-bg-subtle);
+  --color-surface: var(--color-surface);
+  --color-surface-raised: var(--color-surface-raised);
+  --color-surface-hover: var(--color-surface-hover);
+  --color-overlay: var(--color-overlay);
+  --color-hover: var(--color-hover);
+  --color-pressed: var(--color-pressed);
+  --color-border: var(--color-border);
+  --color-border-strong: var(--color-border-strong);
+  --color-control: var(--color-control);
+  --color-fg: var(--color-fg);
+  --color-fg-muted: var(--color-fg-muted);
+  --color-fg-subtle: var(--color-fg-subtle);
+  --color-fg-on-accent: var(--color-fg-on-accent);
+  --color-accent: var(--color-accent);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-accent-subtle: var(--color-accent-subtle);
+  --color-accent-fg: var(--color-accent-fg);
+  --color-amber: var(--color-amber);
+  --color-amber-subtle: var(--color-amber-subtle);
+  --color-amber-fg: var(--color-amber-fg);
+  --color-success: var(--color-success);
+  --color-success-subtle: var(--color-success-subtle);
+  --color-success-fg: var(--color-success-fg);
+  --color-danger: var(--color-danger);
+  --color-danger-hover: var(--color-danger-hover);
+  --color-danger-subtle: var(--color-danger-subtle);
+  --color-danger-fg: var(--color-danger-fg);
+  --color-focus-ring: var(--color-focus-ring);
+
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-glow: var(--shadow-glow);
+}
+
+@theme static {
+  --text-*: initial;
+  --radius-*: initial;
+  --font-weight-*: initial;
+  --tracking-*: initial;
+  --leading-*: initial;
+  --ease-*: initial;
+  --animate-*: initial;
+  --breakpoint-*: initial;
+  --font-serif: initial;
+
+  /* --- Шрифты: грузятся локально из @fontsource-variable, без CDN --- */
+  --font-sans:
+    "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* --- Типографическая шкала. Интерфейс плотный (13px), заголовки растут с окном --- */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.375rem;
+  --text-md: 0.9375rem;
+  --text-md--line-height: 1.5rem;
+  --text-lg: clamp(1rem, 0.92rem + 0.16vw, 1.125rem);
+  --text-lg--line-height: 1.45;
+  --text-xl: clamp(1.125rem, 0.98rem + 0.26vw, 1.3125rem);
+  --text-xl--line-height: 1.35;
+  --text-2xl: clamp(1.375rem, 1.12rem + 0.45vw, 1.75rem);
+  --text-2xl--line-height: 1.25;
+  --text-3xl: clamp(1.75rem, 1.3rem + 0.8vw, 2.5rem);
+  --text-3xl--line-height: 1.12;
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  --tracking-tighter: -0.022em;
+  --tracking-tight: -0.011em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.02em;
+
+  --leading-none: 1;
+  --leading-tight: 1.2;
+  --leading-snug: 1.35;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  /* --- Радиусы --- */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* --- Движение: одна кривая на вход, одна на выход, одна на циклы --- */
+  --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-soft: cubic-bezier(0.32, 0, 0.67, 0);
+  --ease-in-out-soft: cubic-bezier(0.65, 0, 0.35, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+  --duration-loop: 2400ms;
+  --default-transition-duration: var(--duration-base);
+  --default-transition-timing-function: var(--ease-soft);
+
+  /* --- Десктоп: база — окно от 1024px; «широкое» от 1440px, «сверхширокое» от 1920px --- */
+  --breakpoint-wide: 90rem;
+  --breakpoint-ultra: 120rem;
+
+  /* --- Анимации. Ключевые кадры — здесь же --- */
+  --animate-fade-in: fade-in var(--duration-base) var(--ease-soft);
+  --animate-fade-out: fade-out var(--duration-fast) var(--ease-in-soft) forwards;
+  --animate-pop-in: pop-in var(--duration-base) var(--ease-soft);
+  --animate-pop-out: pop-out var(--duration-fast) var(--ease-in-soft) forwards;
+  --animate-dialog-in: dialog-in var(--duration-slow) var(--ease-soft);
+  --animate-dialog-out: dialog-out var(--duration-fast) var(--ease-in-soft) forwards;
+  --animate-sheet-in: sheet-in var(--duration-slow) var(--ease-soft);
+  --animate-sheet-out: sheet-out var(--duration-base) var(--ease-in-soft) forwards;
+  --animate-spin: spin 0.8s linear infinite;
+  --animate-shimmer: shimmer 1.8s var(--ease-in-out-soft) infinite;
+  --animate-flow: flow var(--duration-loop) var(--ease-in-out-soft) infinite;
+  --animate-flow-y: flow-y var(--duration-loop) var(--ease-in-out-soft) infinite;
+  --animate-breathe: breathe var(--duration-loop) var(--ease-in-out-soft) infinite;
+  --animate-dash: dash 1.4s linear infinite;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes fade-out {
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translate(var(--pop-x, 0), var(--pop-y, 0)) scale(0.97);
+    }
+  }
+  @keyframes pop-out {
+    to {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+  }
+  @keyframes dialog-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.98);
+    }
+  }
+  @keyframes dialog-out {
+    to {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+  }
+  @keyframes sheet-in {
+    from {
+      transform: translateX(calc(100% + 16px));
+    }
+  }
+  @keyframes sheet-out {
+    to {
+      transform: translateX(calc(100% + 16px));
+    }
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @keyframes shimmer {
+    from {
+      background-position: 150% 0;
+    }
+    to {
+      background-position: -50% 0;
+    }
+  }
+  @keyframes flow {
+    from {
+      transform: translate3d(-100%, 0, 0);
+    }
+    to {
+      transform: translate3d(260%, 0, 0);
+    }
+  }
+  @keyframes flow-y {
+    from {
+      transform: translate3d(0, -100%, 0);
+    }
+    to {
+      transform: translate3d(0, 260%, 0);
+    }
+  }
+  @keyframes breathe {
+    0%,
+    100% {
+      opacity: 0.5;
+      transform: scale(1);
+    }
+    60% {
+      opacity: 0;
+      transform: scale(2);
+    }
+  }
+  @keyframes dash {
+    to {
+      stroke-dashoffset: -14;
+    }
+  }
+}
+
+/* --- Светлая тема (по умолчанию) --- */
+:root,
+[data-theme="light"] {
+  /* Поверхности: чем выше уровень, тем светлее */
+  --color-bg: var(--palette-frost-50);
+  --color-bg-subtle: var(--palette-frost-100);
+  --color-surface: var(--palette-frost-0);
+  --color-surface-raised: var(--palette-frost-0);
+  --color-surface-hover: var(--palette-frost-100);
+  --color-overlay: oklch(0.2 0.01 265 / 0.3);
+  /* Заливки состояний для прозрачных элементов: ghost-кнопки, пункты меню, строки списков */
+  --color-hover: oklch(0.232 0.01 265 / 0.045);
+  --color-pressed: oklch(0.232 0.01 265 / 0.08);
+  /* Линии */
+  --color-border: var(--palette-frost-200);
+  --color-border-strong: var(--palette-frost-300);
+  /* Граница контролов без заливки (чекбокс, радио): не меньше 3:1 к поверхности */
+  --color-control: var(--palette-graphite-400);
+  /* Текст */
+  --color-fg: var(--palette-graphite-850);
+  --color-fg-muted: var(--palette-graphite-600);
+  --color-fg-subtle: var(--palette-graphite-500);
+  --color-fg-on-accent: var(--palette-frost-0);
+  /* Ток — акцент */
+  --color-accent: var(--palette-tok-600);
+  --color-accent-hover: var(--palette-tok-700);
+  --color-accent-subtle: var(--palette-tok-50);
+  --color-accent-fg: var(--palette-tok-700);
+  /* Янтарь — допущения и внимание */
+  --color-amber: var(--palette-amber-600);
+  --color-amber-subtle: var(--palette-amber-50);
+  --color-amber-fg: var(--palette-amber-800);
+  /* Хвоя — решено, успех */
+  --color-success: var(--palette-pine-600);
+  --color-success-subtle: var(--palette-pine-50);
+  --color-success-fg: var(--palette-pine-700);
+  /* Сурик — ошибки */
+  --color-danger: var(--palette-surik-600);
+  --color-danger-hover: var(--palette-surik-700);
+  --color-danger-subtle: var(--palette-surik-50);
+  --color-danger-fg: var(--palette-surik-700);
+  /* Фокус */
+  --color-focus-ring: var(--palette-tok-500);
+
+  /* Тени: холодный графитовый оттенок вместо чёрного — мягче на Инее */
+  --shadow-xs: 0 1px 1px oklch(0.2 0.01 265 / 0.05);
+  --shadow-sm: 0 1px 2px oklch(0.2 0.01 265 / 0.06), 0 1px 1px oklch(0.2 0.01 265 / 0.03);
+  --shadow-md: 0 6px 16px -4px oklch(0.2 0.01 265 / 0.1), 0 2px 4px -1px oklch(0.2 0.01 265 / 0.05);
+  --shadow-lg:
+    0 24px 56px -12px oklch(0.2 0.01 265 / 0.2), 0 6px 16px -6px oklch(0.2 0.01 265 / 0.08);
+  --shadow-glow: 0 0 0 1px oklch(0.555 0.2 258 / 0.22), 0 6px 24px -6px oklch(0.555 0.2 258 / 0.34);
+
+  /* Служебное: сетка-подложка, скроллбары, выделение */
+  --grid-line: var(--palette-frost-200);
+  --grid-dot: var(--palette-frost-300);
+  --scrollbar-thumb: oklch(0.465 0.015 262 / 0.26);
+  --scrollbar-thumb-hover: oklch(0.465 0.015 262 / 0.44);
+  --selection: oklch(0.625 0.185 257 / 0.2);
+
+  color-scheme: light;
+}
+
+/* --- Тёмная тема: полноценная, переопределяет только семантику --- */
+[data-theme="dark"] {
+  --color-bg: var(--palette-graphite-925);
+  --color-bg-subtle: var(--palette-graphite-950);
+  --color-surface: var(--palette-graphite-900);
+  --color-surface-raised: var(--palette-graphite-850);
+  --color-surface-hover: var(--palette-graphite-850);
+  --color-overlay: oklch(0.1 0.005 265 / 0.62);
+  --color-hover: oklch(0.955 0.004 250 / 0.055);
+  --color-pressed: oklch(0.955 0.004 250 / 0.095);
+
+  --color-border: var(--palette-graphite-800);
+  --color-border-strong: var(--palette-graphite-750);
+  --color-control: var(--palette-graphite-500);
+
+  --color-fg: var(--palette-frost-150);
+  --color-fg-muted: var(--palette-graphite-300);
+  --color-fg-subtle: var(--palette-graphite-400);
+  --color-fg-on-accent: var(--palette-frost-0);
+
+  --color-accent: var(--palette-tok-650);
+  --color-accent-hover: var(--palette-tok-600);
+  --color-accent-subtle: var(--palette-tok-950);
+  --color-accent-fg: var(--palette-tok-300);
+
+  --color-amber: var(--palette-amber-400);
+  --color-amber-subtle: var(--palette-amber-950);
+  --color-amber-fg: var(--palette-amber-300);
+
+  --color-success: var(--palette-pine-500);
+  --color-success-subtle: var(--palette-pine-950);
+  --color-success-fg: var(--palette-pine-300);
+
+  --color-danger: var(--palette-surik-600);
+  --color-danger-hover: var(--palette-surik-700);
+  --color-danger-subtle: var(--palette-surik-950);
+  --color-danger-fg: var(--palette-surik-300);
+
+  --color-focus-ring: var(--palette-tok-400);
+
+  /* В темноте тени глубже, а верхняя кромка поверхности чуть светится */
+  --shadow-xs: 0 1px 1px oklch(0 0 0 / 0.3);
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.36), inset 0 1px 0 oklch(1 0 0 / 0.03);
+  --shadow-md:
+    0 10px 28px -6px oklch(0 0 0 / 0.55), 0 2px 6px oklch(0 0 0 / 0.3),
+    inset 0 1px 0 oklch(1 0 0 / 0.04);
+  --shadow-lg:
+    0 28px 72px -12px oklch(0 0 0 / 0.7), 0 6px 18px oklch(0 0 0 / 0.36),
+    inset 0 1px 0 oklch(1 0 0 / 0.05);
+  --shadow-glow:
+    0 0 0 1px oklch(0.625 0.185 257 / 0.38), 0 8px 32px -8px oklch(0.625 0.185 257 / 0.5);
+
+  --grid-line: var(--palette-graphite-850);
+  --grid-dot: var(--palette-graphite-750);
+  --scrollbar-thumb: oklch(0.775 0.01 258 / 0.2);
+  --scrollbar-thumb-hover: oklch(0.775 0.01 258 / 0.36);
+  --selection: oklch(0.705 0.155 256 / 0.28);
+
+  color-scheme: dark;
+}

@@ -1,2 +1,11 @@
-/* Точка входа стилей. Токены и база — в отдельных файлах (задача #3, docs/frontend/styleguide.md). */
+/*
+ * Точка входа стилей. Порядок важен: Tailwind → токены → база.
+ * Шрифты Geist подключаются в main.tsx (локальные файлы @fontsource-variable, кириллица включена).
+ * Правила — docs/frontend/styleguide.md.
+ */
 @import "tailwindcss";
+@import "./tokens.css";
+@import "./base.css";
+
+/* Вариант dark: для редких мест, где семантических токенов мало. Тема — атрибут data-theme. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));

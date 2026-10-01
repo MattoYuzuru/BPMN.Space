@@ -23,8 +23,9 @@ def derive_status(
 
 
 def default_source_title(content: str, *, limit: int = 60) -> str:
-    """Название источника по умолчанию — первые слова текста в одну строку."""
-    words = " ".join(content.split()).lstrip("#").strip()
+    """Название источника по умолчанию — первая непустая строка текста (без `#` заголовка)."""
+    first = next((line for line in content.splitlines() if line.strip()), "")
+    words = " ".join(first.split()).lstrip("#").strip()
     if len(words) <= limit:
         return words
     cut = words[:limit].rsplit(" ", 1)[0]

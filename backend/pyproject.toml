@@ -25,6 +25,7 @@ dev = [
   "pip-audit",
   "lxml",
   "types-defusedxml",
+  "lxml-stubs",
 ]
 
 [tool.uv]

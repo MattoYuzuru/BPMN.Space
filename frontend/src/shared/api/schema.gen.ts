@@ -4,6 +4,388 @@
  */
 
 export interface paths {
+    "/api/v1/examples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Examples
+         * @description Демо-примеры процессов для быстрого старта.
+         */
+        get: operations["list_examples"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Projects
+         * @description Проекты: сначала недавно изменённые. Курсорная пагинация.
+         */
+        get: operations["list_projects"];
+        put?: never;
+        /** Create Project */
+        post: operations["create_project"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/from-example": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Project From Example
+         * @description Проект с текстом примера в качестве первого источника.
+         */
+        post: operations["create_project_from_example"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Project
+         * @description Проект целиком: источники, вопросы, последняя версия (без XML), активный прогон.
+         */
+        get: operations["get_project"];
+        put?: never;
+        post?: never;
+        /** Delete Project */
+        delete: operations["delete_project"];
+        options?: never;
+        head?: never;
+        /** Update Project */
+        patch: operations["update_project"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/diagram": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Diagram
+         * @description Сохранить правку из bpmn-js как новую версию `manual`.
+         */
+        put: operations["save_diagram"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Questions */
+        get: operations["list_questions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Run
+         * @description Запустить прогон в фоне. Прогресс — `GET /runs/{id}/events` (SSE).
+         *     Если по проекту уже идёт прогон или нет источников — 409.
+         */
+        post: operations["start_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/sources/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create File Source
+         * @description Документ. `.txt`/`.md` готовы сразу; `.docx`/`.pdf` приходят в `processing`
+         *     и становятся `ready` или `failed` в фоне — обновляйте проект, пока есть `processing`.
+         */
+        post: operations["create_file_source"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/sources/text": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Text Source
+         * @description Текст или голосовая заметка (`kind=voice`) после проверки расшифровки аналитиком.
+         */
+        post: operations["create_text_source"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Versions
+         * @description Версии без XML, последняя — первой.
+         */
+        get: operations["list_versions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/questions/{question_id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer Question
+         * @description Ответ создаёт источник `kind=answer`; вопрос становится `answered`.
+         *     Следующий прогон подтвердит ответ (`resolved`) или вернёт вопрос (`open`).
+         */
+        post: operations["answer_question"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/questions/{question_id}/ignore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ignore Question
+         * @description Принять допущение: вопрос `ignored`, допущение попадёт в схему и отчёт.
+         */
+        post: operations["ignore_question"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/questions/{question_id}/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reopen Question
+         * @description Вернуть проигнорированный или отвеченный вопрос в `open` (ответ выключается).
+         */
+        post: operations["reopen_question"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run */
+        get: operations["get_run"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run Events
+         * @description События прогона: `stage`, `question`, `summary`, `version`, `error`, `done`.
+         *     Сначала приходит вся история прогона, затем новые события; поток закрывается после `done`.
+         */
+        get: operations["run_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/{source_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Source
+         * @description Удалить источник. Удаление ответа возвращает отвеченный вопрос в `open`.
+         */
+        delete: operations["delete_source"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Source
+         * @description Поправить название или текст, включить или выключить источник.
+         */
+        patch: operations["update_source"];
+        trace?: never;
+    };
+    "/api/v1/transcriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transcribe
+         * @description Расшифровка голоса для правки перед сохранением (источник или ответ на вопрос).
+         */
+        post: operations["transcribe"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/versions/{version_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Version */
+        get: operations["get_version"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/versions/{version_id}/xml": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Version
+         * @description Скачать `.bpmn` (Content-Disposition: attachment).
+         */
+        get: operations["download_version"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -12,7 +394,7 @@ export interface paths {
             cookie?: never;
         };
         /** Health */
-        get: operations["health_health_get"];
+        get: operations["health"];
         put?: never;
         post?: never;
         delete?: never;
@@ -24,7 +406,705 @@ export interface paths {
 }
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: never;
+    schemas: {
+        /** Answer */
+        Answer: {
+            /**
+             * Source Id
+             * Format: uuid
+             * @description Источник `kind=answer` с текстом ответа
+             */
+            source_id: string;
+            /** Text */
+            text: string;
+        };
+        /**
+         * Assumption
+         * @description Элемент схемы, построенный на допущении неотвеченного вопроса.
+         */
+        Assumption: {
+            /** Element Id */
+            element_id: string;
+            /**
+             * Question Id
+             * Format: uuid
+             */
+            question_id: string;
+            /** Text */
+            text: string;
+        };
+        /** Body_create_file_source */
+        Body_create_file_source: {
+            /**
+             * File
+             * @description .txt, .md, .docx или .pdf
+             */
+            file: string;
+            /** Title */
+            title?: string | null;
+        };
+        /** Body_transcribe */
+        Body_transcribe: {
+            /**
+             * File
+             * @description Аудио: webm/ogg (opus), wav или mp3
+             */
+            file: string;
+        };
+        /** DiagramSave */
+        DiagramSave: {
+            /**
+             * Xml
+             * @description BPMN 2.0 XML из bpmn-js (`saveXML`)
+             */
+            xml: string;
+        };
+        /** DoneEventData */
+        DoneEventData: {
+            run: components["schemas"]["Run"];
+        };
+        /** ErrorEventData */
+        ErrorEventData: {
+            /** Message */
+            message: string;
+        };
+        /** ErrorResponse */
+        ErrorResponse: {
+            /**
+             * Detail
+             * @description Сообщение об ошибке для пользователя, на русском
+             */
+            detail: string;
+        };
+        /** Example */
+        Example: {
+            /**
+             * Content
+             * @description Текст регламента — станет первым источником проекта
+             */
+            content: string;
+            /** Description */
+            description: string;
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+        };
+        /** LintIssue */
+        LintIssue: {
+            /** Element Id */
+            element_id?: string | null;
+            /** Message */
+            message: string;
+            /**
+             * Rule
+             * @description Правило bpmnlint, например `label-required`
+             */
+            rule: string;
+            severity: components["schemas"]["LintSeverity"];
+        };
+        /**
+         * LintSeverity
+         * @enum {string}
+         */
+        LintSeverity: "error" | "warning";
+        /** Project */
+        Project: {
+            counts: components["schemas"]["ProjectCounts"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Lanes
+             * @description Дорожки последней версии схемы — для карточки списка
+             */
+            lanes: string[];
+            status: components["schemas"]["ProjectStatus"];
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ProjectCounts */
+        ProjectCounts: {
+            /** Questions Open */
+            questions_open: number;
+            /** Questions Resolved */
+            questions_resolved: number;
+            /**
+             * Sources
+             * @description Источники без ответов на вопросы
+             */
+            sources: number;
+            /** Versions */
+            versions: number;
+        };
+        /** ProjectCreate */
+        ProjectCreate: {
+            /** Description */
+            description?: string | null;
+            /** Title */
+            title: string;
+        };
+        /** ProjectDetail */
+        ProjectDetail: {
+            active_run: components["schemas"]["Run"] | null;
+            counts: components["schemas"]["ProjectCounts"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Lanes
+             * @description Дорожки последней версии схемы — для карточки списка
+             */
+            lanes: string[];
+            /** @description Последняя версия без XML */
+            latest_version: components["schemas"]["Version"] | null;
+            /** Questions */
+            questions: components["schemas"]["Question"][];
+            /** Sources */
+            sources: components["schemas"]["Source"][];
+            status: components["schemas"]["ProjectStatus"];
+            summary: components["schemas"]["QuestionsSummary"];
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ProjectFromExample */
+        ProjectFromExample: {
+            /**
+             * Example Id
+             * @description id из `GET /examples`
+             */
+            example_id: string;
+        };
+        /** ProjectPage */
+        ProjectPage: {
+            /** Items */
+            items: components["schemas"]["Project"][];
+            /**
+             * Next Cursor
+             * @description Курсор следующей страницы; null — конец
+             */
+            next_cursor: string | null;
+            /**
+             * Total
+             * @description Всего проектов с учётом поиска
+             */
+            total: number;
+        };
+        /**
+         * ProjectStatus
+         * @enum {string}
+         */
+        ProjectStatus: "empty" | "analyzing" | "needs_answers" | "ready" | "building";
+        /** ProjectUpdate */
+        ProjectUpdate: {
+            /** Description */
+            description?: string | null;
+            /** Title */
+            title?: string | null;
+        };
+        /** Question */
+        Question: {
+            /** @description Фрагмент источника, вызвавший вопрос */
+            about?: components["schemas"]["Quote"] | null;
+            answer?: components["schemas"]["Answer"] | null;
+            /**
+             * Assumption
+             * @description Что модель сделает, если вопрос проигнорировать
+             */
+            assumption: string;
+            /**
+             * Code
+             * @description Номер внутри проекта: Q-1, Q-2, …
+             */
+            code: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Element Ids
+             * @description Элементы схемы, которых касается вопрос
+             */
+            element_ids: string[];
+            /** @description Доказательство для `resolved` */
+            evidence?: components["schemas"]["Quote"] | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            kind: components["schemas"]["QuestionKind"];
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            severity: components["schemas"]["Severity"];
+            status: components["schemas"]["QuestionStatus"];
+            /** Text */
+            text: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** QuestionAnswerCreate */
+        QuestionAnswerCreate: {
+            /**
+             * Text
+             * @description Ответ текстом или проверенная расшифровка голоса
+             */
+            text: string;
+        };
+        /** QuestionEventData */
+        QuestionEventData: {
+            question: components["schemas"]["Question"];
+        };
+        /**
+         * QuestionKind
+         * @enum {string}
+         */
+        QuestionKind: "missing_actor" | "ambiguous_condition" | "unclear_order" | "missing_outcome" | "conflict";
+        /**
+         * QuestionStatus
+         * @enum {string}
+         */
+        QuestionStatus: "open" | "answered" | "ignored" | "resolved" | "obsolete";
+        /**
+         * QuestionsSummary
+         * @description Текущее состояние вопросов проекта.
+         *
+         *     `resolved` — всего решено; `new` — открытые вопросы, созданные последним завершённым
+         *     прогоном; `open` — остальные открытые («осталось»); `ignored`, `answered` — сколько сейчас.
+         */
+        QuestionsSummary: {
+            /** Answered */
+            answered: number;
+            /** Ignored */
+            ignored: number;
+            /** New */
+            new: number;
+            /** Open */
+            open: number;
+            /** Resolved */
+            resolved: number;
+        };
+        /**
+         * Quote
+         * @description Цитата из источника: доказательство, трассировка или повод для вопроса.
+         */
+        Quote: {
+            /**
+             * Quote
+             * @description Точный фрагмент текста источника
+             */
+            quote: string;
+            /**
+             * Source Id
+             * Format: uuid
+             */
+            source_id: string;
+        };
+        /** Run */
+        Run: {
+            /**
+             * Error
+             * @description Причина для `status=failed`
+             */
+            error?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            mode: components["schemas"]["RunMode"];
+            /** Progress */
+            progress: number;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** @description Текущий или последний этап; null — в очереди */
+            stage: components["schemas"]["RunStage"] | null;
+            /**
+             * Stage Label
+             * @description Подпись этапа для интерфейса
+             */
+            stage_label: string;
+            /**
+             * Started At
+             * Format: date-time
+             * @description Когда прогон принят
+             */
+            started_at: string;
+            status: components["schemas"]["RunStatus"];
+            summary?: components["schemas"]["RunSummary"] | null;
+            /**
+             * Version Id
+             * @description Версия, собранная прогоном
+             */
+            version_id?: string | null;
+        };
+        /** RunCreate */
+        RunCreate: {
+            /** @description `analyze` — только вопросы, `build` — вопросы и схема */
+            mode: components["schemas"]["RunMode"];
+        };
+        /** RunDoneEvent */
+        RunDoneEvent: {
+            data: components["schemas"]["DoneEventData"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event: "done";
+        };
+        /** RunErrorEvent */
+        RunErrorEvent: {
+            data: components["schemas"]["ErrorEventData"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event: "error";
+        };
+        /**
+         * RunEvent
+         * @description Одно SSE-сообщение: поле `event:` — тип, `data:` — JSON из `data`, `id:` — номер.
+         *
+         *     Порядок: `stage` на каждый этап; на этапе сверки — `question` на каждый изменённый или
+         *     новый вопрос, затем `summary`; при сборке — `version`; последним всегда `done`
+         *     (при ошибке перед ним — `error`). Переподключение — заголовок `Last-Event-ID`.
+         */
+        RunEvent: components["schemas"]["RunStageEvent"] | components["schemas"]["RunQuestionEvent"] | components["schemas"]["RunSummaryEvent"] | components["schemas"]["RunVersionEvent"] | components["schemas"]["RunDoneEvent"] | components["schemas"]["RunErrorEvent"];
+        /**
+         * RunMode
+         * @enum {string}
+         */
+        RunMode: "analyze" | "build";
+        /** RunQuestionEvent */
+        RunQuestionEvent: {
+            data: components["schemas"]["QuestionEventData"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event: "question";
+        };
+        /**
+         * RunStage
+         * @enum {string}
+         */
+        RunStage: "reading_sources" | "extracting" | "reconciling" | "structuring" | "validating" | "layout";
+        /** RunStageEvent */
+        RunStageEvent: {
+            data: components["schemas"]["StageEventData"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event: "stage";
+        };
+        /**
+         * RunStatus
+         * @enum {string}
+         */
+        RunStatus: "queued" | "running" | "succeeded" | "failed";
+        /**
+         * RunSummary
+         * @description Итог прогона по вопросам («решено 2 · осталось 2 · новых 1»).
+         *
+         *     `resolved` — решено этим прогоном; `open` — остались открытыми с прошлых прогонов;
+         *     `new` — новые открытые вопросы этого прогона; `ignored`, `answered` — сколько сейчас.
+         */
+        RunSummary: {
+            /** Answered */
+            answered: number;
+            /** Ignored */
+            ignored: number;
+            /** New */
+            new: number;
+            /** Open */
+            open: number;
+            /** Resolved */
+            resolved: number;
+        };
+        /** RunSummaryEvent */
+        RunSummaryEvent: {
+            data: components["schemas"]["RunSummary"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event: "summary";
+        };
+        /** RunVersionEvent */
+        RunVersionEvent: {
+            data: components["schemas"]["VersionEventData"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event: "version";
+        };
+        /**
+         * Severity
+         * @enum {string}
+         */
+        Severity: "blocker" | "major" | "minor";
+        /** Source */
+        Source: {
+            /**
+             * Active
+             * @description Выключенный источник не участвует в прогонах
+             */
+            active: boolean;
+            /**
+             * Content
+             * @description Извлечённый текст; аналитик может его поправить
+             */
+            content: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Duration Sec
+             * @description Длительность голосовой заметки
+             */
+            duration_sec?: number | null;
+            /**
+             * Error
+             * @description Причина для `status=failed`
+             */
+            error?: string | null;
+            /** File Name */
+            file_name?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            kind: components["schemas"]["SourceKind"];
+            /** Mime */
+            mime?: string | null;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /**
+             * Question Id
+             * @description Для `kind=answer` — вопрос, на который это ответ
+             */
+            question_id?: string | null;
+            /** Size Bytes */
+            size_bytes?: number | null;
+            status: components["schemas"]["SourceStatus"];
+            /** Title */
+            title: string;
+        };
+        /**
+         * SourceKind
+         * @enum {string}
+         */
+        SourceKind: "text" | "voice" | "file" | "answer";
+        /**
+         * SourceStatus
+         * @enum {string}
+         */
+        SourceStatus: "processing" | "ready" | "failed";
+        /**
+         * SourceTextCreate
+         * @description Текст или проверенная аналитиком расшифровка голоса (после `POST /transcriptions`).
+         */
+        SourceTextCreate: {
+            /** Content */
+            content: string;
+            /** Duration Sec */
+            duration_sec?: number | null;
+            /**
+             * Kind
+             * @default text
+             * @enum {string}
+             */
+            kind: "text" | "voice";
+            /** Title */
+            title?: string | null;
+        };
+        /** SourceUpdate */
+        SourceUpdate: {
+            /** Active */
+            active?: boolean | null;
+            /** Content */
+            content?: string | null;
+            /** Title */
+            title?: string | null;
+        };
+        /** StageEventData */
+        StageEventData: {
+            /** Label */
+            label: string;
+            /** Progress */
+            progress: number;
+            stage: components["schemas"]["RunStage"];
+        };
+        /** Transcription */
+        Transcription: {
+            /** Duration Sec */
+            duration_sec: number;
+            /**
+             * Language
+             * @description Код языка, например `ru-RU`
+             */
+            language: string;
+            /** Text */
+            text: string;
+        };
+        /** Version */
+        Version: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            diff: components["schemas"]["VersionDiff"];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Lanes
+             * @description Названия дорожек
+             */
+            lanes: string[];
+            /** Number */
+            number: number;
+            origin: components["schemas"]["VersionOrigin"];
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            report: components["schemas"]["VersionReport"];
+            /** Run Id */
+            run_id?: string | null;
+            /**
+             * Trace
+             * @description Трассировка: id элемента схемы → цитата
+             */
+            trace: {
+                [key: string]: components["schemas"]["Quote"];
+            };
+        };
+        /** VersionDetail */
+        VersionDetail: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            diff: components["schemas"]["VersionDiff"];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Lanes
+             * @description Названия дорожек
+             */
+            lanes: string[];
+            /** Number */
+            number: number;
+            origin: components["schemas"]["VersionOrigin"];
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            report: components["schemas"]["VersionReport"];
+            /** Run Id */
+            run_id?: string | null;
+            /**
+             * Trace
+             * @description Трассировка: id элемента схемы → цитата
+             */
+            trace: {
+                [key: string]: components["schemas"]["Quote"];
+            };
+            /**
+             * Xml
+             * @description BPMN 2.0 XML с координатами (DI)
+             */
+            xml: string;
+        };
+        /**
+         * VersionDiff
+         * @description Сравнение с предыдущей версией по узлам и дорожкам.
+         */
+        VersionDiff: {
+            /** Added */
+            added: number;
+            /** Changed */
+            changed: number;
+            /** Removed */
+            removed: number;
+        };
+        /** VersionEventData */
+        VersionEventData: {
+            version: components["schemas"]["Version"];
+        };
+        /**
+         * VersionOrigin
+         * @enum {string}
+         */
+        VersionOrigin: "generated" | "manual";
+        /** VersionReport */
+        VersionReport: {
+            /** Assumptions */
+            assumptions: components["schemas"]["Assumption"][];
+            /** Lint */
+            lint: components["schemas"]["LintIssue"][];
+            /** Xsd Valid */
+            xsd_valid: boolean;
+        };
+    };
     responses: never;
     parameters: never;
     requestBodies: never;
@@ -33,7 +1113,1009 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    health_health_get: {
+    list_examples: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Example"][];
+                };
+            };
+        };
+    };
+    list_projects: {
+        parameters: {
+            query?: {
+                /** @description `next_cursor` прошлой страницы */
+                cursor?: string | null;
+                limit?: number;
+                /** @description Поиск по названию */
+                q?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectPage"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_project_from_example: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectFromExample"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDetail"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Конфликт состояния */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    update_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    save_diagram: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiagramSave"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Version"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Слишком большой файл */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_questions: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["QuestionStatus"] | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Question"][];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    start_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Run"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Конфликт состояния */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_file_source: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_create_file_source"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Source"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Слишком большой файл */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Формат не поддерживается */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_text_source: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceTextCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Source"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_versions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Version"][];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    answer_question: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionAnswerCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Question"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Конфликт состояния */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    ignore_question: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Question"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Конфликт состояния */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reopen_question: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Question"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Конфликт состояния */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Run"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    run_events: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Продолжить после события */
+                "last-event-id"?: string | null;
+            };
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Поток SSE (`text/event-stream`); схема — одно сообщение */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["RunEvent"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_source: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    update_source: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Source"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    transcribe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_transcribe"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Transcription"];
+                };
+            };
+            /** @description Слишком большой файл */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Формат не поддерживается */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionDetail"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    download_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description BPMN 2.0 XML файлом */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/xml": unknown;
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    health: {
         parameters: {
             query?: never;
             header?: never;

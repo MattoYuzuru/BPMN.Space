@@ -1,0 +1,94 @@
+import type { ReactNode, Ref } from 'react'
+
+/**
+ * Подсветка элементов схемы. Значения — id элементов BPMN (`Task_1`, `Flow_2`…).
+ * Неизвестные id молча пропускаются: схема могла измениться раньше, чем пришли данные.
+ */
+export interface DiagramHighlights {
+  /** Элементы, построенные на допущении (вопрос проигнорирован): янтарный пунктир. */
+  assumptions: readonly string[]
+  /** Элементы выбранного вопроса: акцентная обводка «Ток». */
+  selected: readonly string[]
+  /** Элементы, добавленные в новой версии схемы: «Хвоя». */
+  added: readonly string[]
+}
+
+/** Предупреждение импорта: схема открылась, но часть элементов bpmn-js пропустил. */
+export interface DiagramImportWarning {
+  message: string
+  /** id элемента, к которому относится предупреждение, если bpmn-js его сообщил. */
+  elementId?: string
+}
+
+export interface DiagramImportResult {
+  warnings: readonly DiagramImportWarning[]
+}
+
+export interface DiagramEditorError {
+  /** `import` — XML не открылся; `export` — не удалось выгрузить XML, SVG или PNG. */
+  kind: 'import' | 'export'
+  message: string
+  warnings: readonly DiagramImportWarning[]
+  cause: unknown
+}
+
+/** Фон PNG: `surface` — цвет токена `--color-surface`, `transparent` — без фона. */
+export type PngBackground = 'surface' | 'transparent'
+
+export interface PngExportOptions {
+  background?: PngBackground
+}
+
+/** Императивное API редактора. Доступно через `ref` и в `onReady`. */
+export interface DiagramEditorHandle {
+  /** Вписать схему в окно (плавно, с отступами, без увеличения больше 100 %). */
+  fit(): void
+  zoomIn(): void
+  zoomOut(): void
+  /**
+   * Плавно центрирует элемент (или несколько) и коротко подсвечивает его.
+   * Возвращает `false`, если ни одного элемента с такими id нет на схеме.
+   */
+  focusElement(id: string | readonly string[]): boolean
+  /** BPMN 2.0 XML с отступами. */
+  exportXml(): Promise<string>
+  /** Самодостаточный SVG: цвета текущей темы, шрифт встроен. */
+  exportSvg(): Promise<string>
+  /** PNG через canvas. `scale` по умолчанию 2. */
+  exportPng(scale?: number, options?: PngExportOptions): Promise<Blob>
+  /** Показать или скрыть мини-карту. Без аргумента переключает. Возвращает новое состояние. */
+  toggleMinimap(open?: boolean): boolean
+  /** Включить или выключить симуляцию токена. Без аргумента переключает. Возвращает новое состояние. */
+  toggleSimulation(active?: boolean): boolean
+  /** Отрисовать панель свойств в контейнере экрана; `null` — убрать её. */
+  setPropertiesPanel(container: HTMLElement | null): void
+}
+
+export interface DiagramEditorProps {
+  /** BPMN 2.0 XML. Смена значения перечитывает схему в том же редакторе (без пересоздания). */
+  xml: string
+  /**
+   * Схема изменилась (правка, отмена, повтор). Вызывается не чаще раза в 400 мс
+   * и только если XML действительно стал другим. Возврат этого XML обратно в `xml` не перечитывает схему.
+   */
+  onChange?: (xml: string) => void
+  /** Только просмотр: нет палитры, правок, контекстного меню; панель свойств неактивна. */
+  readOnly?: boolean
+  highlights?: Partial<DiagramHighlights>
+  /** Клик по элементу схемы (не по пустому полю). Для подписи приходит id её элемента. */
+  onElementClick?: (elementId: string) => void
+  /** Первая схема открыта, API готово. */
+  onReady?: (handle: DiagramEditorHandle) => void
+  /** Схема открыта (после каждого импорта), с предупреждениями bpmn-js. */
+  onImport?: (result: DiagramImportResult) => void
+  onError?: (error: DiagramEditorError) => void
+  className?: string
+  /** Подпись области для скринридеров. */
+  ariaLabel?: string
+}
+
+export interface LazyDiagramEditorProps extends DiagramEditorProps {
+  ref?: Ref<DiagramEditorHandle>
+  /** Что показать, пока грузится чанк редактора. По умолчанию — пустой блок того же размера. */
+  fallback?: ReactNode
+}

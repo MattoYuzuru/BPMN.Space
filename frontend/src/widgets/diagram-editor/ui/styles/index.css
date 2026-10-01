@@ -1,0 +1,11 @@
+/*
+ * Стили редактора BPMN. Подключаются только из ленивого чанка (DiagramEditor.tsx),
+ * после CSS самих библиотек. Сырые значения цветов и шрифтов здесь запрещены (design-lint):
+ * всё берётся из токенов дизайн-системы.
+ */
+@import "./theme.css";
+@import "./chrome.css";
+@import "./highlights.css";
+@import "./minimap.css";
+@import "./simulation.css";
+@import "./properties.css";

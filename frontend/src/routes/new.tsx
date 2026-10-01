@@ -1,0 +1,252 @@
+import { createFileRoute } from '@tanstack/react-router'
+import { useRef, useState } from 'react'
+import { buildLocalBpmn, saveLocalProject } from '@/features/local-bpmn'
+import { Button, Card, FileInput, Icon, Input, Textarea } from '@/shared/ui'
+import './home.css'
+
+interface NewSearch {
+  text?: string
+  example?: string
+}
+
+export const Route = createFileRoute('/new')({
+  validateSearch: (search: Record<string, unknown>): NewSearch => ({
+    text: typeof search.text === 'string' ? search.text : undefined,
+    example: typeof search.example === 'string' ? search.example : undefined,
+  }),
+  component: NewProjectPage,
+})
+
+const exampleText =
+  'Заявитель подаёт заявку на технологическое присоединение. Сетевая организация проверяет комплектность документов. Если документов не хватает, она просит заявителя дополнить заявку. После проверки организация направляет договор и технические условия. Заявитель и сетевая организация выполняют свои мероприятия. Затем специалисты осматривают объект, подписывают акт и подключают объект к электросети.'
+
+async function request<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(`/api/v1${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) throw new Error(`API ${response.status}`)
+  return response.json() as Promise<T>
+}
+
+function NewProjectPage() {
+  const search = Route.useSearch()
+  const [title, setTitle] = useState(search.example ? 'Технологическое присоединение' : '')
+  const [source, setSource] = useState(search.example ? exampleText : (search.text ?? ''))
+  const [file, setFile] = useState<File | null>(null)
+  const [working, setWorking] = useState(false)
+  const [notice, setNotice] = useState('')
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  async function createProject() {
+    if (!source.trim() && !file) {
+      setNotice('Добавьте описание или документ, чтобы собрать черновик.')
+      return
+    }
+    setWorking(true)
+    setNotice('Создаём проект и собираем первый черновик…')
+    const projectTitle = title.trim() || 'Новый процесс'
+    let id = `local-${crypto.randomUUID()}`
+    let runId = ''
+    try {
+      const project =
+        search.example === 'tp861'
+          ? await request<{ id: string }>('/projects/from-example', { example_id: 'tp861' })
+          : await request<{ id: string }>('/projects', {
+              title: projectTitle,
+              description: source.trim().slice(0, 500) || null,
+            })
+      id = project.id
+      if (source.trim() && search.example !== 'tp861') {
+        await request(`/projects/${id}/sources/text`, {
+          content: source.trim(),
+          title: 'Описание процесса',
+        })
+      }
+      if (file) {
+        const form = new FormData()
+        form.append('file', file)
+        form.append('title', file.name)
+        const upload = await fetch(`/api/v1/projects/${id}/sources/file`, {
+          method: 'POST',
+          body: form,
+        })
+        if (!upload.ok) throw new Error(`Не удалось загрузить документ (${upload.status})`)
+      }
+      const run = await request<{ id: string }>(`/projects/${id}/runs`, { mode: 'build' })
+      runId = run.id
+      sessionStorage.setItem(`arkhitektor:run:${id}`, runId)
+    } catch {
+      // Сервер сейчас может быть не запущен: автономный черновик позволяет сразу проверить редактор.
+      const content =
+        source.trim() || (file?.type === 'text/plain' ? await file.text() : (file?.name ?? ''))
+      const xml = buildLocalBpmn(projectTitle, content)
+      saveLocalProject({
+        id,
+        title: projectTitle,
+        source: content,
+        xml,
+        createdAt: new Date().toISOString(),
+        demo: true,
+      })
+      setNotice('Открываем локальный черновик. Серверный анализ появится после запуска backend.')
+    }
+    window.location.assign(`/studio/${id}`)
+  }
+
+  async function fillExample() {
+    setTitle('Технологическое присоединение')
+    setSource(exampleText)
+    setNotice('Добавлен короткий пример. Можно отредактировать текст перед сборкой.')
+  }
+
+  return (
+    <main className="min-h-dvh bg-bg text-fg">
+      <header className="mx-auto flex max-w-[1120px] items-center justify-between px-8 py-5">
+        <a
+          href="/"
+          className="flex items-center gap-2.5 text-sm font-semibold text-fg no-underline"
+        >
+          <span className="brand-mark">
+            <Icon name="diagram" size={16} />
+          </span>
+          Архитектор <span className="text-fg-subtle">/ Новый процесс</span>
+        </a>
+        <a
+          href="/"
+          className="inline-flex items-center gap-1.5 text-sm text-fg-muted no-underline hover:text-fg"
+        >
+          <Icon name="arrow-left" size={16} /> На главную
+        </a>
+      </header>
+      <div className="mx-auto grid max-w-[1120px] grid-cols-[1fr_300px] gap-12 px-8 pb-20 pt-8">
+        <section>
+          <div className="mb-3 text-xs font-medium uppercase tracking-widest text-fg-subtle">
+            Новый проект
+          </div>
+          <h1 className="mb-3 text-3xl font-semibold tracking-tight">С чего начнём?</h1>
+          <p className="mb-8 max-w-[620px] text-sm leading-6 text-fg-muted">
+            Опишите процесс так, как рассказываете коллеге. Позже мы поможем выделить роли, порядок
+            действий и места, где нужны уточнения.
+          </p>
+
+          <Card padding="lg" variant="elevated">
+            <label htmlFor="project-title" className="mb-2 block text-xs font-medium text-fg-muted">
+              Название процесса
+            </label>
+            <Input
+              id="project-title"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="Например, согласование договора"
+              wrapperClassName="mb-6"
+            />
+            <div className="mb-2 flex items-center justify-between">
+              <label htmlFor="process-source" className="text-xs font-medium text-fg-muted">
+                Описание или текст источника
+              </label>
+              <span className="text-xs text-fg-subtle">
+                {source.length.toLocaleString('ru-RU')} знаков
+              </span>
+            </div>
+            <Textarea
+              id="process-source"
+              value={source}
+              onChange={(event) => setSource(event.target.value)}
+              minRows={8}
+              maxRows={16}
+              placeholder="Кто начинает процесс? Что происходит дальше? Где принимают решение? Чем всё заканчивается?"
+              className="px-3 py-3 text-sm leading-6"
+            />
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                leadingIcon="file-upload"
+                onClick={() => fileRef.current?.click()}
+              >
+                {file ? file.name : 'Прикрепить документ'}
+              </Button>
+              <FileInput
+                ref={fileRef}
+                accept=".pdf,.docx,.md,.txt,application/pdf"
+                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                leadingIcon="microphone"
+                onClick={() =>
+                  setNotice(
+                    'Голосовой ввод подключается через серверное распознавание. Для этой сборки добавьте новый Deepgram-ключ в backend/.env после его перевыпуска.',
+                  )
+                }
+              >
+                Надиктовать
+              </Button>
+              {file && (
+                <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setFile(null)}>
+                  Убрать файл
+                </Button>
+              )}
+            </div>
+            <div className="mt-6 flex items-center justify-between border-t border-border pt-5">
+              <Button size="sm" variant="ghost" leadingIcon="plus" onClick={fillExample}>
+                Заполнить примером
+              </Button>
+              <Button
+                variant="primary"
+                size="lg"
+                trailingIcon="arrow-right"
+                loading={working}
+                onClick={createProject}
+              >
+                Собрать черновик
+              </Button>
+            </div>
+            {notice && (
+              <p role="status" className="mt-4 text-xs leading-5 text-fg-muted">
+                {notice}
+              </p>
+            )}
+          </Card>
+          <p className="mt-4 flex items-center gap-2 text-xs text-fg-subtle">
+            <Icon name="check" size={16} className="text-success" /> Черновик можно поправить до
+            проверки и скачивания
+          </p>
+        </section>
+
+        <aside className="pt-12">
+          <Card padding="md" className="mb-3">
+            <div className="mb-3 flex size-8 items-center justify-center rounded-md bg-accent-subtle text-accent-fg">
+              <Icon name="assumption" size={16} />
+            </div>
+            <h2 className="mb-2 text-sm font-semibold">Не нужно писать идеально</h2>
+            <p className="text-xs leading-5 text-fg-muted">
+              Сначала добавьте известные шаги. Если не хватает исполнителя или условия, система
+              задаст вопрос и покажет фрагмент, который его вызвал.
+            </p>
+          </Card>
+          <Card padding="md" className="mb-3">
+            <div className="mb-3 flex size-8 items-center justify-center rounded-md bg-bg-subtle text-fg-muted">
+              <Icon name="file-text" size={16} />
+            </div>
+            <h2 className="mb-2 text-sm font-semibold">Подойдут готовые материалы</h2>
+            <p className="text-xs leading-5 text-fg-muted">
+              Регламент, инструкция, заметки со встречи или расшифровка. Текст источника останется в
+              проекте для проверки схемы.
+            </p>
+          </Card>
+          <Card padding="md" className="border-amber/25 bg-amber-subtle">
+            <h2 className="mb-2 text-xs font-semibold text-amber-fg">Демо-режим</h2>
+            <p className="text-xs leading-5 text-fg-muted">
+              Если backend не запущен, схема соберётся локально из предложений. В ней не будет
+              анализа ИИ, но её можно редактировать и скачать.
+            </p>
+          </Card>
+        </aside>
+      </div>
+    </main>
+  )
+}

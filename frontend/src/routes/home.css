@@ -1,0 +1,120 @@
+.home-page {
+  --home-max: 1240px;
+}
+
+.home-page a {
+  color: inherit;
+}
+.home-page a:hover {
+  color: var(--color-fg);
+}
+
+.brand-mark {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-accent-fg);
+  background: var(--color-surface);
+}
+
+.hero-preview {
+  background-image:
+    linear-gradient(var(--color-border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-border) 1px, transparent 1px);
+  background-size: 28px 28px;
+  background-position: -1px -1px;
+}
+
+.flow-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
+}
+.flow-event {
+  display: block;
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  border: 2px solid var(--color-success);
+  border-radius: 50%;
+  background: var(--color-surface);
+}
+.flow-task {
+  display: flex;
+  width: 94px;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  background: var(--color-surface);
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.flow-task-active {
+  border-color: var(--color-accent);
+  outline: 2px solid var(--color-accent-subtle);
+}
+.flow-edge {
+  width: clamp(10px, 2vw, 28px);
+  height: 1px;
+  flex: 0 1 28px;
+  background: var(--color-control);
+}
+.flow-gateway {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--color-amber);
+  background: var(--color-surface);
+  transform: rotate(45deg);
+  font-size: 11px;
+}
+.flow-label {
+  margin-top: 2px;
+  border-top: 1px solid var(--color-border-strong);
+  padding-top: 8px;
+  color: var(--color-fg-subtle);
+  font-size: 10px;
+}
+.flow-label span {
+  margin-left: 30%;
+}
+.home-composer textarea {
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+.journey-card {
+  transition:
+    border-color 140ms ease,
+    transform 140ms ease;
+}
+.journey-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-border-strong);
+}
+
+@media (max-width: 900px) {
+  .home-hero,
+  .home-start > div {
+    grid-template-columns: 1fr;
+  }
+  .home-hero {
+    gap: 40px;
+  }
+  .home-hero h1 {
+    font-size: 44px;
+  }
+  .home-page header {
+    padding-inline: 24px;
+  }
+}

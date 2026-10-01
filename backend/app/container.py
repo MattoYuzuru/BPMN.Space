@@ -21,8 +21,10 @@ from app.infra.repositories.memory import InMemoryStore
 from app.infra.seed import build_seed
 from app.infra.storage import InMemoryFileStorage
 from app.infra.tasks import AsyncioTaskSpawner
+from app.ingest.deepgram import DeepgramSpeechToText
 from app.ingest.parsers import MockDocumentParser
 from app.ingest.stt import MockSpeechToText
+from app.llm.deepseek import DeepSeekPipeline
 from app.llm.mock import MockPipeline
 from app.services.catalog import ExampleService, TranscriptionService
 from app.services.common import Runtime
@@ -66,8 +68,31 @@ def build_container(settings: Settings, *, runtime: Runtime | None = None) -> Co
     # TODO(real): #6 HTTP-клиент bpmn-tools, SpeechKit, python-docx/pypdf.
     # TODO(real): #5 пайплайн на Pydantic AI вместо записанных ответов.
     bpmn_tools = MockBpmnTools()
-    pipeline = MockPipeline(playbook=PLAYBOOK, read_bpmn=read_bpmn)
-    stt = MockSpeechToText(delay_sec=settings.mock_delay(settings.mock_transcription_delay_sec))
+    match settings.llm_provider.lower():
+        case "mock":
+            pipeline = MockPipeline(playbook=PLAYBOOK, read_bpmn=read_bpmn)
+        case "deepseek":
+            if not settings.deepseek_api_key:
+                raise ValueError("LLM_PROVIDER=deepseek требует DEEPSEEK_API_KEY в .env")
+            pipeline = DeepSeekPipeline(
+                api_key=settings.deepseek_api_key,
+                base_url=settings.deepseek_base_url,
+                model=settings.deepseek_model,
+            )
+        case provider:
+            raise ValueError(f"Неизвестный LLM_PROVIDER: {provider}")
+
+    match settings.stt_provider.lower():
+        case "mock":
+            stt = MockSpeechToText(
+                delay_sec=settings.mock_delay(settings.mock_transcription_delay_sec)
+            )
+        case "deepgram":
+            if not settings.deepgram_api_key:
+                raise ValueError("STT_PROVIDER=deepgram требует DEEPGRAM_API_KEY в .env")
+            stt = DeepgramSpeechToText(settings.deepgram_api_key)
+        case provider:
+            raise ValueError(f"Неизвестный STT_PROVIDER: {provider}")
 
     async def mock_pace(stage: RunStage) -> None:
         # TODO(real): #5 убрать: настоящие этапы занимают время сами.

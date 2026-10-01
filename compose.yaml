@@ -7,6 +7,12 @@ services:
     build: ./backend
     environment:
       APP_ENV: docker
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-flash}
+      STT_PROVIDER: ${STT_PROVIDER:-mock}
+      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
     restart: unless-stopped
 
   web:

@@ -1,6 +1,45 @@
-"""Этапы прогона (RFC §5.1): порядок, подписи для интерфейса, прогресс."""
+"""Этапы прогона (RFC §5.1): порядок, подписи для интерфейса, прогресс; события для SSE."""
 
-from app.domain.models import RunMode, RunStage, RunStatus
+from dataclasses import dataclass
+from enum import StrEnum
+
+from app.domain.models import Question, Run, RunMode, RunStage, RunStatus, RunSummary, Version
+
+
+class RunEventKind(StrEnum):
+    """Типы SSE-событий прогона. `done` — всегда последнее (и после `error`)."""
+
+    STAGE = "stage"
+    QUESTION = "question"
+    SUMMARY = "summary"
+    VERSION = "version"
+    DONE = "done"
+    ERROR = "error"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class StageProgress:
+    stage: RunStage
+    label: str
+    progress: float
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RunError:
+    message: str
+
+
+type RunEventPayload = StageProgress | Question | RunSummary | Version | Run | RunError
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RunEvent:
+    """Событие прогона: `id` — порядковый номер внутри прогона (для `Last-Event-ID`)."""
+
+    id: int
+    kind: RunEventKind
+    payload: RunEventPayload
+
 
 STAGE_LABELS: dict[RunStage, str] = {
     RunStage.READING_SOURCES: "Читаю источники",

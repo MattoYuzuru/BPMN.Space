@@ -1,0 +1,67 @@
+# --- Секреты и локальная конфигурация ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# --- Локальные материалы, которые не коммитим ---
+Пример API для BPMN.md
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.python-version
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyright/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# --- Node / frontend ---
+node_modules/
+dist/
+build/
+.vite/
+*.tsbuildinfo
+.eslintcache
+coverage/
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# --- Тесты и отчёты ---
+playwright-report/
+test-results/
+blob-report/
+evals/runs/
+reports/tmp/
+
+# --- Данные и артефакты runtime ---
+data/
+uploads/
+*.sqlite
+*.db
+*.dump
+backups/
+logs/
+*.log
+
+# --- Агенты: личные настройки ---
+.claude/settings.local.json
+.claude/worktrees/
+
+# --- IDE и ОС ---
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+.DS_Store
+Thumbs.db

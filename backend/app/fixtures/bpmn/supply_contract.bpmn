@@ -1,0 +1,266 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_supply_contract" targetNamespace="http://arkhitektor.local/bpmn" exporter="Архитектор BPMN-диаграмм" exporterVersion="0.1.0">
+  <bpmn:collaboration id="Collaboration_supply_contract">
+    <bpmn:participant id="Participant_supply_contract" name="Заключение договора энергоснабжения" processRef="Process_supply_contract"/>
+  </bpmn:collaboration>
+  <bpmn:process id="Process_supply_contract" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_supply_contract">
+      <bpmn:lane id="Lane_Consumer" name="Потребитель">
+        <bpmn:flowNodeRef>StartEvent_Need</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Submit</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ProvideDocs</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Sign</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Signed</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Supplier" name="Гарантирующий поставщик">
+        <bpmn:flowNodeRef>Gateway_CheckMerge</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_CheckDocs</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_DocsOk</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_RequestDocs</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Fork</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_RequestGrid</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_PrepareDraft</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Join</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_SendDraft</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Grid" name="Сетевая организация">
+        <bpmn:flowNodeRef>Task_ConfirmGrid</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="StartEvent_Need" name="Обращение потребителя">
+      <bpmn:outgoing>Flow_Need_Submit</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sendTask id="Task_Submit" name="Подать заявление и документы">
+      <bpmn:incoming>Flow_Need_Submit</bpmn:incoming>
+      <bpmn:outgoing>Flow_Submit_CheckMerge</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:exclusiveGateway id="Gateway_CheckMerge">
+      <bpmn:incoming>Flow_Submit_CheckMerge</bpmn:incoming>
+      <bpmn:incoming>Flow_ProvideDocs_CheckMerge</bpmn:incoming>
+      <bpmn:outgoing>Flow_CheckMerge_CheckDocs</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="Task_CheckDocs" name="Проверить комплект документов">
+      <bpmn:incoming>Flow_CheckMerge_CheckDocs</bpmn:incoming>
+      <bpmn:outgoing>Flow_CheckDocs_DocsOk</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_DocsOk" name="Комплект полный?">
+      <bpmn:incoming>Flow_CheckDocs_DocsOk</bpmn:incoming>
+      <bpmn:outgoing>Flow_DocsOk_RequestDocs</bpmn:outgoing>
+      <bpmn:outgoing>Flow_DocsOk_Fork</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:sendTask id="Task_RequestDocs" name="Запросить недостающие документы">
+      <bpmn:incoming>Flow_DocsOk_RequestDocs</bpmn:incoming>
+      <bpmn:outgoing>Flow_RequestDocs_ProvideDocs</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:userTask id="Task_ProvideDocs" name="Представить документы">
+      <bpmn:incoming>Flow_RequestDocs_ProvideDocs</bpmn:incoming>
+      <bpmn:outgoing>Flow_ProvideDocs_CheckMerge</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:parallelGateway id="Gateway_Fork">
+      <bpmn:incoming>Flow_DocsOk_Fork</bpmn:incoming>
+      <bpmn:outgoing>Flow_Fork_RequestGrid</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Fork_PrepareDraft</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:sendTask id="Task_RequestGrid" name="Запросить у сети документы о ТП">
+      <bpmn:incoming>Flow_Fork_RequestGrid</bpmn:incoming>
+      <bpmn:outgoing>Flow_RequestGrid_ConfirmGrid</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:userTask id="Task_ConfirmGrid" name="Подтвердить документы о ТП и учёте">
+      <bpmn:incoming>Flow_RequestGrid_ConfirmGrid</bpmn:incoming>
+      <bpmn:outgoing>Flow_ConfirmGrid_Join</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_PrepareDraft" name="Подготовить проект договора">
+      <bpmn:incoming>Flow_Fork_PrepareDraft</bpmn:incoming>
+      <bpmn:outgoing>Flow_PrepareDraft_Join</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:parallelGateway id="Gateway_Join">
+      <bpmn:incoming>Flow_ConfirmGrid_Join</bpmn:incoming>
+      <bpmn:incoming>Flow_PrepareDraft_Join</bpmn:incoming>
+      <bpmn:outgoing>Flow_Join_SendDraft</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:sendTask id="Task_SendDraft" name="Направить договор потребителю">
+      <bpmn:incoming>Flow_Join_SendDraft</bpmn:incoming>
+      <bpmn:outgoing>Flow_SendDraft_Sign</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:userTask id="Task_Sign" name="Подписать договор">
+      <bpmn:incoming>Flow_SendDraft_Sign</bpmn:incoming>
+      <bpmn:outgoing>Flow_Sign_Signed</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:endEvent id="EndEvent_Signed" name="Договор заключён">
+      <bpmn:incoming>Flow_Sign_Signed</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_Need_Submit" sourceRef="StartEvent_Need" targetRef="Task_Submit"/>
+    <bpmn:sequenceFlow id="Flow_Submit_CheckMerge" sourceRef="Task_Submit" targetRef="Gateway_CheckMerge"/>
+    <bpmn:sequenceFlow id="Flow_CheckMerge_CheckDocs" sourceRef="Gateway_CheckMerge" targetRef="Task_CheckDocs"/>
+    <bpmn:sequenceFlow id="Flow_CheckDocs_DocsOk" sourceRef="Task_CheckDocs" targetRef="Gateway_DocsOk"/>
+    <bpmn:sequenceFlow id="Flow_DocsOk_RequestDocs" name="Нет" sourceRef="Gateway_DocsOk" targetRef="Task_RequestDocs">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">документов не хватает</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_RequestDocs_ProvideDocs" sourceRef="Task_RequestDocs" targetRef="Task_ProvideDocs"/>
+    <bpmn:sequenceFlow id="Flow_ProvideDocs_CheckMerge" sourceRef="Task_ProvideDocs" targetRef="Gateway_CheckMerge"/>
+    <bpmn:sequenceFlow id="Flow_DocsOk_Fork" name="Да" sourceRef="Gateway_DocsOk" targetRef="Gateway_Fork">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">комплект полный</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Fork_RequestGrid" sourceRef="Gateway_Fork" targetRef="Task_RequestGrid"/>
+    <bpmn:sequenceFlow id="Flow_Fork_PrepareDraft" sourceRef="Gateway_Fork" targetRef="Task_PrepareDraft"/>
+    <bpmn:sequenceFlow id="Flow_RequestGrid_ConfirmGrid" sourceRef="Task_RequestGrid" targetRef="Task_ConfirmGrid"/>
+    <bpmn:sequenceFlow id="Flow_ConfirmGrid_Join" sourceRef="Task_ConfirmGrid" targetRef="Gateway_Join"/>
+    <bpmn:sequenceFlow id="Flow_PrepareDraft_Join" sourceRef="Task_PrepareDraft" targetRef="Gateway_Join"/>
+    <bpmn:sequenceFlow id="Flow_Join_SendDraft" sourceRef="Gateway_Join" targetRef="Task_SendDraft"/>
+    <bpmn:sequenceFlow id="Flow_SendDraft_Sign" sourceRef="Task_SendDraft" targetRef="Task_Sign"/>
+    <bpmn:sequenceFlow id="Flow_Sign_Signed" sourceRef="Task_Sign" targetRef="EndEvent_Signed"/>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_Collaboration_supply_contract">
+    <bpmndi:BPMNPlane id="BPMNPlane_Collaboration_supply_contract" bpmnElement="Collaboration_supply_contract">
+      <bpmndi:BPMNShape id="BPMNShape_Participant_supply_contract" bpmnElement="Participant_supply_contract" isHorizontal="true">
+        <dc:Bounds x="80" y="80" width="2132" height="1200"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Lane_Consumer" bpmnElement="Lane_Consumer" isHorizontal="true">
+        <dc:Bounds x="110" y="80" width="2102" height="400"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Lane_Supplier" bpmnElement="Lane_Supplier" isHorizontal="true">
+        <dc:Bounds x="110" y="480" width="2102" height="560"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Lane_Grid" bpmnElement="Lane_Grid" isHorizontal="true">
+        <dc:Bounds x="110" y="1040" width="2102" height="240"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_StartEvent_Need" bpmnElement="StartEvent_Need">
+        <dc:Bounds x="150" y="182" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="148" y="223" width="81" height="28"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_Submit" bpmnElement="Task_Submit">
+        <dc:Bounds x="286" y="160" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Gateway_CheckMerge" bpmnElement="Gateway_CheckMerge" isMarkerVisible="true">
+        <dc:Bounds x="486" y="575" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_CheckDocs" bpmnElement="Task_CheckDocs">
+        <dc:Bounds x="636" y="560" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Gateway_DocsOk" bpmnElement="Gateway_DocsOk" isMarkerVisible="true">
+        <dc:Bounds x="836" y="575" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="831" y="542" width="60" height="28"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_RequestDocs" bpmnElement="Task_RequestDocs">
+        <dc:Bounds x="986" y="880" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_ProvideDocs" bpmnElement="Task_ProvideDocs">
+        <dc:Bounds x="1186" y="320" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Gateway_Fork" bpmnElement="Gateway_Fork" isMarkerVisible="true">
+        <dc:Bounds x="1011" y="575" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_RequestGrid" bpmnElement="Task_RequestGrid">
+        <dc:Bounds x="1186" y="560" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_ConfirmGrid" bpmnElement="Task_ConfirmGrid">
+        <dc:Bounds x="1386" y="1120" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_PrepareDraft" bpmnElement="Task_PrepareDraft">
+        <dc:Bounds x="1186" y="720" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Gateway_Join" bpmnElement="Gateway_Join" isMarkerVisible="true">
+        <dc:Bounds x="1586" y="575" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_SendDraft" bpmnElement="Task_SendDraft">
+        <dc:Bounds x="1736" y="560" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_Sign" bpmnElement="Task_Sign">
+        <dc:Bounds x="1936" y="160" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_EndEvent_Signed" bpmnElement="EndEvent_Signed">
+        <dc:Bounds x="2136" y="182" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2124" y="223" width="60" height="28"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Need_Submit" bpmnElement="Flow_Need_Submit">
+        <di:waypoint x="186" y="200"/>
+        <di:waypoint x="286" y="200"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Submit_CheckMerge" bpmnElement="Flow_Submit_CheckMerge">
+        <di:waypoint x="386" y="200"/>
+        <di:waypoint x="511" y="200"/>
+        <di:waypoint x="511" y="575"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_CheckMerge_CheckDocs" bpmnElement="Flow_CheckMerge_CheckDocs">
+        <di:waypoint x="536" y="600"/>
+        <di:waypoint x="636" y="600"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_CheckDocs_DocsOk" bpmnElement="Flow_CheckDocs_DocsOk">
+        <di:waypoint x="736" y="600"/>
+        <di:waypoint x="836" y="600"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_DocsOk_Fork" bpmnElement="Flow_DocsOk_Fork">
+        <di:waypoint x="886" y="600"/>
+        <di:waypoint x="1011" y="600"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="940" y="578" width="18" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Fork_RequestGrid" bpmnElement="Flow_Fork_RequestGrid">
+        <di:waypoint x="1061" y="600"/>
+        <di:waypoint x="1186" y="600"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_RequestGrid_ConfirmGrid" bpmnElement="Flow_RequestGrid_ConfirmGrid">
+        <di:waypoint x="1286" y="600"/>
+        <di:waypoint x="1436" y="600"/>
+        <di:waypoint x="1436" y="1120"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_ConfirmGrid_Join" bpmnElement="Flow_ConfirmGrid_Join">
+        <di:waypoint x="1486" y="1160"/>
+        <di:waypoint x="1611" y="1160"/>
+        <di:waypoint x="1611" y="625"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Join_SendDraft" bpmnElement="Flow_Join_SendDraft">
+        <di:waypoint x="1636" y="600"/>
+        <di:waypoint x="1736" y="600"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_SendDraft_Sign" bpmnElement="Flow_SendDraft_Sign">
+        <di:waypoint x="1836" y="600"/>
+        <di:waypoint x="1986" y="600"/>
+        <di:waypoint x="1986" y="240"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Sign_Signed" bpmnElement="Flow_Sign_Signed">
+        <di:waypoint x="2036" y="200"/>
+        <di:waypoint x="2136" y="200"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_DocsOk_RequestDocs" bpmnElement="Flow_DocsOk_RequestDocs">
+        <di:waypoint x="861" y="625"/>
+        <di:waypoint x="861" y="920"/>
+        <di:waypoint x="986" y="920"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="866" y="766" width="25" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Fork_PrepareDraft" bpmnElement="Flow_Fork_PrepareDraft">
+        <di:waypoint x="1036" y="625"/>
+        <di:waypoint x="1036" y="760"/>
+        <di:waypoint x="1186" y="760"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_RequestDocs_ProvideDocs" bpmnElement="Flow_RequestDocs_ProvideDocs">
+        <di:waypoint x="1086" y="920"/>
+        <di:waypoint x="1136" y="920"/>
+        <di:waypoint x="1136" y="360"/>
+        <di:waypoint x="1186" y="360"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_PrepareDraft_Join" bpmnElement="Flow_PrepareDraft_Join">
+        <di:waypoint x="1286" y="740"/>
+        <di:waypoint x="1306" y="740"/>
+        <di:waypoint x="1306" y="555"/>
+        <di:waypoint x="1611" y="555"/>
+        <di:waypoint x="1611" y="575"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_ProvideDocs_CheckMerge" bpmnElement="Flow_ProvideDocs_CheckMerge">
+        <di:waypoint x="1236" y="320"/>
+        <di:waypoint x="1236" y="300"/>
+        <di:waypoint x="511" y="300"/>
+        <di:waypoint x="511" y="575"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

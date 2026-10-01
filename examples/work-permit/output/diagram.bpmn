@@ -1,0 +1,261 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_work_permit" targetNamespace="http://arkhitektor.local/bpmn" exporter="Архитектор BPMN-диаграмм" exporterVersion="0.1.0">
+  <bpmn:collaboration id="Collaboration_work_permit">
+    <bpmn:participant id="Participant_work_permit" name="Работы в электроустановке по наряду-допуску" processRef="Process_work_permit" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_work_permit" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_work_permit">
+      <bpmn:lane id="Lane_Issuer" name="Выдающий наряд">
+        <bpmn:flowNodeRef>StartEvent_Need</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_IssuePermit</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Admitter" name="Допускающий">
+        <bpmn:flowNodeRef>Gateway_PrepFork</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Disconnect</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_PrepJoin</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_CheckMerge</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_CheckWorkplace</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_WorkplaceReady</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_FixRemarks</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Briefing</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ClosePermit</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Closed</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Foreman" name="Производитель работ">
+        <bpmn:flowNodeRef>Task_CheckCrew</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_DoWork</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ClearWorkplace</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="StartEvent_Need" name="Работы запланированы">
+      <bpmn:outgoing>Flow_Need_IssuePermit</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="Task_IssuePermit" name="Выписать наряд-допуск и меры безопасности">
+      <bpmn:incoming>Flow_Need_IssuePermit</bpmn:incoming>
+      <bpmn:outgoing>Flow_IssuePermit_PrepFork</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:parallelGateway id="Gateway_PrepFork">
+      <bpmn:incoming>Flow_IssuePermit_PrepFork</bpmn:incoming>
+      <bpmn:outgoing>Flow_PrepFork_Disconnect</bpmn:outgoing>
+      <bpmn:outgoing>Flow_PrepFork_CheckCrew</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:manualTask id="Task_Disconnect" name="Выполнить отключения и заземление">
+      <bpmn:incoming>Flow_PrepFork_Disconnect</bpmn:incoming>
+      <bpmn:outgoing>Flow_Disconnect_PrepJoin</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:userTask id="Task_CheckCrew" name="Проверить состав бригады и средства защиты">
+      <bpmn:incoming>Flow_PrepFork_CheckCrew</bpmn:incoming>
+      <bpmn:outgoing>Flow_CheckCrew_PrepJoin</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:parallelGateway id="Gateway_PrepJoin">
+      <bpmn:incoming>Flow_Disconnect_PrepJoin</bpmn:incoming>
+      <bpmn:incoming>Flow_CheckCrew_PrepJoin</bpmn:incoming>
+      <bpmn:outgoing>Flow_PrepJoin_CheckMerge</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:exclusiveGateway id="Gateway_CheckMerge">
+      <bpmn:incoming>Flow_PrepJoin_CheckMerge</bpmn:incoming>
+      <bpmn:incoming>Flow_FixRemarks_CheckMerge</bpmn:incoming>
+      <bpmn:outgoing>Flow_CheckMerge_CheckWorkplace</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="Task_CheckWorkplace" name="Проверить подготовку рабочего места">
+      <bpmn:incoming>Flow_CheckMerge_CheckWorkplace</bpmn:incoming>
+      <bpmn:outgoing>Flow_CheckWorkplace_WorkplaceReady</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_WorkplaceReady" name="Рабочее место готово?">
+      <bpmn:incoming>Flow_CheckWorkplace_WorkplaceReady</bpmn:incoming>
+      <bpmn:outgoing>Flow_WorkplaceReady_FixRemarks</bpmn:outgoing>
+      <bpmn:outgoing>Flow_WorkplaceReady_Briefing</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:manualTask id="Task_FixRemarks" name="Устранить замечания">
+      <bpmn:incoming>Flow_WorkplaceReady_FixRemarks</bpmn:incoming>
+      <bpmn:outgoing>Flow_FixRemarks_CheckMerge</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:userTask id="Task_Briefing" name="Провести целевой инструктаж и допуск">
+      <bpmn:incoming>Flow_WorkplaceReady_Briefing</bpmn:incoming>
+      <bpmn:outgoing>Flow_Briefing_DoWork</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:manualTask id="Task_DoWork" name="Выполнить работы">
+      <bpmn:incoming>Flow_Briefing_DoWork</bpmn:incoming>
+      <bpmn:outgoing>Flow_DoWork_ClearWorkplace</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:manualTask id="Task_ClearWorkplace" name="Убрать рабочее место и вывести бригаду">
+      <bpmn:incoming>Flow_DoWork_ClearWorkplace</bpmn:incoming>
+      <bpmn:outgoing>Flow_ClearWorkplace_ClosePermit</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:userTask id="Task_ClosePermit" name="Закрыть наряд-допуск">
+      <bpmn:incoming>Flow_ClearWorkplace_ClosePermit</bpmn:incoming>
+      <bpmn:outgoing>Flow_ClosePermit_Closed</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:endEvent id="EndEvent_Closed" name="Наряд закрыт">
+      <bpmn:incoming>Flow_ClosePermit_Closed</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_Need_IssuePermit" sourceRef="StartEvent_Need" targetRef="Task_IssuePermit" />
+    <bpmn:sequenceFlow id="Flow_IssuePermit_PrepFork" sourceRef="Task_IssuePermit" targetRef="Gateway_PrepFork" />
+    <bpmn:sequenceFlow id="Flow_PrepFork_Disconnect" sourceRef="Gateway_PrepFork" targetRef="Task_Disconnect" />
+    <bpmn:sequenceFlow id="Flow_PrepFork_CheckCrew" sourceRef="Gateway_PrepFork" targetRef="Task_CheckCrew" />
+    <bpmn:sequenceFlow id="Flow_Disconnect_PrepJoin" sourceRef="Task_Disconnect" targetRef="Gateway_PrepJoin" />
+    <bpmn:sequenceFlow id="Flow_CheckCrew_PrepJoin" sourceRef="Task_CheckCrew" targetRef="Gateway_PrepJoin" />
+    <bpmn:sequenceFlow id="Flow_PrepJoin_CheckMerge" sourceRef="Gateway_PrepJoin" targetRef="Gateway_CheckMerge" />
+    <bpmn:sequenceFlow id="Flow_CheckMerge_CheckWorkplace" sourceRef="Gateway_CheckMerge" targetRef="Task_CheckWorkplace" />
+    <bpmn:sequenceFlow id="Flow_CheckWorkplace_WorkplaceReady" sourceRef="Task_CheckWorkplace" targetRef="Gateway_WorkplaceReady" />
+    <bpmn:sequenceFlow id="Flow_WorkplaceReady_FixRemarks" name="Нет" sourceRef="Gateway_WorkplaceReady" targetRef="Task_FixRemarks">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">есть замечания</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_FixRemarks_CheckMerge" sourceRef="Task_FixRemarks" targetRef="Gateway_CheckMerge" />
+    <bpmn:sequenceFlow id="Flow_WorkplaceReady_Briefing" name="Да" sourceRef="Gateway_WorkplaceReady" targetRef="Task_Briefing">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">замечаний нет</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Briefing_DoWork" sourceRef="Task_Briefing" targetRef="Task_DoWork" />
+    <bpmn:sequenceFlow id="Flow_DoWork_ClearWorkplace" sourceRef="Task_DoWork" targetRef="Task_ClearWorkplace" />
+    <bpmn:sequenceFlow id="Flow_ClearWorkplace_ClosePermit" sourceRef="Task_ClearWorkplace" targetRef="Task_ClosePermit" />
+    <bpmn:sequenceFlow id="Flow_ClosePermit_Closed" sourceRef="Task_ClosePermit" targetRef="EndEvent_Closed" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_Collaboration_work_permit">
+    <bpmndi:BPMNPlane id="BPMNPlane_Collaboration_work_permit" bpmnElement="Collaboration_work_permit">
+      <bpmndi:BPMNShape id="BPMNShape_Participant_work_permit" bpmnElement="Participant_work_permit" isHorizontal="true">
+        <dc:Bounds x="80" y="80" width="2282" height="1040" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Lane_Issuer" bpmnElement="Lane_Issuer" isHorizontal="true">
+        <dc:Bounds x="110" y="80" width="2252" height="240" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Lane_Admitter" bpmnElement="Lane_Admitter" isHorizontal="true">
+        <dc:Bounds x="110" y="320" width="2252" height="400" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Lane_Foreman" bpmnElement="Lane_Foreman" isHorizontal="true">
+        <dc:Bounds x="110" y="720" width="2252" height="400" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_StartEvent_Need" bpmnElement="StartEvent_Need">
+        <dc:Bounds x="150" y="182" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="124" y="223" width="88" height="42" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_IssuePermit" bpmnElement="Task_IssuePermit">
+        <dc:Bounds x="286" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Gateway_PrepFork" bpmnElement="Gateway_PrepFork" isMarkerVisible="true">
+        <dc:Bounds x="486" y="415" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_Disconnect" bpmnElement="Task_Disconnect">
+        <dc:Bounds x="636" y="400" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_CheckCrew" bpmnElement="Task_CheckCrew">
+        <dc:Bounds x="636" y="960" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Gateway_PrepJoin" bpmnElement="Gateway_PrepJoin" isMarkerVisible="true">
+        <dc:Bounds x="836" y="415" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Gateway_CheckMerge" bpmnElement="Gateway_CheckMerge" isMarkerVisible="true">
+        <dc:Bounds x="986" y="415" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_CheckWorkplace" bpmnElement="Task_CheckWorkplace">
+        <dc:Bounds x="1136" y="400" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Gateway_WorkplaceReady" bpmnElement="Gateway_WorkplaceReady" isMarkerVisible="true">
+        <dc:Bounds x="1336" y="415" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1335" y="368" width="53" height="42" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_FixRemarks" bpmnElement="Task_FixRemarks">
+        <dc:Bounds x="1486" y="560" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_Briefing" bpmnElement="Task_Briefing">
+        <dc:Bounds x="1486" y="400" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_DoWork" bpmnElement="Task_DoWork">
+        <dc:Bounds x="1686" y="800" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_ClearWorkplace" bpmnElement="Task_ClearWorkplace">
+        <dc:Bounds x="1886" y="800" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_ClosePermit" bpmnElement="Task_ClosePermit">
+        <dc:Bounds x="2086" y="400" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_EndEvent_Closed" bpmnElement="EndEvent_Closed">
+        <dc:Bounds x="2286" y="422" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2262" y="463" width="85" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Need_IssuePermit" bpmnElement="Flow_Need_IssuePermit">
+        <di:waypoint x="186" y="200" />
+        <di:waypoint x="286" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_IssuePermit_PrepFork" bpmnElement="Flow_IssuePermit_PrepFork">
+        <di:waypoint x="386" y="200" />
+        <di:waypoint x="511" y="200" />
+        <di:waypoint x="511" y="415" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_PrepFork_Disconnect" bpmnElement="Flow_PrepFork_Disconnect">
+        <di:waypoint x="536" y="440" />
+        <di:waypoint x="636" y="440" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Disconnect_PrepJoin" bpmnElement="Flow_Disconnect_PrepJoin">
+        <di:waypoint x="736" y="440" />
+        <di:waypoint x="836" y="440" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_PrepJoin_CheckMerge" bpmnElement="Flow_PrepJoin_CheckMerge">
+        <di:waypoint x="886" y="440" />
+        <di:waypoint x="986" y="440" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_CheckMerge_CheckWorkplace" bpmnElement="Flow_CheckMerge_CheckWorkplace">
+        <di:waypoint x="1036" y="440" />
+        <di:waypoint x="1136" y="440" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_CheckWorkplace_WorkplaceReady" bpmnElement="Flow_CheckWorkplace_WorkplaceReady">
+        <di:waypoint x="1236" y="440" />
+        <di:waypoint x="1336" y="440" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_WorkplaceReady_Briefing" bpmnElement="Flow_WorkplaceReady_Briefing">
+        <di:waypoint x="1386" y="440" />
+        <di:waypoint x="1486" y="440" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1427" y="418" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_Briefing_DoWork" bpmnElement="Flow_Briefing_DoWork">
+        <di:waypoint x="1586" y="440" />
+        <di:waypoint x="1736" y="440" />
+        <di:waypoint x="1736" y="800" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_DoWork_ClearWorkplace" bpmnElement="Flow_DoWork_ClearWorkplace">
+        <di:waypoint x="1786" y="840" />
+        <di:waypoint x="1886" y="840" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_ClearWorkplace_ClosePermit" bpmnElement="Flow_ClearWorkplace_ClosePermit">
+        <di:waypoint x="1986" y="840" />
+        <di:waypoint x="2136" y="840" />
+        <di:waypoint x="2136" y="480" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_ClosePermit_Closed" bpmnElement="Flow_ClosePermit_Closed">
+        <di:waypoint x="2186" y="440" />
+        <di:waypoint x="2286" y="440" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_PrepFork_CheckCrew" bpmnElement="Flow_PrepFork_CheckCrew">
+        <di:waypoint x="511" y="465" />
+        <di:waypoint x="511" y="1000" />
+        <di:waypoint x="636" y="1000" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_WorkplaceReady_FixRemarks" bpmnElement="Flow_WorkplaceReady_FixRemarks">
+        <di:waypoint x="1361" y="465" />
+        <di:waypoint x="1361" y="600" />
+        <di:waypoint x="1486" y="600" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1366" y="526" width="25" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_CheckCrew_PrepJoin" bpmnElement="Flow_CheckCrew_PrepJoin">
+        <di:waypoint x="736" y="1000" />
+        <di:waypoint x="861" y="1000" />
+        <di:waypoint x="861" y="465" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_FixRemarks_CheckMerge" bpmnElement="Flow_FixRemarks_CheckMerge">
+        <di:waypoint x="1536" y="640" />
+        <di:waypoint x="1536" y="660" />
+        <di:waypoint x="1011" y="660" />
+        <di:waypoint x="1011" y="465" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

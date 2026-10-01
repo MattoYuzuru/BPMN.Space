@@ -12,7 +12,9 @@
 
 | Путь | Что |
 |---|---|
-| `backend/` | FastAPI, Python 3.13, uv. Слои `api → services → (llm, ingest, infra) → domain` (проверяет import-linter). Сейчас mock-реализация (#2) |
+| `backend/` | FastAPI, Python 3.13, uv. Слои `api → services → (llm, ingest, infra) → domain` (проверяет import-linter). Сейчас mock-реализация (#2): что заглушено и как заменить — `docs/backend/mock.md`, места — `grep -rn "TODO(real)" backend/app` |
+| `backend/app/fixtures/` | демо-данные mock-а: тексты, BPMN-схемы, записанные ответы модели (`make fixtures` пересобирает схемы) |
+| `examples/` | примеры входа и выхода для жюри (копии фикстур) |
 | `frontend/` | React 19 + Vite + TS, TanStack Router/Query, Tailwind v4, Radix, bpmn-js |
 | `frontend/scripts/design-lint.mjs` | правила дизайн-системы (нативные контролы, сырые цвета, символы вместо иконок…) |
 | `docs/api/openapi.json` | контракт API, генерируется из backend (`make gen-api`) |
@@ -31,6 +33,7 @@ make dev-frontend # :5173, /api проксируется на :8000
 make check-fast   # линт + design-lint + типы (после каждой правки)
 make check        # всё: + тесты (backend cov ≥80%) + контракт + сборка (pre-push)
 make gen-api      # после изменения API: OpenAPI + TS-типы
+make fixtures     # пересобрать BPMN-фикстуры и examples/ (Node, XSD, bpmnlint)
 make e2e          # Playwright против Docker-стека
 make verify       # перед MR: check + e2e + секреты → reports/verify-<sha>.md
 make mr-report    # отчёт verify комментарием в MR

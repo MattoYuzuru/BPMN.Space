@@ -21,7 +21,7 @@ export function Switch({ label, description, id, className, disabled, ...props }
       className={cn(
         'group/switch inline-flex h-4 w-7 shrink-0 cursor-pointer items-center rounded-full p-0.5',
         'bg-control/45 shadow-[inset_0_1px_1px_oklch(0_0_0/0.06)]',
-        'transition-colors duration-(--duration-base) ease-soft',
+        'transition-colors duration-base ease-soft',
         'hover:bg-control/60 group-hover/control:bg-control/60',
         'data-[state=checked]:bg-accent data-[state=checked]:hover:bg-accent-hover',
         'disabled:cursor-not-allowed disabled:opacity-45',
@@ -29,7 +29,7 @@ export function Switch({ label, description, id, className, disabled, ...props }
       )}
       {...props}
     >
-      <SwitchPrimitive.Thumb className="block size-3 rounded-full bg-fg-on-accent shadow-[0_1px_2px_oklch(0_0_0/0.2)] transition-transform duration-(--duration-slow) ease-soft data-[state=checked]:translate-x-3" />
+      <SwitchPrimitive.Thumb className="block size-3 rounded-full bg-fg-on-accent shadow-[0_1px_2px_oklch(0_0_0/0.2)] transition-transform duration-slow ease-soft data-[state=checked]:translate-x-3" />
     </SwitchPrimitive.Root>
   )
   if (!label) return control

@@ -51,7 +51,7 @@ export function keyLabel(key: KeyName): string {
 }
 
 const keyClass =
-  'inline-flex h-5 min-w-5 items-center justify-center rounded-xs border border-border bg-surface px-1 font-mono text-2xs font-medium leading-none text-fg-muted shadow-[0_1px_0_var(--color-border)]'
+  'inline-flex h-5 min-w-5 items-center justify-center rounded-xs border border-border bg-surface px-1 font-sans text-2xs font-medium leading-none text-fg-muted shadow-[0_1px_0_var(--color-border)]'
 
 export interface KbdProps {
   /** Сочетание клавиш: ['mod', 'k'] → ⌘ K. */

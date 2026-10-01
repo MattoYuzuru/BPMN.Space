@@ -25,7 +25,7 @@ export function AssumptionFrame({
     <div
       className={cn(
         'group/assumption relative rounded-md bg-amber-subtle/70 px-3 py-2.5',
-        'transition-colors duration-(--duration-base) ease-soft hover:bg-amber-subtle',
+        'transition-colors duration-base ease-soft hover:bg-amber-subtle',
         className,
       )}
     >

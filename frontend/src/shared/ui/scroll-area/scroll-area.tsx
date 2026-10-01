@@ -57,11 +57,11 @@ function ScrollBar({ orientation }: { orientation: 'vertical' | 'horizontal' }) 
       forceMount
       className={cn(
         'z-10 flex touch-none select-none p-0.5',
-        'transition-opacity duration-(--duration-slow) ease-soft data-[state=hidden]:opacity-0 data-[state=visible]:opacity-100',
+        'transition-opacity duration-slow ease-soft data-[state=hidden]:opacity-0 data-[state=visible]:opacity-100',
         orientation === 'vertical' ? 'h-full w-2.5' : 'h-2.5 flex-col',
       )}
     >
-      <ScrollAreaPrimitive.Thumb className="relative flex-1 rounded-full bg-(--scrollbar-thumb) transition-colors duration-(--duration-base) hover:bg-(--scrollbar-thumb-hover) before:absolute before:top-1/2 before:left-1/2 before:size-full before:min-h-6 before:min-w-6 before:-translate-x-1/2 before:-translate-y-1/2" />
+      <ScrollAreaPrimitive.Thumb className="relative flex-1 rounded-full bg-(--scrollbar-thumb) transition-colors duration-base hover:bg-(--scrollbar-thumb-hover) before:absolute before:top-1/2 before:left-1/2 before:size-full before:min-h-6 before:min-w-6 before:-translate-x-1/2 before:-translate-y-1/2" />
     </ScrollAreaPrimitive.Scrollbar>
   )
 }

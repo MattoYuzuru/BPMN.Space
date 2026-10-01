@@ -4,7 +4,7 @@ import { cn } from '@/shared/lib/cn'
 import { Icon, type IconName } from '../icon'
 
 const tagVariants = cva(
-  'inline-flex h-6 max-w-full shrink-0 items-center gap-1.5 rounded-sm border px-2 text-xs transition-colors duration-(--duration-base) ease-soft',
+  'inline-flex h-6 max-w-full shrink-0 items-center gap-1.5 rounded-sm border px-2 text-xs transition-colors duration-base ease-soft',
   {
     variants: {
       variant: {
@@ -47,7 +47,7 @@ export function Tag({
           type="button"
           onClick={onRemove}
           aria-label={removeLabel}
-          className="grid size-5 cursor-pointer place-items-center rounded-xs opacity-60 transition-[opacity,background-color] duration-(--duration-fast) hover:bg-pressed hover:opacity-100"
+          className="grid size-5 cursor-pointer place-items-center rounded-xs opacity-60 transition-[opacity,background-color] duration-fast hover:bg-pressed hover:opacity-100"
         >
           <Icon name="x" size={14} />
         </button>

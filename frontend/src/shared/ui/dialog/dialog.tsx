@@ -13,7 +13,7 @@ const sizes = {
   lg: 'max-w-[45rem]',
 } as const
 
-export const overlayClass = 'motion-overlay fixed inset-0 z-50 bg-overlay backdrop-blur-[2px]'
+export const overlayClass = 'motion-overlay fixed inset-0 z-50 bg-overlay'
 
 export interface DialogContentProps
   extends Omit<ComponentProps<typeof DialogPrimitive.Content>, 'title'> {

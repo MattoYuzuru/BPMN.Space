@@ -43,7 +43,7 @@ export function RadioGroupItem({
       aria-describedby={descriptionId}
       className={cn(
         'group/radio relative grid size-4 shrink-0 cursor-pointer place-items-center rounded-full border border-control bg-surface shadow-xs',
-        'transition-[background-color,border-color] duration-(--duration-base) ease-soft',
+        'transition-[background-color,border-color] duration-base ease-soft',
         'hover:border-fg-muted group-hover/control:border-fg-muted',
         'data-[state=checked]:border-accent data-[state=checked]:bg-accent data-[state=checked]:hover:bg-accent-hover',
         'disabled:cursor-not-allowed disabled:opacity-45',
@@ -53,7 +53,7 @@ export function RadioGroupItem({
     >
       <span
         aria-hidden="true"
-        className="size-1.5 scale-0 rounded-full bg-fg-on-accent transition-transform duration-(--duration-slow) ease-soft group-data-[state=checked]/radio:scale-100"
+        className="size-1.5 scale-0 rounded-full bg-fg-on-accent transition-transform duration-slow ease-soft group-data-[state=checked]/radio:scale-100"
       />
     </RadioGroupPrimitive.Item>
   )

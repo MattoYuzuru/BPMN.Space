@@ -8,7 +8,7 @@ import { cva } from 'class-variance-authority'
 export const controlFrame = cva(
   [
     'flex w-full items-center rounded-md border border-border bg-surface text-fg shadow-xs',
-    'transition-[border-color,box-shadow,background-color] duration-(--duration-base) ease-soft',
+    'transition-[border-color,box-shadow,background-color] duration-base ease-soft',
     'hover:border-border-strong',
     'focus-within:border-accent focus-within:ring-3 focus-within:ring-accent/15 focus-within:hover:border-accent',
     'data-[invalid]:border-danger data-[invalid]:hover:border-danger data-[invalid]:focus-within:ring-danger/15',
@@ -32,9 +32,9 @@ export const floatingSurface =
 /** Пункт меню, селекта и палитры команд. */
 export const menuItem = [
   'relative flex h-8 w-full cursor-default select-none items-center gap-2 rounded-xs px-2 text-sm text-fg outline-none',
-  'transition-colors duration-(--duration-fast) ease-soft',
+  'transition-colors duration-fast ease-soft',
   'data-[highlighted]:bg-hover data-[selected=true]:bg-hover',
-  'data-[disabled]:pointer-events-none data-[disabled]:opacity-45 data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-45',
+  'data-[disabled]:not-data-[disabled=false]:pointer-events-none data-[disabled]:not-data-[disabled=false]:opacity-45',
 ].join(' ')
 
 export const menuLabel = 'px-2 pt-2 pb-1 type-caption text-fg-subtle'

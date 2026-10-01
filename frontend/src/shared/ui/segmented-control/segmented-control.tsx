@@ -38,7 +38,7 @@ export function SegmentedControl<T extends string>({
   'aria-label': ariaLabel,
 }: SegmentedControlProps<T>) {
   const ref = useRef<HTMLDivElement>(null)
-  const indicator = useActiveIndicator(ref, '[role="radio"][data-state="checked"]')
+  const indicator = useActiveIndicator(ref, '[role="radio"][aria-checked="true"]')
   return (
     <RadioGroupPrimitive.Root
       ref={ref}
@@ -48,7 +48,7 @@ export function SegmentedControl<T extends string>({
       loop
       aria-label={ariaLabel}
       className={cn(
-        'relative inline-flex items-center rounded-md border border-border bg-bg-subtle p-0.5',
+        'relative inline-flex w-fit shrink-0 items-center rounded-md border border-border bg-bg-subtle p-0.5',
         className,
       )}
     >
@@ -57,7 +57,7 @@ export function SegmentedControl<T extends string>({
         style={indicator.style}
         className={cn(
           'pointer-events-none absolute top-0 left-0 rounded-sm border border-border bg-surface-raised shadow-xs',
-          'transition-[transform,width,opacity] duration-(--duration-slow) ease-soft',
+          'transition-[transform,width,opacity] duration-slow ease-soft',
           indicator.visible ? 'opacity-100' : 'opacity-0',
         )}
       />
@@ -70,7 +70,7 @@ export function SegmentedControl<T extends string>({
             aria-label={iconOnly ? option.label : undefined}
             className={cn(
               'relative z-10 inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-sm font-medium text-fg-muted outline-none',
-              'transition-colors duration-(--duration-base) ease-soft hover:text-fg data-[state=checked]:text-fg',
+              'transition-colors duration-base ease-soft hover:text-fg aria-checked:text-fg',
               'focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring focus-visible:outline-solid',
               'disabled:pointer-events-none disabled:opacity-45',
               size === 'sm' ? 'h-6 text-xs' : 'h-7 text-sm',

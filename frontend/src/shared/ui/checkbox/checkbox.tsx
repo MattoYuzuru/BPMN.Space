@@ -41,7 +41,7 @@ export function Checkbox({
       aria-describedby={field['aria-describedby']}
       className={cn(
         'group/checkbox relative inline-grid size-4 shrink-0 cursor-pointer place-items-center rounded-xs border border-control bg-surface text-fg-on-accent shadow-xs',
-        'transition-[background-color,border-color,box-shadow] duration-(--duration-base) ease-soft',
+        'transition-[background-color,border-color,box-shadow] duration-base ease-soft',
         'hover:border-fg-muted group-hover/control:border-fg-muted',
         'data-[state=checked]:border-accent data-[state=checked]:bg-accent data-[state=indeterminate]:border-accent data-[state=indeterminate]:bg-accent',
         'data-[state=checked]:hover:border-accent-hover data-[state=checked]:hover:bg-accent-hover',
@@ -62,7 +62,7 @@ export function Checkbox({
           strokeWidth="1.75"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="transition-[stroke-dashoffset] delay-[40ms] duration-(--duration-slow) ease-soft [stroke-dasharray:12] [stroke-dashoffset:12] group-data-[state=checked]/checkbox:[stroke-dashoffset:0]"
+          className="transition-[stroke-dashoffset] delay-[40ms] duration-slow ease-soft [stroke-dasharray:12] [stroke-dashoffset:12] group-data-[state=checked]/checkbox:[stroke-dashoffset:0]"
         />
       </svg>
       <svg
@@ -76,7 +76,7 @@ export function Checkbox({
           stroke="currentColor"
           strokeWidth="1.75"
           strokeLinecap="round"
-          className="transition-[stroke-dashoffset] duration-(--duration-base) ease-soft [stroke-dasharray:7] [stroke-dashoffset:7] group-data-[state=indeterminate]/checkbox:[stroke-dashoffset:0]"
+          className="transition-[stroke-dashoffset] duration-base ease-soft [stroke-dasharray:7] [stroke-dashoffset:7] group-data-[state=indeterminate]/checkbox:[stroke-dashoffset:0]"
         />
       </svg>
     </CheckboxPrimitive.Root>

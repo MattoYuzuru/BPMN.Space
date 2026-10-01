@@ -37,7 +37,7 @@ export function SheetContent({
 }: SheetContentProps) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className={cn(overlayClass, 'backdrop-blur-none')} />
+      <DialogPrimitive.Overlay className={overlayClass} />
       <DialogPrimitive.Content
         {...(description ? {} : { 'aria-describedby': undefined })}
         className={cn(

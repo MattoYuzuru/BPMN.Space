@@ -19,7 +19,7 @@ export function ResizableHandle({ className, ...props }: ComponentProps<typeof S
     <Separator
       className={cn(
         'group/handle relative flex shrink-0 items-center justify-center bg-border outline-none',
-        'transition-colors delay-75 duration-(--duration-base) ease-soft',
+        'transition-colors delay-75 duration-base ease-soft',
         'aria-[orientation=vertical]:w-px aria-[orientation=horizontal]:h-px',
         'data-[separator=hover]:bg-accent/50 data-[separator=active]:bg-accent data-[separator=focus]:bg-accent',
         className,
@@ -29,7 +29,7 @@ export function ResizableHandle({ className, ...props }: ComponentProps<typeof S
       <span
         aria-hidden="true"
         className={cn(
-          'pointer-events-none absolute rounded-full bg-accent/0 transition-colors delay-75 duration-(--duration-base) ease-soft',
+          'pointer-events-none absolute rounded-full bg-accent/0 transition-colors delay-75 duration-base ease-soft',
           'group-aria-[orientation=vertical]/handle:inset-y-0 group-aria-[orientation=vertical]/handle:-inset-x-px',
           'group-aria-[orientation=horizontal]/handle:inset-x-0 group-aria-[orientation=horizontal]/handle:-inset-y-px',
           'group-data-[separator=active]/handle:bg-accent/30 group-data-[separator=hover]/handle:bg-accent/15',

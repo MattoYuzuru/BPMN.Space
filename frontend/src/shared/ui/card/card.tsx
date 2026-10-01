@@ -14,7 +14,7 @@ const cardVariants = cva('relative rounded-lg text-fg', {
     padding: { none: '', sm: 'p-3', md: 'p-4', lg: 'p-6' },
     interactive: {
       true: [
-        'cursor-pointer outline-none transition-[border-color,box-shadow,background-color] duration-(--duration-base) ease-soft',
+        'cursor-pointer outline-none transition-[border-color,box-shadow,background-color] duration-base ease-soft',
         'hover:border-border-strong hover:shadow-sm focus-visible:border-accent focus-visible:ring-3 focus-visible:ring-accent/15',
         'data-[state=active]:border-accent/50 aria-[current=true]:border-accent/50',
       ],

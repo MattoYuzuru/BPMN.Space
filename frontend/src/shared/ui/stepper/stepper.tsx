@@ -91,7 +91,7 @@ export function Stepper({ steps, className, 'aria-label': ariaLabel }: StepperPr
               <div className="flex items-baseline justify-between gap-3">
                 <span
                   className={cn(
-                    'text-sm font-medium transition-colors duration-(--duration-slow)',
+                    'text-sm font-medium transition-colors duration-slow',
                     step.status === 'upcoming' && 'text-fg-subtle',
                     step.status === 'complete' && 'text-fg-muted',
                     step.status === 'current' && 'text-fg',

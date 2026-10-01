@@ -66,7 +66,7 @@ export function Textarea({
       }}
       className={cn(
         'block w-full resize-none rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm text-fg shadow-xs outline-none',
-        'transition-[border-color,box-shadow,background-color] duration-(--duration-base) ease-soft',
+        'transition-[border-color,box-shadow,background-color] duration-base ease-soft',
         'placeholder:text-fg-subtle hover:border-border-strong',
         'focus:border-accent focus:ring-3 focus:ring-accent/15 focus:hover:border-accent',
         'aria-invalid:border-danger aria-invalid:focus:ring-danger/15',

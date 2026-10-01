@@ -12,7 +12,7 @@ import { Spinner } from '../spinner/spinner'
 export const buttonVariants = cva(
   [
     'group/button relative inline-flex shrink-0 cursor-pointer select-none items-center justify-center whitespace-nowrap font-medium',
-    'transition-[color,background-color,border-color,box-shadow,opacity,scale] duration-(--duration-base) ease-soft',
+    'transition-[color,background-color,border-color,box-shadow,opacity,scale] duration-base ease-soft',
     'active:scale-[0.98] disabled:pointer-events-none disabled:opacity-45 aria-busy:pointer-events-none',
   ],
   {
@@ -96,7 +96,7 @@ export function Button({
     >
       <span
         className={cn(
-          'inline-flex items-center gap-[inherit] transition-opacity duration-(--duration-fast)',
+          'inline-flex items-center gap-[inherit] transition-opacity duration-fast',
           loading && 'opacity-0',
         )}
       >

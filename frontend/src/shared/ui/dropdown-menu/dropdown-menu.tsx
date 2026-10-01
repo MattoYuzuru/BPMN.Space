@@ -73,9 +73,9 @@ export function DropdownMenuCheckboxItem({
   ...props
 }: ComponentProps<typeof MenuPrimitive.CheckboxItem>) {
   return (
-    <MenuPrimitive.CheckboxItem className={cn(menuItem, 'pr-8', className)} {...props}>
+    <MenuPrimitive.CheckboxItem className={cn(menuItem, 'pl-8', className)} {...props}>
       <span className="flex-1 truncate">{children}</span>
-      <MenuPrimitive.ItemIndicator className="absolute right-2 inline-flex text-accent-fg">
+      <MenuPrimitive.ItemIndicator className="absolute left-2 inline-flex text-accent-fg">
         <Icon name="check" size={14} />
       </MenuPrimitive.ItemIndicator>
     </MenuPrimitive.CheckboxItem>
@@ -88,9 +88,9 @@ export function DropdownMenuRadioItem({
   ...props
 }: ComponentProps<typeof MenuPrimitive.RadioItem>) {
   return (
-    <MenuPrimitive.RadioItem className={cn(menuItem, 'pr-8', className)} {...props}>
+    <MenuPrimitive.RadioItem className={cn(menuItem, 'pl-8', className)} {...props}>
       <span className="flex-1 truncate">{children}</span>
-      <MenuPrimitive.ItemIndicator className="absolute right-2 inline-flex text-accent-fg">
+      <MenuPrimitive.ItemIndicator className="absolute left-2 inline-flex text-accent-fg">
         <Icon name="check" size={14} />
       </MenuPrimitive.ItemIndicator>
     </MenuPrimitive.RadioItem>

@@ -42,7 +42,7 @@ export function useActiveIndicator(
     mutations.observe(container, {
       attributes: true,
       subtree: true,
-      attributeFilter: ['data-state'],
+      attributeFilter: ['data-state', 'aria-checked', 'aria-selected'],
     })
     const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
     resize?.observe(container)

@@ -39,7 +39,7 @@ export default function CommandPaletteImpl({
               />
               <Kbd keys={['esc']} />
             </div>
-            <Command.List className="h-(--cmdk-list-height) max-h-[min(24rem,56vh)] scroll-py-1.5 overflow-y-auto p-1.5 transition-[height] duration-(--duration-base) ease-soft">
+            <Command.List className="h-(--cmdk-list-height) max-h-[min(24rem,56vh)] scroll-py-1.5 overflow-y-auto transition-[height] [&_[cmdk-list-sizer]]:p-1.5 duration-base ease-soft">
               <Command.Empty className="py-10 text-center text-sm text-fg-muted">
                 {emptyText}
               </Command.Empty>

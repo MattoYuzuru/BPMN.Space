@@ -10,11 +10,17 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as StyleguideRouteImport } from './routes/styleguide'
 import { Route as DevDiagramRouteImport } from './routes/dev.diagram'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StyleguideRoute = StyleguideRouteImport.update({
+  id: '/styleguide',
+  path: '/styleguide',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DevDiagramRoute = DevDiagramRouteImport.update({
@@ -25,27 +31,31 @@ const DevDiagramRoute = DevDiagramRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/styleguide': typeof StyleguideRoute
   '/dev/diagram': typeof DevDiagramRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/styleguide': typeof StyleguideRoute
   '/dev/diagram': typeof DevDiagramRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/styleguide': typeof StyleguideRoute
   '/dev/diagram': typeof DevDiagramRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/dev/diagram'
+  fullPaths: '/' | '/styleguide' | '/dev/diagram'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/dev/diagram'
-  id: '__root__' | '/' | '/dev/diagram'
+  to: '/' | '/styleguide' | '/dev/diagram'
+  id: '__root__' | '/' | '/styleguide' | '/dev/diagram'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  StyleguideRoute: typeof StyleguideRoute
   DevDiagramRoute: typeof DevDiagramRoute
 }
 
@@ -56,6 +66,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/styleguide': {
+      id: '/styleguide'
+      path: '/styleguide'
+      fullPath: '/styleguide'
+      preLoaderRoute: typeof StyleguideRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dev/diagram': {
@@ -70,6 +87,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  StyleguideRoute: StyleguideRoute,
   DevDiagramRoute: DevDiagramRoute,
 }
 export const routeTree = rootRouteImport

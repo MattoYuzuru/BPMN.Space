@@ -53,7 +53,7 @@ export function Progress({
       ) : (
         <ProgressPrimitive.Indicator
           className={cn(
-            'size-full origin-left rounded-full transition-transform duration-(--duration-slow) ease-soft',
+            'size-full origin-left rounded-full transition-transform duration-slow ease-soft',
             tones[tone],
           )}
           style={{ transform: `translateX(-${100 - percent}%)` }}

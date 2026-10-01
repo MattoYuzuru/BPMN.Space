@@ -24,7 +24,7 @@ export function TabsList({
       <span
         aria-hidden="true"
         className={cn(
-          'pointer-events-none absolute top-0 left-0 transition-[transform,width,opacity] duration-(--duration-slow) ease-soft',
+          'pointer-events-none absolute top-0 left-0 transition-[transform,width,opacity] duration-slow ease-soft',
           indicator.visible ? 'opacity-100' : 'opacity-0',
         )}
         style={indicator.style}
@@ -46,13 +46,13 @@ export function TabsTrigger({ icon, count, className, children, ...props }: Tabs
     <TabsPrimitive.Trigger
       className={cn(
         'group/tab relative z-10 -mb-px flex h-9 cursor-pointer items-center px-0 text-sm font-medium text-fg-muted outline-none',
-        'transition-colors duration-(--duration-base) ease-soft hover:text-fg data-[state=active]:text-fg',
+        'transition-colors duration-base ease-soft hover:text-fg data-[state=active]:text-fg',
         'disabled:pointer-events-none disabled:opacity-45',
         className,
       )}
       {...props}
     >
-      <span className="flex items-center gap-1.5 rounded-sm px-2 py-1 outline-focus-ring transition-colors duration-(--duration-base) group-hover/tab:bg-hover group-focus-visible/tab:outline-2 group-focus-visible/tab:outline-solid">
+      <span className="flex items-center gap-1.5 rounded-sm px-2 py-1 outline-focus-ring transition-colors duration-base group-hover/tab:bg-hover group-focus-visible/tab:outline-2 group-focus-visible/tab:outline-solid">
         {icon && <Icon name={icon} size={16} />}
         {children}
         {count !== undefined && (

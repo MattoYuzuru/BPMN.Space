@@ -33,14 +33,14 @@
         <bpmn:flowNodeRef>End_Supplied</bpmn:flowNodeRef>
       </bpmn:lane>
     </bpmn:laneSet>
-    <bpmn:startEvent id="Start_Need" name="Нужно присоединить энергопринимающие устройства">
+    <bpmn:startEvent id="Start_Need" name="Нужно присоединить объект">
       <bpmn:outgoing>Flow_Start_Submit</bpmn:outgoing>
     </bpmn:startEvent>
     <bpmn:userTask id="Task_SubmitApplication" name="Подать заявку через личный кабинет">
       <bpmn:incoming>Flow_Start_Submit</bpmn:incoming>
       <bpmn:outgoing>Flow_Submit_Check</bpmn:outgoing>
     </bpmn:userTask>
-    <bpmn:task id="Task_CheckCompleteness" name="Проверить комплектность заявки">
+    <bpmn:task id="Task_CheckCompleteness" name="Проверить полноту заявки">
       <bpmn:incoming>Flow_Submit_Check</bpmn:incoming>
       <bpmn:incoming>Flow_Supplement_Check</bpmn:incoming>
       <bpmn:outgoing>Flow_Check_Complete</bpmn:outgoing>
@@ -50,7 +50,7 @@
       <bpmn:outgoing>Flow_Complete_No</bpmn:outgoing>
       <bpmn:outgoing>Flow_Complete_Yes</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:sendTask id="Task_NotifyMissing" name="Уведомить заявителя о недостающих сведениях">
+    <bpmn:sendTask id="Task_NotifyMissing" name="Запросить недостающие сведения">
       <bpmn:incoming>Flow_Complete_No</bpmn:incoming>
       <bpmn:outgoing>Flow_Notify_Supplement</bpmn:outgoing>
     </bpmn:sendTask>
@@ -63,11 +63,11 @@
       <bpmn:outgoing>Flow_Power_Small</bpmn:outgoing>
       <bpmn:outgoing>Flow_Power_Large</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:task id="Task_OfferSmall" name="Разместить договор и ТУ в личном кабинете за 10 р. д.">
+    <bpmn:task id="Task_OfferSmall" name="Разместить договор и ТУ в ЛК (10 р. д.)">
       <bpmn:incoming>Flow_Power_Small</bpmn:incoming>
       <bpmn:outgoing>Flow_Small_Join</bpmn:outgoing>
     </bpmn:task>
-    <bpmn:task id="Task_OfferLarge" name="Направить проект договора и ТУ за 20 р. д.">
+    <bpmn:task id="Task_OfferLarge" name="Направить договор и ТУ (20 р. д.)">
       <bpmn:incoming>Flow_Power_Large</bpmn:incoming>
       <bpmn:outgoing>Flow_Large_Join</bpmn:outgoing>
     </bpmn:task>
@@ -85,11 +85,11 @@
       <bpmn:outgoing>Flow_Split_Applicant</bpmn:outgoing>
       <bpmn:outgoing>Flow_Split_Grid</bpmn:outgoing>
     </bpmn:parallelGateway>
-    <bpmn:task id="Task_ApplicantMeasures" name="Выполнить мероприятия по ТУ в границах участка">
+    <bpmn:task id="Task_ApplicantMeasures" name="Выполнить ТУ на своём участке">
       <bpmn:incoming>Flow_Split_Applicant</bpmn:incoming>
       <bpmn:outgoing>Flow_Applicant_Join</bpmn:outgoing>
     </bpmn:task>
-    <bpmn:task id="Task_GridMeasures" name="Выполнить мероприятия по ТУ до границы участка">
+    <bpmn:task id="Task_GridMeasures" name="Выполнить ТУ до границы участка">
       <bpmn:incoming>Flow_Split_Grid</bpmn:incoming>
       <bpmn:outgoing>Flow_Grid_Join</bpmn:outgoing>
     </bpmn:task>
@@ -102,23 +102,23 @@
       <bpmn:incoming>Flow_Join_Notify</bpmn:incoming>
       <bpmn:outgoing>Flow_Notify_Inspect</bpmn:outgoing>
     </bpmn:sendTask>
-    <bpmn:task id="Task_Inspect" name="Провести осмотр и допустить прибор учёта">
+    <bpmn:task id="Task_Inspect" name="Осмотреть объект и прибор учёта">
       <bpmn:incoming>Flow_Notify_Inspect</bpmn:incoming>
       <bpmn:outgoing>Flow_Inspect_Connect</bpmn:outgoing>
     </bpmn:task>
-    <bpmn:task id="Task_Connect" name="Осуществить фактическое присоединение">
+    <bpmn:task id="Task_Connect" name="Выполнить фактическое подключение">
       <bpmn:incoming>Flow_Inspect_Connect</bpmn:incoming>
       <bpmn:outgoing>Flow_Connect_Act</bpmn:outgoing>
     </bpmn:task>
-    <bpmn:task id="Task_SignAct" name="Составить акт о технологическом присоединении">
+    <bpmn:task id="Task_SignAct" name="Подписать акт о ТП">
       <bpmn:incoming>Flow_Connect_Act</bpmn:incoming>
       <bpmn:outgoing>Flow_Act_Supply</bpmn:outgoing>
     </bpmn:task>
-    <bpmn:task id="Task_SupplyContract" name="Заключить договор энергоснабжения">
+    <bpmn:task id="Task_SupplyContract" name="Заключить договор поставки">
       <bpmn:incoming>Flow_Act_Supply</bpmn:incoming>
       <bpmn:outgoing>Flow_Supply_End</bpmn:outgoing>
     </bpmn:task>
-    <bpmn:endEvent id="End_Supplied" name="Электроснабжение начато">
+    <bpmn:endEvent id="End_Supplied" name="Поставка энергии начата">
       <bpmn:incoming>Flow_Supply_End</bpmn:incoming>
     </bpmn:endEvent>
     <bpmn:sequenceFlow id="Flow_Start_Submit" sourceRef="Start_Need" targetRef="Task_SubmitApplication" />
@@ -162,7 +162,7 @@
       <bpmndi:BPMNShape id="BPMNShape_Start_Need" bpmnElement="Start_Need">
         <dc:Bounds x="150" y="182" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="144" y="223" width="88" height="70" />
+          <dc:Bounds x="144" y="223" width="88" height="42" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_SubmitApplication" bpmnElement="Task_SubmitApplication">
@@ -231,7 +231,7 @@
       <bpmndi:BPMNShape id="BPMNShape_End_Supplied" bpmnElement="End_Supplied">
         <dc:Bounds x="3086" y="1142" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="3060" y="1183" width="88" height="28" />
+          <dc:Bounds x="3074" y="1183" width="60" height="42" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_Start_Submit" bpmnElement="Flow_Start_Submit">

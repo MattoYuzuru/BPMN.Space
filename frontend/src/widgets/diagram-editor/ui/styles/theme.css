@@ -116,12 +116,15 @@
   background-position: var(--de-grid-x, 0) var(--de-grid-y, 0);
 }
 
-/* Фокус холста с клавиатуры: кольцо внутри, чтобы не обрезалось. */
+/*
+ * Фокус холста. diagram-js сам фокусирует SVG по клику, и браузер часто считает это
+ * «видимым» фокусом — поэтому рамка тонкая (1 px) и внутри холста: заметна с клавиатуры, не шумит.
+ */
 .de-root .djs-container svg:focus {
   outline: none;
 }
 
 .de-root .djs-container svg:focus-visible {
-  outline: 2px solid var(--color-focus-ring);
-  outline-offset: -2px;
+  outline: 1px solid var(--color-focus-ring);
+  outline-offset: -1px;
 }

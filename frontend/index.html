@@ -1,11 +1,26 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <title>Архитектор BPMN</title>
+    <!-- Тема до первой отрисовки, без мигания. Логика совпадает с src/shared/lib/theme. -->
+    <script>
+      ;(() => {
+        const root = document.documentElement
+        let theme = 'light'
+        try {
+          const stored = localStorage.getItem('arkhitektor.theme')
+          if (stored === 'dark') theme = 'dark'
+          else if (stored === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
+            theme = 'dark'
+        } catch {}
+        root.setAttribute('data-theme', theme)
+        root.style.colorScheme = theme
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

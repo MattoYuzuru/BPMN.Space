@@ -25,7 +25,7 @@
 
   /* Графит — тёмная нейтральная база: текст светлой темы, поверхности тёмной. */
   --palette-graphite-300: oklch(0.775 0.01 258);
-  --palette-graphite-400: oklch(0.66 0.012 260);
+  --palette-graphite-400: oklch(0.645 0.012 260);
   --palette-graphite-500: oklch(0.545 0.014 261);
   --palette-graphite-600: oklch(0.465 0.015 262);
   --palette-graphite-700: oklch(0.37 0.014 263);
@@ -57,7 +57,7 @@
   --palette-amber-300: oklch(0.865 0.112 76);
   --palette-amber-400: oklch(0.815 0.145 72);
   --palette-amber-500: oklch(0.76 0.155 66);
-  --palette-amber-600: oklch(0.67 0.15 58);
+  --palette-amber-600: oklch(0.655 0.15 57);
   --palette-amber-700: oklch(0.58 0.135 55);
   --palette-amber-800: oklch(0.49 0.11 52);
   --palette-amber-900: oklch(0.39 0.085 50);
@@ -417,7 +417,7 @@
   --color-success-fg: var(--palette-pine-300);
 
   --color-danger: var(--palette-surik-600);
-  --color-danger-hover: var(--palette-surik-500);
+  --color-danger-hover: var(--palette-surik-700);
   --color-danger-subtle: var(--palette-surik-950);
   --color-danger-fg: var(--palette-surik-300);
 

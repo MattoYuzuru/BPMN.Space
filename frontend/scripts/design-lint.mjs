@@ -74,6 +74,35 @@ export const RULES = [
     test: (line) => /font-family\s*:/.test(line) || /font-\[['"]/.test(line),
   },
   {
+    id: 'raw-scroll',
+    message:
+      'Прокрутка через overflow-auto/scroll. Используй <ScrollArea> из @/shared/ui — единый тонкий скроллбар.',
+    test: (line, ext) =>
+      ext === '.css'
+        ? /overflow(-[xy])?\s*:\s*(auto|scroll)\b/.test(line)
+        : /(^|[\s"'`:!])overflow(-[xy])?-(auto|scroll)\b/.test(line),
+  },
+  {
+    id: 'native-title',
+    message:
+      'Атрибут title на элементе даёт браузерную подсказку. Используй <Tooltip> из @/shared/ui.',
+    test: (line, ext) => ext === '.tsx' && /<[a-z][\w.-]*\b[^>]*\stitle=/.test(line),
+  },
+  {
+    id: 'inline-svg',
+    message: 'SVG в разметке экрана. Иконки — <Icon name="…" />, графика — компонент в shared/ui.',
+    test: (line, ext) => ext === '.tsx' && /<svg\b/.test(line),
+  },
+  {
+    id: 'arbitrary-visual',
+    message:
+      'Произвольное значение для цвета, шрифта, радиуса, тени или движения. Только токены: text-sm, rounded-md, shadow-md, ease-soft.',
+    test: (line) =>
+      /(^|[\s"'`:!])(text|bg|border|ring|outline|shadow|rounded(-[a-z]+)?|font|leading|tracking|fill|stroke|from|via|to|decoration|duration|ease|delay)-[[(]/.test(
+        line,
+      ),
+  },
+  {
     id: 'browser-dialog',
     message: 'Системные alert/confirm/prompt запрещены. Используй Dialog или toast из @/shared/ui.',
     test: (line, ext) => ext !== '.css' && /\b(window\.)?(alert|confirm|prompt)\(/.test(line),

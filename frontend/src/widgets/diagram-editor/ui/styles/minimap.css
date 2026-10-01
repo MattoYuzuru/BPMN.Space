@@ -29,6 +29,4 @@
 .de-root .djs-minimap .viewport-dom {
   border-width: 1.5px;
   border-radius: var(--radius-xs, 4px);
-  background-color: var(--color-accent-subtle);
-  opacity: 0.6;
 }

@@ -27,6 +27,9 @@ const FONT_FACES = [
 const MAX_CANVAS_SIDE = 16_384
 const MAX_CANVAS_AREA = 120_000_000
 
+/** Пауза между прогревочной отрисовкой SVG и итоговой: встроенный шрифт успевает загрузиться. */
+const FONT_WARMUP_MS = 200
+
 let fontCssPromise: Promise<string> | undefined
 
 function readAsDataUrl(blob: Blob): Promise<string> {
@@ -93,6 +96,10 @@ export async function rasterizeSvg(svg: string, scale: number, background?: stri
     const image = new Image()
     image.src = url
     await image.decode()
+    // Шрифт из data: URL внутри SVG-картинки Chrome начинает грузить только при первой отрисовке,
+    // а до загрузки текст невидим. Поэтому сначала «прогревочная» отрисовка, пауза — и только потом PNG.
+    document.createElement('canvas').getContext('2d')?.drawImage(image, 0, 0, 1, 1)
+    await new Promise((resolve) => setTimeout(resolve, FONT_WARMUP_MS))
     const canvas = document.createElement('canvas')
     canvas.width = width
     canvas.height = height

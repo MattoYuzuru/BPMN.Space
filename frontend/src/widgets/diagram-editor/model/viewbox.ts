@@ -42,8 +42,8 @@ function fitScale(outer: Size, bbox: Box, padding: number): number {
   return Math.min(width / Math.max(bbox.width, 1), height / Math.max(bbox.height, 1))
 }
 
-/** Вписать bbox в окно с отступами, не увеличивая больше `maxScale` (по умолчанию 100 %). */
-export function fitViewbox(outer: Size, bbox: Box, padding = 48, maxScale = 1): Box {
+/** Вписать bbox в окно с отступами (72 px — шире плавающей палитры), не увеличивая больше `maxScale` (по умолчанию 100 %). */
+export function fitViewbox(outer: Size, bbox: Box, padding = 72, maxScale = 1): Box {
   const scale = clamp(fitScale(outer, bbox, padding), MIN_SCALE, maxScale)
   return around(outer, bbox.x + bbox.width / 2, bbox.y + bbox.height / 2, scale)
 }

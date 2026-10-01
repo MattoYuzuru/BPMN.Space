@@ -63,8 +63,9 @@ test-frontend: ## vitest
 
 test: test-backend test-frontend ## Все unit- и интеграционные тесты
 
-build: ## Production-сборка фронтенда
+build: ## Production-сборка фронтенда + бюджет стартового бандла (bpmn-js только лениво)
 	$(NPM_FRONT) build
+	node frontend/scripts/check-bundle.mjs
 
 openapi: ## Выгрузить OpenAPI из backend в docs/api/openapi.json
 	$(UV) python -m app.openapi_export > docs/api/openapi.json

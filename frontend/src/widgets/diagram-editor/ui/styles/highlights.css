@@ -1,0 +1,104 @@
+/* biome-ignore-all lint/complexity/noImportantStyles: bpmn-js пишет fill/stroke и фон правки подписей во встроенный style — перекрыть можно только так */
+/*
+ * Маркеры подсветки (canvas.addMarker → класс на <g class="djs-element">).
+ *
+ * bpmn-js задаёт fill/stroke фигур во встроенном style, поэтому перекрытие — через !important.
+ * Красим только основной контур фигуры (первый дочерний элемент .djs-visual) и линию соединения:
+ * иконки типов задач, подписи и маркеры событий остаются как есть.
+ * Во время симуляции подсветка выключена, чтобы не спорить с её цветами.
+ */
+
+.de-root .djs-element .djs-visual > :first-child {
+  transition:
+    fill var(--de-slow) var(--de-ease),
+    stroke var(--de-slow) var(--de-ease);
+}
+
+/* --- Допущение: янтарный пунктир и мягкая янтарная подложка --- */
+.de-root:not(.de-simulating) .djs-shape.hl-assumption .djs-visual > :first-child {
+  stroke: var(--color-amber) !important;
+  stroke-dasharray: 6 4 !important;
+  fill: var(--color-amber-subtle) !important;
+}
+
+.de-root:not(.de-simulating) .djs-connection.hl-assumption .djs-visual > path {
+  stroke: var(--color-amber) !important;
+  stroke-dasharray: 6 4 !important;
+}
+
+/* --- Добавлено в новой версии: «Хвоя» --- */
+.de-root:not(.de-simulating) .djs-shape.hl-added .djs-visual > :first-child {
+  stroke: var(--color-success) !important;
+  fill: var(--color-success-subtle) !important;
+}
+
+.de-root:not(.de-simulating) .djs-connection.hl-added .djs-visual > path {
+  stroke: var(--color-success) !important;
+}
+
+/* --- Выбранный вопрос: акцентный контур «Ток» и мягкое свечение --- */
+.de-root:not(.de-simulating) .djs-shape.hl-selected .djs-visual > :first-child {
+  stroke: var(--color-accent) !important;
+  fill: var(--color-accent-subtle) !important;
+}
+
+.de-root:not(.de-simulating) .djs-connection.hl-selected .djs-visual > path {
+  stroke: var(--color-accent) !important;
+}
+
+.de-root:not(.de-simulating) .djs-element.hl-selected .djs-visual {
+  filter: drop-shadow(0 0 6px var(--color-accent));
+  animation: de-fade-in var(--de-slow) var(--de-ease);
+}
+
+.de-root:not(.de-simulating) .djs-connection.hl-focus .djs-visual > path {
+  stroke: var(--color-accent) !important;
+}
+
+/* Наконечник стрелки живёт в <defs> внутри .djs-visual — перекрашиваем вместе с линией. */
+.de-root:not(.de-simulating) .djs-connection.hl-assumption .djs-visual marker path {
+  fill: var(--color-amber) !important;
+  stroke: var(--color-amber) !important;
+}
+
+.de-root:not(.de-simulating) .djs-connection.hl-added .djs-visual marker path {
+  fill: var(--color-success) !important;
+  stroke: var(--color-success) !important;
+}
+
+.de-root:not(.de-simulating) .djs-connection.hl-selected .djs-visual marker path {
+  fill: var(--color-accent) !important;
+  stroke: var(--color-accent) !important;
+}
+
+/* --- Короткая подсветка после focusElement: контур вспыхивает и гаснет --- */
+.de-root .djs-element.hl-focus .djs-outline {
+  visibility: visible;
+  stroke: var(--color-accent);
+  stroke-width: 3px;
+  animation: de-focus-flash 1.6s var(--de-ease) both;
+}
+
+@keyframes de-focus-flash {
+  0% {
+    stroke-opacity: 0;
+  }
+  15% {
+    stroke-opacity: 1;
+  }
+  65% {
+    stroke-opacity: 0.7;
+  }
+  100% {
+    stroke-opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .de-root *,
+  .de-root *::before,
+  .de-root *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

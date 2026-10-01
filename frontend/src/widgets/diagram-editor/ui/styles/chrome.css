@@ -1,0 +1,316 @@
+/* biome-ignore-all lint/complexity/noImportantStyles: bpmn-js пишет fill/stroke и фон правки подписей во встроенный style — перекрыть можно только так */
+/*
+ * Интерфейс редактора поверх холста: палитра, контекстное меню, всплывающие меню,
+ * подсказки, правка подписей, поиск. Стиль — тонкие линии, мягкие тени, спокойные переходы.
+ */
+
+/* --- Палитра инструментов: плавающая вертикальная панель --- */
+.de-root .djs-palette {
+  top: 12px;
+  left: 12px;
+  width: 42px;
+  padding: 4px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--de-shadow-raised);
+}
+
+.de-root .djs-palette.two-column.open {
+  width: 74px;
+}
+
+.de-root .djs-palette .entry,
+.de-root .djs-palette .djs-palette-toggle {
+  width: 32px;
+  height: 32px;
+  line-height: 32px;
+  font-size: 22px;
+  color: var(--color-fg-muted);
+  border-radius: var(--radius-sm);
+  transition:
+    background-color var(--de-fast) var(--de-ease),
+    color var(--de-fast) var(--de-ease);
+}
+
+.de-root .djs-palette .entry:hover,
+.de-root .djs-palette .djs-palette-toggle:hover {
+  color: var(--color-fg);
+  background: var(--de-hover);
+}
+
+.de-root .djs-palette .highlighted-entry {
+  color: var(--color-accent-fg) !important;
+  background: var(--color-accent-subtle);
+}
+
+.de-root .djs-palette .separator {
+  margin: 4px 6px;
+  padding-top: 4px;
+  border-bottom-color: var(--color-border);
+}
+
+/* Подсказки палитры и контекстного меню */
+.de-root .djs-hover-tooltip {
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+  box-shadow: var(--de-shadow-raised);
+}
+
+.de-root .djs-palette-tooltip-shortcut {
+  border-radius: var(--radius-xs, 4px);
+  font-family: var(--font-mono); /* design-lint-ignore */
+}
+
+/* --- Контекстное меню элемента: плитки с иконками --- */
+.de-root .djs-context-pad {
+  width: 96px;
+}
+
+.de-root .djs-context-pad .entry {
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  margin: 0 4px 4px 0;
+  font-size: 18px;
+  line-height: 26px;
+  color: var(--color-fg-muted);
+  background-color: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--de-shadow-control);
+  transition:
+    color var(--de-fast) var(--de-ease),
+    border-color var(--de-fast) var(--de-ease),
+    background-color var(--de-fast) var(--de-ease);
+}
+
+.de-root .djs-context-pad .entry:hover {
+  color: var(--color-accent-fg);
+  background-color: var(--color-surface-raised);
+  border-color: var(--color-border-strong);
+}
+
+.de-root .djs-context-pad.open {
+  animation: de-fade-in var(--de-base) var(--de-ease);
+}
+
+/* --- Всплывающие меню (смена типа, выравнивание) --- */
+.de-root .djs-popup {
+  color: var(--color-fg);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg, var(--de-shadow-raised));
+  animation: de-fade-in var(--de-base) var(--de-ease);
+}
+
+.de-root .djs-popup-header {
+  margin: 10px 12px 6px;
+}
+
+.de-root .djs-popup-title {
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
+.de-root .djs-popup-search {
+  margin: 6px 8px;
+}
+
+.de-root .djs-popup-search input {
+  height: 32px;
+  padding: 0 10px 0 30px;
+  color: var(--color-fg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  transition:
+    border-color var(--de-fast) var(--de-ease),
+    box-shadow var(--de-fast) var(--de-ease);
+}
+
+.de-root .djs-popup-search input:focus {
+  background: var(--color-surface);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-subtle);
+}
+
+.de-root .djs-popup-search-icon {
+  top: 9px;
+  left: 10px;
+}
+
+/* У иконки поиска цвет зашит в разметку — перекрашиваем под тему. */
+.de-root .djs-popup-search-icon path {
+  fill: var(--color-fg-subtle);
+}
+
+.de-root .djs-popup-search-count {
+  margin: 0 12px 4px;
+  color: var(--color-fg-subtle);
+}
+
+.de-root .djs-popup-results {
+  margin: 4px;
+  padding-right: 4px;
+}
+
+.de-root .djs-popup-body .entry {
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--de-fast) var(--de-ease);
+}
+
+.de-root .djs-popup .entry.selected {
+  color: var(--color-fg);
+  background-color: var(--de-hover);
+}
+
+.de-root .djs-popup .entry.active {
+  color: var(--color-accent-fg);
+}
+
+.de-root .djs-popup-body .entry-header {
+  padding: 8px 8px 4px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-fg-subtle);
+}
+
+.de-root .djs-popup-header .entry {
+  padding: 2px;
+  border-radius: var(--radius-xs, 4px);
+  color: var(--color-fg-muted);
+  transition: background-color var(--de-fast) var(--de-ease);
+}
+
+.de-root .djs-popup-header .entry:hover {
+  background-color: var(--de-hover);
+}
+
+.de-root .djs-popup-no-results {
+  color: var(--color-fg-subtle);
+}
+
+/* --- Правка подписей прямо на схеме --- */
+.de-root .djs-direct-editing-parent {
+  color: var(--color-fg);
+  caret-color: var(--color-accent);
+  border-radius: var(--radius-sm);
+  outline: 1.5px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* bpmn-js задаёт внешним подписям белый фон и серую рамку прямо в style — перекрываем под тему. */
+.de-root .djs-direct-editing-parent[style*="border"] {
+  background-color: var(--color-surface-raised) !important;
+  border: 1px solid var(--color-border-strong) !important;
+  box-shadow: 0 0 0 3px var(--color-accent-subtle);
+  outline: none;
+}
+
+.de-root .djs-direct-editing-resize-handle {
+  border-right-color: var(--color-border-strong) !important;
+  border-bottom-color: var(--color-border-strong) !important;
+}
+
+/* --- Поиск по схеме (Ctrl+F) --- */
+.de-root .djs-search-container {
+  top: 12px;
+  overflow: hidden;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg, var(--de-shadow-raised));
+}
+
+.de-root .djs-search-input input {
+  height: 36px;
+  color: var(--color-fg);
+  background: var(--color-surface-raised);
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+}
+
+.de-root .djs-search-input input:focus {
+  background: var(--color-surface-raised);
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.de-root .djs-search-input svg path {
+  fill: var(--color-fg-subtle);
+}
+
+.de-root .djs-search-result {
+  padding: 8px 12px;
+}
+
+.de-root .djs-search-result-secondary {
+  font-family: var(--font-mono); /* design-lint-ignore */
+  font-size: 11px;
+}
+
+/* --- Хлебные крошки подпроцессов: правее палитры --- */
+.de-root .bjs-breadcrumbs {
+  top: 12px;
+  left: 66px;
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--de-shadow-raised);
+}
+
+/* --- Выделение и вспомогательная графика холста --- */
+.de-root .djs-outline,
+.de-root .djs-selection-outline {
+  stroke-width: 1.5px;
+}
+
+.de-root .djs-lasso-overlay {
+  fill: var(--color-accent-subtle);
+  fill-opacity: 0.4;
+  stroke-width: 1px;
+  stroke-dasharray: 4 3;
+}
+
+.de-root .djs-tooltip-error {
+  font-size: 12px;
+  border-radius: var(--radius-sm);
+  opacity: 1;
+}
+
+/* --- Только просмотр и заблокированный холст (симуляция) --- */
+.de-root.de-readonly .djs-palette,
+.de-root.de-readonly .djs-context-pad {
+  display: none !important;
+}
+
+.de-root .djs-canvas-locked {
+  user-select: none;
+}
+
+.de-root .djs-canvas-locked .djs-resizer {
+  display: none;
+}
+
+.de-root .djs-canvas-locked .djs-segment-dragger,
+.de-root .djs-canvas-locked .djs-bendpoint {
+  display: none !important;
+}
+
+/* Элементы кликабельны (onElementClick), но не перетаскиваются. */
+.de-root .djs-canvas-locked .djs-element .djs-hit-all,
+.de-root .djs-canvas-locked .djs-element .djs-hit-stroke,
+.de-root .djs-canvas-locked .djs-element .djs-hit-click-stroke {
+  cursor: pointer;
+}
+
+@keyframes de-fade-in {
+  from {
+    opacity: 0;
+  }
+}

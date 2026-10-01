@@ -1,0 +1,21 @@
+# Локальный стек: `make up` → http://localhost:8080
+# Сейчас backend — mock на фикстурах (задача #2). Postgres и bpmn-tools добавляются в задаче #6.
+name: arkhitektor
+
+services:
+  backend:
+    build: ./backend
+    environment:
+      APP_ENV: docker
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped

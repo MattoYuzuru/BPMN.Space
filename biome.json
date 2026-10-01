@@ -47,6 +47,10 @@
       "linter": { "rules": { "style": { "noRestrictedImports": "off" } } }
     },
     {
+      "includes": ["frontend/src/shared/styles/**"],
+      "linter": { "rules": { "complexity": { "noImportantStyles": "off" } } }
+    },
+    {
       "includes": ["scripts/**", "frontend/scripts/**", "frontend/e2e/**", "frontend/*.config.ts"],
       "linter": { "rules": { "suspicious": { "noConsole": "off" } } }
     }

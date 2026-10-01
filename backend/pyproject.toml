@@ -10,6 +10,7 @@ dependencies = [
   "pydantic-settings",
   "sse-starlette",
   "python-multipart",
+  "defusedxml",
 ]
 
 [dependency-groups]
@@ -22,6 +23,9 @@ dev = [
   "import-linter",
   "vulture",
   "pip-audit",
+  "lxml",
+  "types-defusedxml",
+  "lxml-stubs",
 ]
 
 [tool.uv]
@@ -68,3 +72,9 @@ name = "domain не зависит от внешнего мира"
 type = "forbidden"
 source_modules = ["app.domain"]
 forbidden_modules = ["app.api", "app.services", "app.llm", "app.ingest", "app.infra", "fastapi", "httpx", "sqlalchemy"]
+
+[[tool.importlinter.contracts]]
+name = "fixtures — только данные: не зависят от слоёв приложения"
+type = "forbidden"
+source_modules = ["app.fixtures"]
+forbidden_modules = ["app.api", "app.services", "app.llm", "app.ingest", "app.infra", "fastapi"]

@@ -55,20 +55,28 @@ const SECTION_IDS = NAV.flatMap((group) => group.items.map(([id]) => id))
 function useActiveSection() {
   const [active, setActive] = useState<string>(SECTION_IDS[0] ?? '')
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
-        if (visible[0]) setActive(visible[0].target.id)
-      },
-      { rootMargin: '-72px 0px -65% 0px' },
-    )
-    for (const id of SECTION_IDS) {
-      const element = document.getElementById(id)
-      if (element) observer.observe(element)
+    let frame = 0
+    // Активен последний раздел, чей верх уже прошёл под шапку (плюс запас в треть экрана).
+    const update = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        const line = 96 + window.innerHeight * 0.25
+        let current = SECTION_IDS[0] ?? ''
+        for (const id of SECTION_IDS) {
+          const top = document.getElementById(id)?.getBoundingClientRect().top
+          if (top !== undefined && top <= line) current = id
+        }
+        setActive(current)
+      })
     }
-    return () => observer.disconnect()
+    update()
+    window.addEventListener('scroll', update, { passive: true })
+    window.addEventListener('resize', update)
+    return () => {
+      cancelAnimationFrame(frame)
+      window.removeEventListener('scroll', update)
+      window.removeEventListener('resize', update)
+    }
   }, [])
   return active
 }

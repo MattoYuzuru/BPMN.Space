@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { buildLocalBpmn, saveLocalProject } from '@/features/local-bpmn'
+import { transcribeAudio } from '@/features/voice-transcription'
 import { Button, Card, FileInput, Icon, Input, Textarea } from '@/shared/ui'
 import './home.css'
 
@@ -21,12 +22,6 @@ const exampleText =
   'Заявитель подаёт заявку на технологическое присоединение. Сетевая организация проверяет комплектность документов. Если документов не хватает, она просит заявителя дополнить заявку. После проверки организация направляет договор и технические условия. Заявитель и сетевая организация выполняют свои мероприятия. Затем специалисты осматривают объект, подписывают акт и подключают объект к электросети.'
 
 type VoiceState = 'idle' | 'recording' | 'transcribing'
-
-interface TranscriptionResponse {
-  text: string
-  duration_sec: number
-  language: string
-}
 
 async function request<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
@@ -70,13 +65,8 @@ function NewProjectPage() {
       return
     }
 
-    const form = new FormData()
-    form.append('file', blob, 'voice-note.webm')
     try {
-      const response = await fetch('/api/v1/transcriptions', { method: 'POST', body: form })
-      if (!response.ok) throw new Error(`HTTP ${response.status}`)
-      const result = (await response.json()) as TranscriptionResponse
-      if (!result.text?.trim()) throw new Error('Пустая расшифровка')
+      const result = await transcribeAudio(blob)
       setSource((current) => [current.trim(), result.text.trim()].filter(Boolean).join('\n'))
       setNotice('Расшифровка добавлена в описание. Проверьте текст перед сборкой схемы.')
     } catch {

@@ -5,7 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 env_file="${ENV_FILE:-$repo_root/.env}"
 deploy_host="${DEPLOY_HOST:-}"
 deploy_user="${DEPLOY_USER:-deploy}"
-remote_root="${DEPLOY_PATH:-/opt/arkhitektor}"
+remote_root="${DEPLOY_PATH:-/home/$deploy_user/arkhitektor}"
 
 if [[ -z "$deploy_host" ]]; then
   echo "Задайте DEPLOY_HOST с адресом VM." >&2

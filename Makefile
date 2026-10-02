@@ -8,7 +8,7 @@ SHELL := bash
 UV := uv run --directory backend
 NPM_FRONT := npm run --workspace frontend
 
-.PHONY: help setup up down logs dev-backend dev-frontend \
+.PHONY: help setup up down logs dev-backend dev-frontend deploy deploy-env \
         format lint typecheck design-lint check-fast test test-backend test-frontend \
         build contract-check openapi gen-api fixtures check e2e screenshots secrets verify mr-report
 
@@ -34,6 +34,12 @@ dev-backend: ## Backend с автоперезагрузкой на :8000
 
 dev-frontend: ## Frontend dev-сервер на :5173 (проксирует /api на :8000)
 	$(NPM_FRONT) dev
+
+deploy-env: ## Однократно/при смене ключей: загрузить production .env на VM по SSH
+	DEPLOY_HOST="$(DEPLOY_HOST)" DEPLOY_USER="$(or $(DEPLOY_USER),deploy)" scripts/upload-server-env.sh
+
+deploy: ## Деплой проверенного commit SHA из main: make deploy DEPLOY_HOST=... REF=...
+	DEPLOY_HOST="$(DEPLOY_HOST)" DEPLOY_USER="$(or $(DEPLOY_USER),deploy)" scripts/deploy.sh "$(REF)"
 
 format: ## Автоформатирование всего кода
 	npx biome check --write .

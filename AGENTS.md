@@ -22,6 +22,7 @@
 | `docs/` | RFC, ADR, стайлгайд и архитектура фронтенда (`docs/frontend/`), бэкенда (`docs/backend/`) |
 | `scripts/` | `contract-check.sh`, `verify.sh`, `mr-report.sh`, `agent-hooks/` |
 | `compose.yaml`, `infra/caddy/` | локальный стек: `make up` → http://localhost:8080 |
+| `docs/deployment.md`, `scripts/deploy.sh` | ручной деплой проверенного commit SHA на демо-VM; GitLab CI/CD не используется |
 
 ## Команды
 
@@ -37,7 +38,11 @@ make fixtures     # пересобрать BPMN-фикстуры и examples/ (N
 make e2e          # Playwright против Docker-стека
 make verify       # перед MR: check + e2e + секреты → reports/verify-<sha>.md
 make mr-report    # отчёт verify комментарием в MR
+make deploy-env   # передать production-переменные из локального .env на VM по SSH
+make deploy       # задеплоить commit из main после MR и make verify
 ```
+
+Деплой: сначала прочитайте [`docs/deployment.md`](docs/deployment.md). Production выкладывается только из `origin/main` по SHA, секреты хранятся отдельно в `/opt/arkhitektor/shared/.env` на VM.
 
 ## Правила
 

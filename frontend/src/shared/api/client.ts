@@ -34,7 +34,14 @@ function detailOf(body: unknown): string | undefined {
   return undefined
 }
 
-export const api = createClient<paths>({ baseUrl: '' })
+/**
+ * Адрес — от текущего origin: openapi-fetch строит Request с абсолютным URL (в тестах на Node
+ * относительный не разбирается). fetch берётся в момент запроса — так его можно подменить в тестах.
+ */
+export const api = createClient<paths>({
+  baseUrl: globalThis.location?.origin ?? '',
+  fetch: (request) => globalThis.fetch(request),
+})
 
 /**
  * Результат openapi-fetch -> данные или ApiError. Используется во всех queryFn и mutationFn:

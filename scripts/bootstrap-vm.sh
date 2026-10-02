@@ -30,8 +30,9 @@ usermod -aG docker "$deploy_user"
 
 home_dir="$(getent passwd "$deploy_user" | cut -d: -f6)"
 install -d -m 0700 -o "$deploy_user" -g "$deploy_user" "$home_dir/.ssh"
-install -d -m 0750 -o "$deploy_user" -g "$deploy_user" /opt/arkhitektor/shared
-install -d -m 0750 -o "$deploy_user" -g "$deploy_user" /opt/arkhitektor/releases
+remote_root="$(getent passwd "$deploy_user" | cut -d: -f6)/arkhitektor"
+install -d -m 0750 -o "$deploy_user" -g "$deploy_user" "$remote_root/shared"
+install -d -m 0750 -o "$deploy_user" -g "$deploy_user" "$remote_root/releases"
 
 authorized_keys="$home_dir/.ssh/authorized_keys"
 touch "$authorized_keys"
@@ -39,4 +40,5 @@ chmod 0600 "$authorized_keys"
 chown "$deploy_user:$deploy_user" "$authorized_keys"
 echo "VM готова. SSH-доступ настроен для пользователя $deploy_user."
 echo "Добавьте публичные ключи команды в $authorized_keys с правами 0600."
+echo "Каталог релизов: $remote_root"
 echo "Важно: группа docker даёт полномочия уровня root; добавляйте туда только тех, кому доверяете управление сервером."

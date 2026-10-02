@@ -1,5 +1,12 @@
 import type { ComponentProps } from 'react'
 import { Group, Panel, Separator } from 'react-resizable-panels'
+
+export {
+  type PanelImperativeHandle,
+  useDefaultLayout,
+  usePanelRef,
+} from 'react-resizable-panels'
+
 import { cn } from '@/shared/lib/cn'
 
 /**

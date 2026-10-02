@@ -58,8 +58,8 @@ export function DiagramToolbar({
   const assumptions = version?.report.assumptions.length ?? 0
 
   return (
-    <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border bg-surface px-2.5">
-      <div className="flex min-w-0 flex-1 items-center gap-2">
+    <div className="@container flex h-11 shrink-0 items-center gap-2 border-b border-border bg-surface px-2.5">
+      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
         {version && origin && (
           <Tooltip content="История версий" side="bottom">
             <Button
@@ -70,7 +70,7 @@ export function DiagramToolbar({
               className="text-fg-muted"
             >
               {origin.label}
-              <span className="font-normal text-fg-subtle" data-numeric>
+              <span className="hidden font-normal text-fg-subtle @3xl:inline" data-numeric>
                 {formatRelative(new Date(version.created_at))}
               </span>
             </Button>

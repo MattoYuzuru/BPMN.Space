@@ -120,13 +120,11 @@ function HeaderActions({ running }: { running: boolean }) {
   const { project, editorRef, viewedVersionId, viewVersion } = useWorkspace()
   const setSheet = useWorkspaceUi((state) => state.setSheet)
   const start = useStartRun(project.id)
-  const run = useRunView(project.id)
   const latest = project.latest_version
   const versions = useQuery({ ...versionsQueryOptions(project.id), enabled: !!latest })
   const noSources = project.sources.length === 0
   const viewedId = viewedVersionId ?? latest?.id
   const viewed = versions.data?.find((item) => item.id === viewedId) ?? latest
-  const activeMode = running ? (run?.mode ?? project.active_run?.mode) : undefined
 
   return (
     <>
@@ -139,7 +137,7 @@ function HeaderActions({ running }: { running: boolean }) {
             leadingIcon="sparkles"
             size="sm"
             disabled={noSources || running}
-            loading={(start.isPending && start.variables === 'analyze') || activeMode === 'analyze'}
+            loading={start.isPending && start.variables === 'analyze'}
             onClick={() => start.mutate('analyze')}
           >
             Анализ
@@ -151,7 +149,7 @@ function HeaderActions({ running }: { running: boolean }) {
         leadingIcon="diagram"
         size="sm"
         disabled={noSources || running}
-        loading={(start.isPending && start.variables === 'build') || activeMode === 'build'}
+        loading={start.isPending && start.variables === 'build'}
         onClick={() => start.mutate('build')}
       >
         Построить схему

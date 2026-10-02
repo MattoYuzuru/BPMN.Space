@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { AnimatePresence, m } from 'motion/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { isRunning } from '@/entities/project'
 import { useRunView } from '@/entities/run'
 import {
   addedElementIds,
@@ -32,7 +31,8 @@ export function DiagramPanel() {
   const versions = useQuery({ ...versionsQueryOptions(project.id), enabled: !!latest })
   const run = useRunView(project.id)
   const isLatest = !viewedVersionId || viewedVersionId === latest?.id
-  const building = isRunning(project.status)
+  // Анализ схему не меняет — править можно; сборка заменит схему, поэтому на её время только просмотр.
+  const building = project.status === 'building'
   const readOnly = !isLatest || building
 
   const [markers, setMarkers] = useState<MarkerToggles>({ assumptions: true, added: true })

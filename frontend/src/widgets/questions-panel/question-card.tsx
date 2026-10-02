@@ -66,7 +66,9 @@ export function QuestionCard({ question, settling = false, fresh = false }: Ques
       />
       <div className="flex flex-col gap-2.5 py-3 pr-3 pl-4">
         <div className="flex items-center gap-2">
-          <span className="type-code text-fg-subtle">{question.code}</span>
+          <span className="shrink-0 whitespace-nowrap type-code text-fg-subtle">
+            {question.code}
+          </span>
           <span className="flex min-w-0 items-center gap-1 type-caption text-fg-muted">
             <Icon name={kind.icon} size={14} className="shrink-0 text-fg-subtle" />
             <span className="truncate">{kind.label}</span>
@@ -142,7 +144,7 @@ export function QuestionCard({ question, settling = false, fresh = false }: Ques
             onCancel={() => setAnswering(false)}
           />
         ) : (
-          <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1">
             {question.status === 'open' && (
               <>
                 <Button

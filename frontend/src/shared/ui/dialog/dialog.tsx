@@ -61,7 +61,7 @@ export function DialogContent({
             </DialogPrimitive.Description>
           )}
         </div>
-        {children && <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">{children}</div>}
+        {children && <div className="min-h-0 flex-auto overflow-y-auto px-5 pb-5">{children}</div>}
         {footer && (
           <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3.5">
             {footer}

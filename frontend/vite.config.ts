@@ -16,8 +16,21 @@ export default defineConfig({
     tailwindcss(),
   ],
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
-  server: { port: 5173, proxy: { '/api': { target: apiTarget, changeOrigin: true } } },
-  preview: { port: 4173, proxy: { '/api': { target: apiTarget, changeOrigin: true } } },
+  // /health проксируем вместе с /api: e2e-проверка «backend отвечает» работает и против dev-сервера.
+  server: {
+    port: 5173,
+    proxy: {
+      '/api': { target: apiTarget, changeOrigin: true },
+      '/health': { target: apiTarget, changeOrigin: true },
+    },
+  },
+  preview: {
+    port: 4173,
+    proxy: {
+      '/api': { target: apiTarget, changeOrigin: true },
+      '/health': { target: apiTarget, changeOrigin: true },
+    },
+  },
   build: { sourcemap: false, target: 'es2023', chunkSizeWarningLimit: 900 },
   test: {
     globals: true,

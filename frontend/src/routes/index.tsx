@@ -35,6 +35,10 @@ function HomePage() {
             <Icon name="home" size={16} />
             Главная
           </Link>
+          <Link to="/projects" className="home-nav-item">
+            <Icon name="folder" size={16} />
+            Проекты
+          </Link>
           <Link to="/new" className="home-nav-item">
             <Icon name="plus" size={16} />
             Новый процесс

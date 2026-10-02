@@ -1,6 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
-import { buildLocalBpmn, saveLocalProject } from '@/features/local-bpmn'
 import { transcribeAudio } from '@/features/voice-transcription'
 import { Button, Card, FileInput, Icon, Input, Textarea } from '@/shared/ui'
 import './home.css'
@@ -142,8 +141,7 @@ function NewProjectPage() {
     setWorking(true)
     setNotice('Создаём проект и собираем первый черновик…')
     const projectTitle = title.trim() || 'Новый процесс'
-    let id = `local-${crypto.randomUUID()}`
-    let runId = ''
+    let projectId: string | undefined
     try {
       const project =
         search.example === 'tp861'
@@ -152,9 +150,9 @@ function NewProjectPage() {
               title: projectTitle,
               description: source.trim().slice(0, 500) || null,
             })
-      id = project.id
+      projectId = project.id
       if (source.trim() && search.example !== 'tp861') {
-        await request(`/projects/${id}/sources/text`, {
+        await request(`/projects/${projectId}/sources/text`, {
           content: source.trim(),
           title: 'Описание процесса',
         })
@@ -163,31 +161,25 @@ function NewProjectPage() {
         const form = new FormData()
         form.append('file', file)
         form.append('title', file.name)
-        const upload = await fetch(`/api/v1/projects/${id}/sources/file`, {
+        const upload = await fetch(`/api/v1/projects/${projectId}/sources/file`, {
           method: 'POST',
           body: form,
         })
         if (!upload.ok) throw new Error(`Не удалось загрузить документ (${upload.status})`)
       }
-      const run = await request<{ id: string }>(`/projects/${id}/runs`, { mode: 'build' })
-      runId = run.id
-      sessionStorage.setItem(`arkhitektor:run:${id}`, runId)
-    } catch {
-      // Сервер сейчас может быть не запущен: автономный черновик позволяет сразу проверить редактор.
-      const content =
-        source.trim() || (file?.type === 'text/plain' ? await file.text() : (file?.name ?? ''))
-      const xml = buildLocalBpmn(projectTitle, content)
-      saveLocalProject({
-        id,
-        title: projectTitle,
-        source: content,
-        xml,
-        createdAt: new Date().toISOString(),
-        demo: true,
-      })
-      setNotice('Открываем локальный черновик. Серверный анализ появится после запуска backend.')
+      const run = await request<{ id: string }>(`/projects/${projectId}/runs`, { mode: 'build' })
+      sessionStorage.setItem(`arkhitektor:run:${projectId}`, run.id)
+    } catch (error) {
+      if (projectId) {
+        // Проект уже создан на backend: открываем его штатное рабочее место даже при ошибке прогона.
+        window.location.assign(`/projects/${projectId}`)
+        return
+      }
+      setNotice(error instanceof Error ? error.message : 'Не удалось создать проект на сервере.')
+      setWorking(false)
+      return
     }
-    window.location.assign(`/studio/${id}`)
+    window.location.assign(`/projects/${projectId}`)
   }
 
   async function fillExample() {

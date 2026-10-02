@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as NewRouteImport } from './routes/new'
 import { Route as StyleguideRouteImport } from './routes/styleguide'
+import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as DevDiagramRouteImport } from './routes/dev.diagram'
 import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
 import { Route as ProjectsProjectIdRouteImport } from './routes/projects.$projectId'
@@ -30,6 +31,11 @@ const NewRoute = NewRouteImport.update({
 const StyleguideRoute = StyleguideRouteImport.update({
   id: '/styleguide',
   path: '/styleguide',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WelcomeRoute = WelcomeRouteImport.update({
+  id: '/welcome',
+  path: '/welcome',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DevDiagramRoute = DevDiagramRouteImport.update({
@@ -57,6 +63,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/new': typeof NewRoute
   '/styleguide': typeof StyleguideRoute
+  '/welcome': typeof WelcomeRoute
   '/dev/diagram': typeof DevDiagramRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/studio/$projectId': typeof StudioProjectIdRoute
@@ -66,6 +73,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/new': typeof NewRoute
   '/styleguide': typeof StyleguideRoute
+  '/welcome': typeof WelcomeRoute
   '/dev/diagram': typeof DevDiagramRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/studio/$projectId': typeof StudioProjectIdRoute
@@ -76,6 +84,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/new': typeof NewRoute
   '/styleguide': typeof StyleguideRoute
+  '/welcome': typeof WelcomeRoute
   '/dev/diagram': typeof DevDiagramRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/studio/$projectId': typeof StudioProjectIdRoute
@@ -87,6 +96,7 @@ export interface FileRouteTypes {
     | '/'
     | '/new'
     | '/styleguide'
+    | '/welcome'
     | '/dev/diagram'
     | '/projects/$projectId'
     | '/studio/$projectId'
@@ -96,6 +106,7 @@ export interface FileRouteTypes {
     | '/'
     | '/new'
     | '/styleguide'
+    | '/welcome'
     | '/dev/diagram'
     | '/projects/$projectId'
     | '/studio/$projectId'
@@ -105,6 +116,7 @@ export interface FileRouteTypes {
     | '/'
     | '/new'
     | '/styleguide'
+    | '/welcome'
     | '/dev/diagram'
     | '/projects/$projectId'
     | '/studio/$projectId'
@@ -115,6 +127,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   NewRoute: typeof NewRoute
   StyleguideRoute: typeof StyleguideRoute
+  WelcomeRoute: typeof WelcomeRoute
   DevDiagramRoute: typeof DevDiagramRoute
   ProjectsProjectIdRoute: typeof ProjectsProjectIdRoute
   StudioProjectIdRoute: typeof StudioProjectIdRoute
@@ -142,6 +155,13 @@ declare module '@tanstack/react-router' {
       path: '/styleguide'
       fullPath: '/styleguide'
       preLoaderRoute: typeof StyleguideRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/welcome': {
+      id: '/welcome'
+      path: '/welcome'
+      fullPath: '/welcome'
+      preLoaderRoute: typeof WelcomeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dev/diagram': {
@@ -179,6 +199,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   NewRoute: NewRoute,
   StyleguideRoute: StyleguideRoute,
+  WelcomeRoute: WelcomeRoute,
   DevDiagramRoute: DevDiagramRoute,
   ProjectsProjectIdRoute: ProjectsProjectIdRoute,
   StudioProjectIdRoute: StudioProjectIdRoute,

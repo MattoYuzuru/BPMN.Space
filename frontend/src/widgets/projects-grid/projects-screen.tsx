@@ -1,4 +1,5 @@
 import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { projectsInfiniteOptions } from '@/entities/project'
 import { useCreateProjectDialog } from '@/features/create-project/model'
@@ -83,6 +84,9 @@ export function ProjectsScreen({ query, onQueryChange }: ProjectsScreenProps) {
             )}
           </div>
           <div className="flex items-center gap-2">
+            <Button asChild variant="ghost" leadingIcon="home">
+              <Link to="/welcome">Обзор</Link>
+            </Button>
             <Button leadingIcon="template" onClick={() => showCreate('example')}>
               Начать с примера
             </Button>

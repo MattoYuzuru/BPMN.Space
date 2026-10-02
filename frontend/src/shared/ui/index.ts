@@ -5,8 +5,10 @@
  */
 
 export { AssumptionFrame, type AssumptionFrameProps } from './assumption-frame/assumption-frame'
+export { AudioLevel, type AudioLevelProps } from './audio-level/audio-level'
 export { Avatar, type AvatarProps, initials } from './avatar/avatar'
 export { Badge, type BadgeProps, type BadgeTone } from './badge/badge'
+export { BrandMark, type BrandMarkProps } from './brand-mark/brand-mark'
 export {
   Button,
   type ButtonProps,
@@ -44,6 +46,7 @@ export {
 } from './dropdown-menu/dropdown-menu'
 export { EmptyState, type EmptyStateProps } from './empty-state/empty-state'
 export { Field, type FieldProps, useFieldControl } from './field/field'
+export { dragHasFiles, FileDrop, type FileDropProps } from './file-drop/file-drop'
 export { FlowLine, type FlowLineProps, type FlowLineState } from './flow-line/flow-line'
 export { GridBackdrop, type GridBackdropProps } from './grid-backdrop/grid-backdrop'
 export { Icon, type IconName, type IconProps, type IconSize, iconNames } from './icon'
@@ -64,7 +67,14 @@ export {
   type RadioGroupItemProps,
   type RadioGroupProps,
 } from './radio-group/radio-group'
-export { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './resizable/resizable'
+export {
+  type PanelImperativeHandle,
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+  useDefaultLayout,
+  usePanelRef,
+} from './resizable/resizable'
 export { ScrollArea, type ScrollAreaProps } from './scroll-area/scroll-area'
 export {
   SegmentedControl,

@@ -94,7 +94,13 @@ export function AddVoiceDialog({ projectId, open, onOpenChange }: DialogProps) {
         onOpenChange(next)
       }}
     >
-      <DialogContent title="Голосовая заметка" size="md" aria-describedby={undefined}>
+      <DialogContent
+        title="Голосовая заметка"
+        size="md"
+        aria-describedby={undefined}
+        // Запись стартует сама; фокус на крестике отвлекал бы от таймера.
+        onOpenAutoFocus={(event) => event.preventDefault()}
+      >
         {open && (
           <VoiceCapture
             autoStart

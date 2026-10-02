@@ -81,13 +81,6 @@ export function DiagramPanel() {
     [editorRef],
   )
 
-  // Выбрали вопрос — плавно показать его элементы, если они есть на схеме.
-  useEffect(() => {
-    if (ready && selectedQuestion?.element_ids.length) {
-      editorRef.current?.focusElement(selectedQuestion.element_ids)
-    }
-  }, [ready, selectedQuestion, editorRef])
-
   useEffect(() => {
     editorRef.current?.setPropertiesPanel(propertiesOpen ? propertiesRef.current : null)
   }, [propertiesOpen, editorRef])

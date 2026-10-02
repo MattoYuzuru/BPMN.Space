@@ -1,5 +1,5 @@
 import { AnimatePresence, m } from 'motion/react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { isRunning } from '@/entities/project'
 import {
   countByGroup,
@@ -36,11 +36,14 @@ export function QuestionsPanel({ onCollapse }: { onCollapse: () => void }) {
   const transitions = useQuestionTransitions(project.questions)
   const counts = countByGroup(project.questions.filter((q) => q.status !== 'obsolete'))
 
-  // Выбранный извне вопрос (со схемы, из отчёта) открывает свою вкладку.
+  // Выбранный извне вопрос (со схемы, из отчёта) открывает свою вкладку. Только при смене
+  // выбора: если вопрос решился, пока выбран, вкладка остаётся — пусть уход будет виден.
+  const questionsRef = useRef(project.questions)
+  questionsRef.current = project.questions
   useEffect(() => {
-    const selected = project.questions.find((question) => question.id === selectedQuestionId)
+    const selected = questionsRef.current.find((question) => question.id === selectedQuestionId)
     if (selected) setTab(questionGroup(selected.status))
-  }, [selectedQuestionId, project.questions])
+  }, [selectedQuestionId])
 
   const lists = useMemo(() => {
     const sorted = sortQuestions(project.questions)

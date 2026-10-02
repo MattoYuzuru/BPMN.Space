@@ -13,4 +13,4 @@ export {
   useDeleteProject,
   useRenameProject,
 } from './api'
-export { isRunning, PROJECT_STATUS, type ProjectStatus } from './model'
+export { isRunning, PROJECT_STATUS, type ProjectStatus, projectStatusView } from './model'

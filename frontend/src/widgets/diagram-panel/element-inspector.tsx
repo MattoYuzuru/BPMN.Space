@@ -45,7 +45,7 @@ export function ElementInspector({
         </div>
         <IconButton icon="x" size="sm" label="Закрыть" tooltip={false} onClick={onClose} />
       </div>
-      <div className="flex max-h-80 flex-col gap-3 px-4 py-3">
+      <div className="flex flex-col gap-3 px-4 py-3">
         {trace ? (
           <div className="flex flex-col gap-1.5">
             <span className="type-label text-fg-muted">Откуда в схеме</span>

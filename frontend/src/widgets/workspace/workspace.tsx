@@ -11,12 +11,9 @@ import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
-  Skeleton,
-  SkeletonText,
   useDefaultLayout,
   usePanelRef,
 } from '@/shared/ui'
-import { AppHeader } from '@/widgets/app-header/app-header'
 import type { DiagramEditorHandle } from '@/widgets/diagram-editor'
 import { DiagramPanel } from '@/widgets/diagram-panel/diagram-panel'
 import { ProjectHeader } from '@/widgets/project-header/project-header'
@@ -284,39 +281,4 @@ function useWorkspaceCommands(api: WorkspaceApi | null): CommandGroup | null {
       ],
     }
   }, [project, running, noSources, hasVersion, start.mutate, setDialog, setSheet])
-}
-
-/** Заглушка рабочего места на время первой загрузки: та же раскладка, что у настоящего. */
-export function WorkspaceSkeleton() {
-  return (
-    <div className="flex h-dvh flex-col bg-bg" aria-busy="true">
-      <AppHeader>
-        <Skeleton className="h-4 w-64" />
-      </AppHeader>
-      <div className="flex min-h-0 flex-1">
-        <div className="flex w-1/5 min-w-56 flex-col gap-3 border-r border-border bg-bg-subtle p-4">
-          <Skeleton className="h-4 w-24" />
-          {[0, 1, 2].map((key) => (
-            <div key={key} className="flex items-center gap-2.5">
-              <Skeleton className="size-7 rounded-md" />
-              <SkeletonText lines={2} className="flex-1" />
-            </div>
-          ))}
-        </div>
-        <div className="relative flex-1">
-          <div className="absolute inset-0 pattern-dots opacity-60" />
-        </div>
-        <div className="flex w-1/4 min-w-72 flex-col gap-3 border-l border-border bg-surface p-4">
-          <Skeleton className="h-4 w-28" />
-          {[0, 1].map((key) => (
-            <div key={key} className="flex flex-col gap-3 rounded-lg border border-border p-4">
-              <Skeleton className="h-3 w-32" />
-              <SkeletonText lines={2} />
-              <Skeleton className="h-14 rounded-md" />
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
 }

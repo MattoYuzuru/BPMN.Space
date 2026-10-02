@@ -109,7 +109,7 @@ export function AnswerComposer({
             leadingIcon="send"
             disabled={!text.trim()}
           >
-            Ответить
+            Отправить ответ
           </Button>
         </div>
       </div>

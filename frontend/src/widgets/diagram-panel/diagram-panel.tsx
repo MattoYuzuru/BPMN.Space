@@ -73,10 +73,15 @@ export function DiagramPanel() {
     }
   }, [markers, version.data, project.questions, selectedQuestion, previousXml.data, xml])
 
+  // Открыли ссылку с ?question= — когда схема готова, показываем элементы вопроса.
+  const initialFocus = useRef(selectedQuestion?.element_ids)
   const handleReady = useCallback(
     (handle: DiagramEditorHandle) => {
       editorRef.current = handle
       setReady(true)
+      const ids = initialFocus.current
+      initialFocus.current = undefined
+      if (ids?.length) setTimeout(() => handle.focusElement(ids), 300)
     },
     [editorRef],
   )

@@ -290,6 +290,8 @@ OKLCH-значения — в `tokens.css` (`--palette-<цвет>-<ступен�
 | `Input` | `size` `sm`/`md`, `leadingIcon`, `trailing` (Kbd, IconButton), `invalid` |
 | `Textarea` | Авто-рост между `minRows` и `maxRows`, дальше прокрутка |
 | `Select` | `options: { value, label, icon?, disabled? }[]`, `placeholder`, `size`, `invalid` |
+| `FileDrop` (`accept`, `onFiles`, `multiple`, `title`, `hint`, `size`) | Зона загрузки: перетаскивание и кнопка «Выбрать файл». При наведении файла — рамка и подложка Тока. `dragHasFiles(event)` — проверка, что тащат файлы, для своих оверлеев |
+| `AudioLevel` (`levels` 0..1, `bars`, `active`, `label`) | Уровень сигнала при записи голоса: полосы масштабируются трансформацией, роль `meter`. Данные — из `AnalyserNode` (`features/voice-record`) |
 
 ```tsx
 <Field label="Название проекта" error={errors.name}>
@@ -359,7 +361,8 @@ OKLCH-значения — в `tokens.css` (`--palette-<цвет>-<ступен�
 | `Card` (`variant` `outline`/`elevated`/`sunken`, `padding`, `interactive`, `glow`, `asChild`) + `CardHeader` (`title`, `description`, `icon`, `actions`) | Группа связанного содержимого. Карточки не вкладываем |
 | `Divider` (`orientation`, `label`) | Линия между группами, когда отступа мало |
 | `ScrollArea` (`orientation`, `viewportRef`) | Единственный способ прокрутки в экранах. Скроллбар проявляется при наведении |
-| `ResizablePanelGroup`, `ResizablePanel`, `ResizableHandle` | Три панели рабочего места. Размеры: число — px, строка — % (`"25"`), `"20rem"` |
+| `ResizablePanelGroup`, `ResizablePanel`, `ResizableHandle` | Три панели рабочего места. Размеры: число — px, строка — % (`"25"`), `"20rem"`. `collapsible` + `collapsedSize` — сворачивание в полосу; `usePanelRef()` — `collapse()`/`expand()`; `useDefaultLayout({ id })` — раскладка запоминается между сессиями |
+| `BrandMark` (`size` `sm`/`md`/`lg`) | Знак продукта: шапка, 404, пустые экраны |
 
 ```tsx
 <ResizablePanelGroup orientation="horizontal">

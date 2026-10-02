@@ -5,6 +5,7 @@ import { useStartRun } from '@/entities/run'
 import { AddTextDialog, AddVoiceDialog } from '@/features/add-source/add-source-dialogs'
 import { useRegisterCommands } from '@/features/command-palette/model'
 import { useRunTracker } from '@/features/run-analysis/use-run-tracker'
+import { useDocumentTitle } from '@/shared/hooks/use-document-title'
 import {
   type CommandGroup,
   IconButton,
@@ -56,6 +57,7 @@ export function Workspace({ projectId, search, onSearchChange }: WorkspaceProps)
   })
 
   useRunTracker(projectId, project?.active_run)
+  useDocumentTitle(project?.title)
   useEffect(() => () => useWorkspaceUi.getState().reset(), [])
 
   const api = useMemo<WorkspaceApi | null>(() => {

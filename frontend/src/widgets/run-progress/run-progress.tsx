@@ -26,7 +26,7 @@ export function RunProgress({ projectId }: { projectId: string }) {
   }, [finished, view?.status, projectId, setExpanded])
 
   return (
-    <AnimatePresence>
+    <AnimatePresence mode="wait">
       {view && expanded && (
         <m.div
           key={view.runId}

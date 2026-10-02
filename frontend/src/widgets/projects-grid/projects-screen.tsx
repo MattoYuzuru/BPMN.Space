@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { projectsInfiniteOptions } from '@/entities/project'
 import { useCreateProjectDialog } from '@/features/create-project/model'
 import { useDebouncedValue } from '@/shared/hooks/use-debounced'
+import { useDocumentTitle } from '@/shared/hooks/use-document-title'
 import { useHotkey } from '@/shared/hooks/use-hotkey'
 import { formatNumber } from '@/shared/lib/format'
 import { Button, IconButton, Input, Kbd } from '@/shared/ui'
@@ -36,6 +37,7 @@ export function ProjectsScreen({ query, onQueryChange }: ProjectsScreenProps) {
   }, [debounced, query, onQueryChange])
 
   useHotkey(['/'], () => searchRef.current?.focus())
+  useDocumentTitle('Проекты')
 
   return (
     <div className="flex min-h-dvh flex-col bg-bg">

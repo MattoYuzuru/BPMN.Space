@@ -47,7 +47,7 @@ async function openDemo(page: Page, theme: Theme = 'light') {
 }
 
 test('01–02 список проектов', async ({ page }) => {
-  await open(page, '/')
+  await open(page, '/projects')
   await expect(page.getByRole('link', { name: /электросетям/ })).toBeVisible()
   await settle(page, 900)
   await shoot(page, '01-projects-light')
@@ -59,7 +59,7 @@ test('01–02 список проектов', async ({ page }) => {
 })
 
 test('03 создание проекта', async ({ page }) => {
-  await open(page, '/')
+  await open(page, '/projects')
   await page.getByRole('button', { name: 'Начать с примера' }).first().click()
   const dialog = page.getByRole('dialog', { name: 'Новый проект' })
   await expect(dialog.getByRole('radio', { name: /Технологическое/ })).toBeChecked()

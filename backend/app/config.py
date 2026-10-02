@@ -40,6 +40,14 @@ class Settings(BaseSettings):
     # Засевать ли демо-проекты при старте (в тестах можно выключить).
     seed_demo_data: bool = True
 
+    # Внешние провайдеры выключены по умолчанию. Секреты задаются только в корневом .env.
+    llm_provider: str = "mock"
+    deepseek_api_key: str | None = None
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_model: str = "deepseek-flash"
+    stt_provider: str = "mock"
+    deepgram_api_key: str | None = None
+
     def mock_delay(self, seconds: float) -> float:
         return max(seconds, 0.0) * max(self.mock_delay_scale, 0.0)
 

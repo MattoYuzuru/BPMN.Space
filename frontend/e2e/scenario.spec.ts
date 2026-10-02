@@ -8,7 +8,7 @@ import { DEMO_PROJECT_TITLE, dragElement, FINANCES_MD, questionCard, startRun } 
  * правка мышью → новая версия manual → скачивание .bpmn.
  */
 test('список проектов: бесконечная прокрутка и демо-проект', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/projects')
   await expect(page).toHaveTitle(/Проекты/)
   const cards = page.locator('section[aria-label="Проекты"] a[href^="/projects/"]')
   await expect(cards.first()).toBeVisible()
@@ -37,7 +37,7 @@ test('полный сценарий: вопросы, голос, докумен�
   test.slow()
 
   await test.step('создать проект из примера', async () => {
-    await page.goto('/')
+    await page.goto('/projects')
     await page.getByRole('button', { name: 'Начать с примера' }).first().click()
     const dialog = page.getByRole('dialog', { name: 'Новый проект' })
     await expect(dialog.getByRole('radio', { name: /Технологическое присоединение/ })).toBeChecked()

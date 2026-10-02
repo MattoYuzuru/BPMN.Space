@@ -26,6 +26,7 @@ from app.ingest.parsers import MockDocumentParser
 from app.ingest.stt import MockSpeechToText
 from app.llm.deepseek import DeepSeekPipeline
 from app.llm.mock import MockPipeline
+from app.services.assistant import AssistantModel, AssistantService
 from app.services.catalog import ExampleService, TranscriptionService
 from app.services.common import Runtime
 from app.services.projects import ProjectService
@@ -47,6 +48,7 @@ class Container:
     versions: VersionService
     examples: ExampleService
     transcriptions: TranscriptionService
+    assistant: AssistantService | None
 
 
 def build_container(settings: Settings, *, runtime: Runtime | None = None) -> Container:
@@ -65,6 +67,7 @@ def build_container(settings: Settings, *, runtime: Runtime | None = None) -> Co
         )
     repos = store.repositories()
     spawner = AsyncioTaskSpawner()
+    assistant_model: AssistantModel | None = None
     # TODO(real): #6 HTTP-клиент bpmn-tools, SpeechKit, python-docx/pypdf.
     # TODO(real): #5 пайплайн на Pydantic AI вместо записанных ответов.
     bpmn_tools = MockBpmnTools()
@@ -79,6 +82,7 @@ def build_container(settings: Settings, *, runtime: Runtime | None = None) -> Co
                 base_url=settings.deepseek_base_url,
                 model=settings.deepseek_model,
             )
+            assistant_model = pipeline
         case provider:
             raise ValueError(f"Неизвестный LLM_PROVIDER: {provider}")
 
@@ -133,4 +137,7 @@ def build_container(settings: Settings, *, runtime: Runtime | None = None) -> Co
         ),
         examples=ExampleService(EXAMPLES),
         transcriptions=TranscriptionService(stt, max_audio_bytes=settings.max_audio_bytes),
+        assistant=(
+            AssistantService(repos, model=assistant_model) if assistant_model is not None else None
+        ),
     )

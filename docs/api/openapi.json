@@ -21,6 +21,72 @@
         "title": "Answer",
         "type": "object"
       },
+      "AssistantRequest": {
+        "properties": {
+          "diagram_xml": {
+            "default": "",
+            "maxLength": 30000,
+            "title": "Diagram Xml",
+            "type": "string"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/AssistantTurn"
+            },
+            "maxItems": 10,
+            "title": "History",
+            "type": "array"
+          },
+          "message": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "AssistantRequest",
+        "type": "object"
+      },
+      "AssistantResponse": {
+        "properties": {
+          "answer": {
+            "title": "Answer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer"
+        ],
+        "title": "AssistantResponse",
+        "type": "object"
+      },
+      "AssistantTurn": {
+        "properties": {
+          "role": {
+            "enum": [
+              "assistant",
+              "user"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "text"
+        ],
+        "title": "AssistantTurn",
+        "type": "object"
+      },
       "Assumption": {
         "description": "Элемент схемы, построенный на допущении неотвеченного вопроса.",
         "properties": {
@@ -212,6 +278,48 @@
         ],
         "title": "LintSeverity",
         "type": "string"
+      },
+      "LocalAssistantRequest": {
+        "properties": {
+          "diagram_xml": {
+            "default": "",
+            "maxLength": 30000,
+            "title": "Diagram Xml",
+            "type": "string"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/AssistantTurn"
+            },
+            "maxItems": 10,
+            "title": "History",
+            "type": "array"
+          },
+          "message": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "project_title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Project Title",
+            "type": "string"
+          },
+          "source": {
+            "default": "",
+            "maxLength": 24000,
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "project_title"
+        ],
+        "title": "LocalAssistantRequest",
+        "type": "object"
       },
       "Project": {
         "properties": {
@@ -1570,6 +1678,67 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/assistant/chat": {
+      "post": {
+        "operationId": "ask_about_local_draft",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocalAssistantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Провайдер модели вернул ошибку"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Помощник не настроен"
+          }
+        },
+        "summary": "Ask About Local Draft",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
     "/api/v1/examples": {
       "get": {
         "description": "Демо-примеры процессов для быстрого старта.",
@@ -1937,6 +2106,89 @@
         "summary": "Update Project",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/assistant": {
+      "post": {
+        "operationId": "ask_assistant",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Провайдер модели вернул ошибку"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Помощник не настроен"
+          }
+        },
+        "summary": "Ask Assistant",
+        "tags": [
+          "assistant"
         ]
       }
     },

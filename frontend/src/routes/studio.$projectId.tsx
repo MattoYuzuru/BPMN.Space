@@ -36,7 +36,16 @@ export const Route = createFileRoute('/studio/$projectId')({ component: StudioPa
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`/api/v1${path}`, options)
-  if (!response.ok) throw new Error(`API ${response.status}`)
+  if (!response.ok) {
+    let message = `Ошибка сервера (${response.status})`
+    try {
+      const body = (await response.json()) as { detail?: string }
+      if (body.detail) message = body.detail
+    } catch {
+      // Оставляем понятное сообщение, если сервер вернул не JSON.
+    }
+    throw new Error(message)
+  }
   return response.json() as Promise<T>
 }
 
@@ -47,6 +56,7 @@ function StudioPage() {
   const [xml, setXml] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [assistantSending, setAssistantSending] = useState(false)
   const [notice, setNotice] = useState('')
   const [assistantInput, setAssistantInput] = useState('')
   const [messages, setMessages] = useState<AssistantMessage[]>([
@@ -188,16 +198,49 @@ function StudioPage() {
     }
   }
 
-  function sendMessage() {
-    if (!assistantInput.trim()) return
-    setMessages((current) => [
-      ...current,
-      { id: crypto.randomUUID(), role: 'user', text: assistantInput.trim() },
-    ])
+  async function sendMessage() {
+    const text = assistantInput.trim()
+    if (!text || assistantSending) return
+    setAssistantSending(true)
     setAssistantInput('')
-    setNotice(
-      'Сообщение сохранено в черновике. Подключение диалога к реальной LLM ещё не включено в серверной заглушке.',
-    )
+    setMessages((current) => [...current, { id: crypto.randomUUID(), role: 'user', text }])
+    try {
+      const currentXml = await editorRef.current?.exportXml()
+      const path = localMode ? '/assistant/chat' : `/projects/${projectId}/assistant`
+      const body = localMode
+        ? {
+            project_title: local?.title ?? project?.title ?? 'Новый процесс',
+            source: local?.source ?? '',
+            message: text,
+            diagram_xml: currentXml ?? xml,
+            history: messages
+              .filter((item) => item.id !== 'welcome')
+              .slice(-10)
+              .map(({ role, text: historyText }) => ({ role, text: historyText })),
+          }
+        : {
+            message: text,
+            diagram_xml: currentXml ?? xml,
+            history: messages
+              .filter((item) => item.id !== 'welcome')
+              .slice(-10)
+              .map(({ role, text: historyText }) => ({ role, text: historyText })),
+          }
+      const result = await api<{ answer: string }>(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      setMessages((current) => [
+        ...current,
+        { id: crypto.randomUUID(), role: 'assistant', text: result.answer },
+      ])
+      setNotice('Ответил помощник на сервере.')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Не удалось связаться с помощником.')
+    } finally {
+      setAssistantSending(false)
+    }
   }
 
   if (loading)
@@ -421,13 +464,13 @@ function StudioPage() {
               <Icon name="messages" size={16} className="text-accent-fg" /> Помощник по процессу
             </h2>
             <span className="rounded border border-border px-1.5 py-0.5 text-2xs text-fg-subtle">
-              прототип
+              LLM
             </span>
           </div>
           <ScrollArea className="min-h-0 flex-1" viewportClassName="p-4">
             <div className="mb-4 rounded-lg border border-border bg-bg-subtle p-3 text-xs leading-5 text-fg-muted">
-              Я помогу разобрать процесс и найти пропуски. Уточните шаг, роль или условие — ответ
-              сохранится как заметка к черновику.
+              Я помогу разобрать процесс и найти пробелы. Ответы формируются по материалам проекта и
+              текущей BPMN-схеме.
             </div>
             {messages.map((message) => (
               <div
@@ -459,16 +502,21 @@ function StudioPage() {
             />
             <div className="mt-2 flex items-center justify-between">
               <span className="text-2xs text-fg-subtle">
-                ИИ-ответы включатся после настройки backend
+                {assistantSending
+                  ? 'Помощник отвечает…'
+                  : localMode
+                    ? 'Текст отправится в подключённую LLM'
+                    : 'Ответ придёт от LLM через backend'}
               </span>
               <Button
                 size="sm"
                 variant="primary"
                 leadingIcon="send"
                 onClick={sendMessage}
+                disabled={assistantSending || !assistantInput.trim()}
                 aria-label="Добавить сообщение"
               >
-                Отправить
+                {assistantSending ? 'Думаю…' : 'Отправить'}
               </Button>
             </div>
           </div>

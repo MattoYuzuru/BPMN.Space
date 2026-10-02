@@ -28,5 +28,7 @@ def errors(*codes: int) -> dict[int | str, dict[str, object]]:
         413: "Слишком большой файл",
         415: "Формат не поддерживается",
         422: "Некорректные данные",
+        502: "Провайдер модели вернул ошибку",
+        503: "Помощник не настроен",
     }
     return {code: {"model": ErrorResponse, "description": descriptions[code]} for code in codes}

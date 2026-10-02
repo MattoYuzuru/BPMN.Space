@@ -60,6 +60,31 @@ export function formatRelative(date: Date, now: Date = new Date()): string {
   return formatDate(date, now)
 }
 
+/** Длительность записи по-часовому: «0:07», «2:22», «1:02:05». */
+export function formatClock(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds))
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const rest = String(total % 60).padStart(2, '0')
+  return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${rest}` : `${minutes}:${rest}`
+}
+
+const fractionFormat = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 1 })
+
+/** Размер файла: «812 Б», «48 КБ», «1,4 МБ» (неразрывный пробел перед единицей). */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${formatNumber(bytes)} Б`
+  const units = ['КБ', 'МБ', 'ГБ'] as const
+  let value = bytes / 1024
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  const rounded = value >= 10 ? Math.round(value) : value
+  return `${fractionFormat.format(rounded)} ${units[unit]}`
+}
+
 /** Длительность прогона: «12 с», «1 мин 05 с». */
 export function formatDuration(ms: number): string {
   const total = Math.max(0, Math.round(ms / 1000))

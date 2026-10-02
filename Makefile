@@ -87,12 +87,12 @@ contract-check: ## Контракт API: backend ↔ docs/api/openapi.json ↔ T
 
 check: check-fast test contract-check build ## Полная проверка (pre-push)
 
-e2e: ## e2e Playwright против стека в Docker
-	docker compose up -d --build --wait
+e2e: ## e2e Playwright: Docker-стек или уже запущенный E2E_BASE_URL
+	@if [ -z "$$E2E_BASE_URL" ]; then docker compose up -d --build --wait; else echo "Использую уже запущенный стенд: $$E2E_BASE_URL"; fi
 	$(NPM_FRONT) e2e
 
-screenshots: ## Скриншоты ключевых экранов в reports/screenshots
-	docker compose up -d --build --wait
+screenshots: ## Скриншоты ключевых экранов; E2E_BASE_URL задаёт готовый стенд
+	@if [ -z "$$E2E_BASE_URL" ]; then docker compose up -d --build --wait; else echo "Использую уже запущенный стенд: $$E2E_BASE_URL"; fi
 	$(NPM_FRONT) e2e -- --project=screenshots
 
 secrets: ## Поиск секретов во всех файлах

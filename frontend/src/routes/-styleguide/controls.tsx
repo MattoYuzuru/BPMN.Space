@@ -1,8 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
+  AudioLevel,
+  BrandMark,
   Button,
   Checkbox,
   Field,
+  FileDrop,
   IconButton,
   Input,
   Kbd,
@@ -115,12 +118,14 @@ export function FieldsSection() {
   const [answer, setAnswer] = useState(
     'Бюджет согласуют в финансовом отделе, это есть в документе «Финансы проекта».',
   )
+  const [dropped, setDropped] = useState<string[]>([])
+  const levels = useDemoLevels()
   return (
     <Section
       id="fields"
       eyebrow="11 Компоненты"
       title="Поля ввода"
-      lead="Field связывает подпись, подсказку и ошибку с полем. Подсказку пишем, только если без неё поле нельзя заполнить. Обязательные поля не помечаем звёздочкой — помечаем необязательные."
+      lead="Field связывает подпись, подсказку и ошибку с полем. Подсказку пишем, только если без неё поле нельзя заполнить. Обязательные поля не помечаем звёздочкой — помечаем необязательные. Файлы принимает FileDrop, голос показывает AudioLevel."
     >
       <SpecimenGrid>
         <Specimen title="Input" note="Field + Input">
@@ -163,9 +168,46 @@ export function FieldsSection() {
             </Field>
           </div>
         </Specimen>
+        <Specimen title="FileDrop" note="перетаскивание и кнопка выбора">
+          <FileDrop
+            accept=".txt,.md,.docx,.pdf"
+            multiple
+            onFiles={(files) => setDropped(files.map((file) => file.name))}
+            title="Перетащите документ"
+            hint=".txt, .md, .docx, .pdf"
+          />
+          {dropped.length > 0 && <Caption>Получено: {dropped.join(', ')}</Caption>}
+        </Specimen>
+        <Specimen title="AudioLevel" note="уровень сигнала при записи голоса">
+          <div className="flex flex-col gap-4">
+            <AudioLevel levels={levels} label="Уровень сигнала, пример" />
+            <AudioLevel levels={levels} active={false} bars={32} className="h-8" label="Пауза" />
+            <div className="flex items-center gap-3">
+              <BrandMark size="sm" />
+              <BrandMark />
+              <BrandMark size="lg" />
+              <Caption>BrandMark — знак продукта: шапка, 404, пустые экраны.</Caption>
+            </div>
+          </div>
+        </Specimen>
       </SpecimenGrid>
     </Section>
   )
+}
+
+/** Псевдоречь для витрины уровня сигнала: слоги с паузами, без микрофона. */
+function useDemoLevels() {
+  const [levels, setLevels] = useState<number[]>([])
+  useEffect(() => {
+    let tick = 0
+    const timer = setInterval(() => {
+      tick += 1
+      const syllable = Math.abs(Math.sin(tick / 2.3)) * (tick % 23 < 17 ? 1 : 0.08)
+      setLevels((previous) => [...previous.slice(-63), 0.12 + syllable * 0.8])
+    }, 90)
+    return () => clearInterval(timer)
+  }, [])
+  return levels
 }
 
 const MODELS = [

@@ -1,5 +1,12 @@
 import { contrastRatio, parseOklch, toHex } from './color'
-import { formatCount, formatDuration, formatNumber, pluralRu } from './format'
+import {
+  formatBytes,
+  formatClock,
+  formatCount,
+  formatDuration,
+  formatNumber,
+  pluralRu,
+} from './format'
 
 describe('format', () => {
   it('склоняет по числу', () => {
@@ -19,6 +26,16 @@ describe('format', () => {
     expect(formatNumber(12345).replace(/\s/g, ' ')).toBe('12 345')
     expect(formatDuration(12_400)).toBe('12\u00a0с')
     expect(formatDuration(65_000)).toBe('1\u00a0мин 05\u00a0с')
+  })
+
+  it('пишет длительность записи и размер файла', () => {
+    expect(formatClock(7)).toBe('0:07')
+    expect(formatClock(142.6)).toBe('2:22')
+    expect(formatClock(3725)).toBe('1:02:05')
+    expect(formatBytes(812)).toBe('812\u00a0Б')
+    expect(formatBytes(1331)).toBe('1,3\u00a0КБ')
+    expect(formatBytes(48 * 1024)).toBe('48\u00a0КБ')
+    expect(formatBytes(1.4 * 1024 * 1024)).toBe('1,4\u00a0МБ')
   })
 })
 

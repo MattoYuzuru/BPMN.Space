@@ -46,6 +46,21 @@ test('новый пустой проект: онбординг и текстов
   await expect(page.getByRole('button', { name: 'Анализ', exact: true })).toBeEnabled()
 })
 
+test('диалог создания проекта показывает форму целиком', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/projects')
+  await page.getByRole('button', { name: 'Новый проект' }).click()
+
+  const dialog = page.getByRole('dialog', { name: 'Новый проект' })
+  await expect(dialog.getByRole('textbox', { name: 'Название' })).toBeInViewport()
+  await expect(dialog.getByRole('textbox', { name: 'Описание' })).toBeInViewport()
+  await expect(dialog.getByRole('button', { name: 'Создать проект' })).toBeInViewport()
+
+  const bounds = await dialog.boundingBox()
+  expect(bounds?.height).toBeGreaterThan(300)
+  expect(bounds?.height).toBeLessThan(800)
+})
+
 test('источник открывается с подсветкой цитаты из вопроса', async ({ page }) => {
   await page.goto(`/projects/${DEMO_PROJECT_ID}`)
   const quote = page.locator('[data-question="Q-4"]').getByRole('link').first()

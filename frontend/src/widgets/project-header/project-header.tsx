@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
-import { isRunning, PROJECT_STATUS, useRenameProject } from '@/entities/project'
+import { isRunning, projectStatusView, useRenameProject } from '@/entities/project'
 import { useRunView, useStartRun } from '@/entities/run'
 import { VERSION_ORIGIN, versionLabel, versionsQueryOptions } from '@/entities/version'
 import { EXPORT_FORMATS, exportDiagram } from '@/features/export-diagram/export'
@@ -30,7 +30,7 @@ export function ProjectHeader() {
   const { project } = useWorkspace()
   const run = useRunView(project.id)
   const running = isRunning(project.status) || run?.status === 'running'
-  const status = PROJECT_STATUS[project.status]
+  const status = projectStatusView(project)
 
   return (
     <AppHeader

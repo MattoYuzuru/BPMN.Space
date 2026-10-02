@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { projectsInfiniteOptions } from '@/entities/project'
-import { ProjectsScreen, ProjectsScreenSkeleton } from '@/widgets/projects-grid/projects-screen'
+import { ProjectsScreen } from '@/widgets/projects-grid/projects-screen'
+import { ProjectsScreenSkeleton } from '@/widgets/skeletons/screen-skeletons'
 
 interface ProjectsSearch {
   q?: string

@@ -7,9 +7,12 @@ import { useGridColumns, useLoadMore } from '@/shared/hooks/use-load-more'
 import { formatCount } from '@/shared/lib/format'
 import { listItem, staggerDelay } from '@/shared/lib/motion'
 import { Button, EmptyState } from '@/shared/ui'
-import { ProjectCard, ProjectCardSkeleton } from './project-card'
-
-const GRID = 'grid grid-cols-1 gap-3 @2xl:grid-cols-2 @5xl:grid-cols-3 @7xl:grid-cols-4 wide:gap-4'
+import {
+  PROJECTS_GRID as GRID,
+  ProjectCardSkeleton,
+  ProjectsGridSkeleton,
+} from '@/widgets/skeletons/screen-skeletons'
+import { ProjectCard } from './project-card'
 
 export interface ProjectsGridProps {
   query: string
@@ -112,18 +115,5 @@ export function ProjectsGrid({ query, onResetQuery }: ProjectsGridProps) {
         </p>
       )}
     </section>
-  )
-}
-
-export function ProjectsGridSkeleton() {
-  return (
-    <div className="@container" aria-busy="true">
-      <div className={GRID}>
-        {Array.from({ length: 8 }, (_, index) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: заглушки без идентичности
-          <ProjectCardSkeleton key={index} />
-        ))}
-      </div>
-    </div>
   )
 }

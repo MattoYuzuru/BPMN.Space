@@ -34,7 +34,7 @@ export function AudioLevel({
       aria-valuemax={100}
       aria-valuenow={Math.round(peak * 100)}
       className={cn(
-        'flex h-14 items-center gap-0.5 transition-colors duration-slow ease-soft',
+        'flex h-14 items-center justify-center gap-1 transition-colors duration-slow ease-soft',
         active ? 'text-accent' : 'text-fg-subtle',
         className,
       )}
@@ -44,7 +44,7 @@ export function AudioLevel({
           // biome-ignore lint/suspicious/noArrayIndexKey: полосы — позиции, а не сущности
           key={index}
           aria-hidden="true"
-          className="h-full min-w-0.5 flex-1 rounded-full bg-current opacity-90 transition-transform duration-fast ease-soft motion-reduce:transition-none"
+          className="h-full w-1 shrink-0 rounded-full bg-current transition-transform duration-fast ease-soft motion-reduce:transition-none"
           style={{ transform: `scaleY(${Math.max(0.06, Math.min(1, level))})` }}
         />
       ))}

@@ -4,7 +4,8 @@ import { projectQueryOptions } from '@/entities/project'
 import { versionDetailOptions } from '@/entities/version'
 import { preloadDiagramEditor } from '@/widgets/diagram-editor'
 import { RouteErrorScreen } from '@/widgets/route-states/route-states'
-import { Workspace, type WorkspaceSearch, WorkspaceSkeleton } from '@/widgets/workspace/workspace'
+import { WorkspaceSkeleton } from '@/widgets/skeletons/screen-skeletons'
+import { Workspace, type WorkspaceSearch } from '@/widgets/workspace/workspace'
 
 const optional = (value: unknown) => (typeof value === 'string' && value ? value : undefined)
 

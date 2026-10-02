@@ -13,6 +13,7 @@ export function DiagramEmpty() {
   const { project } = useWorkspace()
   const start = useStartRun(project.id)
   const running = isRunning(project.status)
+  const building = project.status === 'building'
 
   if (project.sources.length === 0) return <Onboarding />
 
@@ -20,18 +21,19 @@ export function DiagramEmpty() {
     <EmptyState
       className="h-full"
       icon="diagram"
-      title={running ? 'Схема собирается' : 'Схемы пока нет'}
+      title={building ? 'Схема собирается' : 'Схемы пока нет'}
       description={
-        running
-          ? 'Ход прогона — над холстом. Схема появится здесь автоматически.'
+        building
+          ? 'Схема появится здесь, как только прогон дойдёт до раскладки.'
           : 'Постройте её сейчас: на неотвеченные вопросы модель примет допущения и подсветит их на схеме.'
       }
       action={
-        running ? undefined : (
+        building ? undefined : (
           <>
             <Button
               variant="primary"
               leadingIcon="diagram"
+              disabled={running}
               loading={start.isPending && start.variables === 'build'}
               onClick={() => start.mutate('build')}
             >
@@ -40,6 +42,7 @@ export function DiagramEmpty() {
             {project.questions.length === 0 && (
               <Button
                 leadingIcon="sparkles"
+                disabled={running}
                 loading={start.isPending && start.variables === 'analyze'}
                 onClick={() => start.mutate('analyze')}
               >

@@ -14,6 +14,20 @@ export const PROJECT_STATUS: Record<
   building: { label: 'Строится схема', tone: 'accent', icon: 'diagram' },
 }
 
+/**
+ * Статус для карточки и шапки. Бэкенд считает проект без открытых вопросов «готовым», даже
+ * если схему ещё не строили, — тогда честнее сказать «Можно строить».
+ */
+export function projectStatusView(project: {
+  status: ProjectStatus
+  counts: { versions: number }
+}): { label: string; tone: BadgeTone; icon: IconName } {
+  if (project.status === 'ready' && project.counts.versions === 0) {
+    return { label: 'Можно строить схему', tone: 'neutral', icon: 'diagram' }
+  }
+  return PROJECT_STATUS[project.status]
+}
+
 /** Идёт ли по проекту прогон (кнопки запуска недоступны, правка схемы — только после). */
 export function isRunning(status: ProjectStatus): boolean {
   return status === 'analyzing' || status === 'building'

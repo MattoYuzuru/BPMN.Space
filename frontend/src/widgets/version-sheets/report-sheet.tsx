@@ -170,13 +170,15 @@ function Report({ version }: { version: VersionDetail }) {
         )}
       </Section>
 
-      <Section title="Изменения к прошлой версии" icon="compare">
-        <div className="grid grid-cols-3 gap-2">
-          <DiffStat label="Добавлено" value={diff.added} tone="success" icon="plus" />
-          <DiffStat label="Удалено" value={diff.removed} tone="danger" icon="minus" />
-          <DiffStat label="Изменено" value={diff.changed} tone="amber" icon="pencil" />
-        </div>
-      </Section>
+      {version.number > 1 && (
+        <Section title={`Изменения к версии ${version.number - 1}`} icon="compare">
+          <div className="grid grid-cols-3 gap-2">
+            <DiffStat label="Добавлено" value={diff.added} tone="success" icon="plus" />
+            <DiffStat label="Удалено" value={diff.removed} tone="danger" icon="minus" />
+            <DiffStat label="Изменено" value={diff.changed} tone="amber" icon="pencil" />
+          </div>
+        </Section>
+      )}
 
       <Section title="Скачать" icon="download">
         <div className="flex flex-wrap gap-2">

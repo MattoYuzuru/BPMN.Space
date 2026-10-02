@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
-import { PROJECT_STATUS, type Project, useDeleteProject } from '@/entities/project'
+import { type Project, projectStatusView, useDeleteProject } from '@/entities/project'
 import { formatRelative } from '@/shared/lib/format'
 import {
   Badge,
@@ -13,7 +13,6 @@ import {
   DropdownMenuTrigger,
   Icon,
   IconButton,
-  Skeleton,
   Tag,
   Tooltip,
 } from '@/shared/ui'
@@ -22,7 +21,7 @@ const MAX_LANES = 3
 
 /** Карточка проекта в списке: статус, дорожки, вопросы, версии и когда менялся. */
 export function ProjectCard({ project }: { project: Project }) {
-  const status = PROJECT_STATUS[project.status]
+  const status = projectStatusView(project)
   const lanes = project.lanes.slice(0, MAX_LANES)
   const extraLanes = project.lanes.length - lanes.length
   const { counts } = project
@@ -164,28 +163,5 @@ function ProjectMenu({ project }: { project: Project }) {
         onConfirm={() => remove.mutate(project.id)}
       />
     </>
-  )
-}
-
-/** Заглушка карточки той же высоты, что и настоящая. */
-export function ProjectCardSkeleton() {
-  return (
-    <div className="flex h-full min-h-52 flex-col rounded-lg border border-border bg-surface">
-      <div className="flex flex-1 flex-col gap-3 p-4">
-        <Skeleton className="h-5 w-24" />
-        <Skeleton className="h-4 w-4/5" />
-        <Skeleton className="h-3 w-3/5" />
-        <div className="mt-auto flex gap-1.5">
-          <Skeleton className="h-6 w-20" />
-          <Skeleton className="h-6 w-28" />
-        </div>
-      </div>
-      <div className="flex gap-3 border-t border-border px-4 py-3">
-        <Skeleton className="h-3 w-8" />
-        <Skeleton className="h-3 w-8" />
-        <Skeleton className="h-3 w-8" />
-        <Skeleton className="ml-auto h-3 w-20" />
-      </div>
-    </div>
   )
 }

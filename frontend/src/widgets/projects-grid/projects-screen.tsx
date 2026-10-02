@@ -5,9 +5,9 @@ import { useCreateProjectDialog } from '@/features/create-project/model'
 import { useDebouncedValue } from '@/shared/hooks/use-debounced'
 import { useHotkey } from '@/shared/hooks/use-hotkey'
 import { formatNumber } from '@/shared/lib/format'
-import { Button, IconButton, Input, Kbd, Skeleton } from '@/shared/ui'
+import { Button, IconButton, Input, Kbd } from '@/shared/ui'
 import { AppHeader } from '@/widgets/app-header/app-header'
-import { ProjectsGrid, ProjectsGridSkeleton } from './projects-grid'
+import { ProjectsGrid } from './projects-grid'
 
 const SEARCH_DEBOUNCE_MS = 250
 
@@ -90,21 +90,6 @@ export function ProjectsScreen({ query, onQueryChange }: ProjectsScreenProps) {
           </div>
         </div>
         <ProjectsGrid query={query} onResetQuery={() => setDraft('')} />
-      </main>
-    </div>
-  )
-}
-
-export function ProjectsScreenSkeleton() {
-  return (
-    <div className="flex min-h-dvh flex-col bg-bg">
-      <AppHeader />
-      <main className="mx-auto flex w-full max-w-[100rem] flex-1 flex-col gap-6 px-6 pt-8 pb-16 wide:px-10 wide:pt-10">
-        <div className="flex items-end justify-between">
-          <Skeleton className="h-8 w-40" />
-          <Skeleton className="h-8 w-64" />
-        </div>
-        <ProjectsGridSkeleton />
       </main>
     </div>
   )

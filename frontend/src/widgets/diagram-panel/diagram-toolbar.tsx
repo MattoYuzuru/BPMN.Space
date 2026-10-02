@@ -61,22 +61,20 @@ export function DiagramToolbar({
     <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border bg-surface px-2.5">
       <div className="flex min-w-0 flex-1 items-center gap-2">
         {version && origin && (
-          <>
-            <Tooltip content="История версий" side="bottom">
-              <Button
-                variant="ghost"
-                size="sm"
-                leadingIcon={origin.icon}
-                onClick={() => setSheet('versions')}
-                className="text-fg-muted"
-              >
-                {origin.label}
-                <span className="font-normal text-fg-subtle" data-numeric>
-                  {formatRelative(new Date(version.created_at))}
-                </span>
-              </Button>
-            </Tooltip>
-          </>
+          <Tooltip content="История версий" side="bottom">
+            <Button
+              variant="ghost"
+              size="sm"
+              leadingIcon={origin.icon}
+              onClick={() => setSheet('versions')}
+              className="text-fg-muted"
+            >
+              {origin.label}
+              <span className="font-normal text-fg-subtle" data-numeric>
+                {formatRelative(new Date(version.created_at))}
+              </span>
+            </Button>
+          </Tooltip>
         )}
         {!isLatest && (
           <>

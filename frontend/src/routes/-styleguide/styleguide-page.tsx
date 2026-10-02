@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { ThemeSwitch } from '@/features/theme-switch/theme-switch'
 import { cn } from '@/shared/lib/cn'
@@ -86,15 +87,19 @@ export function StyleguidePage() {
   return (
     <div className="flex min-h-dvh">
       <aside className="sticky top-0 flex h-dvh w-60 shrink-0 flex-col border-r border-border bg-bg-subtle wide:w-64">
-        <div className="flex h-14 items-center gap-2.5 border-b border-border px-5">
+        <Link
+          to="/"
+          aria-label="На главную — Архитектор"
+          className="flex h-14 items-center gap-2.5 border-b border-border px-5 no-underline transition-colors hover:bg-hover"
+        >
           <span className="grid size-7 place-items-center rounded-md bg-accent text-fg-on-accent shadow-xs">
             <Icon name="diagram" />
           </span>
-          <div className="flex flex-col">
+          <span className="flex flex-col">
             <span className="type-subheading text-fg">Архитектор</span>
             <span className="type-caption text-fg-subtle">Дизайн-система</span>
-          </div>
-        </div>
+          </span>
+        </Link>
         <ScrollArea className="flex-1">
           <nav aria-label="Разделы стайлгайда" className="flex flex-col gap-5 px-3 py-5">
             {NAV.map((group) => (
@@ -128,7 +133,12 @@ export function StyleguidePage() {
       <main className="min-w-0 flex-1">
         <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-4 border-b border-border bg-bg/85 px-10 backdrop-blur-md">
           <div className="flex items-center gap-2 type-ui text-fg-muted">
-            <span>Архитектор</span>
+            <Link
+              to="/"
+              className="inline-flex items-center gap-1.5 rounded-sm text-fg-muted no-underline hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              <Icon name="home" size={14} /> Главная
+            </Link>
             <Icon name="chevron-right" size={14} className="text-fg-subtle" />
             <span className="text-fg">Дизайн-система</span>
           </div>

@@ -47,6 +47,7 @@ export {
 export { EmptyState, type EmptyStateProps } from './empty-state/empty-state'
 export { Field, type FieldProps, useFieldControl } from './field/field'
 export { dragHasFiles, FileDrop, type FileDropProps } from './file-drop/file-drop'
+export { FileInput } from './file-input/file-input'
 export { FlowLine, type FlowLineProps, type FlowLineState } from './flow-line/flow-line'
 export { GridBackdrop, type GridBackdropProps } from './grid-backdrop/grid-backdrop'
 export { Icon, type IconName, type IconProps, type IconSize, iconNames } from './icon'

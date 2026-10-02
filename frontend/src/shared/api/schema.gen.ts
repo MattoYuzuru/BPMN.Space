@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/v1/assistant/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ask About Local Draft */
+        post: operations["ask_about_local_draft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/examples": {
         parameters: {
             query?: never;
@@ -85,6 +102,23 @@ export interface paths {
         head?: never;
         /** Update Project */
         patch: operations["update_project"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/assistant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ask Assistant */
+        post: operations["ask_assistant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/projects/{project_id}/diagram": {
@@ -418,6 +452,33 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** AssistantRequest */
+        AssistantRequest: {
+            /**
+             * Diagram Xml
+             * @default
+             */
+            diagram_xml: string;
+            /** History */
+            history?: components["schemas"]["AssistantTurn"][];
+            /** Message */
+            message: string;
+        };
+        /** AssistantResponse */
+        AssistantResponse: {
+            /** Answer */
+            answer: string;
+        };
+        /** AssistantTurn */
+        AssistantTurn: {
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "assistant" | "user";
+            /** Text */
+            text: string;
+        };
         /**
          * Assumption
          * @description Элемент схемы, построенный на допущении неотвеченного вопроса.
@@ -508,6 +569,25 @@ export interface components {
          * @enum {string}
          */
         LintSeverity: "error" | "warning";
+        /** LocalAssistantRequest */
+        LocalAssistantRequest: {
+            /**
+             * Diagram Xml
+             * @default
+             */
+            diagram_xml: string;
+            /** History */
+            history?: components["schemas"]["AssistantTurn"][];
+            /** Message */
+            message: string;
+            /** Project Title */
+            project_title: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+        };
         /** Project */
         Project: {
             counts: components["schemas"]["ProjectCounts"];
@@ -1113,6 +1193,57 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    ask_about_local_draft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LocalAssistantRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Провайдер модели вернул ошибку */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Помощник не настроен */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     list_examples: {
         parameters: {
             query?: never;
@@ -1365,6 +1496,68 @@ export interface operations {
             };
             /** @description Некорректные данные */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    ask_assistant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Провайдер модели вернул ошибку */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Помощник не настроен */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

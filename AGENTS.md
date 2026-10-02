@@ -22,6 +22,7 @@
 | `docs/` | RFC, ADR, стайлгайд и архитектура фронтенда (`docs/frontend/`), бэкенда (`docs/backend/`) |
 | `scripts/` | `contract-check.sh`, `verify.sh`, `mr-report.sh`, `agent-hooks/` |
 | `compose.yaml`, `infra/caddy/` | локальный стек: `make up` → http://localhost:8080 |
+| `docs/deployment.md`, `scripts/deploy.sh` | ручной деплой проверенного commit SHA на демо-VM; GitLab CI/CD не используется |
 
 ## Команды
 
@@ -34,10 +35,14 @@ make check-fast   # линт + design-lint + типы (после каждой �
 make check        # всё: + тесты (backend cov ≥80%) + контракт + сборка (pre-push)
 make gen-api      # после изменения API: OpenAPI + TS-типы
 make fixtures     # пересобрать BPMN-фикстуры и examples/ (Node, XSD, bpmnlint)
-make e2e          # Playwright против Docker-стека
+make e2e          # Playwright против Docker-стека; E2E_BASE_URL задаёт уже запущенный стенд
 make verify       # перед MR: check + e2e + секреты → reports/verify-<sha>.md
 make mr-report    # отчёт verify комментарием в MR
+make deploy-env   # передать production-переменные из локального .env на VM по SSH
+make deploy       # задеплоить commit из main после MR и make verify
 ```
+
+Деплой: сначала прочитайте [`docs/deployment.md`](docs/deployment.md). Production выкладывается только из `origin/main` по SHA, секреты хранятся отдельно в `/opt/arkhitektor/shared/.env` на VM.
 
 ## Правила
 

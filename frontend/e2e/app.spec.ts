@@ -26,7 +26,7 @@ test('палитра команд: Ctrl+K, переход и команды пр
 })
 
 test('новый пустой проект: онбординг и текстовый источник', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/projects')
   await page.getByRole('button', { name: 'Новый проект' }).click()
   const dialog = page.getByRole('dialog', { name: 'Новый проект' })
   await dialog.getByRole('button', { name: 'Создать проект' }).click()

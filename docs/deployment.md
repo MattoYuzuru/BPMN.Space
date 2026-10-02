@@ -23,7 +23,7 @@
 
 ## Один раз: положить секреты на VM
 
-В корне локальной копии создайте `.env` из `.env.example` и добавьте ключи провайдеров. Загрузка отправляет только production-переменные по SSH в `/opt/arkhitektor/shared/.env`, выставляет права `0600` и не сохраняет секреты в релизах или Git.
+В корне локальной копии создайте `.env` из `.env.example` и добавьте ключи провайдеров. Загрузка отправляет только production-переменные по SSH в `/home/deploy/arkhitektor/shared/.env`, выставляет права `0600` и не сохраняет секреты в релизах или Git. Путь находится в домашнем каталоге `deploy`, поэтому пользователь может переключать релизы без root-прав.
 
 ```bash
 DEPLOY_HOST=<IP_VM> scripts/upload-server-env.sh
@@ -42,15 +42,15 @@ DEPLOY_HOST=<IP_VM> scripts/upload-server-env.sh
    DEPLOY_HOST=<IP_VM> scripts/deploy.sh <commit-sha>
    ```
 
-Скрипт архивирует коммит из Git, передаёт его по SSH в `/opt/arkhitektor/releases/<sha>`, собирает Compose-образы на VM и переключает `current`. Он ждёт `/health` до двух минут и при ошибке возвращает предыдущий релиз. Секретный `.env` хранится отдельно и не затрагивается. Текущий Compose пока не содержит PostgreSQL и пользовательских файлов, поэтому перед релизом прикладные данные не мигрируются.
+Скрипт архивирует коммит из Git, передаёт его по SSH в `/home/deploy/arkhitektor/releases/<sha>`, собирает Compose-образы на VM и переключает `current`. Он ждёт `/health` до двух минут и при ошибке возвращает предыдущий релиз. Секретный `.env` хранится отдельно и не затрагивается. Текущий Compose пока не содержит PostgreSQL и пользовательских файлов, поэтому перед релизом прикладные данные не мигрируются.
 
 ## Проверка и восстановление
 
 Откройте `http://<IP_VM>/`, затем проверьте главную страницу, `/health` и тестовые сценарии помощника/голосового ввода. Диагностика на VM:
 
 ```bash
-ssh deploy@<IP_VM> 'cd /opt/arkhitektor/current && docker compose --env-file /opt/arkhitektor/shared/.env -p arkhitektor -f compose.yaml -f compose.prod.yaml ps'
-ssh deploy@<IP_VM> 'cd /opt/arkhitektor/current && docker compose --env-file /opt/arkhitektor/shared/.env -p arkhitektor -f compose.yaml -f compose.prod.yaml logs --tail=100'
+ssh deploy@<IP_VM> 'cd /home/deploy/arkhitektor/current && docker compose --env-file /home/deploy/arkhitektor/shared/.env -p arkhitektor -f compose.yaml -f compose.prod.yaml ps'
+ssh deploy@<IP_VM> 'cd /home/deploy/arkhitektor/current && docker compose --env-file /home/deploy/arkhitektor/shared/.env -p arkhitektor -f compose.yaml -f compose.prod.yaml logs --tail=100'
 ```
 
 Порты 80 и 22 открыты, TLS-домен пока не настроен — HTTP подходит только для временного демо/тестирования. Не используйте production-ключи с публичным адресом без ограничений доступа; перед открытым демо добавьте домен, HTTPS и защиту от неавторизованных запросов.

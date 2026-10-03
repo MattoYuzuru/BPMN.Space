@@ -116,7 +116,7 @@
         "properties": {
           "file": {
             "contentMediaType": "application/octet-stream",
-            "description": ".txt, .md, .docx или .pdf",
+            "description": ".txt, .md, .csv, .docx или .pdf",
             "title": "File",
             "type": "string"
           },
@@ -2415,7 +2415,7 @@
     },
     "/api/v1/projects/{project_id}/sources/file": {
       "post": {
-        "description": "Документ. `.txt`/`.md` готовы сразу; `.docx`/`.pdf` приходят в `processing`\nи становятся `ready` или `failed` в фоне — обновляйте проект, пока есть `processing`.",
+        "description": "Документ. `.txt`/`.md`/`.csv` готовы сразу; `.docx`/`.pdf` приходят в `processing`\nи становятся `ready` или `failed` в фоне — обновляйте проект, пока есть `processing`.",
         "operationId": "create_file_source",
         "parameters": [
           {

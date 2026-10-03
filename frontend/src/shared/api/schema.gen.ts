@@ -190,7 +190,7 @@ export interface paths {
         put?: never;
         /**
          * Create File Source
-         * @description Документ. `.txt`/`.md` готовы сразу; `.docx`/`.pdf` приходят в `processing`
+         * @description Документ. `.txt`/`.md`/`.csv` готовы сразу; `.docx`/`.pdf` приходят в `processing`
          *     и становятся `ready` или `failed` в фоне — обновляйте проект, пока есть `processing`.
          */
         post: operations["create_file_source"];
@@ -498,7 +498,7 @@ export interface components {
         Body_create_file_source: {
             /**
              * File
-             * @description .txt, .md, .docx или .pdf
+             * @description .txt, .md, .csv, .docx или .pdf
              */
             file: string;
             /** Title */

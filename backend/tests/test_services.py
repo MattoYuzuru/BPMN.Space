@@ -150,6 +150,29 @@ async def test_questions_service_conflicts(service_container: Container) -> None
 async def test_parsers() -> None:
     parser = LocalDocumentParser()
     assert await parser.parse(file_name="a.TXT", data="Текст".encode()) == "Текст"
+    csv_text = await parser.parse(
+        file_name="roles.csv",
+        data='Роль;Описание\n"Клиент";"Подаёт заявку; прикладывает документы"\n'.encode(),
+    )
+    assert 'Строка 1: ["Роль", "Описание"]' in csv_text
+    assert 'Строка 2: ["Клиент", "Подаёт заявку; прикладывает документы"]' in csv_text
+    quoted_csv = await parser.parse(
+        file_name="quoted.csv", data='name,details\n"Роль","Строка 1\nСтрока 2, да"\n'.encode()
+    )
+    assert 'Строка 2: ["Роль", "Строка 1\\nСтрока 2, да"]' in quoted_csv
+    bom_csv = await parser.parse(file_name="bom.csv", data="\ufeffРоль,Клиент".encode())
+    assert '["Роль", "Клиент"]' in bom_csv
+    cp1251_csv = await parser.parse(file_name="roles.csv", data="Роль;Клиент".encode("cp1251"))
+    assert '["Роль", "Клиент"]' in cp1251_csv
+    with pytest.raises(DocumentParseError, match="В CSV нет данных"):
+        await parser.parse(file_name="blank.csv", data=b" \n\n  \n")
+    limited_parser = LocalDocumentParser(max_text_chars=150)
+    with pytest.raises(DocumentParseError, match="CSV после разбора превышает лимит 150 символов"):
+        await limited_parser.parse(file_name="large.csv", data=b"a,b\n" + b"x,y\n" * 10)
+    with pytest.raises(DocumentParseError, match="кавычки и разделители"):
+        await parser.parse(file_name="broken.csv", data=b'role,description\n"unfinished')
+    with pytest.raises(DocumentParseError, match="бинарные данные"):
+        await parser.parse(file_name="binary.csv", data=b"role\x00name")
     with pytest.raises(UnsupportedFormatError):
         await parser.parse(file_name="a.doc", data=b"x")
     with pytest.raises(UnsupportedFormatError):

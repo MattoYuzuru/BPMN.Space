@@ -33,7 +33,7 @@ flowchart TB
 | Репозитории проектов, источников, вопросов, прогонов, версий и вызовов модели | `infra/repositories/base.py` | `memory.py` — тестовый режим | `infra/repositories/sql.py`: SQLAlchemy 2 + Alembic, Postgres 16 |
 | `ProcessPipeline` (анализ + структура) | `llm/base.py` | `llm/mock.py`: правила из `fixtures/playbook.py` срабатывают по цитатам в источниках | #5: Pydantic AI, IR → ProcessGraph → XML, repair |
 | `SpeechToText` | `ingest/stt.py` | ждёт ~1 с, отдаёт правдоподобную расшифровку | #6: Yandex SpeechKit + ffmpeg |
-| `DocumentParser` | `ingest/parsers.py` | `.txt`/`.md` — напрямую; `.docx` — упрощённо (абзацы); `.pdf` — pypdf по страницам, сканы без текстового слоя получают ошибку | #6: python-docx; OCR через Yandex Vision — P2 |
+| `DocumentParser` | `ingest/parsers.py` | `.txt`/`.md` — напрямую; `.csv` — построчно с сохранением ячеек, до 40 000 символов контекста; `.docx` — упрощённо (абзацы); `.pdf` — pypdf по страницам, сканы без текстового слоя получают ошибку | OCR через Yandex Vision — P2 |
 | `BpmnTools` (layout, lint) | `infra/bpmn_tools.py` | раскладку не делает (схемы уже с DI), линтер — `domain/bpmn/lint.py` | #6: HTTP-клиент к Node-сервису bpmn-tools |
 | XSD-проверка | `domain/bpmn/xsd.py` | только корректность XML и корень `bpmn:definitions` | #5: lxml + `domain/bpmn/xsd/*.xsd` |
 | `RunEventBus` | `infra/events.py` | in-process журнал событий прогона | остаётся (один backend); итог завершённого прогона синтезируется из БД после рестарта |

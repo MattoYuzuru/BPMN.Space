@@ -10,6 +10,7 @@ from urllib.request import Request, urlopen
 from uuid import UUID
 
 from app.domain.analysis import (
+    MAX_SOURCE_TEXT_CHARS,
     AnalysisResult,
     ContextSource,
     DiagramDraft,
@@ -304,7 +305,11 @@ class DeepSeekPipeline:
 def _source_payload(sources: list[ContextSource]) -> list[dict[str, str]]:
     # Не передаём истории вопросов, секреты и технические данные пользователя провайдеру.
     return [
-        {"id": str(source.id), "title": source.title[:200], "text": source.content[:40_000]}
+        {
+            "id": str(source.id),
+            "title": source.title[:200],
+            "text": source.content[:MAX_SOURCE_TEXT_CHARS],
+        }
         for source in sources
     ]
 

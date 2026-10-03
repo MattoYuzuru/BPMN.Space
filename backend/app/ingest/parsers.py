@@ -1,11 +1,14 @@
 """Извлечение текста из загруженных документов (RFC §5.2).
 
-`.txt`/`.md` читаются напрямую; `.docx` — упрощённо (абзацы без таблиц и колонтитулов);
+`.txt`/`.md` читаются напрямую, `.csv` разбирается построчно; `.docx` — упрощённо
+(абзацы без таблиц и колонтитулов);
 `.pdf` — через pypdf с номерами страниц. Для PDF без текстового слоя нужен OCR.
 """
 
 import asyncio
+import csv
 import io
+import json
 import zipfile
 from enum import StrEnum
 from typing import Protocol
@@ -16,6 +19,8 @@ from defusedxml.ElementTree import fromstring
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
+from app.domain.analysis import MAX_SOURCE_TEXT_CHARS
+
 _WORD_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 _MAX_DOCX_XML_BYTES = 20 * 1024 * 1024
 
@@ -23,6 +28,7 @@ _MAX_DOCX_XML_BYTES = 20 * 1024 * 1024
 class DocumentFormat(StrEnum):
     TXT = "txt"
     MD = "md"
+    CSV = "csv"
     DOCX = "docx"
     PDF = "pdf"
 
@@ -83,6 +89,46 @@ def _docx_text(data: bytes) -> str:
     return "\n".join(paragraphs)
 
 
+def _csv_text(data: bytes, *, max_chars: int) -> str:
+    """Представляет ячейки CSV компактными JSON-массивами, сохраняя их порядок и значения."""
+    text = decode_text(data)
+    if "\x00" in text:
+        raise DocumentParseError("Не удалось прочитать CSV: файл содержит бинарные данные")
+
+    sample = text[:65_536]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+    except csv.Error:
+        dialect = csv.excel
+
+    lines = [
+        "CSV-таблица. Каждая строка ниже — JSON-массив ячеек в исходном порядке. "
+        "Первая строка может содержать заголовки."
+    ]
+    content_chars = len(lines[0])
+    has_data = False
+    try:
+        reader = csv.reader(io.StringIO(text, newline=""), dialect, strict=True)
+        for index, row in enumerate(reader, 1):
+            has_data = has_data or any(cell.strip() for cell in row)
+            line = f"Строка {index}: {json.dumps(row, ensure_ascii=False)}"
+            content_chars += len(line) + 1
+            if content_chars > max_chars:
+                raise DocumentParseError(
+                    f"CSV после разбора превышает лимит {max_chars} символов. "
+                    "Разделите файл на части и загрузите их отдельно"
+                )
+            lines.append(line)
+    except csv.Error as error:
+        raise DocumentParseError(
+            "Не удалось прочитать CSV: проверьте кавычки и разделители"
+        ) from error
+
+    if not has_data:
+        raise DocumentParseError("В CSV нет данных")
+    return "\n".join(lines)
+
+
 def _pdf_text(data: bytes) -> str:
     """Извлекает только текст PDF и сохраняет границы страниц для ссылок на цитаты."""
     try:
@@ -109,10 +155,15 @@ def _pdf_text(data: bytes) -> str:
 
 
 class LocalDocumentParser:
+    def __init__(self, *, max_text_chars: int = MAX_SOURCE_TEXT_CHARS) -> None:
+        self._max_text_chars = max_text_chars
+
     async def parse(self, *, file_name: str, data: bytes) -> str:
         fmt = detect_format(file_name)
         if fmt in {DocumentFormat.TXT, DocumentFormat.MD}:
             text = decode_text(data)
+        elif fmt is DocumentFormat.CSV:
+            text = _csv_text(data, max_chars=self._max_text_chars)
         elif fmt is DocumentFormat.DOCX:
             text = _docx_text(data)
         else:

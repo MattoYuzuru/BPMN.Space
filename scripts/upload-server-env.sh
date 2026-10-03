@@ -32,7 +32,12 @@ set +a
 
 : "${DEEPSEEK_API_KEY:?В .env не задан DEEPSEEK_API_KEY}"
 : "${DEEPGRAM_API_KEY:?В .env не задан DEEPGRAM_API_KEY}"
-for key in "$DEEPSEEK_API_KEY" "$DEEPGRAM_API_KEY"; do
+: "${POSTGRES_PASSWORD:?В .env задайте отдельный POSTGRES_PASSWORD для production PostgreSQL}"
+if [[ "$POSTGRES_PASSWORD" == "local-dev-only" || ${#POSTGRES_PASSWORD} -lt 32 ]]; then
+  echo "POSTGRES_PASSWORD должен быть production-секретом длиной не менее 32 символов." >&2
+  exit 1
+fi
+for key in "$DEEPSEEK_API_KEY" "$DEEPGRAM_API_KEY" "$POSTGRES_PASSWORD"; do
   if [[ ! "$key" =~ ^[A-Za-z0-9_-]+$ ]]; then
     echo "Ключ содержит символы, требующие ручной настройки; файл на сервер не загружен." >&2
     exit 1
@@ -51,6 +56,9 @@ DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
 DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-flash}
 STT_PROVIDER=deepgram
 DEEPGRAM_API_KEY=$DEEPGRAM_API_KEY
+POSTGRES_DB=${POSTGRES_DB:-arkhitektor}
+POSTGRES_USER=${POSTGRES_USER:-arkhitektor}
+POSTGRES_PASSWORD=$POSTGRES_PASSWORD
 EOF
 
 ssh "$deploy_user@$deploy_host" "umask 077; install -d -m 0750 '$remote_root/shared'; cat > '$remote_root/shared/.env.new' && chmod 0600 '$remote_root/shared/.env.new' && mv '$remote_root/shared/.env.new' '$remote_root/shared/.env'" <"$temporary_file"

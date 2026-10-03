@@ -12,7 +12,7 @@ from uuid import uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import Table, select, text
+from sqlalchemy import Table, inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.domain.models import (
@@ -28,10 +28,19 @@ from app.domain.models import (
 from app.fixtures import read_bpmn
 from app.fixtures.playbook import PLAYBOOK
 from app.infra.bpmn_tools import MockBpmnTools
-from app.infra.db_models import Base, LlmCallRow, RunRow, SourceRow
+from app.infra.database import Database
+from app.infra.db_models import (
+    Base,
+    DiagramVersionRow,
+    LlmCallRow,
+    QuestionRow,
+    RunRow,
+    SourceRow,
+)
 from app.infra.events import InMemoryRunEventBus
 from app.infra.repositories.base import ActiveRunConflictError
 from app.infra.repositories.sql import SqlRunRepository, SqlStore
+from app.infra.seed import DEMO_PROJECT_ID, build_seed
 from app.infra.storage import LocalFileStorage
 from app.infra.tasks import AsyncioTaskSpawner
 from app.llm.mock import MockPipeline
@@ -90,6 +99,57 @@ def test_postgres_schema_has_domain_tables_and_active_run_constraint() -> None:
     assert active_run_index.unique
     assert "queued" in str(active_run_index.dialect_options["postgresql"]["where"])
     assert "running" in str(active_run_index.dialect_options["postgresql"]["where"])
+
+    question_table = cast(Table, QuestionRow.__table__)
+    version_table = cast(Table, DiagramVersionRow.__table__)
+    question_constraints = {constraint.name for constraint in question_table.constraints}
+    version_constraints = {constraint.name for constraint in version_table.constraints}
+    run_foreign_keys = {foreign_key.name for foreign_key in RunRow.__table__.foreign_keys}
+    assert "uq_questions_answer_source_id" in question_constraints
+    assert "uq_versions_run_id" in version_constraints
+    assert "fk_runs_version_id_diagram_versions" in run_foreign_keys
+
+
+@pytest.mark.asyncio
+async def test_postgres_migration_installs_one_to_one_constraints(sql_store) -> None:
+    _, sessions = sql_store
+    async with sessions() as session:
+        connection = await session.connection()
+
+        def constraints(sync_connection):
+            inspector = inspect(sync_connection)
+            return (
+                {item["name"] for item in inspector.get_unique_constraints("questions")},
+                {item["name"] for item in inspector.get_unique_constraints("diagram_versions")},
+                {item["name"] for item in inspector.get_foreign_keys("runs")},
+            )
+
+        questions, versions, runs = await connection.run_sync(constraints)
+    assert "uq_questions_answer_source_id" in questions
+    assert "uq_versions_run_id" in versions
+    assert "fk_runs_version_id_diagram_versions" in runs
+
+
+@pytest.mark.asyncio
+async def test_database_seed_persists_linked_runs_and_versions(sql_store) -> None:
+    store, _ = sql_store
+    database = Database(os.environ["TEST_DATABASE_URL"])
+    database.store = store
+    try:
+        await database.seed(build_seed)
+        await database.seed(build_seed)
+        repos = store.repositories()
+        seeded = build_seed()
+        linked_run = next(run for run in seeded.runs if run.version_id is not None)
+        restored_run = await repos.runs.get(linked_run.id)
+        restored_version = await repos.versions.get(linked_run.version_id)
+        assert restored_run is not None
+        assert restored_run.version_id == linked_run.version_id
+        assert restored_version is not None
+        assert restored_version.run_id == linked_run.id
+        assert await repos.projects.get(DEMO_PROJECT_ID) is not None
+    finally:
+        await database.dispose()
 
 
 @pytest.mark.asyncio

@@ -14,7 +14,7 @@ export const SOURCE_KIND: Record<SourceKind, { label: string; icon: IconName }> 
 }
 
 /** Форматы, которые принимает бэкенд (`POST /sources/file`). */
-export const ACCEPTED_FILES = ['.txt', '.md', '.docx', '.pdf'] as const
+export const ACCEPTED_FILES = ['.txt', '.md', '.csv', '.docx', '.pdf'] as const
 
 export function isAcceptedFile(name: string): boolean {
   const lower = name.toLowerCase()

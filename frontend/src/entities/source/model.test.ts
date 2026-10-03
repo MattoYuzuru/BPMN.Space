@@ -47,6 +47,7 @@ describe('метаданные источника', () => {
   it('принимает только поддерживаемые форматы', () => {
     expect(isAcceptedFile('Финансы.DOCX')).toBe(true)
     expect(isAcceptedFile('notes.md')).toBe(true)
+    expect(isAcceptedFile('roles.CSV')).toBe(true)
     expect(isAcceptedFile('scan.png')).toBe(false)
   })
 })

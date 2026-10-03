@@ -68,6 +68,33 @@ def test_markdown_file_is_ready_immediately(client: TestClient) -> None:
     assert cp1251["content"] == "Проверка"
 
 
+def test_csv_file_is_parsed_and_saved_as_a_regular_source(client: TestClient) -> None:
+    project_id = create_project(client)
+    data = 'Роль;Ответственность\n"Клиент";"Подаёт заявку; прикладывает документы"\n'.encode()
+    status, source = _upload(client, project_id, "roles.csv", data, "text/csv")
+
+    assert status == 201
+    assert source["kind"] == "file"
+    assert source["status"] == "ready"
+    content = str(source["content"])
+    assert content.startswith("CSV-таблица.")
+    assert 'Строка 2: ["Клиент", "Подаёт заявку; прикладывает документы"]' in content
+    detail = client.get(f"{API}/projects/{project_id}").json()
+    assert detail["sources"][0]["content"] == source["content"]
+
+
+def test_parsed_file_over_text_limit_fails_instead_of_silently_truncating(
+    client: TestClient, container: Container
+) -> None:
+    project_id = create_project(client)
+    container.sources._max_text = 60
+    status, source = _upload(client, project_id, "large.csv", b"a,b\n" + b"x,y\n" * 10, "text/csv")
+
+    assert status == 201
+    assert source["status"] == "failed"
+    assert "превышает лимит 60 символов" in str(source["error"])
+
+
 def test_docx_from_examples_is_parsed_in_background(client: TestClient) -> None:
     project_id = create_project(client)
     data = (EXAMPLES / "tp861" / "input" / "project-finances.docx").read_bytes()
@@ -93,8 +120,8 @@ def test_pdf_and_broken_docx(client: TestClient) -> None:
     sources = {
         s["file_name"]: s for s in client.get(f"{API}/projects/{project_id}").json()["sources"]
     }
-    assert sources["Приказ.pdf"]["status"] == "ready"
-    assert sources["Приказ.pdf"]["content"].startswith("Приказ\n\n")
+    assert sources["Приказ.pdf"]["status"] == "failed"
+    assert "Не удалось прочитать PDF" in sources["Приказ.pdf"]["error"]
     assert sources["broken.docx"]["status"] == "failed"
     assert sources["broken.docx"]["error"] == "Не удалось прочитать .docx: файл повреждён"
 

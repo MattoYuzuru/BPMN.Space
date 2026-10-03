@@ -115,7 +115,7 @@ export function SourcesPanel({ onCollapse }: { onCollapse: () => void }) {
             multiple
             onFiles={upload}
             title="Перетащите документ"
-            hint=".txt, .md, .docx, .pdf"
+            hint=".txt, .md, .csv, .docx, .pdf"
             className="mx-1"
           />
         </div>
@@ -130,7 +130,7 @@ export function SourcesPanel({ onCollapse }: { onCollapse: () => void }) {
             upload(files)
           }}
           title="Отпустите, чтобы загрузить"
-          hint=".txt, .md, .docx, .pdf"
+          hint=".txt, .md, .csv, .docx, .pdf"
           className="absolute inset-2 z-10 animate-fade-in border-accent bg-accent-subtle/90 backdrop-blur-sm"
         />
       )}

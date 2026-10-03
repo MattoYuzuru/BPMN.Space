@@ -41,10 +41,10 @@ async def create_file_source(
     project_id: UUID,
     container: ContainerDep,
     background: BackgroundTasks,
-    file: Annotated[UploadFile, File(description=".txt, .md, .docx или .pdf")],
+    file: Annotated[UploadFile, File(description=".txt, .md, .csv, .docx или .pdf")],
     title: Annotated[str | None, Form(max_length=200)] = None,
 ) -> Source:
-    """Документ. `.txt`/`.md` готовы сразу; `.docx`/`.pdf` приходят в `processing`
+    """Документ. `.txt`/`.md`/`.csv` готовы сразу; `.docx`/`.pdf` приходят в `processing`
     и становятся `ready` или `failed` в фоне — обновляйте проект, пока есть `processing`."""
     data = await file.read()
     source, slow = await container.sources.create_file(

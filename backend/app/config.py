@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     deepseek_api_key: str | None = None
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-flash"
+    deepseek_timeout_sec: float = 120.0
+    deepseek_thinking_enabled: bool = False
     stt_provider: str = "mock"
     deepgram_api_key: str | None = None
 

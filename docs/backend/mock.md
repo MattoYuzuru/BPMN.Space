@@ -33,7 +33,7 @@ flowchart TB
 | Репозитории проектов, источников, вопросов, прогонов, версий и вызовов модели | `infra/repositories/base.py` | `memory.py` — тестовый режим | `infra/repositories/sql.py`: SQLAlchemy 2 + Alembic, Postgres 16 |
 | `ProcessPipeline` (анализ + структура) | `llm/base.py` | `llm/mock.py`: правила из `fixtures/playbook.py` срабатывают по цитатам в источниках | #5: Pydantic AI, IR → ProcessGraph → XML, repair |
 | `SpeechToText` | `ingest/stt.py` | ждёт ~1 с, отдаёт правдоподобную расшифровку | #6: Yandex SpeechKit + ffmpeg |
-| `DocumentParser` | `ingest/parsers.py` | `.txt`/`.md` — по-настоящему; `.docx` — упрощённо (абзацы); `.pdf` — текст-заглушка | #6: python-docx, pypdf |
+| `DocumentParser` | `ingest/parsers.py` | `.txt`/`.md` — напрямую; `.csv` — построчно с сохранением ячеек, до 40 000 символов контекста; `.docx` — упрощённо (абзацы); `.pdf` — pypdf по страницам, сканы без текстового слоя получают ошибку | OCR через Yandex Vision — P2 |
 | `BpmnTools` (layout, lint) | `infra/bpmn_tools.py` | раскладку не делает (схемы уже с DI), линтер — `domain/bpmn/lint.py` | #6: HTTP-клиент к Node-сервису bpmn-tools |
 | XSD-проверка | `domain/bpmn/xsd.py` | только корректность XML и корень `bpmn:definitions` | #5: lxml + `domain/bpmn/xsd/*.xsd` |
 | `RunEventBus` | `infra/events.py` | in-process журнал событий прогона | остаётся (один backend); итог завершённого прогона синтезируется из БД после рестарта |
@@ -95,7 +95,7 @@ Mock-модель (`llm/mock.py`) детерминирована и зависи
 
 ### #6 — хранение, ingest, bpmn-tools
 
-1. `ingest/parsers.py`: python-docx и pypdf вместо `_docx_text` и `_pdf_placeholder`; лимиты — в config.
+1. `ingest/parsers.py`: добавить python-docx вместо упрощённого `_docx_text`; PDF уже извлекается через pypdf, лимит текста задаётся в config.
 2. `ingest/stt.py`: класс `YandexSpeechToText` с тем же `transcribe`; ffmpeg в образе.
 3. `infra/bpmn_tools.py`: `HttpBpmnTools` (`/layout`, `/lint`), URL — в `config.py`.
 4. Результаты `analysis`, отчёт, модель и задержка прогона сохраняются в БД; вызовы этапов

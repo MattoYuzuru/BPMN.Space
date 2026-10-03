@@ -5,7 +5,9 @@ WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv PATH="/opt/venv/bin:$PATH"
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
-# app/ включает фикстуры mock-а: app/fixtures (тексты, .bpmn) и app/domain/bpmn/xsd
+# Alembic запускается приложением при старте; app/ включает фикстуры и XSD.
+COPY alembic.ini ./
+COPY migrations ./migrations
 COPY app ./app
 EXPOSE 8000
 HEALTHCHECK --interval=5s --timeout=3s --retries=10 \

@@ -1,11 +1,11 @@
-# Mock-бэкенд (#2): что заглушено и как заменить
+# Backend: что уже работает и что остаётся заменить
 
 Бэкенд уже в финальной структуре слоёв (RFC §5.6), контракт API — настоящий: из Pydantic-схем
 генерируются `docs/api/openapi.json` и `frontend/src/shared/api/schema.gen.ts`. Заглушки стоят
 за интерфейсами (Protocol), а выбор реализаций сделан в одном месте — `backend/app/container.py`.
-Задачи #5 и #6 заменяют реализации и не трогают контракт, сервисы и роуты.
+Хранение уже переведено на Postgres; ingest, STT, bpmn-tools и LLM-пайплайн остаются в работе.
 
-Все места для настоящей реализации помечены в коде: `grep -rn "TODO(real)" backend/app`.
+Детали БД и миграций — в `docs/backend/persistence.md`.
 
 ## Карта слоёв
 
@@ -30,15 +30,15 @@ flowchart TB
 
 | Интерфейс | Где | Mock | Настоящая реализация |
 |---|---|---|---|
-| Репозитории `ProjectRepository`, `SourceRepository`, `QuestionRepository`, `RunRepository`, `VersionRepository` | `infra/repositories/base.py` | `memory.py`: in-memory, хранит копии, данные до рестарта; сид — `infra/seed.py` | #6: SQLAlchemy 2 + Alembic, Postgres |
+| Репозитории проектов, источников, вопросов, прогонов, версий и вызовов модели | `infra/repositories/base.py` | `memory.py` — тестовый режим | `infra/repositories/sql.py`: SQLAlchemy 2 + Alembic, Postgres 16 |
 | `ProcessPipeline` (анализ + структура) | `llm/base.py` | `llm/mock.py`: правила из `fixtures/playbook.py` срабатывают по цитатам в источниках | #5: Pydantic AI, IR → ProcessGraph → XML, repair |
 | `SpeechToText` | `ingest/stt.py` | ждёт ~1 с, отдаёт правдоподобную расшифровку | #6: Yandex SpeechKit + ffmpeg |
 | `DocumentParser` | `ingest/parsers.py` | `.txt`/`.md` — по-настоящему; `.docx` — упрощённо (абзацы); `.pdf` — текст-заглушка | #6: python-docx, pypdf |
 | `BpmnTools` (layout, lint) | `infra/bpmn_tools.py` | раскладку не делает (схемы уже с DI), линтер — `domain/bpmn/lint.py` | #6: HTTP-клиент к Node-сервису bpmn-tools |
 | XSD-проверка | `domain/bpmn/xsd.py` | только корректность XML и корень `bpmn:definitions` | #5: lxml + `domain/bpmn/xsd/*.xsd` |
-| `RunEventBus` | `infra/events.py` | in-process журнал событий прогона | остаётся (один backend); #6 — синтез `done` из БД после рестарта |
-| `TaskSpawner` | `infra/tasks.py` | `asyncio`-задачи | остаётся; #6 — пометка `failed` незавершённых прогонов при старте |
-| `FileStorage` | `infra/storage.py` | байты в памяти | #6: volume `/data/uploads`, позже S3 |
+| `RunEventBus` | `infra/events.py` | in-process журнал событий прогона | остаётся (один backend); итог завершённого прогона синтезируется из БД после рестарта |
+| `TaskSpawner` | `infra/tasks.py` | `asyncio`-задачи | остаётся; при старте queued/running прогоны переводятся в `failed` |
+| `FileStorage` | `infra/storage.py` | `InMemoryFileStorage` в тестах | `LocalFileStorage`: volume `/data/uploads`, позже S3 |
 | Задержки этапов | `container.py` → `mock_pace` | из `MOCK_STAGE_DELAYS × MOCK_DELAY_SCALE` | #5: убрать — этапы занимают время сами |
 
 Не заглушено и остаётся: контракт API, сервисы, правила вопросов и сверки (`domain/questions.py`:
@@ -95,18 +95,14 @@ Mock-модель (`llm/mock.py`) детерминирована и зависи
 
 ### #6 — хранение, ingest, bpmn-tools
 
-1. `infra/db/`: модели RFC §5.7, Alembic; классы `Sql*Repository` с сигнатурами из
-   `infra/repositories/base.py` (порядки сортировки описаны в docstring-ах).
-2. Частичный уникальный индекс «один активный прогон на проект»; `asyncio.Lock` в `RunService.start`
-   остаётся только как быстрый путь.
-3. Сессия на запрос: `Repositories` собирается из сессии в `api/deps.py` (зависимость FastAPI), а
-   фоновые прогоны и разбор файлов открывают свою сессию.
-4. При старте приложения прогоны `queued`/`running` → `failed` («прервано перезапуском»).
-5. `ingest/parsers.py`: python-docx и pypdf вместо `_docx_text` и `_pdf_placeholder`; лимиты — в config.
-6. `ingest/stt.py`: класс `YandexSpeechToText` с тем же `transcribe`; ffmpeg в образе.
-7. `infra/bpmn_tools.py`: `HttpBpmnTools` (`/layout`, `/lint`), URL — в `config.py`.
-8. `infra/storage.py`: volume. Сид — команда загрузки демо-проекта.
-9. В `container.py` заменить реализации. Тесты API работают без изменений: они проверяют контракт.
+1. `ingest/parsers.py`: python-docx и pypdf вместо `_docx_text` и `_pdf_placeholder`; лимиты — в config.
+2. `ingest/stt.py`: класс `YandexSpeechToText` с тем же `transcribe`; ffmpeg в образе.
+3. `infra/bpmn_tools.py`: `HttpBpmnTools` (`/layout`, `/lint`), URL — в `config.py`.
+4. Результаты `analysis`, отчёт, модель и задержка прогона сохраняются в БД; вызовы этапов
+   записываются в `llm_calls`. Токены пока неизвестны в общем формате и остаются `null`.
+5. Добавить JSON IR, когда пайплайн будет возвращать промежуточное представление согласно RFC;
+   сейчас структура возвращает готовый BPMN-черновик, поэтому `runs.ir` пустой.
+6. API-контракт и роуты пока остаются прежними.
 
 ### #5 — LLM-пайплайн и domain
 

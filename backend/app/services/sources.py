@@ -169,7 +169,7 @@ class SourceService:
     async def process_file(self, source_id: UUID) -> None:
         """Фоновый разбор документа.
 
-        TODO(real): #6 очередь не нужна: asyncio-задача, статус источника — в БД.
+        Разбор запускается asyncio-задачей; статус источника сохраняется в БД.
         """
         await asyncio.sleep(self._parse_delay)
         source = await self._repos.sources.get(source_id)

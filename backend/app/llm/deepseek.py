@@ -48,6 +48,10 @@ class DeepSeekPipeline:
         self._timeout_sec = timeout_sec
         self._complete = complete
 
+    @property
+    def model_name(self) -> str:
+        return self._model
+
     async def analyze(self, context: RunContext) -> AnalysisResult:
         sources = _source_payload(context.sources)
         question = (

@@ -1,7 +1,12 @@
 """Проекты: список с курсором и поиском, карточка, создание, правка, удаление, примеры."""
 
+import asyncio
+from uuid import UUID
+
+import pytest
 from fastapi.testclient import TestClient
 
+from app.container import Container
 from tests.conftest import API, DEMO, create_project, read_events
 
 MISSING = "00000000-0000-0000-0000-000000000000"
@@ -103,6 +108,24 @@ def test_create_update_delete_project(client: TestClient) -> None:
     assert client.delete(f"{API}/projects/{project['id']}").status_code == 204
     assert client.get(f"{API}/projects/{project['id']}").status_code == 404
     assert client.delete(f"{API}/projects/{project['id']}").status_code == 404
+
+
+def test_delete_project_removes_uploaded_files(client: TestClient, container: Container) -> None:
+    project_id = create_project(client, "Проект с файлом")
+    response = client.post(
+        f"{API}/projects/{project_id}/sources/file",
+        files={"file": ("source.txt", b"content", "text/plain")},
+    )
+    assert response.status_code == 201
+    source_id = response.json()["id"]
+    source = asyncio.run(container.repos.sources.get(UUID(source_id)))
+    assert source is not None
+    assert source.file_key
+    assert asyncio.run(container.storage.load(source.file_key)) == b"content"
+
+    assert client.delete(f"{API}/projects/{project_id}").status_code == 204
+    with pytest.raises(KeyError):
+        asyncio.run(container.storage.load(source.file_key))
 
 
 def test_create_validation(client: TestClient) -> None:

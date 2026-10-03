@@ -12,7 +12,8 @@
 
 | Путь | Что |
 |---|---|
-| `backend/` | FastAPI, Python 3.13, uv. Слои `api → services → (llm, ingest, infra) → domain` (проверяет import-linter). Сейчас mock-реализация (#2): что заглушено и как заменить — `docs/backend/mock.md`, места — `grep -rn "TODO(real)" backend/app` |
+| `backend/` | FastAPI, Python 3.13, uv. Слои `api → services → (llm, ingest, infra) → domain` (проверяет import-linter). PostgreSQL/Alembic описаны в `docs/backend/persistence.md`; оставшиеся заглушки — `docs/backend/mock.md` |
+| `backend/migrations/` | Alembic-миграции PostgreSQL; правила и сохраняемые сущности — `docs/backend/persistence.md` |
 | `backend/app/fixtures/` | демо-данные mock-а: тексты, BPMN-схемы, записанные ответы модели (`make fixtures` пересобирает схемы) |
 | `examples/` | примеры входа и выхода для жюри (копии фикстур) |
 | `frontend/` | React 19 + Vite + TS, TanStack Router/Query, Tailwind v4, Radix, bpmn-js |
@@ -29,6 +30,7 @@
 ```bash
 make setup        # npm ci + uv sync + chromium + git-хуки
 make up           # стек в Docker → http://localhost:8080
+make db-upgrade   # вручную применить миграции к локальной PostgreSQL
 make dev-backend  # :8000 с автоперезагрузкой
 make dev-frontend # :5173, /api проксируется на :8000
 make check-fast   # линт + design-lint + типы (после каждой правки)

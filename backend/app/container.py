@@ -1,10 +1,4 @@
-"""Сборка приложения из реализаций (composition root). Единственное место, где выбирается,
-какая реализация стоит за каждым интерфейсом.
-
-Сейчас всё — mock (#2): in-memory хранилище с сидом, записанные ответы модели, mock STT,
-mock bpmn-tools. Замена на настоящие реализации — здесь, без правок сервисов и API
-(пошагово — `docs/backend/mock.md`).
-"""
+"""Сборка приложения: выбирает persistent или тестовые реализации портов."""
 
 import asyncio
 from dataclasses import dataclass
@@ -15,11 +9,12 @@ from app.fixtures import read_bpmn
 from app.fixtures.examples import EXAMPLES
 from app.fixtures.playbook import PLAYBOOK
 from app.infra.bpmn_tools import MockBpmnTools
+from app.infra.database import Database
 from app.infra.events import InMemoryRunEventBus
 from app.infra.repositories.base import Repositories
 from app.infra.repositories.memory import InMemoryStore
 from app.infra.seed import build_seed
-from app.infra.storage import InMemoryFileStorage
+from app.infra.storage import InMemoryFileStorage, LocalFileStorage
 from app.infra.tasks import AsyncioTaskSpawner
 from app.ingest.deepgram import DeepgramSpeechToText
 from app.ingest.parsers import MockDocumentParser
@@ -40,6 +35,8 @@ from app.services.versions import VersionService
 class Container:
     settings: Settings
     repos: Repositories
+    database: Database | None
+    storage: InMemoryFileStorage | LocalFileStorage
     spawner: AsyncioTaskSpawner
     projects: ProjectService
     sources: SourceService
@@ -54,18 +51,23 @@ class Container:
 def build_container(settings: Settings, *, runtime: Runtime | None = None) -> Container:
     runtime = runtime or Runtime()
 
-    # TODO(real): #6 Postgres-репозитории вместо InMemoryStore; сид — отдельной командой.
-    store = InMemoryStore()
-    if settings.seed_demo_data:
-        seed = build_seed()
-        store.load(
-            projects=seed.projects,
-            sources=seed.sources,
-            questions=seed.questions,
-            runs=seed.runs,
-            versions=seed.versions,
-        )
-    repos = store.repositories()
+    database = Database(settings.database_url) if settings.database_url else None
+    if database:
+        repos = database.store.repositories()
+        storage = LocalFileStorage(settings.upload_dir)
+    else:
+        store = InMemoryStore()
+        if settings.seed_demo_data:
+            seed = build_seed()
+            store.load(
+                projects=seed.projects,
+                sources=seed.sources,
+                questions=seed.questions,
+                runs=seed.runs,
+                versions=seed.versions,
+            )
+        repos = store.repositories()
+        storage = InMemoryFileStorage()
     spawner = AsyncioTaskSpawner()
     assistant_model: AssistantModel | None = None
     # TODO(real): #6 HTTP-клиент bpmn-tools, SpeechKit, python-docx/pypdf.
@@ -107,12 +109,14 @@ def build_container(settings: Settings, *, runtime: Runtime | None = None) -> Co
     return Container(
         settings=settings,
         repos=repos,
+        database=database,
+        storage=storage,
         spawner=spawner,
-        projects=ProjectService(repos, examples=EXAMPLES, runtime=runtime),
+        projects=ProjectService(repos, examples=EXAMPLES, runtime=runtime, storage=storage),
         sources=SourceService(
             repos,
             parser=MockDocumentParser(),
-            storage=InMemoryFileStorage(),
+            storage=storage,
             runtime=runtime,
             max_text_chars=settings.max_text_chars,
             max_upload_bytes=settings.max_upload_bytes,

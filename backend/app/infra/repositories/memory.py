@@ -10,7 +10,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from uuid import UUID
 
-from app.domain.models import Project, Question, QuestionStatus, Run, Source, Version
+from app.domain.models import LlmCall, Project, Question, QuestionStatus, Run, Source, Version
 from app.domain.questions import normalize
 from app.domain.runs import ACTIVE_STATUSES
 from app.infra.repositories.base import PageKey, Repositories
@@ -23,6 +23,7 @@ class InMemoryStore:
     questions: dict[UUID, Question] = field(default_factory=dict[UUID, Question])
     runs: dict[UUID, Run] = field(default_factory=dict[UUID, Run])
     versions: dict[UUID, Version] = field(default_factory=dict[UUID, Version])
+    llm_calls: dict[UUID, LlmCall] = field(default_factory=dict[UUID, LlmCall])
 
     def load(
         self,
@@ -47,6 +48,7 @@ class InMemoryStore:
             questions=InMemoryQuestionRepository(self),
             runs=InMemoryRunRepository(self),
             versions=InMemoryVersionRepository(self),
+            llm_calls=InMemoryLlmCallRepository(self),
         )
 
 
@@ -198,3 +200,11 @@ class InMemoryVersionRepository:
     async def delete_by_project(self, project_id: UUID) -> None:
         for key in [k for k, v in self._items.items() if v.project_id == project_id]:
             del self._items[key]
+
+
+class InMemoryLlmCallRepository:
+    def __init__(self, store: InMemoryStore) -> None:
+        self._items = store.llm_calls
+
+    async def add(self, call: LlmCall) -> None:
+        self._items[call.id] = copy.deepcopy(call)

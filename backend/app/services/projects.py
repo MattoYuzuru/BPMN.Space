@@ -24,6 +24,7 @@ from app.domain.runs import ACTIVE_STATUSES
 from app.fixtures import read_text
 from app.fixtures.types import Example
 from app.infra.repositories.base import Repositories
+from app.infra.storage import FileStorage
 from app.services.common import Runtime, get_project
 from app.services.errors import ConflictError, InvalidInputError, NotFoundError
 
@@ -85,11 +86,17 @@ def _clean_description(description: str | None) -> str | None:
 
 class ProjectService:
     def __init__(
-        self, repos: Repositories, *, examples: Sequence[Example], runtime: Runtime
+        self,
+        repos: Repositories,
+        *,
+        examples: Sequence[Example],
+        runtime: Runtime,
+        storage: FileStorage,
     ) -> None:
         self._repos = repos
         self._examples = {example.id: example for example in examples}
         self._rt = runtime
+        self._storage = storage
 
     async def _view(
         self,
@@ -230,8 +237,12 @@ class ProjectService:
         await get_project(repos, project_id)
         if await repos.runs.active_for_project(project_id):
             raise ConflictError("Нельзя удалить проект, пока идёт прогон")
+        sources = await repos.sources.list_by_project(project_id)
         await repos.sources.delete_by_project(project_id)
         await repos.questions.delete_by_project(project_id)
         await repos.runs.delete_by_project(project_id)
         await repos.versions.delete_by_project(project_id)
         await repos.projects.delete(project_id)
+        for source in sources:
+            if source.file_key:
+                await self._storage.delete(source.file_key)

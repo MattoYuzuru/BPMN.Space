@@ -18,6 +18,9 @@ class PipelineError(Exception):
 
 
 class ProcessPipeline(Protocol):
+    @property
+    def model_name(self) -> str: ...
+
     async def analyze(self, context: RunContext) -> AnalysisResult:
         """Участники, шаги, условия → обновления прежних вопросов и новые вопросы."""
         ...

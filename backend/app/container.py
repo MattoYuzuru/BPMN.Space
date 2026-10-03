@@ -83,6 +83,8 @@ def build_container(settings: Settings, *, runtime: Runtime | None = None) -> Co
                 api_key=settings.deepseek_api_key,
                 base_url=settings.deepseek_base_url,
                 model=settings.deepseek_model,
+                timeout_sec=settings.deepseek_timeout_sec,
+                thinking_enabled=settings.deepseek_thinking_enabled,
             )
             assistant_model = pipeline
         case provider:

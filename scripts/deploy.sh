@@ -52,6 +52,14 @@ rollback() {
   fi
 }
 
+# Снимок persistent-данных до переключения релиза и запуска миграций.
+# На первой установке previous пустой, поэтому сохранять ещё нечего.
+if [[ -n "$previous" ]]; then
+  backup_id="$(date -u +%Y%m%dT%H%M%SZ)-$commit"
+  backup_dir="$remote_root/backups/$backup_id"
+  ssh "$deploy_user@$deploy_host" "set -eu; umask 077; mkdir -p '$backup_dir'; chmod 0700 '$backup_dir'; cd '$previous'; compose='docker compose --env-file $remote_root/shared/.env -p arkhitektor -f compose.yaml -f compose.prod.yaml'; if \$compose config --services | grep -qx db; then \$compose up -d --wait db; \$compose exec -T db sh -c 'pg_dump -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\"' > '$backup_dir/postgres.sql'; \$compose run --rm --no-deps -T --entrypoint tar backend -C /data/uploads -czf - . > '$backup_dir/uploads.tar.gz'; chmod 0600 '$backup_dir/postgres.sql' '$backup_dir/uploads.tar.gz'; echo 'Persistent data backup created: $backup_id'; else echo 'No PostgreSQL service in current release; skipping first-install backup.'; fi"
+fi
+
 git archive --format=tar "$commit" | ssh "$deploy_user@$deploy_host" "set -eu; mkdir -p '$release'; tar -xf - -C '$release'"
 if ! ssh "$deploy_user@$deploy_host" "set -eu; test -s '$remote_root/shared/.env'; ln -sfn '$release' '$remote_root/current'; cd '$release'; docker compose --env-file '$remote_root/shared/.env' -p arkhitektor -f compose.yaml -f compose.prod.yaml up -d --build --remove-orphans"; then
   rollback

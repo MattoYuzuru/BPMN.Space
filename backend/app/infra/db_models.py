@@ -85,13 +85,24 @@ class RunRow(Base):
     report: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     model: Mapped[str | None] = mapped_column(String(128))
     latency_ms: Mapped[int | None] = mapped_column(Integer)
-    version_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    version_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey(
+            "diagram_versions.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_runs_version_id_diagram_versions",
+        ),
+    )
     error: Mapped[str | None] = mapped_column(Text)
 
 
 class QuestionRow(Base):
     __tablename__ = "questions"
-    __table_args__ = (UniqueConstraint("project_id", "code", name="uq_questions_project_code"),)
+    __table_args__ = (
+        UniqueConstraint("project_id", "code", name="uq_questions_project_code"),
+        UniqueConstraint("answer_source_id", name="uq_questions_answer_source_id"),
+    )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
     project_id: Mapped[UUID] = mapped_column(
@@ -122,7 +133,10 @@ class QuestionRow(Base):
 
 class DiagramVersionRow(Base):
     __tablename__ = "diagram_versions"
-    __table_args__ = (UniqueConstraint("project_id", "number", name="uq_versions_project_number"),)
+    __table_args__ = (
+        UniqueConstraint("project_id", "number", name="uq_versions_project_number"),
+        UniqueConstraint("run_id", name="uq_versions_run_id"),
+    )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
     project_id: Mapped[UUID] = mapped_column(

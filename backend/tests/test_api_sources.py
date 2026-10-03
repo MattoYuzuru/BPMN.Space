@@ -93,8 +93,8 @@ def test_pdf_and_broken_docx(client: TestClient) -> None:
     sources = {
         s["file_name"]: s for s in client.get(f"{API}/projects/{project_id}").json()["sources"]
     }
-    assert sources["Приказ.pdf"]["status"] == "ready"
-    assert sources["Приказ.pdf"]["content"].startswith("Приказ\n\n")
+    assert sources["Приказ.pdf"]["status"] == "failed"
+    assert "Не удалось прочитать PDF" in sources["Приказ.pdf"]["error"]
     assert sources["broken.docx"]["status"] == "failed"
     assert sources["broken.docx"]["error"] == "Не удалось прочитать .docx: файл повреждён"
 

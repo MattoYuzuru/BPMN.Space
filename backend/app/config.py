@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", extra="ignore")
 
     app_env: str = "dev"
+    database_url: str | None = None
+    upload_dir: str = "/data/uploads"
     api_prefix: str = "/api/v1"
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:8080"]
 

@@ -14,6 +14,7 @@ from app.api.v1 import api_router
 from app.api.v1.runs import OPENAPI_EXTRA_MODELS
 from app.config import Settings, get_settings
 from app.container import Container, build_container
+from app.infra.seed import build_seed
 
 
 def _openapi(app: FastAPI) -> dict[str, Any]:
@@ -38,8 +39,17 @@ def create_app(settings: Settings | None = None, *, container: Container | None 
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        yield
-        await container.spawner.shutdown()
+        database = container.database
+        if database:
+            await database.initialize()
+            if settings.seed_demo_data:
+                await database.seed(build_seed)
+        try:
+            yield
+        finally:
+            await container.spawner.shutdown()
+            if database:
+                await database.dispose()
 
     app = FastAPI(
         title="Архитектор BPMN-диаграмм",
@@ -58,7 +68,9 @@ def create_app(settings: Settings | None = None, *, container: Container | None 
     app.include_router(api_router, prefix=settings.api_prefix)
 
     @app.get("/health", tags=["service"])
-    def health() -> dict[str, str]:
+    async def health() -> dict[str, str]:
+        if container.database:
+            await container.database.check()
         return {"status": "ok"}
 
     app.openapi = lambda: _openapi(app)  # type: ignore[method-assign]

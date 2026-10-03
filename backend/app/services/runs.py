@@ -8,14 +8,19 @@
 
 import asyncio
 import logging
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
+from datetime import date, datetime
+from enum import Enum
+from typing import Any
 from uuid import UUID
 
 from app.domain.analysis import AnalysisResult, DiagramDraft, RunContext
 from app.domain.bpmn.document import BpmnFormatError
 from app.domain.bpmn.xsd import xsd_errors
 from app.domain.models import (
+    LlmCall,
     Run,
     RunMode,
     RunStage,
@@ -37,7 +42,7 @@ from app.domain.runs import (
 )
 from app.infra.bpmn_tools import BpmnTools
 from app.infra.events import RunEventBus
-from app.infra.repositories.base import Repositories
+from app.infra.repositories.base import ActiveRunConflictError, Repositories
 from app.infra.tasks import TaskSpawner
 from app.ingest.context import build_run_context
 from app.llm.base import PipelineError, ProcessPipeline
@@ -52,6 +57,21 @@ type Pace = Callable[[RunStage], Awaitable[None]]
 
 async def no_pace(stage: RunStage) -> None:  # noqa: ARG001 — сигнатура Pace
     return None
+
+
+def _json_data(value: Any) -> Any:
+    """Приводит объекты domain к JSON-совместимым снимкам без зависимости от API-слоя."""
+    if is_dataclass(value) and not isinstance(value, type):
+        return _json_data(asdict(value))
+    if isinstance(value, dict):
+        return {str(key): _json_data(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_data(item) for item in value]
+    if isinstance(value, (UUID, datetime, date)):
+        return str(value) if isinstance(value, UUID) else value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
+    return value
 
 
 @dataclass(slots=True)
@@ -83,7 +103,7 @@ class RunService:
         self._rt = runtime
         self._pace = pace
         self._limit = asyncio.Semaphore(max(max_concurrent, 1))
-        # TODO(real): #6 гарантию «один активный прогон на проект» даёт уникальный индекс в БД.
+        # Этот lock ускоряет конфликт внутри процесса; уникальный индекс защищает между процессами.
         self._start_lock = asyncio.Lock()
 
     async def start(self, project_id: UUID, *, mode: RunMode) -> Run:
@@ -106,8 +126,14 @@ class RunService:
                 mode=mode,
                 status=RunStatus.QUEUED,
                 started_at=now,
+                model=getattr(self._pipeline, "model_name", type(self._pipeline).__name__),
             )
-            await self._repos.runs.add(run)
+            try:
+                await self._repos.runs.add(run)
+            except ActiveRunConflictError as error:
+                raise ConflictError(
+                    "По проекту уже идёт прогон — дождитесь его завершения"
+                ) from error
             await touch_project(self._repos, project_id, now)
         self._spawner.spawn(self._execute(run.id), name=f"run-{run.id}")
         return run
@@ -132,6 +158,7 @@ class RunService:
             run = await self._repos.runs.get(run_id)
             if run is None:
                 return
+            execution_started = time.perf_counter()
             run.status = RunStatus.RUNNING
             await self._repos.runs.update(run)
             try:
@@ -141,18 +168,27 @@ class RunService:
                     await self._pace(stage)
                     await self._perform(run, stage, state)
             except asyncio.CancelledError:
-                await self._fail(run, "Прогон прерван остановкой сервера")
+                await self._fail(
+                    run,
+                    "Прогон прерван остановкой сервера",
+                    execution_started=execution_started,
+                )
                 raise
             except (PipelineError, BpmnFormatError) as error:
-                await self._fail(run, str(error))
+                await self._fail(run, str(error), execution_started=execution_started)
                 return
             except Exception:
                 logger.exception("Прогон %s упал", run_id)
-                await self._fail(run, "Внутренняя ошибка прогона, попробуйте ещё раз")
+                await self._fail(
+                    run,
+                    "Внутренняя ошибка прогона, попробуйте ещё раз",
+                    execution_started=execution_started,
+                )
                 return
             run.status = RunStatus.SUCCEEDED
             run.progress = 1.0
             run.finished_at = self._rt.clock()
+            run.latency_ms = max(0, round((time.perf_counter() - execution_started) * 1000))
             await self._repos.runs.update(run)
             await touch_project(self._repos, run.project_id, run.finished_at)
             await self._events.publish(run.id, RunEventKind.DONE, run)
@@ -171,11 +207,28 @@ class RunService:
             case RunStage.READING_SOURCES:
                 state.context = await self._context(run.project_id)
             case RunStage.EXTRACTING:
-                state.analysis = await self._pipeline.analyze(self._require(state))
+                context = self._require(state)
+                state.analysis = await self._model_call(
+                    run,
+                    stage="analyze",
+                    request={"context": _json_data(context)},
+                    call=lambda: self._pipeline.analyze(context),
+                )
+                run.analysis = _json_data(state.analysis)
+                await self._repos.runs.update(run)
             case RunStage.RECONCILING:
                 await self._reconcile(run, state)
             case RunStage.STRUCTURING:
-                state.draft = await self._pipeline.structure(self._require(state), state.analysis)
+                context = self._require(state)
+                state.draft = await self._model_call(
+                    run,
+                    stage="structure",
+                    request={
+                        "context": _json_data(context),
+                        "analysis": _json_data(state.analysis),
+                    },
+                    call=lambda: self._pipeline.structure(context, state.analysis),
+                )
             case RunStage.VALIDATING:
                 draft = state.draft
                 if draft is None:
@@ -241,13 +294,50 @@ class RunService:
             run_id=run.id,
         )
         run.version_id = version.id
+        run.report = _json_data(version.report)
         await self._repos.runs.update(run)
         await self._events.publish(run.id, RunEventKind.VERSION, version)
 
-    async def _fail(self, run: Run, message: str) -> None:
+    async def _model_call(
+        self,
+        run: Run,
+        *,
+        stage: str,
+        request: dict[str, Any],
+        call: Callable[[], Awaitable[Any]],
+    ) -> Any:
+        started = time.perf_counter()
+        try:
+            response = await call()
+        except Exception as error:
+            await self._repos.llm_calls.add(
+                LlmCall(
+                    id=self._rt.new_id(),
+                    run_id=run.id,
+                    stage=stage,
+                    request=_json_data(request),
+                    response={"error": str(error)},
+                    latency_ms=max(0, round((time.perf_counter() - started) * 1000)),
+                )
+            )
+            raise
+        await self._repos.llm_calls.add(
+            LlmCall(
+                id=self._rt.new_id(),
+                run_id=run.id,
+                stage=stage,
+                request=_json_data(request),
+                response=_json_data(response),
+                latency_ms=max(0, round((time.perf_counter() - started) * 1000)),
+            )
+        )
+        return response
+
+    async def _fail(self, run: Run, message: str, *, execution_started: float) -> None:
         run.status = RunStatus.FAILED
         run.error = message
         run.finished_at = self._rt.clock()
+        run.latency_ms = max(0, round((time.perf_counter() - execution_started) * 1000))
         await self._repos.runs.update(run)
         await self._events.publish(run.id, RunEventKind.ERROR, RunError(message=message))
         await self._events.publish(run.id, RunEventKind.DONE, run)

@@ -1,18 +1,42 @@
 # Локальный стек: `make up` → http://localhost:8080
-# Сейчас backend — mock на фикстурах (задача #2). Postgres и bpmn-tools добавляются в задаче #6.
+# PostgreSQL хранит проекты и состояние прогона; загруженные файлы живут в volume.
 name: arkhitektor
 
 services:
+  db:
+    image: postgres:16-alpine
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-arkhitektor}
+      POSTGRES_USER: ${POSTGRES_USER:-arkhitektor}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-dev-only}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   backend:
     build: ./backend
     environment:
       APP_ENV: docker
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-arkhitektor}:${POSTGRES_PASSWORD:-local-dev-only}@db:5432/${POSTGRES_DB:-arkhitektor}
+      UPLOAD_DIR: /data/uploads
       LLM_PROVIDER: ${LLM_PROVIDER:-mock}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-flash}
       STT_PROVIDER: ${STT_PROVIDER:-mock}
       DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
+    volumes:
+      - uploads_data:/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
 
   web:
@@ -25,3 +49,7 @@ services:
       backend:
         condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  postgres_data:
+  uploads_data:

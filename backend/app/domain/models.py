@@ -8,6 +8,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 from uuid import UUID
 
 
@@ -125,6 +126,7 @@ class Source:
     question_id: UUID | None = None
     error: str | None = None
     file_key: str | None = None  # внутреннее: ключ файла в хранилище (infra/storage)
+    digest: str | None = None  # внутреннее: кэш дайджеста источника для контекстного окна
 
 
 @dataclass(slots=True, kw_only=True)
@@ -170,6 +172,25 @@ class Run:
     summary: RunSummary | None = None
     version_id: UUID | None = None
     error: str | None = None
+    analysis: dict[str, Any] | None = None  # внутреннее: снимок анализа для аудита и повтора
+    ir: dict[str, Any] | None = None  # внутреннее: нормализованная структура прогона
+    report: dict[str, Any] | None = None  # внутреннее: итог проверки BPMN
+    model: str | None = None  # внутреннее: фактически использованная модель
+    latency_ms: int | None = None  # внутреннее: длительность выполнения прогона
+
+
+@dataclass(slots=True, kw_only=True)
+class LlmCall:
+    """Запись аудита одного этапа вызова модели (RFC §5.7)."""
+
+    id: UUID
+    run_id: UUID
+    stage: str
+    request: dict[str, Any]
+    response: dict[str, Any]
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    latency_ms: int | None = None
 
 
 @dataclass(slots=True, kw_only=True)

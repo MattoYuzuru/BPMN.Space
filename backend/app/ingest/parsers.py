@@ -1,12 +1,10 @@
 """Извлечение текста из загруженных документов (RFC §5.2).
 
-Mock: `.txt` и `.md` читаются по-настоящему; `.docx` — упрощённо (текст абзацев из
-`word/document.xml` без таблиц и колонтитулов); `.pdf` — правдоподобный текст-заглушка.
-TODO(real): #6 `.docx` → python-docx (абзацы, таблицы, нумерация), `.pdf` → pypdf с номерами
-страниц для цитат; сканы без текстового слоя → статус `failed` (OCR — P2, Yandex Vision).
+`.txt`/`.md` читаются напрямую; `.docx` — упрощённо (абзацы без таблиц и колонтитулов);
+`.pdf` — через pypdf с номерами страниц. Для PDF без текстового слоя нужен OCR.
 """
 
-import hashlib
+import asyncio
 import io
 import zipfile
 from enum import StrEnum
@@ -15,6 +13,8 @@ from xml.etree.ElementTree import ParseError
 
 from defusedxml import DefusedXmlException
 from defusedxml.ElementTree import fromstring
+from pypdf import PdfReader
+from pypdf.errors import PdfReadError
 
 _WORD_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 _MAX_DOCX_XML_BYTES = 20 * 1024 * 1024
@@ -83,35 +83,32 @@ def _docx_text(data: bytes) -> str:
     return "\n".join(paragraphs)
 
 
-_PDF_PLACEHOLDERS = (
-    (
-        "Порядок согласования отключений потребителей при плановых ремонтах. "
-        "Служба планирования формирует перечень отключаемых потребителей не позднее чем за "
-        "10 дней до начала работ. Клиентская служба уведомляет потребителей. "
-        "Диспетчер подтверждает время отключения в день работ."
-    ),
-    (
-        "Положение о закупочной деятельности (выдержка). Инициатор закупки готовит "
-        "техническое задание и обоснование начальной цены. Отдел закупок размещает извещение "
-        "в единой информационной системе. Закупочная комиссия рассматривает заявки и "
-        "подписывает протокол."
-    ),
-    (
-        "Регламент обработки обращений потребителей. Обращение регистрируется в день "
-        "поступления. Руководитель группы назначает исполнителя. Ответ готовится в течение "
-        "30 дней и согласуется с юристом при наличии претензии."
-    ),
-)
+def _pdf_text(data: bytes) -> str:
+    """Извлекает только текст PDF и сохраняет границы страниц для ссылок на цитаты."""
+    try:
+        reader = PdfReader(io.BytesIO(data), strict=False)
+        if reader.is_encrypted and not reader.decrypt(""):
+            raise DocumentParseError("PDF защищён паролем. Снимите защиту и загрузите файл снова")
+        pages = [
+            f"[Страница {page_number}]\n{text.strip()}"
+            for page_number, page in enumerate(reader.pages, start=1)
+            if (text := (page.extract_text() or "")).strip()
+        ]
+    except DocumentParseError:
+        raise
+    except (PdfReadError, OSError, ValueError, KeyError, TypeError) as error:
+        raise DocumentParseError(
+            "Не удалось прочитать PDF. Проверьте, что файл не повреждён и не защищён паролем"
+        ) from error
+    if not pages:
+        raise DocumentParseError(
+            "В PDF не найден текстовый слой. Возможно, это скан — распознайте его "
+            "или вставьте текст вручную"
+        )
+    return "\n\n".join(pages)
 
 
-def _pdf_placeholder(file_name: str, data: bytes) -> str:
-    digest = hashlib.sha256(data).digest()
-    body = _PDF_PLACEHOLDERS[digest[0] % len(_PDF_PLACEHOLDERS)]
-    title = file_name.rsplit(".", 1)[0]
-    return f"{title}\n\n{body}"
-
-
-class MockDocumentParser:
+class LocalDocumentParser:
     async def parse(self, *, file_name: str, data: bytes) -> str:
         fmt = detect_format(file_name)
         if fmt in {DocumentFormat.TXT, DocumentFormat.MD}:
@@ -119,8 +116,7 @@ class MockDocumentParser:
         elif fmt is DocumentFormat.DOCX:
             text = _docx_text(data)
         else:
-            # TODO(real): #6 pypdf: текст по страницам; без текстового слоя — DocumentParseError.
-            text = _pdf_placeholder(file_name, data)
+            text = await asyncio.to_thread(_pdf_text, data)
         text = text.strip()
         if not text:
             raise DocumentParseError("В файле нет текста")

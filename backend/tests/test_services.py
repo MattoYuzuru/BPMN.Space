@@ -18,7 +18,7 @@ from app.infra.storage import InMemoryFileStorage
 from app.infra.tasks import AsyncioTaskSpawner
 from app.ingest.parsers import (
     DocumentParseError,
-    MockDocumentParser,
+    LocalDocumentParser,
     UnsupportedFormatError,
     decode_text,
 )
@@ -148,7 +148,7 @@ async def test_questions_service_conflicts(service_container: Container) -> None
 
 
 async def test_parsers() -> None:
-    parser = MockDocumentParser()
+    parser = LocalDocumentParser()
     assert await parser.parse(file_name="a.TXT", data="Текст".encode()) == "Текст"
     with pytest.raises(UnsupportedFormatError):
         await parser.parse(file_name="a.doc", data=b"x")
@@ -161,7 +161,56 @@ async def test_parsers() -> None:
         archive.writestr("other.xml", "<x/>")
     with pytest.raises(DocumentParseError, match="повреждён"):
         await parser.parse(file_name="a.docx", data=buffer.getvalue())
+    pdf = _make_pdf(["Submit an application", "The manager approves the application"])
+    text = await parser.parse(file_name="process.pdf", data=pdf)
+    assert "[Страница 1]\nSubmit an application" in text
+    assert "[Страница 2]\nThe manager approves the application" in text
+    with pytest.raises(DocumentParseError, match="не найден текстовый слой"):
+        await parser.parse(file_name="scan.pdf", data=_make_pdf([""]))
+    with pytest.raises(DocumentParseError, match="Не удалось прочитать PDF"):
+        await parser.parse(file_name="broken.pdf", data=b"not a PDF")
     assert decode_text(b"\xef\xbb\xbfutf8") == "utf8"
+
+
+def _make_pdf(pages: list[str]) -> bytes:
+    """Минимальный PDF с текстовым слоем для тестов без генераторных зависимостей."""
+    font_id = 3 + 2 * len(pages)
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        f"<< /Type /Pages /Kids [{' '.join(f'{3 + 2 * i} 0 R' for i in range(len(pages)))}] "
+        f"/Count {len(pages)} >>".encode(),
+    ]
+    for index, page_text in enumerate(pages):
+        page_id = 3 + index * 2
+        content_id = page_id + 1
+        escaped = page_text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+        stream = f"BT /F1 12 Tf 72 720 Td ({escaped}) Tj ET".encode()
+        objects.extend(
+            [
+                (
+                    f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                    f"/Resources << /Font << /F1 {font_id} 0 R >> >> /Contents {content_id} 0 R >>"
+                ).encode(),
+                f"<< /Length {len(stream)} >>\nstream\n".encode() + stream + b"\nendstream",
+            ]
+        )
+    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+
+    pdf = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for object_id, body in enumerate(objects, start=1):
+        offsets.append(len(pdf))
+        pdf.extend(f"{object_id} 0 obj\n".encode() + body + b"\nendobj\n")
+    xref_offset = len(pdf)
+    pdf.extend(f"xref\n0 {len(offsets)}\n0000000000 65535 f \n".encode())
+    for offset in offsets[1:]:
+        pdf.extend(f"{offset:010} 00000 n \n".encode())
+    pdf.extend(
+        (
+            f"trailer\n<< /Size {len(offsets)} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n"
+        ).encode()
+    )
+    return bytes(pdf)
 
 
 async def test_stt_and_storage_and_tools() -> None:

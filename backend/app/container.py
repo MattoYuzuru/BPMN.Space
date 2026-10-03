@@ -17,7 +17,7 @@ from app.infra.seed import build_seed
 from app.infra.storage import InMemoryFileStorage, LocalFileStorage
 from app.infra.tasks import AsyncioTaskSpawner
 from app.ingest.deepgram import DeepgramSpeechToText
-from app.ingest.parsers import MockDocumentParser
+from app.ingest.parsers import LocalDocumentParser
 from app.ingest.stt import MockSpeechToText
 from app.llm.deepseek import DeepSeekPipeline
 from app.llm.mock import MockPipeline
@@ -70,7 +70,7 @@ def build_container(settings: Settings, *, runtime: Runtime | None = None) -> Co
         storage = InMemoryFileStorage()
     spawner = AsyncioTaskSpawner()
     assistant_model: AssistantModel | None = None
-    # TODO(real): #6 HTTP-клиент bpmn-tools, SpeechKit, python-docx/pypdf.
+    # TODO(real): #6 HTTP-клиент bpmn-tools и python-docx; PDF уже разбирается через pypdf.
     # TODO(real): #5 пайплайн на Pydantic AI вместо записанных ответов.
     bpmn_tools = MockBpmnTools()
     match settings.llm_provider.lower():
@@ -115,7 +115,7 @@ def build_container(settings: Settings, *, runtime: Runtime | None = None) -> Co
         projects=ProjectService(repos, examples=EXAMPLES, runtime=runtime, storage=storage),
         sources=SourceService(
             repos,
-            parser=MockDocumentParser(),
+            parser=LocalDocumentParser(),
             storage=storage,
             runtime=runtime,
             max_text_chars=settings.max_text_chars,

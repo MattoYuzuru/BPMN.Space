@@ -117,7 +117,7 @@ class SourceService:
     ) -> tuple[Source, bool]:
         """Сохраняет файл. Возвращает источник и флаг «дочитать в фоне» (`process_file`).
 
-        `.txt`/`.md` разбираются сразу (`ready`), `.docx`/`.pdf` — в фоне (`processing`).
+        `.txt`/`.md`/`.csv` разбираются сразу (`ready`), `.docx`/`.pdf` — в фоне (`processing`).
         """
         await get_project(self._repos, project_id)
         try:
@@ -161,7 +161,12 @@ class SourceService:
             source.error = str(error)
             return
         if len(text) > self._max_text:
-            text = text[: self._max_text]
+            source.status = SourceStatus.FAILED
+            source.error = (
+                f"После разбора файл превышает лимит {self._max_text} символов. "
+                "Разделите файл на части и загрузите их отдельно"
+            )
+            return
         source.content = text
         source.status = SourceStatus.READY
         source.error = None

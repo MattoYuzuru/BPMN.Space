@@ -257,7 +257,7 @@ function NewProjectPage() {
               </Button>
               <FileInput
                 ref={fileRef}
-                accept=".pdf,.docx,.md,.txt,application/pdf"
+                accept=".pdf,.docx,.md,.txt,.csv,application/pdf,text/csv"
                 onChange={(event) => setFile(event.target.files?.[0] ?? null)}
               />
               <Button

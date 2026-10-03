@@ -21,7 +21,7 @@ export function useFileUploads(projectId: string) {
       const rejected = files.filter((file) => !isAcceptedFile(file.name))
       if (rejected.length) {
         toast.error('Формат не поддерживается', {
-          description: `${rejected.map((file) => file.name).join(', ')}. Подойдут .txt, .md, .docx и .pdf.`,
+          description: `${rejected.map((file) => file.name).join(', ')}. Подойдут .txt, .md, .csv, .docx и .pdf.`,
         })
       }
       for (const file of files.filter((item) => isAcceptedFile(item.name))) {

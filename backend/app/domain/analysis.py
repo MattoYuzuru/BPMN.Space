@@ -17,6 +17,8 @@ from app.domain.models import (
     SourceKind,
 )
 
+MAX_SOURCE_TEXT_CHARS = 40_000
+
 
 @dataclass(slots=True, kw_only=True)
 class ContextSource:

@@ -1,5 +1,5 @@
 import { AnimatePresence, m } from 'motion/react'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { RUN_MODE_LABEL, type RunView, runSteps, useRunStore, useRunView } from '@/entities/run'
 import { formatDuration } from '@/shared/lib/format'
 import { floatingPanel } from '@/shared/lib/motion'
@@ -44,10 +44,16 @@ export function RunProgress({ projectId }: { projectId: string }) {
 }
 
 function RunCard({ view, onClose }: { view: RunView; onClose: () => void }) {
+  const [clock, setClock] = useState(Date.now())
   const labels = RUN_MODE_LABEL[view.mode]
   const running = view.status === 'running'
   const failed = view.status === 'failed'
-  const elapsed = (view.finishedAt ?? Date.now()) - view.startedAt
+  useEffect(() => {
+    if (!running) return
+    const timer = window.setInterval(() => setClock(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [running])
+  const elapsed = Math.max(0, (view.finishedAt ?? clock) - view.startedAt)
   return (
     <Card
       variant="elevated"
@@ -78,17 +84,18 @@ function RunCard({ view, onClose }: { view: RunView; onClose: () => void }) {
           <span className="type-subheading text-fg">
             {failed ? 'Прогон остановлен' : running ? labels.title : labels.done}
           </span>
-          {!running && (
-            <span className="type-caption text-fg-subtle" data-numeric>
-              {formatDuration(elapsed)}
-            </span>
-          )}
+          <span className="type-caption text-fg-subtle" data-numeric role="timer" aria-live="off">
+            {running ? `Прошло ${formatDuration(elapsed)}` : formatDuration(elapsed)}
+          </span>
         </div>
         <IconButton icon="x" size="sm" label="Скрыть" onClick={onClose} />
       </div>
       <div className="px-4 pb-4">
         {running || failed ? (
-          <Stepper aria-label="Этапы прогона" steps={runSteps(view)} />
+          <>
+            <Stepper aria-label="Этапы прогона" steps={runSteps(view)} />
+            {running && <RunHint stage={view.stage} />}
+          </>
         ) : (
           <div className="flex flex-col gap-3 animate-fade-in">
             {view.summary && <SummaryChips summary={view.summary} />}
@@ -103,4 +110,15 @@ function RunCard({ view, onClose }: { view: RunView; onClose: () => void }) {
       </div>
     </Card>
   )
+}
+
+function RunHint({ stage }: { stage: RunView['stage'] }) {
+  const hint =
+    stage === 'extracting'
+      ? 'Модель анализирует источники. Это может занять до двух минут.'
+      : stage === 'structuring'
+        ? 'Модель собирает шаги процесса в структуру диаграммы.'
+        : null
+  if (!hint) return null
+  return <p className="mt-3 border-t border-border pt-3 type-caption text-fg-muted">{hint}</p>
 }

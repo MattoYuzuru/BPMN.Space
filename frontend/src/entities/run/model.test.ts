@@ -105,6 +105,11 @@ describe('reduceRun', () => {
     const view = initialRunView({ ...run, mode: 'build' }, 0)
     expect(runSteps(view)).toHaveLength(6)
   })
+
+  it('берёт время начала с сервера для таймера прогона', () => {
+    const view = initialRunView(run, 1234)
+    expect(view.startedAt).toBe(Date.parse(run.started_at))
+  })
 })
 
 describe('formatSummary', () => {

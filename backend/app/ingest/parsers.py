@@ -1,13 +1,14 @@
 """Извлечение текста из загруженных документов (RFC §5.2).
 
-Mock: `.txt` и `.md` читаются по-настоящему; `.docx` — упрощённо (текст абзацев из
-`word/document.xml` без таблиц и колонтитулов); `.pdf` — правдоподобный текст-заглушка.
-TODO(real): #6 `.docx` → python-docx (абзацы, таблицы, нумерация), `.pdf` → pypdf с номерами
-страниц для цитат; сканы без текстового слоя → статус `failed` (OCR — P2, Yandex Vision).
+`.txt`/`.md` читаются напрямую, `.csv` разбирается построчно; `.docx` — упрощённо
+(абзацы без таблиц и колонтитулов);
+`.pdf` — через pypdf с номерами страниц. Для PDF без текстового слоя нужен OCR.
 """
 
-import hashlib
+import asyncio
+import csv
 import io
+import json
 import zipfile
 from enum import StrEnum
 from typing import Protocol
@@ -15,6 +16,10 @@ from xml.etree.ElementTree import ParseError
 
 from defusedxml import DefusedXmlException
 from defusedxml.ElementTree import fromstring
+from pypdf import PdfReader
+from pypdf.errors import PdfReadError
+
+from app.domain.analysis import MAX_SOURCE_TEXT_CHARS
 
 _WORD_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 _MAX_DOCX_XML_BYTES = 20 * 1024 * 1024
@@ -23,6 +28,7 @@ _MAX_DOCX_XML_BYTES = 20 * 1024 * 1024
 class DocumentFormat(StrEnum):
     TXT = "txt"
     MD = "md"
+    CSV = "csv"
     DOCX = "docx"
     PDF = "pdf"
 
@@ -83,44 +89,85 @@ def _docx_text(data: bytes) -> str:
     return "\n".join(paragraphs)
 
 
-_PDF_PLACEHOLDERS = (
-    (
-        "Порядок согласования отключений потребителей при плановых ремонтах. "
-        "Служба планирования формирует перечень отключаемых потребителей не позднее чем за "
-        "10 дней до начала работ. Клиентская служба уведомляет потребителей. "
-        "Диспетчер подтверждает время отключения в день работ."
-    ),
-    (
-        "Положение о закупочной деятельности (выдержка). Инициатор закупки готовит "
-        "техническое задание и обоснование начальной цены. Отдел закупок размещает извещение "
-        "в единой информационной системе. Закупочная комиссия рассматривает заявки и "
-        "подписывает протокол."
-    ),
-    (
-        "Регламент обработки обращений потребителей. Обращение регистрируется в день "
-        "поступления. Руководитель группы назначает исполнителя. Ответ готовится в течение "
-        "30 дней и согласуется с юристом при наличии претензии."
-    ),
-)
+def _csv_text(data: bytes, *, max_chars: int) -> str:
+    """Представляет ячейки CSV компактными JSON-массивами, сохраняя их порядок и значения."""
+    text = decode_text(data)
+    if "\x00" in text:
+        raise DocumentParseError("Не удалось прочитать CSV: файл содержит бинарные данные")
+
+    sample = text[:65_536]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+    except csv.Error:
+        dialect = csv.excel
+
+    lines = [
+        "CSV-таблица. Каждая строка ниже — JSON-массив ячеек в исходном порядке. "
+        "Первая строка может содержать заголовки."
+    ]
+    content_chars = len(lines[0])
+    has_data = False
+    try:
+        reader = csv.reader(io.StringIO(text, newline=""), dialect, strict=True)
+        for index, row in enumerate(reader, 1):
+            has_data = has_data or any(cell.strip() for cell in row)
+            line = f"Строка {index}: {json.dumps(row, ensure_ascii=False)}"
+            content_chars += len(line) + 1
+            if content_chars > max_chars:
+                raise DocumentParseError(
+                    f"CSV после разбора превышает лимит {max_chars} символов. "
+                    "Разделите файл на части и загрузите их отдельно"
+                )
+            lines.append(line)
+    except csv.Error as error:
+        raise DocumentParseError(
+            "Не удалось прочитать CSV: проверьте кавычки и разделители"
+        ) from error
+
+    if not has_data:
+        raise DocumentParseError("В CSV нет данных")
+    return "\n".join(lines)
 
 
-def _pdf_placeholder(file_name: str, data: bytes) -> str:
-    digest = hashlib.sha256(data).digest()
-    body = _PDF_PLACEHOLDERS[digest[0] % len(_PDF_PLACEHOLDERS)]
-    title = file_name.rsplit(".", 1)[0]
-    return f"{title}\n\n{body}"
+def _pdf_text(data: bytes) -> str:
+    """Извлекает только текст PDF и сохраняет границы страниц для ссылок на цитаты."""
+    try:
+        reader = PdfReader(io.BytesIO(data), strict=False)
+        if reader.is_encrypted and not reader.decrypt(""):
+            raise DocumentParseError("PDF защищён паролем. Снимите защиту и загрузите файл снова")
+        pages = [
+            f"[Страница {page_number}]\n{text.strip()}"
+            for page_number, page in enumerate(reader.pages, start=1)
+            if (text := (page.extract_text() or "")).strip()
+        ]
+    except DocumentParseError:
+        raise
+    except (PdfReadError, OSError, ValueError, KeyError, TypeError) as error:
+        raise DocumentParseError(
+            "Не удалось прочитать PDF. Проверьте, что файл не повреждён и не защищён паролем"
+        ) from error
+    if not pages:
+        raise DocumentParseError(
+            "В PDF не найден текстовый слой. Возможно, это скан — распознайте его "
+            "или вставьте текст вручную"
+        )
+    return "\n\n".join(pages)
 
 
-class MockDocumentParser:
+class LocalDocumentParser:
+    def __init__(self, *, max_text_chars: int = MAX_SOURCE_TEXT_CHARS) -> None:
+        self._max_text_chars = max_text_chars
+
     async def parse(self, *, file_name: str, data: bytes) -> str:
         fmt = detect_format(file_name)
         if fmt in {DocumentFormat.TXT, DocumentFormat.MD}:
             text = decode_text(data)
+        elif fmt is DocumentFormat.CSV:
+            text = _csv_text(data, max_chars=self._max_text_chars)
         elif fmt is DocumentFormat.DOCX:
             text = _docx_text(data)
         else:
-            # TODO(real): #6 pypdf: текст по страницам; без текстового слоя — DocumentParseError.
-            text = _pdf_placeholder(file_name, data)
+            text = await asyncio.to_thread(_pdf_text, data)
         text = text.strip()
         if not text:
             raise DocumentParseError("В файле нет текста")

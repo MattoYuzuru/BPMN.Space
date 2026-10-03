@@ -85,7 +85,7 @@ export function initialRunView(run: Run, now: number): RunView {
     versionId: run.version_id ?? null,
     error: run.error ?? null,
     lastEventId: 0,
-    startedAt: now,
+    startedAt: Date.parse(run.started_at) || now,
     finishedAt: finished ? now : null,
   }
 }

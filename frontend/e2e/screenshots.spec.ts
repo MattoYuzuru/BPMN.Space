@@ -72,7 +72,10 @@ test('04–07 рабочее место, карточки вопросов, сх
   await openDemo(page, 'light')
   await hideToasts(page)
   // Выбранный вопрос: свечение карточки и подсветка его элементов на схеме.
-  await questionCard(page, 'Q-3').getByText('Кто выставляет счёт').click()
+  // Q-3 уже решён сидом; Q-4 остаётся открытым и показывает подсветку допущения.
+  await questionCard(page, 'Q-4')
+    .getByText('Что происходит, если заявитель не дополнил заявку в срок?')
+    .click()
   await settle(page, 1200)
   await shoot(page, '04-workspace-light')
 

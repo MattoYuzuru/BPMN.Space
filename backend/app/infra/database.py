@@ -1,6 +1,7 @@
 """PostgreSQL connection lifecycle, migrations and repositories."""
 
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -55,15 +56,20 @@ class Database:
             for source in data.sources:
                 if source.project_id == project.id:
                     await repos.sources.add(source)
-            for run in data.runs:
-                if run.project_id == project.id:
-                    await repos.runs.add(run)
+            project_runs = [run for run in data.runs if run.project_id == project.id]
+            for run in project_runs:
+                # `runs.version_id` и `diagram_versions.run_id` образуют взаимную связь.
+                # Сначала создаём прогон без обратной ссылки, затем версию и обновляем прогон.
+                await repos.runs.add(replace(run, version_id=None))
             for question in data.questions:
                 if question.project_id == project.id:
                     await repos.questions.add(question)
             for version in data.versions:
                 if version.project_id == project.id:
                     await repos.versions.add(version)
+            for run in project_runs:
+                if run.version_id is not None:
+                    await repos.runs.update(run)
 
     async def check(self) -> None:
         async with self.engine.connect() as connection:

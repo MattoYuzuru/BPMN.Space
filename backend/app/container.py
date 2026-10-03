@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import dataclass
 
 from app.config import Settings
+from app.domain.analysis import MAX_SOURCE_TEXT_CHARS
 from app.domain.models import RunStage
 from app.fixtures import read_bpmn
 from app.fixtures.examples import EXAMPLES
@@ -117,7 +118,9 @@ def build_container(settings: Settings, *, runtime: Runtime | None = None) -> Co
         projects=ProjectService(repos, examples=EXAMPLES, runtime=runtime, storage=storage),
         sources=SourceService(
             repos,
-            parser=LocalDocumentParser(),
+            parser=LocalDocumentParser(
+                max_text_chars=min(settings.max_text_chars, MAX_SOURCE_TEXT_CHARS)
+            ),
             storage=storage,
             runtime=runtime,
             max_text_chars=settings.max_text_chars,

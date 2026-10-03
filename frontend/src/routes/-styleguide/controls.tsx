@@ -170,11 +170,11 @@ export function FieldsSection() {
         </Specimen>
         <Specimen title="FileDrop" note="перетаскивание и кнопка выбора">
           <FileDrop
-            accept=".txt,.md,.docx,.pdf"
+            accept=".txt,.md,.csv,.docx,.pdf"
             multiple
             onFiles={(files) => setDropped(files.map((file) => file.name))}
             title="Перетащите документ"
-            hint=".txt, .md, .docx, .pdf"
+            hint=".txt, .md, .csv, .docx, .pdf"
           />
           {dropped.length > 0 && <Caption>Получено: {dropped.join(', ')}</Caption>}
         </Specimen>

@@ -2,7 +2,9 @@
 
 import asyncio
 import json
+import logging
 import re
+import time
 from collections.abc import Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
@@ -24,6 +26,9 @@ from app.domain.questions import normalize
 from app.llm.base import PipelineError
 
 _MAX_DIAGRAM_STEPS = 12
+_NETWORK_RETRIES = 1
+_NETWORK_RETRY_DELAY_SEC = 0.5
+logger = logging.getLogger(__name__)
 
 
 class DeepSeekPipeline:
@@ -272,9 +277,43 @@ class DeepSeekPipeline:
             },
             method="POST",
         )
+        response_body = b""
+        for attempt in range(_NETWORK_RETRIES + 1):
+            try:
+                with urlopen(request, timeout=self._timeout_sec) as response:  # noqa: S310
+                    response_body = response.read()
+                break
+            except HTTPError as error:
+                raise RuntimeError(f"Сервис модели вернул HTTP {error.code}") from None
+            except TimeoutError:
+                # Таймаут чтения мог произойти уже после обработки запроса провайдером.
+                # Не отправляем его повторно, чтобы не создавать лишний платный запрос.
+                raise RuntimeError(
+                    f"Модель не ответила за {self._timeout_sec:g} секунд. Повторите попытку."
+                ) from None
+            except URLError as error:
+                reason = error.reason
+                reason_detail = str(reason).replace("\n", " ")[:200]
+                logger.warning(
+                    "Сбой соединения с сервисом модели (попытка %d/%d, %s: %s)",
+                    attempt + 1,
+                    _NETWORK_RETRIES + 1,
+                    type(reason).__name__,
+                    reason_detail,
+                )
+                if attempt < _NETWORK_RETRIES:
+                    time.sleep(_NETWORK_RETRY_DELAY_SEC)
+                    continue
+                if isinstance(reason, TimeoutError):
+                    raise RuntimeError(
+                        f"Модель не ответила за {self._timeout_sec:g} секунд. Повторите попытку."
+                    ) from None
+                raise RuntimeError(
+                    "Не удалось связаться с сервисом модели. Проверьте сеть и повторите."
+                ) from None
+
         try:
-            with urlopen(request, timeout=self._timeout_sec) as response:  # noqa: S310
-                payload = json.loads(response.read())
+            payload = json.loads(response_body)
             choice = payload["choices"][0]
             if choice.get("finish_reason") == "length":
                 raise RuntimeError("Ответ модели обрезан по лимиту длины. Повторите анализ.")
@@ -282,20 +321,6 @@ class DeepSeekPipeline:
             if not isinstance(content, str) or not content.strip():
                 raise RuntimeError("Модель вернула пустой или неподдерживаемый ответ")
             return content
-        except HTTPError as error:
-            raise RuntimeError(f"Сервис модели вернул HTTP {error.code}") from None
-        except TimeoutError:
-            raise RuntimeError(
-                f"Модель не ответила за {self._timeout_sec:g} секунд. Повторите попытку."
-            ) from None
-        except URLError as error:
-            if isinstance(error.reason, TimeoutError):
-                raise RuntimeError(
-                    f"Модель не ответила за {self._timeout_sec:g} секунд. Повторите попытку."
-                ) from None
-            raise RuntimeError(
-                "Не удалось связаться с сервисом модели. Проверьте сеть и повторите."
-            ) from None
         except json.JSONDecodeError:
             raise RuntimeError("Сервис модели вернул ответ в некорректном формате") from None
         except (KeyError, IndexError, TypeError, ValueError):

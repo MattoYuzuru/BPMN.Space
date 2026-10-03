@@ -1,6 +1,6 @@
 import json
 from datetime import UTC, datetime
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from urllib.error import URLError
 from uuid import uuid4
 
@@ -54,10 +54,27 @@ def test_request_reports_timeout_separately() -> None:
 def test_request_reports_network_error_separately() -> None:
     pipeline = DeepSeekPipeline(api_key="test-only")
     with (
-        patch("app.llm.deepseek.urlopen", side_effect=URLError("offline")),
+        patch("app.llm.deepseek.urlopen", side_effect=URLError("offline")) as urlopen,
         pytest.raises(RuntimeError, match="связаться с сервисом модели"),
     ):
         pipeline._request_json("system", "prompt")
+    assert urlopen.call_count == 2
+
+
+def test_request_retries_transient_tls_error_once() -> None:
+    pipeline = DeepSeekPipeline(api_key="test-only")
+    response = MagicMock()
+    response.__enter__.return_value.read.return_value = json.dumps(
+        {"choices": [{"message": {"content": '{"steps": []}'}}]}
+    ).encode()
+
+    with patch(
+        "app.llm.deepseek.urlopen",
+        side_effect=[URLError(TimeoutError("TLS handshake timeout")), response],
+    ) as urlopen:
+        assert pipeline._request_json("system", "prompt") == '{"steps": []}'
+
+    assert urlopen.call_count == 2
 
 
 def test_request_reports_invalid_provider_json_separately() -> None:

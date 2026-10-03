@@ -18,6 +18,9 @@ const fakeMedia = {
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
+  // E2E-сценарии используют общий демо-проект. Последовательный режим в CI
+  // исключает взаимное изменение вопросов и прогонов между тестами.
+  workers: process.env.CI ? 1 : undefined,
   forbidOnly: !!process.env.CI,
   retries: 0,
   timeout: 60_000,

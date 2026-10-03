@@ -11,6 +11,9 @@ dependencies = [
   "sse-starlette",
   "python-multipart",
   "defusedxml",
+  "sqlalchemy[asyncio]",
+  "asyncpg",
+  "alembic",
 ]
 
 [dependency-groups]

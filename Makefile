@@ -8,9 +8,9 @@ SHELL := bash
 UV := uv run --directory backend
 NPM_FRONT := npm run --workspace frontend
 
-.PHONY: help setup up down logs dev-backend dev-frontend deploy deploy-env \
+.PHONY: help setup up down logs db-upgrade dev-backend dev-frontend deploy deploy-env \
         format lint typecheck design-lint check-fast test test-backend test-frontend \
-        build contract-check openapi gen-api fixtures check e2e screenshots secrets verify mr-report
+        test-postgres build contract-check openapi gen-api fixtures check e2e screenshots secrets verify mr-report
 
 help: ## Список команд
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -25,6 +25,9 @@ up: ## Поднять стек в Docker: http://localhost:8080
 
 down: ## Остановить стек
 	docker compose down
+
+db-upgrade: ## Применить Alembic-миграции к локальной БД
+	cd backend && uv run alembic upgrade head
 
 logs: ## Логи стека
 	docker compose logs -f --tail=100
@@ -63,6 +66,11 @@ check-fast: lint design-lint typecheck ## Быстрые проверки (аг�
 
 test-backend: ## pytest с покрытием ≥80%
 	$(UV) pytest --cov --cov-report=term-missing:skip-covered
+
+test-postgres: ## SQL-репозитории на изолированной временной схеме PostgreSQL
+	set -a; [ ! -f .env ] || . ./.env; set +a; docker compose up -d --wait db; \
+	TEST_DATABASE_URL="$${TEST_DATABASE_URL:-$${DATABASE_URL:-postgresql+asyncpg://arkhitektor:local-dev-only@localhost:5433/arkhitektor}}" \
+	$(UV) pytest tests/test_persistence.py
 
 test-frontend: ## vitest
 	$(NPM_FRONT) test

@@ -101,6 +101,10 @@ class MockPipeline:
         self._playbook = playbook
         self._read_bpmn = read_bpmn
 
+    @property
+    def model_name(self) -> str:
+        return "recorded-fixtures"
+
     async def analyze(self, context: RunContext) -> AnalysisResult:
         by_id = {s.id: s for s in context.sources}
         updates = [

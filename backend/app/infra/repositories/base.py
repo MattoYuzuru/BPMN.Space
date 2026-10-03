@@ -1,20 +1,17 @@
-"""Интерфейсы хранилища (порты). Сервисы зависят только от них.
-
-Сейчас их реализует `memory.py` (in-memory, данные живут до рестарта процесса).
-TODO(real): #6 реализация на SQLAlchemy 2 + Alembic (`infra/db/`, модели RFC §5.7) с теми же
-сигнатурами: сессия на запрос, транзакция на сценарий сервиса, частичный уникальный индекс
-«один активный прогон на проект» вместо блокировки в `RunService`, агрегирующий запрос
-для счётчиков списка проектов вместо выборки по каждому проекту.
-"""
+"""Интерфейсы репозиториев. В приложении используется SQL-реализация, в тестах — in-memory."""
 
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
-from app.domain.models import Project, Question, QuestionStatus, Run, Source, Version
+from app.domain.models import LlmCall, Project, Question, QuestionStatus, Run, Source, Version
 
 type PageKey = tuple[datetime, UUID]
+
+
+class ActiveRunConflictError(Exception):
+    """В БД уже есть активный прогон этого проекта (гарантия уникального индекса)."""
 
 
 class ProjectRepository(Protocol):
@@ -83,6 +80,10 @@ class VersionRepository(Protocol):
     async def delete_by_project(self, project_id: UUID) -> None: ...
 
 
+class LlmCallRepository(Protocol):
+    async def add(self, call: LlmCall) -> None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class Repositories:
     projects: ProjectRepository
@@ -90,3 +91,4 @@ class Repositories:
     questions: QuestionRepository
     runs: RunRepository
     versions: VersionRepository
+    llm_calls: LlmCallRepository

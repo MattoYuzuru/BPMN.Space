@@ -1,6 +1,7 @@
 import { DropdownMenu as MenuPrimitive } from 'radix-ui'
 import type { ComponentProps } from 'react'
 import { cn } from '@/shared/lib/cn'
+import { guardTourLayer } from '@/shared/lib/tour-anchors'
 import { Icon, type IconName } from '../icon'
 import { Kbd, type KeyName } from '../kbd/kbd'
 import { floatingSurface, menuItem, menuLabel, menuSeparator } from '../styles'
@@ -15,6 +16,8 @@ export function DropdownMenuContent({
   className,
   sideOffset = 6,
   align = 'start',
+  onInteractOutside,
+  onEscapeKeyDown,
   ...props
 }: ComponentProps<typeof MenuPrimitive.Content>) {
   return (
@@ -25,6 +28,15 @@ export function DropdownMenuContent({
         collisionPadding={8}
         className={cn(floatingSurface, 'min-w-48 rounded-md p-1', className)}
         {...props}
+        // Клик и Esc внутри слоя обучения (карточка тура) не закрывают меню.
+        onInteractOutside={(event) => {
+          guardTourLayer(event)
+          onInteractOutside?.(event)
+        }}
+        onEscapeKeyDown={(event) => {
+          guardTourLayer(event)
+          onEscapeKeyDown?.(event)
+        }}
       />
     </MenuPrimitive.Portal>
   )

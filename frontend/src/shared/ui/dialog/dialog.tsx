@@ -1,6 +1,7 @@
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import type { ComponentProps, ReactNode } from 'react'
 import { cn } from '@/shared/lib/cn'
+import { guardTourLayer } from '@/shared/lib/tour-anchors'
 import { IconButton } from '../icon-button/icon-button'
 
 export const Dialog = DialogPrimitive.Root
@@ -37,6 +38,8 @@ export function DialogContent({
   hideClose = false,
   className,
   children,
+  onInteractOutside,
+  onEscapeKeyDown,
   ...props
 }: DialogContentProps) {
   return (
@@ -52,6 +55,15 @@ export function DialogContent({
           className,
         )}
         {...props}
+        // Клик и Esc внутри слоя обучения (карточка тура) не закрывают окно.
+        onInteractOutside={(event) => {
+          guardTourLayer(event)
+          onInteractOutside?.(event)
+        }}
+        onEscapeKeyDown={(event) => {
+          guardTourLayer(event)
+          onEscapeKeyDown?.(event)
+        }}
       >
         <div className="flex flex-col gap-1.5 px-5 pt-5 pb-4 pr-12">
           <DialogPrimitive.Title className="type-heading text-fg">{title}</DialogPrimitive.Title>

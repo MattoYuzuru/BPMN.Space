@@ -1,14 +1,14 @@
 """Автор прогона и сохранённой версии для истории совместной работы.
 
-Revision ID: 0008_version_actor
-Revises: 0007_run_warnings
+Revision ID: 0009_version_actor
+Revises: 0008_viewer_memberships
 """
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0008_version_actor"
-down_revision = "0007_run_warnings"
+revision = "0009_version_actor"
+down_revision = "0008_viewer_memberships"
 branch_labels = None
 depends_on = None
 

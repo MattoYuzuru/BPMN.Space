@@ -42,6 +42,8 @@ export function useUpdateTour() {
   const client = useQueryClient()
   const key = useOnboardingKey()
   return useMutation({
+    // Ответ сервера сам становится состоянием: общее перечитывание не нужно.
+    meta: { skipOnboarding: true },
     mutationFn: async (body: TourUpdate) =>
       unwrap(await api.PATCH('/api/v1/me/onboarding/tour', { body })),
     onSuccess: (state) => client.setQueryData<OnboardingState>(key, state),
@@ -54,6 +56,8 @@ export function useRestartTour() {
   const client = useQueryClient()
   const key = useOnboardingKey()
   return useMutation({
+    // Ответ сервера сам становится состоянием: общее перечитывание не нужно.
+    meta: { skipOnboarding: true },
     mutationFn: async () => unwrap(await api.POST('/api/v1/me/onboarding/tour/restart')),
     onSuccess: (state) => client.setQueryData<OnboardingState>(key, state),
     onError: (error) =>
@@ -66,6 +70,8 @@ export function useSetChecklistHidden() {
   const client = useQueryClient()
   const key = useOnboardingKey()
   return useMutation({
+    // Ответ сервера сам становится состоянием: общее перечитывание не нужно.
+    meta: { skipOnboarding: true },
     mutationFn: async (hidden: boolean) =>
       unwrap(await api.PATCH('/api/v1/me/onboarding/checklist', { body: { hidden } })),
     onMutate: async (hidden) => {

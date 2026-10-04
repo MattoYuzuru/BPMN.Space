@@ -228,7 +228,9 @@ test('ссылка на просмотр из чужого аккаунта ос
   for (const name of ['Анализ', 'Построить схему', 'Добавить источник', 'Поделиться']) {
     await expect(other.getByRole('button', { name, exact: true })).toHaveCount(0)
   }
-  // Ссылка на чтение сохранила проект в профиле (поведение ADR 0003): он открывается, но только для чтения.
+  // Ссылка на чтение сохраняет проект в профиле (docs/backend/auth-and-sharing.md): он открывается, но только для чтения.
+  // Сохранение идёт из эффекта страницы — ждём его, прежде чем уходить.
+  await expect(other.getByText('Общий проект добавлен в ваш профиль')).toBeVisible()
   await other.goto(`/projects/${id}`)
   await expect(other.getByText('Только просмотр').first()).toBeVisible()
   for (const name of ['Анализ', 'Построить схему', 'Добавить источник', 'Поделиться']) {

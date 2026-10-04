@@ -111,6 +111,16 @@ describe('панель «Начало работы»: кнопки внизу', 
     expect(calls.filter((c) => c.path.includes('restart'))).toHaveLength(0)
   })
 
+  it('«Продолжить обучение», когда локально тур не запущен: стартует с шага сервера', async () => {
+    const active = state('active')
+    if (active.tour) active.tour.step = 'run.start'
+    stubApi({})
+    mount(active)
+    await userEvent.click(await screen.findByRole('button', { name: 'Продолжить обучение' }))
+    expect(useTourStore.getState().status).toBe('active')
+    expect(useTourStore.getState().stepKey).toBe('run.start')
+  })
+
   it('«Скрыть чек-лист» шлёт hidden: true и сразу меняет подпись на «Показывать прогресс»', async () => {
     const calls = stubApi({
       'PATCH /api/v1/me/onboarding/checklist': { body: state('completed', true) },

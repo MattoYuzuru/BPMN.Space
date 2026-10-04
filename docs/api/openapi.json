@@ -671,6 +671,17 @@
         "title": "ProjectRole",
         "type": "string"
       },
+      "ProjectScope": {
+        "description": "Какие проекты показывать в списке: все доступные, свои, где я редактор, демо-примеры.",
+        "enum": [
+          "all",
+          "own",
+          "shared",
+          "examples"
+        ],
+        "title": "ProjectScope",
+        "type": "string"
+      },
       "ProjectStatus": {
         "enum": [
           "empty",
@@ -2512,6 +2523,17 @@
               ],
               "description": "Поиск по названию",
               "title": "Q"
+            }
+          },
+          {
+            "description": "Что показывать: `all` — всё доступное (по умолчанию), `own` — свои, `shared` — где вы редактор по приглашению, `examples` — демо-примеры. Без аккаунтов параметр не действует.",
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ProjectScope",
+              "default": "all",
+              "description": "Что показывать: `all` — всё доступное (по умолчанию), `own` — свои, `shared` — где вы редактор по приглашению, `examples` — демо-примеры. Без аккаунтов параметр не действует."
             }
           }
         ],

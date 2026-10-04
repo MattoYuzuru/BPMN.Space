@@ -9,15 +9,27 @@ import {
 
 describe('projectCapabilities', () => {
   it('владелец может всё', () => {
-    expect(projectCapabilities('owner')).toEqual({ canEdit: true, canManage: true })
+    expect(projectCapabilities('owner', true)).toEqual({
+      canEdit: true,
+      canManage: true,
+      canShare: true,
+    })
   })
 
   it('редактор правит, но не удаляет проект и не управляет доступом', () => {
-    expect(projectCapabilities('editor')).toEqual({ canEdit: true, canManage: false })
+    expect(projectCapabilities('editor', true)).toEqual({
+      canEdit: true,
+      canManage: false,
+      canShare: false,
+    })
   })
 
   it('зритель только читает', () => {
-    expect(projectCapabilities('viewer')).toEqual({ canEdit: false, canManage: false })
+    expect(projectCapabilities('viewer', true)).toEqual({
+      canEdit: false,
+      canManage: false,
+      canShare: false,
+    })
     expect(isReadOnly('viewer')).toBe(true)
     expect(isReadOnly('editor')).toBe(false)
   })

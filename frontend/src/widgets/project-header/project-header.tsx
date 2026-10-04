@@ -129,7 +129,7 @@ function ProjectTitle() {
 }
 
 function HeaderActions({ running }: { running: boolean }) {
-  const { project, canEdit, canManage, viewedVersionId, viewVersion, versions } = useWorkspace()
+  const { project, canEdit, canShare, viewedVersionId, viewVersion, versions } = useWorkspace()
   const setSheet = useWorkspaceUi((state) => state.setSheet)
   const start = useStartRun(project.id)
   const latest = project.latest_version
@@ -210,7 +210,7 @@ function HeaderActions({ running }: { running: boolean }) {
           <DownloadMenu version={viewed} />
         </>
       )}
-      {canManage && <ShareProjectButton projectId={project.id} />}
+      {canShare && <ShareProjectButton projectId={project.id} />}
       <span aria-hidden="true" className="mx-1 h-5 w-px bg-border" />
     </>
   )

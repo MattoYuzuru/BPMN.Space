@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from app.fixtures import read_text
 from app.fixtures.types import Example
 from app.ingest.stt import SpeechToText, Transcript
-from app.services.errors import InvalidInputError, PayloadTooLargeError, UnsupportedMediaError
+from app.services.common import too_large
+from app.services.errors import InvalidInputError, UnsupportedMediaError
 
 _AUDIO_CONTAINERS = {"video/webm", "video/ogg", "application/ogg", "application/octet-stream"}
 
@@ -44,6 +45,5 @@ class TranscriptionService:
         if not data:
             raise InvalidInputError("Аудиозапись пустая")
         if len(data) > self._max_bytes:
-            limit_mb = self._max_bytes // (1024 * 1024)
-            raise PayloadTooLargeError(f"Запись больше {limit_mb} МБ")
+            raise too_large("Запись", self._max_bytes)
         return await self._stt.transcribe(data, mime=base_mime)

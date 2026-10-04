@@ -172,6 +172,8 @@ class Run:
     summary: RunSummary | None = None
     version_id: UUID | None = None
     error: str | None = None
+    # Предупреждения прогона для пользователя: например, часть материалов не вошла в контекст.
+    warnings: list[str] = field(default_factory=list[str])
     analysis: dict[str, Any] | None = None  # внутреннее: снимок анализа для аудита и повтора
     ir: dict[str, Any] | None = None  # внутреннее: нормализованная структура прогона
     report: dict[str, Any] | None = None  # внутреннее: итог проверки BPMN

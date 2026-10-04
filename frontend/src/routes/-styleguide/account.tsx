@@ -12,7 +12,7 @@ function PasswordGeneratorDemo() {
   const [visible, setVisible] = useState(false)
   return (
     <div className="mx-auto w-full max-w-sm">
-      <Field label="Пароль" hint="От 12 символов">
+      <Field label="Пароль" hint="От 8 символов">
         <Input
           name="password"
           type={visible ? 'text' : 'password'}

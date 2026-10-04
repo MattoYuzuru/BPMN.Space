@@ -237,6 +237,8 @@ export interface paths {
         /**
          * Save Diagram
          * @description Сохранить правку из bpmn-js как новую версию `manual`.
+         *
+         *     Пока по проекту идёт прогон — 409: его версия перекрыла бы правку.
          */
         put: operations["save_diagram"];
         post?: never;
@@ -1128,6 +1130,11 @@ export interface components {
              * @description Версия, собранная прогоном
              */
             version_id?: string | null;
+            /**
+             * Warnings
+             * @description Предупреждения прогона, не мешающие результату: например, часть материалов не поместилась в контекст модели и была обрезана или пропущена
+             */
+            warnings?: string[];
         };
         /** RunCreate */
         RunCreate: {
@@ -2335,6 +2342,15 @@ export interface operations {
             };
             /** @description Не найдено */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Конфликт состояния */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -29,6 +29,12 @@ class Settings(BaseSettings):
 
     # --- Прогоны (RFC §5.1) ---
     max_concurrent_runs: int = 2
+    # Общий срок одного прогона (секунды, 0 — без срока): новые запросы к модели после него
+    # не начинаются, прогон завершается ошибкой, а не висит.
+    run_deadline_sec: float = 600.0
+    # Сколько символов текста источников суммарно отдаём модели за прогон (≈ 40–45 тыс. токенов).
+    # Лишнее обрезается поровну между источниками; обрезка попадает в `warnings` прогона.
+    llm_context_budget_chars: int = 120_000
 
     # --- Ограничения загрузок ---
     max_upload_bytes: int = 20 * _MB
@@ -63,6 +69,11 @@ class Settings(BaseSettings):
     deepseek_model: str = "deepseek-flash"
     deepseek_timeout_sec: float = 120.0
     deepseek_thinking_enabled: bool = False
+    # Повторы временных сбоев (HTTP 408/429/5xx, таймаут, обрыв сети): экспоненциальная пауза
+    # с джиттером от `base` до `max` секунд, `Retry-After` провайдера учитывается.
+    deepseek_max_retries: int = 3
+    deepseek_retry_base_sec: float = 1.0
+    deepseek_retry_max_sec: float = 30.0
     stt_provider: str = "mock"
     deepgram_api_key: str | None = None
 

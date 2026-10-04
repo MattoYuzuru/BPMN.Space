@@ -719,3 +719,42 @@ async def test_fail_processing_and_project_touch_update(sql_store) -> None:
     assert stored is not None
     assert stored.title == "Другое имя"
     assert stored.updated_at == later
+
+
+@pytest.mark.asyncio
+async def test_run_warnings_and_llm_tokens_round_trip(sql_store) -> None:
+    store, sessions = sql_store
+    repos = store.repositories()
+    project = await _make_project(repos)
+    run = Run(
+        id=uuid4(),
+        project_id=project.id,
+        mode=RunMode.ANALYZE,
+        status=RunStatus.SUCCEEDED,
+        started_at=datetime.now(UTC),
+        warnings=["Источник обрезан"],
+    )
+    await repos.runs.add(run)
+    await repos.llm_calls.add(
+        LlmCall(
+            id=uuid4(),
+            run_id=run.id,
+            stage="analyze",
+            request={"context": {"sources": []}},
+            response={},
+            tokens_in=120,
+            tokens_out=30,
+        )
+    )
+    stored = await repos.runs.get(run.id)
+    assert stored is not None
+    assert stored.warnings == ["Источник обрезан"]
+    run.warnings = []
+    await repos.runs.update(run)
+    again = await repos.runs.get(run.id)
+    assert again is not None
+    assert again.warnings == []
+    async with sessions() as session:
+        call = await session.scalar(select(LlmCallRow).where(LlmCallRow.run_id == run.id))
+    assert call is not None
+    assert (call.tokens_in, call.tokens_out) == (120, 30)

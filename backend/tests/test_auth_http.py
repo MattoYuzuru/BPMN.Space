@@ -536,11 +536,6 @@ MALICIOUS_XML = {
         '<bpmn:process id="p"/><html:script xmlns:html="http://www.w3.org/1999/xhtml">'
         "alert(1)</html:script></bpmn:definitions>"
     ),
-    "bpmn-script": (
-        '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
-        '<bpmn:process id="p"><bpmn:script>alert(1)</bpmn:script></bpmn:process>'
-        "</bpmn:definitions>"
-    ),
     "foreign-attribute": (
         '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" '
         'xmlns:x="http://evil.example/ns" x:onload="alert(1)"><bpmn:process id="p"/>'

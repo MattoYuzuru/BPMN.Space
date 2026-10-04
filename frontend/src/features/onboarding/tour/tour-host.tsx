@@ -47,6 +47,17 @@ function routeMatches(router: RouterLike, target: RouteTarget): boolean {
   )
 }
 
+/** В окне уже печатают (фокус в поле ввода): карточка не отбирает у человека фокус. */
+function typingInside(modal: HTMLElement | null): boolean {
+  const active = document.activeElement
+  return Boolean(
+    modal &&
+      active instanceof HTMLElement &&
+      modal.contains(active) &&
+      active.matches('input, textarea, [contenteditable="true"]'),
+  )
+}
+
 /** Пилюля паузы: пользователь ушёл с экрана шага. */
 function PausePill({ onResume, onEnd }: { onResume: () => void; onEnd: () => void }) {
   const [confirming, setConfirming] = useState(false)
@@ -413,6 +424,7 @@ export default function TourHost<Ctx>({
           anchorRef={virtualRef}
           side={view.side}
           portalContainer={modal}
+          autoFocus={!typingInside(modal)}
           eyebrow={eyebrow}
           title={view.title}
           text={view.text}

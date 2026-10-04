@@ -374,6 +374,12 @@ flowchart TB
 
 ```mermaid
 erDiagram
+    USER ||--o{ PROJECT : owns
+    USER ||--o{ ACCESS_TOKEN : sessions
+    PROJECT ||--o{ PROJECT_MEMBER : collaborators
+    USER ||--o{ PROJECT_MEMBER : edits
+    PROJECT ||--o{ PROJECT_SHARE_LINK : links
+    USER ||--o{ PROJECT_SHARE_LINK : creates
     PROJECT ||--o{ SOURCE : "источники"
     PROJECT ||--o{ QUESTION : "вопросы"
     PROJECT ||--o{ RUN : "прогоны"
@@ -385,6 +391,32 @@ erDiagram
         uuid id
         string title
         timestamptz created_at
+        uuid owner_id
+        bool public_read_only
+    }
+    USER {
+        uuid id
+        string email "unique"
+        string hashed_password "Argon2"
+    }
+    ACCESS_TOKEN {
+        string token "SHA-256 digest"
+        uuid user_id
+        timestamptz created_at
+    }
+    PROJECT_MEMBER {
+        uuid project_id
+        uuid user_id
+        string role "editor"
+        timestamptz added_at
+    }
+    PROJECT_SHARE_LINK {
+        uuid id
+        uuid project_id
+        string token_hash "SHA-256 digest"
+        string role "viewer | editor"
+        timestamptz expires_at
+        timestamptz revoked_at
     }
     SOURCE {
         uuid id
@@ -442,12 +474,16 @@ erDiagram
 
 `LLM_CALL` — бесплатная наблюдаемость (лог вызовов модели) вместо Langfuse. Если понадобится UI, поднимем Arize Phoenix одним контейнером.
 
+Для аккаунтов и общего доступа добавлены `USERS`, `ACCESS_TOKENS`, `PROJECT_MEMBERS` и `PROJECT_SHARE_LINKS`. `PROJECTS.owner_id` задаёт владельца; демонстрационные проекты могут быть доступны только для чтения. В сессии и ссылках проекта хранится только SHA-256 хеш случайного токена, исходный токен ссылки возвращается владельцу один раз. Подробности — в [решении по авторизации и доступу](../adr/0001-auth-and-project-sharing.md).
+
 ### 5.8. API
 
 Контракт v1 реализован в mock-бэкенде (#2, `docs/backend/mock.md`); точные схемы — `docs/api/openapi.json`. Поля — `snake_case`, id — UUID, даты — ISO 8601, ошибки — `{"detail": "…"}` на русском.
 
 | Метод | Путь | Что делает |
 |---|---|---|
+| POST | `/api/v1/auth/register` · `/auth/session/login` · `/auth/session/logout` | регистрация по email и паролю · вход и выход через cookie-сессию |
+| GET | `/api/v1/auth/csrf` · `/auth/me` | получить CSRF-токен · профиль текущего пользователя |
 | GET | `/api/v1/projects?cursor=&limit=20&q=` | список проектов: курсорная пагинация, поиск по названию → `{items, next_cursor, total}` |
 | POST | `/api/v1/projects` · `/projects/from-example` | создать проект · создать из примера (текст примера — первый источник) |
 | GET / PATCH / DELETE | `/api/v1/projects/{id}` | проект целиком: источники, вопросы, последняя версия без XML, активный прогон, сводка вопросов · правка · удаление (`409`, если идёт прогон) |
@@ -463,6 +499,10 @@ erDiagram
 | GET | `/api/v1/projects/{id}/versions` · `/versions/{id}` | версии с диффом и отчётом · версия с XML |
 | GET | `/api/v1/versions/{id}/xml` | скачать `.bpmn` (SVG/PNG экспортирует bpmn-js на фронтенде) |
 | PUT | `/api/v1/projects/{id}/diagram` | сохранить ручную правку из bpmn-js → новая версия `manual` |
+| GET / DELETE | `/api/v1/projects/{id}/members` · `/members/{user_id}` | владелец просматривает список редакторов и отзывает доступ |
+| POST / GET / DELETE | `/api/v1/projects/{id}/share-links` · `/share-links/{link_id}` | создать, перечислить и отозвать ссылку `viewer` или `editor`; срок — до 365 дней |
+| GET | `/api/v1/shares/{token}` · `/shares/{token}/versions/{version_id}/xml` | открыть проект и схему по ссылке; ссылка `editor` требует входа |
+| POST | `/api/v1/shares/{token}/accept` | принять приглашение редактора после входа в аккаунт |
 | GET | `/api/v1/examples` · `/health` | демо-примеры · healthcheck |
 
 - OpenAPI генерирует FastAPI. Он коммитится в `docs/api/openapi.json` (`make openapi`).
@@ -554,7 +594,7 @@ STT_PROVIDER=yandex
 
 - Отдельной папки `ai/` нет. Скиллы лежат в `.claude/skills/`, оттуда их находит Claude Code; другие агенты находят их через `AGENTS.md`. Скрипты прогонов — в `scripts/`, эталонные данные — в `evals/`.
 - **Промпты** — это код продукта, а не инструмент разработки. Они лежат в `backend/app/llm/prompts/`.
-- **Авторизация в MVP — basic auth на Caddy** для демо жюри (логин и пароль — в инструкции на Codenrock). Генерация токенов для e2e не нужна.
+- **Авторизация приложения** — аккаунт email/пароль и серверная cookie-сессия; Caddy Basic Auth может дополнительно закрывать демо-контур. Изменяющие API-запросы из браузера требуют CSRF cookie и заголовок `X-CSRF-Token`.
 
 ## 9. Качество без CI
 

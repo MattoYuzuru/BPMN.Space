@@ -3,8 +3,19 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    File,
+    Form,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 
+from app.api.access import ensure_project_access, ensure_resource_access, require_account
+from app.api.auth import OptionalUserDep
 from app.api.deps import ContainerDep
 from app.api.schemas.common import errors
 from app.api.schemas.projects import Transcription
@@ -19,9 +30,14 @@ router = APIRouter(tags=["sources"])
     responses=errors(404, 422),
 )
 async def create_text_source(
-    project_id: UUID, body: SourceTextCreate, container: ContainerDep
+    project_id: UUID,
+    body: SourceTextCreate,
+    request: Request,
+    container: ContainerDep,
+    user: OptionalUserDep,
 ) -> Source:
     """Текст или голосовая заметка (`kind=voice`) после проверки расшифровки аналитиком."""
+    await ensure_project_access(request, container, project_id, user, write=True)
     source = await container.sources.create_text(
         project_id,
         content=body.content,
@@ -37,15 +53,18 @@ async def create_text_source(
     status_code=status.HTTP_201_CREATED,
     responses=errors(404, 413, 415, 422),
 )
-async def create_file_source(
+async def create_file_source(  # noqa: PLR0917 - multipart form fields are separate parameters
     project_id: UUID,
+    request: Request,
     container: ContainerDep,
     background: BackgroundTasks,
     file: Annotated[UploadFile, File(description=".txt, .md, .csv, .docx или .pdf")],
+    user: OptionalUserDep,
     title: Annotated[str | None, Form(max_length=200)] = None,
 ) -> Source:
     """Документ. `.txt`/`.md`/`.csv` готовы сразу; `.docx`/`.pdf` приходят в `processing`
     и становятся `ready` или `failed` в фоне — обновляйте проект, пока есть `processing`."""
+    await ensure_project_access(request, container, project_id, user, write=True)
     data = await file.read()
     source, slow = await container.sources.create_file(
         project_id,
@@ -60,8 +79,15 @@ async def create_file_source(
 
 
 @router.patch("/sources/{source_id}", responses=errors(404, 422))
-async def update_source(source_id: UUID, body: SourceUpdate, container: ContainerDep) -> Source:
+async def update_source(
+    source_id: UUID,
+    body: SourceUpdate,
+    request: Request,
+    container: ContainerDep,
+    user: OptionalUserDep,
+) -> Source:
     """Поправить название или текст, включить или выключить источник."""
+    await ensure_resource_access(request, container, source_id, user, resource="source", write=True)
     source = await container.sources.update(
         source_id,
         title=body.title,
@@ -75,18 +101,27 @@ async def update_source(source_id: UUID, body: SourceUpdate, container: Containe
 @router.delete(
     "/sources/{source_id}", status_code=status.HTTP_204_NO_CONTENT, responses=errors(404, 422)
 )
-async def delete_source(source_id: UUID, container: ContainerDep) -> Response:
+async def delete_source(
+    source_id: UUID,
+    request: Request,
+    container: ContainerDep,
+    user: OptionalUserDep,
+) -> Response:
     """Удалить источник. Удаление ответа возвращает отвеченный вопрос в `open`."""
+    await ensure_resource_access(request, container, source_id, user, resource="source", write=True)
     await container.sources.delete(source_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/transcriptions", tags=["transcriptions"], responses=errors(413, 415, 422))
 async def transcribe(
+    request: Request,
     container: ContainerDep,
     file: Annotated[UploadFile, File(description="Аудио: webm/ogg (opus), wav или mp3")],
+    user: OptionalUserDep,
 ) -> Transcription:
     """Расшифровка голоса для правки перед сохранением (источник или ответ на вопрос)."""
+    require_account(request, user)
     data = await file.read()
     transcript = await container.transcriptions.transcribe(data, mime=file.content_type)
     return Transcription.model_validate(transcript)

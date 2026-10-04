@@ -1,0 +1,193 @@
+"""SQL-реализация доступа: роли, участники проекта и ссылки-приглашения."""
+
+from datetime import datetime
+from uuid import UUID
+
+from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.domain.access import ProjectMember, ProjectRole, ResourceKind, ShareLink
+from app.infra.db_models import (
+    DiagramVersionRow,
+    ProjectMemberRow,
+    ProjectRow,
+    ProjectShareLinkRow,
+    QuestionRow,
+    RunRow,
+    SourceRow,
+    UserRow,
+)
+
+type SessionFactory = async_sessionmaker[AsyncSession]
+
+users = UserRow.__table__  # `email` и `id` у FastAPI Users объявлены без Mapped-типов
+
+_RESOURCE_ROWS = {
+    ResourceKind.SOURCE: SourceRow,
+    ResourceKind.QUESTION: QuestionRow,
+    ResourceKind.RUN: RunRow,
+    ResourceKind.VERSION: DiagramVersionRow,
+}
+
+
+def _link(row: ProjectShareLinkRow) -> ShareLink:
+    return ShareLink(
+        id=row.id,
+        project_id=row.project_id,
+        role=row.role,
+        token_hash=row.token_hash,
+        created_by=row.created_by,
+        created_at=row.created_at,
+        expires_at=row.expires_at,
+        revoked_at=row.revoked_at,
+    )
+
+
+class SqlAccessRepository:
+    def __init__(self, sessions: SessionFactory) -> None:
+        self.sessions = sessions
+
+    async def project_role(self, project_id: UUID, user_id: UUID) -> ProjectRole | None:
+        async with self.sessions() as session:
+            project = await session.get(ProjectRow, project_id)
+            if project is None:
+                return None
+            if project.owner_id == user_id:
+                return ProjectRole.OWNER
+            membership = await session.get(ProjectMemberRow, (project_id, user_id))
+            if membership is not None and membership.role == ProjectRole.EDITOR:
+                return ProjectRole.EDITOR
+            return ProjectRole.VIEWER if project.public_read_only else None
+
+    async def project_roles(
+        self, project_ids: list[UUID], user_id: UUID | None
+    ) -> dict[UUID, ProjectRole]:
+        if not project_ids:
+            return {}
+        async with self.sessions() as session:
+            projects = (
+                await session.execute(
+                    select(ProjectRow.id, ProjectRow.owner_id, ProjectRow.public_read_only).where(
+                        ProjectRow.id.in_(project_ids)
+                    )
+                )
+            ).all()
+            editable: set[UUID] = set()
+            if user_id is not None:
+                editable = set(
+                    await session.scalars(
+                        select(ProjectMemberRow.project_id).where(
+                            ProjectMemberRow.project_id.in_(project_ids),
+                            ProjectMemberRow.user_id == user_id,
+                            ProjectMemberRow.role == ProjectRole.EDITOR,
+                        )
+                    )
+                )
+        roles: dict[UUID, ProjectRole] = {}
+        for project_id, owner_id, public in projects:
+            if user_id is not None and owner_id == user_id:
+                roles[project_id] = ProjectRole.OWNER
+            elif project_id in editable:
+                roles[project_id] = ProjectRole.EDITOR
+            elif public:
+                roles[project_id] = ProjectRole.VIEWER
+        return roles
+
+    async def resource_project_id(self, kind: ResourceKind, resource_id: UUID) -> UUID | None:
+        row_type = _RESOURCE_ROWS[kind]
+        async with self.sessions() as session:
+            return await session.scalar(
+                select(row_type.project_id).where(row_type.id == resource_id)
+            )
+
+    async def find_share_link(self, token_hash: str) -> ShareLink | None:
+        async with self.sessions() as session:
+            row = await session.scalar(
+                select(ProjectShareLinkRow).where(ProjectShareLinkRow.token_hash == token_hash)
+            )
+            return _link(row) if row else None
+
+    async def add_share_link(self, link: ShareLink) -> None:
+        async with self.sessions.begin() as session:
+            session.add(
+                ProjectShareLinkRow(
+                    id=link.id,
+                    project_id=link.project_id,
+                    token_hash=link.token_hash,
+                    role=link.role,
+                    created_by=link.created_by,
+                    created_at=link.created_at,
+                    expires_at=link.expires_at,
+                )
+            )
+
+    async def list_share_links(self, project_id: UUID) -> list[ShareLink]:
+        async with self.sessions() as session:
+            rows = await session.scalars(
+                select(ProjectShareLinkRow)
+                .where(ProjectShareLinkRow.project_id == project_id)
+                .order_by(ProjectShareLinkRow.created_at.desc())
+            )
+            return [_link(row) for row in rows]
+
+    async def revoke_share_link(
+        self, project_id: UUID, link_id: UUID, revoked_at: datetime
+    ) -> bool:
+        async with self.sessions.begin() as session:
+            row = await session.scalar(
+                select(ProjectShareLinkRow).where(
+                    ProjectShareLinkRow.id == link_id,
+                    ProjectShareLinkRow.project_id == project_id,
+                )
+            )
+            if row is None:
+                return False
+            if row.revoked_at is None:
+                row.revoked_at = revoked_at
+        return True
+
+    async def list_members(self, project_id: UUID) -> list[ProjectMember]:
+        async with self.sessions() as session:
+            rows = (
+                await session.execute(
+                    select(ProjectMemberRow, users.c.email)
+                    .join(users, users.c.id == ProjectMemberRow.user_id)
+                    .where(ProjectMemberRow.project_id == project_id)
+                    .order_by(ProjectMemberRow.added_at)
+                )
+            ).all()
+        return [
+            ProjectMember(
+                user_id=member.user_id, email=email, role=member.role, added_at=member.added_at
+            )
+            for member, email in rows
+        ]
+
+    async def remove_member(self, project_id: UUID, user_id: UUID) -> bool:
+        async with self.sessions.begin() as session:
+            result = await session.execute(
+                delete(ProjectMemberRow)
+                .where(
+                    ProjectMemberRow.project_id == project_id,
+                    ProjectMemberRow.user_id == user_id,
+                )
+                .returning(ProjectMemberRow.user_id)
+            )
+            return result.scalar_one_or_none() is not None
+
+    async def add_editor(self, project_id: UUID, user_id: UUID, added_at: datetime) -> None:
+        async with self.sessions.begin() as session:
+            await session.execute(
+                insert(ProjectMemberRow)
+                .values(
+                    project_id=project_id,
+                    user_id=user_id,
+                    role=ProjectRole.EDITOR.value,
+                    added_at=added_at,
+                )
+                .on_conflict_do_update(
+                    index_elements=[ProjectMemberRow.project_id, ProjectMemberRow.user_id],
+                    set_={"role": ProjectRole.EDITOR.value},
+                )
+            )

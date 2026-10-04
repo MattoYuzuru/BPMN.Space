@@ -1,7 +1,7 @@
 [project]
 name = "arkhitektor-backend"
 version = "0.1.0"
-description = "Архитектор BPMN-диаграмм: API (сейчас — mock-реализация, см. docs/backend/mock.md)"
+description = "Архитектор BPMN-диаграмм: API, аккаунты и общий доступ к проектам (демо-заглушки — docs/backend/mock.md)"
 requires-python = ">=3.13,<3.14"
 dependencies = [
   "fastapi",
@@ -83,3 +83,11 @@ name = "fixtures — только данные: не зависят от сло�
 type = "forbidden"
 source_modules = ["app.fixtures"]
 forbidden_modules = ["app.api", "app.services", "app.llm", "app.ingest", "app.infra", "fastapi"]
+
+[[tool.importlinter.contracts]]
+name = "api не ходит в infra напрямую: только через services, схемы и контейнер"
+type = "forbidden"
+source_modules = ["app.api"]
+forbidden_modules = ["app.infra"]
+# Через app.container (сборка зависимостей) и services цепочка в infra допустима.
+allow_indirect_imports = true

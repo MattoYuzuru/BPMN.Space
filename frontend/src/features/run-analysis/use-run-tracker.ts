@@ -10,6 +10,7 @@ import {
   type RunEvent,
   useRunStore,
 } from '@/entities/run'
+import { needsLogin, sessionQueryOptions } from '@/entities/session'
 import { type Version, versionKeys, versionLabel } from '@/entities/version'
 import { toast } from '@/shared/ui'
 
@@ -71,14 +72,25 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
       })
     }
 
-    return openRunStream(runId, {
-      onEvent: handle,
-      onLost: () => {
-        void client.invalidateQueries({ queryKey: projectKeys.detail(projectId) })
-        toast.warning('Связь с прогоном потеряна', {
-          description: 'Результат появится, когда прогон завершится.',
-        })
+    // Сессия закончилась: любой защищённый запрос получит 401, а его общая обработка уведёт на вход.
+    const expire = () => void client.invalidateQueries({ queryKey: projectKeys.detail(projectId) })
+
+    return openRunStream(
+      runId,
+      {
+        onEvent: handle,
+        onSessionExpired: expire,
+        onLost: () => {
+          void client.invalidateQueries({ queryKey: projectKeys.detail(projectId) })
+          toast.warning('Связь с прогоном потеряна', {
+            description: 'Результат появится, когда прогон завершится.',
+          })
+        },
       },
-    })
+      {
+        checkSession: async () =>
+          !needsLogin(await client.fetchQuery({ ...sessionQueryOptions, staleTime: 0 })),
+      },
+    )
   }, [runId, projectId])
 }

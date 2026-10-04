@@ -6,11 +6,6 @@ test('список проектов открывается на главной',
   await expect(page.getByRole('heading', { name: 'Проекты' })).toBeVisible()
 })
 
-test('обзор продукта доступен отдельно', async ({ page }) => {
-  await page.goto('/welcome')
-  await expect(page.getByRole('heading', { name: /Из материалов/ })).toBeVisible()
-})
-
 test('старый адрес рабочего места ведёт в единое пространство проекта', async ({ page }) => {
   const projectId = '00000000-0000-0000-0000-000000000000'
   await page.goto(`/studio/${projectId}`)

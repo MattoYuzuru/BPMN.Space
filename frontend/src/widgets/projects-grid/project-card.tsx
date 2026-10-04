@@ -1,6 +1,12 @@
 import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
-import { type Project, projectStatusView, useDeleteProject } from '@/entities/project'
+import {
+  isReadOnly,
+  type Project,
+  projectCapabilities,
+  projectStatusView,
+  useDeleteProject,
+} from '@/entities/project'
 import { formatRelative } from '@/shared/lib/format'
 import {
   Badge,
@@ -41,6 +47,7 @@ export function ProjectCard({ project }: { project: Project }) {
               <Badge tone={status.tone} dot>
                 {status.label}
               </Badge>
+              {isReadOnly(project.access) && <Tag icon="lock">Пример</Tag>}
             </div>
             <div className="flex flex-col gap-1">
               <h2 className="line-clamp-2 type-subheading text-md text-fg">{project.title}</h2>
@@ -99,7 +106,7 @@ export function ProjectCard({ project }: { project: Project }) {
           </div>
         </Link>
       </Card>
-      <ProjectMenu project={project} />
+      {projectCapabilities(project.access).canManage && <ProjectMenu project={project} />}
     </div>
   )
 }

@@ -36,7 +36,7 @@ export function QuestionSheet() {
 }
 
 function QuestionDetail({ question }: { question: Question }) {
-  const { project, selectQuestion, focusElements } = useWorkspace()
+  const { project, canEdit, selectQuestion, focusElements } = useWorkspace()
   const close = useWorkspaceUi((state) => state.openQuestionSheet)
   const action = useQuestionAction(project.id)
   const latest = project.latest_version
@@ -65,7 +65,7 @@ function QuestionDetail({ question }: { question: Question }) {
       }
       footer={
         <>
-          {question.status === 'open' && (
+          {canEdit && question.status === 'open' && (
             <Button
               variant="ghost"
               leadingIcon="eye-off"
@@ -74,7 +74,7 @@ function QuestionDetail({ question }: { question: Question }) {
               Игнорировать
             </Button>
           )}
-          {question.status === 'ignored' && (
+          {canEdit && question.status === 'ignored' && (
             <Button
               variant="ghost"
               leadingIcon="undo"
@@ -156,7 +156,7 @@ function QuestionDetail({ question }: { question: Question }) {
           </AssumptionFrame>
         )}
 
-        {question.status === 'open' && (
+        {canEdit && question.status === 'open' && (
           <Section title="Ответ" icon="message-question">
             <AnswerComposer projectId={project.id} question={question} autoFocus={false} />
           </Section>

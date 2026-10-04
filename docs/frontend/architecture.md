@@ -6,18 +6,19 @@
 
 | Маршрут | Что | Файлы |
 |---|---|---|
-| `/` и `/projects` | Список проектов: поиск (`?q=`), сетка карточек, бесконечная прокрутка, создание проекта | `routes/index.tsx`, `routes/projects.index.tsx`, `widgets/projects-grid/` |
-| `/welcome` | Обзор продукта и переход к созданию процесса или примеру | `routes/welcome.tsx` |
-| `/new` | Ввод описания, документа или голоса перед созданием проекта | `routes/new.tsx` |
-| `/projects/$projectId` | Рабочее место: шапка, три панели (источники, схема, вопросы), ход прогона, листы вопроса, источника, отчёта и версий | `routes/projects.$projectId.tsx`, `widgets/workspace/` и соседние виджеты |
-| `/studio/$projectId` | Старые ссылки перенаправляются в единственное рабочее место проекта | `routes/studio.$projectId.tsx` |
+| `/login` | Вход и регистрация (`?redirect=` — куда вернуть). Публичный | `routes/login.tsx`, `widgets/login-screen/`, `features/sign-in/` |
+| `/` и `/projects` | Список проектов: поиск (`?q=`), сетка карточек, бесконечная прокрутка, создание проекта | `routes/_app.index.tsx`, `routes/_app.projects.index.tsx`, `widgets/projects-grid/` |
+| `/projects/$projectId` | Рабочее место: шапка, три панели (источники, схема, вопросы), ход прогона, листы вопроса, источника, отчёта и версий | `routes/_app.projects.$projectId.tsx`, `widgets/workspace/` и соседние виджеты |
+| `/studio/$projectId` | Старые ссылки перенаправляются в единственное рабочее место проекта | `routes/_app.studio.$projectId.tsx` |
 | `/styleguide` | Живой стайлгайд | `routes/styleguide.tsx` |
 | `/dev/diagram` | Витрина редактора BPMN для разработки; в навигации продукта ссылок на неё нет | `routes/dev.diagram.tsx` |
 | любой другой | 404 | `widgets/route-states/` |
 
 Состояние рабочего места живёт в адресе — ссылкой можно поделиться, «назад» работает: `?question=` (выбранный вопрос), `?version=` (просмотр старой версии, только чтение), `?source=&mark=` (открытый источник и цитата, к которой прокрутить).
 
-У серверного проекта одно рабочее место — `/projects/$projectId`. Создание через `/new` ведёт туда же; отдельный редактор для локальных черновиков удалён, а старый `/studio/$projectId` оставлен только для перенаправления старых ссылок.
+У серверного проекта одно рабочее место — `/projects/$projectId`. Создание проекта (диалог в корне) ведёт туда же; отдельный редактор для локальных черновиков удалён, а старый `/studio/$projectId` оставлен только для перенаправления старых ссылок.
+
+**Доступ.** Закрытые экраны — под pathless-маршрутом `routes/_app.tsx`: его `beforeLoad` (`requireSession` из `entities/session`) читает `/auth/session` и гостя при включённых аккаунтах отправляет на `/login?redirect=…`. Публичные маршруты (`/login`, `/styleguide`, `/dev/diagram`, позже `/share/$token`) лежат вне `_app`. `entities/session` — запрос сессии, вход, регистрация (сразу входит), выход, очистка кэша данных аккаунта, проверка адреса возврата. 401 посреди работы ловят `QueryCache`/`MutationCache` (`app/query-client.ts`) и ведут на вход (`app/session-expiry.ts`); 429 — спокойный тост. Права в проекте — `projectCapabilities(access)` в `entities/project`, компоненты получают `canEdit` / `canManage`. Подробности — styleguide §16.
 
 Глобальные слои стоят в корне (`routes/__root.tsx`): палитра команд (Ctrl+K / ⌘K) и диалог создания проекта. Экран добавляет в палитру свои команды через `useRegisterCommands` (рабочее место — «Запустить анализ», «Построить схему», «Отчёт проверки»…).
 
@@ -30,8 +31,8 @@ src/
   widgets/    крупные блоки экранов: projects-grid, workspace, project-header, sources-panel,
               questions-panel, diagram-panel, run-progress, version-sheets, diagram-editor, skeletons
   features/   действия пользователя: create-project, add-source, voice-record, answer-question,
-              run-analysis, export-diagram, command-palette, theme-switch
-  entities/   данные предметной области: project, source, question, run, version, example —
+              run-analysis, export-diagram, command-palette, theme-switch, sign-in, account-menu
+  entities/   данные предметной области: project, source, question, run, version, example, session —
               ключи запросов, queryOptions, мутации, модели и чистые функции
   shared/     api (клиент openapi-fetch и типы), ui (дизайн-система), lib, hooks, styles
 ```

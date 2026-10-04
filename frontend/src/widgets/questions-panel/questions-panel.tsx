@@ -107,7 +107,7 @@ export function QuestionsPanel({ onCollapse }: { onCollapse: () => void }) {
 }
 
 function EmptyTab({ tab }: { tab: QuestionGroup }) {
-  const { project } = useWorkspace()
+  const { project, canEdit } = useWorkspace()
   const start = useStartRun(project.id)
   const noSources = project.sources.length === 0
   if (tab === 'open') {
@@ -119,12 +119,14 @@ function EmptyTab({ tab }: { tab: QuestionGroup }) {
           icon="message-question"
           title={noSources ? 'Вопросов пока нет' : 'Анализ ещё не запускался'}
           description={
-            noSources
-              ? 'Добавьте источник — после анализа здесь появятся уточняющие вопросы.'
-              : 'Модель прочитает источники и спросит о том, что в них неясно.'
+            !canEdit
+              ? 'Здесь появятся уточняющие вопросы после анализа.'
+              : noSources
+                ? 'Добавьте источник — после анализа здесь появятся уточняющие вопросы.'
+                : 'Модель прочитает источники и спросит о том, что в них неясно.'
           }
           action={
-            noSources ? undefined : (
+            noSources || !canEdit ? undefined : (
               <Button
                 size="sm"
                 leadingIcon="sparkles"

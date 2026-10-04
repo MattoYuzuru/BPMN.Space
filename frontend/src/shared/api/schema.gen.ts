@@ -75,6 +75,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Session State */
+        get: operations["get_session_state"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/session/login": {
         parameters: {
             query?: never;
@@ -138,7 +155,7 @@ export interface paths {
         };
         /**
          * List Projects
-         * @description Проекты: сначала недавно изменённые. Курсорная пагинация.
+         * @description Проекты: сначала недавно изменённые. Курсорная пагинация. Гостям — 401.
          */
         get: operations["list_projects"];
         put?: never;
@@ -314,6 +331,9 @@ export interface paths {
         /**
          * Create Share Link
          * @description Создать ссылку на чтение либо приглашение редактора; сырой токен выдаётся один раз.
+         *
+         *     Срок всегда ограничен: приглашение редактора — по умолчанию 7 дней (максимум 30), ссылка
+         *     на чтение — 30 дней (максимум 365).
          */
         post: operations["create_share_link"];
         delete?: never;
@@ -506,7 +526,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read Shared Project */
+        /**
+         * Read Shared Project
+         * @description Открыть проект по ссылке. Ссылка на чтение работает без входа (гостям тоже).
+         */
         get: operations["read_shared_project"];
         put?: never;
         post?: never;
@@ -813,6 +836,8 @@ export interface components {
         };
         /** Project */
         Project: {
+            /** @description Роль текущего пользователя: owner и editor меняют проект, viewer только читает */
+            access: components["schemas"]["ProjectRole"];
             counts: components["schemas"]["ProjectCounts"];
             /**
              * Created At
@@ -863,6 +888,8 @@ export interface components {
         };
         /** ProjectDetail */
         ProjectDetail: {
+            /** @description Роль текущего пользователя: owner и editor меняют проект, viewer только читает */
+            access: components["schemas"]["ProjectRole"];
             active_run: components["schemas"]["Run"] | null;
             counts: components["schemas"]["ProjectCounts"];
             /**
@@ -937,6 +964,11 @@ export interface components {
              */
             total: number;
         };
+        /**
+         * ProjectRole
+         * @enum {string}
+         */
+        ProjectRole: "owner" | "editor" | "viewer";
         /**
          * ProjectStatus
          * @enum {string}
@@ -1200,6 +1232,19 @@ export interface components {
             event: "version";
         };
         /**
+         * SessionState
+         * @description Состояние входа для клиента: всегда 200, чтобы не путать «гость» с ошибкой сети.
+         */
+        SessionState: {
+            /**
+             * Auth Enabled
+             * @description false — стенд без аккаунтов, вход не нужен
+             */
+            auth_enabled: boolean;
+            /** @description Текущий пользователь; null — гость */
+            user: components["schemas"]["UserRead"] | null;
+        };
+        /**
          * Severity
          * @enum {string}
          */
@@ -1216,7 +1261,10 @@ export interface components {
         };
         /** ShareLinkCreate */
         ShareLinkCreate: {
-            /** Expires In Days */
+            /**
+             * Expires In Days
+             * @description Срок ссылки в днях. Для `editor`: по умолчанию 7, максимум 30. Для `viewer`: по умолчанию 30, максимум 365. Бессрочных ссылок нет.
+             */
             expires_in_days?: number | null;
             role: components["schemas"]["ShareRole"];
         };
@@ -1587,8 +1635,26 @@ export interface operations {
                     "application/json": components["schemas"]["AssistantResponse"];
                 };
             };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Некорректные данные */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Слишком много запросов; повторите через `Retry-After` секунд */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1605,7 +1671,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Помощник не настроен */
+            /** @description Сервис или помощник не настроен */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -1696,6 +1762,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_session_state: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionState"];
                 };
             };
         };
@@ -1827,6 +1913,15 @@ export interface operations {
                     "application/json": components["schemas"]["ProjectPage"];
                 };
             };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Некорректные данные */
             422: {
                 headers: {
@@ -1860,6 +1955,15 @@ export interface operations {
                     "application/json": components["schemas"]["Project"];
                 };
             };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Некорректные данные */
             422: {
                 headers: {
@@ -1891,6 +1995,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Не найдено */
@@ -1933,6 +2046,15 @@ export interface operations {
                     "application/json": components["schemas"]["ProjectDetail"];
                 };
             };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Не найдено */
             404: {
                 headers: {
@@ -1970,6 +2092,24 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
             };
             /** @description Не найдено */
             404: {
@@ -2024,6 +2164,24 @@ export interface operations {
                     "application/json": components["schemas"]["Project"];
                 };
             };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Не найдено */
             404: {
                 headers: {
@@ -2068,6 +2226,24 @@ export interface operations {
                     "application/json": components["schemas"]["AssistantResponse"];
                 };
             };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Не найдено */
             404: {
                 headers: {
@@ -2086,6 +2262,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Слишком много запросов; повторите через `Retry-After` секунд */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Провайдер модели вернул ошибку */
             502: {
                 headers: {
@@ -2095,7 +2280,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Помощник не настроен */
+            /** @description Сервис или помощник не настроен */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -2128,6 +2313,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Version"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Не найдено */
@@ -2296,6 +2499,15 @@ export interface operations {
                     "application/json": components["schemas"]["Question"][];
                 };
             };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Не найдено */
             404: {
                 headers: {
@@ -2340,6 +2552,24 @@ export interface operations {
                     "application/json": components["schemas"]["Run"];
                 };
             };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Не найдено */
             404: {
                 headers: {
@@ -2360,6 +2590,15 @@ export interface operations {
             };
             /** @description Некорректные данные */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Слишком много запросов; повторите через `Retry-After` секунд */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2570,6 +2809,24 @@ export interface operations {
                     "application/json": components["schemas"]["Source"];
                 };
             };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Не найдено */
             404: {
                 headers: {
@@ -2606,6 +2863,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Слишком много запросов; повторите через `Retry-After` секунд */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     create_text_source: {
@@ -2630,6 +2896,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Source"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Не найдено */
@@ -2670,6 +2954,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Version"][];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Не найдено */
@@ -2714,6 +3007,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Question"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Не найдено */
@@ -2765,6 +3076,24 @@ export interface operations {
                     "application/json": components["schemas"]["Question"];
                 };
             };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Не найдено */
             404: {
                 headers: {
@@ -2812,6 +3141,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Question"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Не найдено */
@@ -2863,6 +3210,15 @@ export interface operations {
                     "application/json": components["schemas"]["Run"];
                 };
             };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Не найдено */
             404: {
                 headers: {
@@ -2904,6 +3260,15 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": components["schemas"]["RunEvent"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Не найдено */
@@ -3063,7 +3428,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Диаграмма BPMN по ссылке доступа */
+            /** @description Диаграмма BPMN по ссылке доступа (вложением) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3128,6 +3493,24 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Не найдено */
             404: {
                 headers: {
@@ -3172,6 +3555,24 @@ export interface operations {
                     "application/json": components["schemas"]["Source"];
                 };
             };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Не найдено */
             404: {
                 headers: {
@@ -3214,6 +3615,15 @@ export interface operations {
                     "application/json": components["schemas"]["Transcription"];
                 };
             };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Слишком большой файл */
             413: {
                 headers: {
@@ -3241,6 +3651,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Слишком много запросов; повторите через `Retry-After` секунд */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     get_version: {
@@ -3261,6 +3680,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionDetail"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Не найдено */
@@ -3301,6 +3729,15 @@ export interface operations {
                 };
                 content: {
                     "application/xml": unknown;
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Не найдено */

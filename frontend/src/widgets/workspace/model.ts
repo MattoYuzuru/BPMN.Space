@@ -1,13 +1,13 @@
 import { createContext, type RefObject, useContext } from 'react'
 import { create } from 'zustand'
-import type { ProjectDetail } from '@/entities/project'
+import type { ProjectCapabilities, ProjectDetail } from '@/entities/project'
 import type { DiagramEditorHandle } from '@/widgets/diagram-editor'
 
 /**
  * Общее состояние рабочего места для панелей. Выбор (вопрос, открытый источник, версия)
  * живёт в адресе — ссылкой можно поделиться, «назад» работает; открытые окна — в сторе.
  */
-export interface WorkspaceApi {
+export interface WorkspaceApi extends ProjectCapabilities {
   project: ProjectDetail
   editorRef: RefObject<DiagramEditorHandle | null>
   selectedQuestionId?: string

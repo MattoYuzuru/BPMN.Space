@@ -18,7 +18,7 @@ DEMO = str(DEMO_PROJECT_ID)
 
 @pytest.fixture(autouse=True)
 def isolate_external_services(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Tests must not inherit live providers, credentials, DBs, or Docker paths."""
+    """Тесты не наследуют боевые провайдеры, ключи, БД и пути Docker."""
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("DATABASE_URL", "")
     monkeypatch.setenv("LLM_PROVIDER", "mock")
@@ -29,12 +29,13 @@ def isolate_external_services(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def settings() -> Settings:
-    # Keep API tests on in-memory repositories so they never mutate a developer's DB.
+    # API-тесты работают на in-memory репозиториях и не трогают БД разработчика.
     return Settings(
         mock_delay_scale=0,
         database_url=None,
         app_env="test",
         auth_enabled=False,
+        rate_limit_enabled=False,
         llm_provider="mock",
         stt_provider="mock",
         deepseek_api_key=None,

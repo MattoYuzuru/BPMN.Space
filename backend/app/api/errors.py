@@ -10,15 +10,23 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.services.errors import (
     ConflictError,
+    ForbiddenError,
+    GoneError,
     InvalidInputError,
     NotFoundError,
     PayloadTooLargeError,
     ServiceError,
+    UnauthorizedError,
+    UnavailableError,
     UnsupportedMediaError,
 )
 
 _STATUS: dict[type[ServiceError], int] = {
+    UnauthorizedError: 401,
+    ForbiddenError: 403,
     NotFoundError: 404,
+    GoneError: 410,
+    UnavailableError: 503,
     ConflictError: 409,
     PayloadTooLargeError: 413,
     UnsupportedMediaError: 415,

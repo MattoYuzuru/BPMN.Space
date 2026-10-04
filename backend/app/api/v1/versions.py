@@ -79,6 +79,8 @@ async def save_diagram(
 
     Пока по проекту идёт прогон — 409: его версия перекрыла бы правку."""
     await ensure_project_access(request, container, project_id, user, write=True)
-    saved = await container.versions.save_manual(project_id, xml=body.xml)
+    saved = await container.versions.save_manual(
+        project_id, xml=body.xml, actor_email=user.email if user else None
+    )
     await container.onboarding.record(user.id if user else None, ChecklistItem.DIAGRAM_EDITED)
     return Version.model_validate(saved)

@@ -27,7 +27,7 @@ class UserCreate(BaseUserCreate):
     """Регистрация по адресу почты и паролю."""
 
     model_config = ConfigDict(extra="forbid")
-    password: str = Field(min_length=12, max_length=128)
+    password: str = Field(min_length=8, max_length=128)
 
     @model_validator(mode="before")
     @classmethod

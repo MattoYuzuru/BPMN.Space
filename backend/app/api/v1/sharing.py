@@ -94,8 +94,7 @@ async def create_share_link(
 ) -> ShareLinkCreated:
     """Создать ссылку на чтение либо приглашение редактора; сырой токен выдаётся один раз.
 
-    Срок всегда ограничен: приглашение редактора — по умолчанию 7 дней (максимум 30), ссылка
-    на чтение — 30 дней (максимум 365).
+    У обеих ролей одинаковый срок: 7, 30, 365 дней или бессрочно (0); по умолчанию 30 дней.
     """
     await _ensure_owner(
         request, container, project_id, user, "Ссылки доступа может создавать только владелец"
@@ -209,17 +208,15 @@ async def download_shared_diagram(
 @router.post(
     "/shares/{token}/accept",
     response_model=ShareAccepted,
-    responses=errors(401, 403, 404, 410, 422),
+    responses=errors(401, 404, 410, 422),
 )
-async def accept_editor_invite(
+async def accept_share_link(
     token: str,
     container: ContainerDep,
     user: OptionalUserDep,
 ) -> ShareAccepted:
     link = await get_active_share_link(container, token)
-    if link.role != ShareRole.EDITOR:
-        raise ForbiddenError("Ссылка предназначена только для просмотра")
     if user is None:
-        raise UnauthorizedError("Войдите или зарегистрируйтесь, чтобы стать редактором")
-    await container.sharing.accept_invite(link.project_id, user.id)
-    return ShareAccepted(project_id=link.project_id)
+        raise UnauthorizedError("Войдите или зарегистрируйтесь, чтобы добавить проект в профиль")
+    await container.sharing.accept_invite(link.project_id, user.id, link.role)
+    return ShareAccepted(project_id=link.project_id, role=ShareRole(link.role))

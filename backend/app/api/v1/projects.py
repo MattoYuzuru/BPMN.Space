@@ -38,7 +38,7 @@ async def list_projects(  # noqa: PLR0917 - FastAPI binds each query parameter i
         Query(
             description=(
                 "Что показывать: `all` — всё доступное (по умолчанию), `own` — свои, "
-                "`shared` — где вы редактор по приглашению, `examples` — демо-примеры. "
+                "`shared` — принятые по ссылке проекты, `examples` — демо-примеры. "
                 "Без аккаунтов параметр не действует."
             )
         ),

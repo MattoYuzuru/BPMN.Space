@@ -12,3 +12,4 @@
 - ADR:
   - [Cookie-сессии и роли доступа к проектам](adr/0001-auth-and-project-sharing.md)
   - [Ограничение частоты запросов и Secure-cookie](adr/0002-rate-limits-and-secure-cookies.md)
+  - [Присутствие и история версий](adr/0003-presence-and-version-history.md)

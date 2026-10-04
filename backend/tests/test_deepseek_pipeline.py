@@ -9,16 +9,16 @@ import pytest
 from app.domain.analysis import AnalysisResult, ContextSource, RunContext
 from app.domain.models import SourceKind
 from app.llm.base import PipelineError
-from app.llm.deepseek import DeepSeekPipeline, _verified_quote
+from app.llm.openai_compatible import OpenAICompatiblePipeline, _verified_quote
 
 _NO_SLEEP = lambda _seconds: None  # noqa: E731 — тесты не ждут настоящих пауз
 
 
 def test_request_uses_current_model_and_server_side_bearer_auth() -> None:
     payload = {"choices": [{"message": {"content": '{"steps": []}'}}]}
-    pipeline = DeepSeekPipeline(api_key="test-only", model="deepseek-flash")
+    pipeline = OpenAICompatiblePipeline(api_key="test-only", model="deepseek-flash")
 
-    with patch("app.llm.deepseek.urlopen") as urlopen:
+    with patch("app.llm.openai_compatible.urlopen") as urlopen:
         urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(payload).encode()
         response = pipeline._request_json("system", "prompt")
         request = urlopen.call_args.args[0]
@@ -28,26 +28,27 @@ def test_request_uses_current_model_and_server_side_bearer_auth() -> None:
     assert request.get_header("Authorization") == "Bearer test-only"
     request_body = json.loads(request.data)
     assert request_body["model"] == "deepseek-flash"
-    assert request_body["thinking"] == {"type": "disabled"}
+    assert "thinking" not in request_body
+    assert request_body["response_format"] == {"type": "json_object"}
     assert request_body["max_tokens"] == 4096
 
 
-def test_request_can_enable_thinking_explicitly() -> None:
-    pipeline = DeepSeekPipeline(api_key="test-only", thinking_enabled=True)
-    with patch("app.llm.deepseek.urlopen") as urlopen:
+def test_request_can_disable_json_mode_for_providers_without_json_object_support() -> None:
+    pipeline = OpenAICompatiblePipeline(api_key="test-only", json_mode=False)
+    with patch("app.llm.openai_compatible.urlopen") as urlopen:
         urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(
             {"choices": [{"message": {"content": "{}"}}]}
         ).encode()
         pipeline._request_json("system", "prompt")
         request = urlopen.call_args.args[0]
 
-    assert json.loads(request.data)["thinking"] == {"type": "enabled"}
+    assert "response_format" not in json.loads(request.data)
 
 
 def test_request_reports_timeout_separately() -> None:
-    pipeline = DeepSeekPipeline(api_key="test-only", timeout_sec=17, sleep=_NO_SLEEP)
+    pipeline = OpenAICompatiblePipeline(api_key="test-only", timeout_sec=17, sleep=_NO_SLEEP)
     with (
-        patch("app.llm.deepseek.urlopen", side_effect=TimeoutError) as urlopen,
+        patch("app.llm.openai_compatible.urlopen", side_effect=TimeoutError) as urlopen,
         pytest.raises(RuntimeError, match="не ответила за 17 секунд"),
     ):
         pipeline._request_json("system", "prompt")
@@ -55,9 +56,9 @@ def test_request_reports_timeout_separately() -> None:
 
 
 def test_request_reports_network_error_separately() -> None:
-    pipeline = DeepSeekPipeline(api_key="test-only", max_retries=1, sleep=_NO_SLEEP)
+    pipeline = OpenAICompatiblePipeline(api_key="test-only", max_retries=1, sleep=_NO_SLEEP)
     with (
-        patch("app.llm.deepseek.urlopen", side_effect=URLError("offline")) as urlopen,
+        patch("app.llm.openai_compatible.urlopen", side_effect=URLError("offline")) as urlopen,
         pytest.raises(RuntimeError, match="связаться с сервисом модели"),
     ):
         pipeline._request_json("system", "prompt")
@@ -65,14 +66,14 @@ def test_request_reports_network_error_separately() -> None:
 
 
 def test_request_retries_transient_tls_error_once() -> None:
-    pipeline = DeepSeekPipeline(api_key="test-only", sleep=_NO_SLEEP)
+    pipeline = OpenAICompatiblePipeline(api_key="test-only", sleep=_NO_SLEEP)
     response = MagicMock()
     response.__enter__.return_value.read.return_value = json.dumps(
         {"choices": [{"message": {"content": '{"steps": []}'}}]}
     ).encode()
 
     with patch(
-        "app.llm.deepseek.urlopen",
+        "app.llm.openai_compatible.urlopen",
         side_effect=[URLError(TimeoutError("TLS handshake timeout")), response],
     ) as urlopen:
         assert pipeline._request_json("system", "prompt") == '{"steps": []}'
@@ -81,16 +82,16 @@ def test_request_retries_transient_tls_error_once() -> None:
 
 
 def test_request_reports_invalid_provider_json_separately() -> None:
-    pipeline = DeepSeekPipeline(api_key="test-only")
-    with patch("app.llm.deepseek.urlopen") as urlopen:
+    pipeline = OpenAICompatiblePipeline(api_key="test-only")
+    with patch("app.llm.openai_compatible.urlopen") as urlopen:
         urlopen.return_value.__enter__.return_value.read.return_value = b"not-json"
         with pytest.raises(RuntimeError, match="некорректном формате"):
             pipeline._request_json("system", "prompt")
 
 
 def test_request_reports_truncated_model_response_separately() -> None:
-    pipeline = DeepSeekPipeline(api_key="test-only")
-    with patch("app.llm.deepseek.urlopen") as urlopen:
+    pipeline = OpenAICompatiblePipeline(api_key="test-only")
+    with patch("app.llm.openai_compatible.urlopen") as urlopen:
         urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(
             {"choices": [{"message": {"content": "{}"}, "finish_reason": "length"}]}
         ).encode()
@@ -120,9 +121,9 @@ def test_verified_quote_accepts_pdf_line_wraps_and_returns_verbatim_source() -> 
 
 def test_chat_request_is_plain_text_and_receives_project_context() -> None:
     payload = {"choices": [{"message": {"content": "Уточните, кто принимает решение."}}]}
-    pipeline = DeepSeekPipeline(api_key="test-only")
+    pipeline = OpenAICompatiblePipeline(api_key="test-only")
 
-    with patch("app.llm.deepseek.urlopen") as urlopen:
+    with patch("app.llm.openai_compatible.urlopen") as urlopen:
         urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(payload).encode()
         response = pipeline._request_text("system", '{"user_message":"кто согласует?"}')
         request = urlopen.call_args.args[0]
@@ -203,7 +204,7 @@ async def test_pipeline_builds_diagram_and_keeps_only_verifiable_quotes() -> Non
             ),
         ]
     )
-    pipeline = DeepSeekPipeline(
+    pipeline = OpenAICompatiblePipeline(
         api_key="test-only", complete=lambda _system, _prompt: next(responses)
     )
 
@@ -248,7 +249,9 @@ async def test_pipeline_refuses_steps_without_source_quotes_after_repair() -> No
             ]
         }
     )
-    pipeline = DeepSeekPipeline(api_key="test-only", complete=lambda _system, _prompt: response)
+    pipeline = OpenAICompatiblePipeline(
+        api_key="test-only", complete=lambda _system, _prompt: response
+    )
 
     with pytest.raises(PipelineError, match="не смогла подтвердить цитатами"):
         await pipeline.structure(context, AnalysisResult())
@@ -262,7 +265,7 @@ async def test_chat_uses_injected_model_and_returns_answer() -> None:
         seen.append((system, prompt))
         return "Сначала оператор проверяет заявление."
 
-    pipeline = DeepSeekPipeline(api_key="test-only", complete=complete)
+    pipeline = OpenAICompatiblePipeline(api_key="test-only", complete=complete)
     answer = await pipeline.chat(
         project_title="Обработка заявления",
         project_description=None,
@@ -280,9 +283,9 @@ async def test_chat_uses_injected_model_and_returns_answer() -> None:
 
 
 def test_connection_errors_before_send_keep_full_retries() -> None:
-    pipeline = DeepSeekPipeline(api_key="test-only", max_retries=3, sleep=_NO_SLEEP)
+    pipeline = OpenAICompatiblePipeline(api_key="test-only", max_retries=3, sleep=_NO_SLEEP)
     with (
-        patch("app.llm.deepseek.urlopen", side_effect=URLError("refused")) as urlopen,
+        patch("app.llm.openai_compatible.urlopen", side_effect=URLError("refused")) as urlopen,
         pytest.raises(RuntimeError, match="связаться с сервисом модели"),
     ):
         pipeline._request_json("system", "prompt")
@@ -290,9 +293,11 @@ def test_connection_errors_before_send_keep_full_retries() -> None:
 
 
 def test_urlerror_timeout_is_retried_at_most_once() -> None:
-    pipeline = DeepSeekPipeline(api_key="test-only", max_retries=3, sleep=_NO_SLEEP)
+    pipeline = OpenAICompatiblePipeline(api_key="test-only", max_retries=3, sleep=_NO_SLEEP)
     with (
-        patch("app.llm.deepseek.urlopen", side_effect=URLError(TimeoutError("read"))) as urlopen,
+        patch(
+            "app.llm.openai_compatible.urlopen", side_effect=URLError(TimeoutError("read"))
+        ) as urlopen,
         pytest.raises(RuntimeError, match="не ответила"),
     ):
         pipeline._request_json("system", "prompt")

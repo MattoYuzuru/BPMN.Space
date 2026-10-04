@@ -62,7 +62,7 @@ afterEach(() => {
 })
 
 describe('ShareDialog', () => {
-  it('сроки зависят от роли, а недопустимый срок при смене роли сбрасывается', async () => {
+  it('просмотр и редактирование предлагают одинаковые сроки', async () => {
     stubApi({ [`GET ${LINKS}`]: { body: [] }, [`GET ${MEMBERS}`]: { body: [] } })
     const { user } = setup()
     const expiry = await screen.findByRole('combobox', { name: 'Срок действия' })
@@ -72,18 +72,19 @@ describe('ShareDialog', () => {
     expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual([
       '7 дней',
       '30 дней',
-      '3 месяца',
       'Год',
+      'Бессрочно',
     ])
     await user.click(screen.getByRole('option', { name: 'Год' }))
 
     await user.click(screen.getByRole('radio', { name: /Редактирование/ }))
-    expect(screen.getByRole('combobox', { name: 'Срок действия' })).toHaveTextContent('7 дней')
+    expect(screen.getByRole('combobox', { name: 'Срок действия' })).toHaveTextContent('Год')
     await user.click(screen.getByRole('combobox', { name: 'Срок действия' }))
     expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual([
-      '1 день',
       '7 дней',
       '30 дней',
+      'Год',
+      'Бессрочно',
     ])
   })
 

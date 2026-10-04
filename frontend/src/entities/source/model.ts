@@ -5,6 +5,8 @@ import type { IconName } from '@/shared/ui'
 export type Source = Schemas['Source']
 export type SourceKind = Schemas['SourceKind']
 export type Quote = Schemas['Quote']
+export type Sample = Schemas['Sample']
+export type SampleKind = Schemas['SampleKind']
 
 export const SOURCE_KIND: Record<SourceKind, { label: string; icon: IconName }> = {
   text: { label: 'Текст', icon: 'notes' },

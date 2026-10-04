@@ -33,7 +33,7 @@ src/
               questions-panel, diagram-panel, run-progress, version-sheets, diagram-editor, skeletons
   features/   действия пользователя: create-project, add-source, voice-record, answer-question,
               run-analysis, export-diagram, command-palette, theme-switch, sign-in, account-menu, share-project
-  entities/   данные предметной области: project, source, question, run, version, example, session, share —
+  entities/   данные предметной области: project, source, question, run, version, example, session, share, onboarding —
               ключи запросов, queryOptions, мутации, модели и чистые функции
   shared/     api (клиент openapi-fetch и типы), ui (дизайн-система), lib, hooks, styles
 ```
@@ -74,6 +74,8 @@ src/
 | переименование проекта | `entities/project/api.ts` (`useRenameProject`) | снимок проекта; списки перезапрашиваются |
 | удаление проекта | `useDeleteProject` | снимки всех страниц списков |
 | включить/выключить, править, удалить источник | `entities/source/api.ts` | снимок проекта |
+| состояние тура и чек-листа | `entities/onboarding/api.ts` (`useOnboarding`, `useUpdateTour`, `useSetChecklistHidden`, `useReportOnboardingEvent`) | ключ включает id пользователя; ответ сервера кладётся в кэш; отметка клиента не уходит, если пункт уже выполнен |
+| учебные материалы («Примеры») | `entities/source/api.ts` (`useSamples`, `useAddSampleSource`) | как у остальных источников: снимок проекта |
 | сохранение правки схемы | `entities/version/api.ts` (`useSaveDiagram`) | не оптимистично: XML кладётся в кэш новой версии после ответа, редактор не перечитывает схему |
 
 Сводка вопросов при оптимистичном переходе сдвигается функцией `shiftSummary`; точные числа приходят следующим запросом.

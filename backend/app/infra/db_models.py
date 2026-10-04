@@ -172,6 +172,55 @@ class RunRow(Base):
     warnings: Mapped[list[str]] = mapped_column(
         JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
     )
+    created_by: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL", name="fk_runs_created_by_users"),
+    )
+
+
+class UserOnboardingRow(Base):
+    """Состояние тура и чек-листа пользователя; создаётся лениво при первом обращении."""
+
+    __tablename__ = "user_onboarding"
+    __table_args__ = (
+        CheckConstraint(
+            "tour_status IN ('pending', 'active', 'completed', 'dismissed')",
+            name="ck_user_onboarding_tour_status",
+        ),
+    )
+
+    user_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    tour_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending", server_default="pending"
+    )
+    tour_step: Mapped[str | None] = mapped_column(String(64))
+    tour_project_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("projects.id", ondelete="SET NULL", name="fk_user_onboarding_tour_project"),
+    )
+    checklist_hidden: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class UserOnboardingItemRow(Base):
+    """Отмеченный пункт чек-листа; ключ — значение `ChecklistItem` (новые пункты без миграций)."""
+
+    __tablename__ = "user_onboarding_items"
+    __table_args__ = (
+        CheckConstraint("source IN ('server', 'client')", name="ck_user_onboarding_items_source"),
+    )
+
+    user_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    item_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
 
 
 class QuestionRow(Base):

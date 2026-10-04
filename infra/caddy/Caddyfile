@@ -1,5 +1,5 @@
-# Локальный и демо-стенд: статика фронтенда + прокси API.
-:80 {
+# Общее приложение: статика фронтенда + прокси API.
+(app) {
 	encode zstd gzip
 
 	# API и SSE: flush_interval -1 отдаёт события прогона сразу, без буферизации.
@@ -19,4 +19,14 @@
 		try_files {path} /index.html
 		file_server
 	}
+}
+
+# Локальный и IP-стенд остаются доступны по HTTP.
+:80 {
+	import app
+}
+
+# Caddy автоматически получает и обновляет Let's Encrypt сертификаты для домена.
+bpmn.space, www.bpmn.space {
+	import app
 }

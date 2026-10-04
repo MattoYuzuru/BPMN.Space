@@ -3,8 +3,8 @@ import { Link } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
 import { isRunning, projectStatusView, useRenameProject } from '@/entities/project'
 import { useRunView, useStartRun } from '@/entities/run'
-import { VERSION_ORIGIN, versionLabel, versionsQueryOptions } from '@/entities/version'
-import { EXPORT_FORMATS, exportDiagram } from '@/features/export-diagram/export'
+import { VERSION_ORIGIN, versionLabel } from '@/entities/version'
+import { ShareProjectButton } from '@/features/share-project/share-project-button'
 import { formatRelative } from '@/shared/lib/format'
 import {
   Badge,
@@ -17,13 +17,13 @@ import {
   DropdownMenuTrigger,
   FlowLine,
   Icon,
-  IconButton,
   Input,
   Tooltip,
 } from '@/shared/ui'
 import { AppHeader } from '@/widgets/app-header/app-header'
 import { SummaryChips } from '@/widgets/run-progress/summary-chips'
 import { useWorkspace, useWorkspaceUi } from '@/widgets/workspace/model'
+import { DownloadMenu } from './download-menu'
 
 /** Шапка рабочего места: крошки, название, статус, итоги вопросов, запуск прогонов, версии. */
 export function ProjectHeader() {
@@ -129,14 +129,14 @@ function ProjectTitle() {
 }
 
 function HeaderActions({ running }: { running: boolean }) {
-  const { project, canEdit, editorRef, viewedVersionId, viewVersion } = useWorkspace()
+  const { project, canEdit, canShare, viewedVersionId, viewVersion, versions } = useWorkspace()
   const setSheet = useWorkspaceUi((state) => state.setSheet)
   const start = useStartRun(project.id)
   const latest = project.latest_version
-  const versions = useQuery({ ...versionsQueryOptions(project.id), enabled: !!latest })
+  const versionList = useQuery({ ...versions.list(project.id), enabled: !!latest })
   const noSources = project.sources.length === 0
   const viewedId = viewedVersionId ?? latest?.id
-  const viewed = versions.data?.find((item) => item.id === viewedId) ?? latest
+  const viewed = versionList.data?.find((item) => item.id === viewedId) ?? latest
 
   return (
     <>
@@ -183,7 +183,7 @@ function HeaderActions({ running }: { running: boolean }) {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-72">
               <DropdownMenuLabel>Версии схемы</DropdownMenuLabel>
-              {(versions.data ?? [latest]).slice(0, 6).map((version, index) => (
+              {(versionList.data ?? [latest]).slice(0, 6).map((version, index) => (
                 <DropdownMenuItem
                   key={version.id}
                   icon={VERSION_ORIGIN[version.origin].icon}
@@ -207,39 +207,10 @@ function HeaderActions({ running }: { running: boolean }) {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <DropdownMenu>
-            <Tooltip content="Скачать" side="bottom">
-              <DropdownMenuTrigger asChild>
-                <IconButton icon="download" size="sm" label="Скачать схему" tooltip={false} />
-              </DropdownMenuTrigger>
-            </Tooltip>
-            <DropdownMenuContent align="end" className="min-w-60">
-              <DropdownMenuLabel>{versionLabel(viewed)}</DropdownMenuLabel>
-              {EXPORT_FORMATS.map((item) => (
-                <DropdownMenuItem
-                  key={item.format}
-                  icon={item.icon}
-                  onSelect={() =>
-                    void exportDiagram({
-                      format: item.format,
-                      versionId: viewed.id,
-                      versionNumber: viewed.number,
-                      title: project.title,
-                      editor: editorRef.current,
-                    })
-                  }
-                >
-                  {item.label}
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem icon="shield-check" onSelect={() => setSheet('report')}>
-                Отчёт проверки
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <DownloadMenu version={viewed} />
         </>
       )}
+      {canShare && <ShareProjectButton projectId={project.id} />}
       <span aria-hidden="true" className="mx-1 h-5 w-px bg-border" />
     </>
   )

@@ -1,6 +1,6 @@
 import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query'
 import { AnimatePresence, m } from 'motion/react'
-import { PROJECTS_PAGE_SIZE, projectsInfiniteOptions } from '@/entities/project'
+import { PROJECTS_PAGE_SIZE, type ProjectScope, projectsInfiniteOptions } from '@/entities/project'
 import { useCreateProjectDialog } from '@/features/create-project/model'
 import { errorMessage } from '@/shared/api/client'
 import { useGridColumns, useLoadMore } from '@/shared/hooks/use-load-more'
@@ -16,7 +16,9 @@ import { ProjectCard } from './project-card'
 
 export interface ProjectsGridProps {
   query: string
+  scope: ProjectScope
   onResetQuery: () => void
+  onResetScope: () => void
 }
 
 /**
@@ -24,9 +26,9 @@ export interface ProjectsGridProps {
  * показалась карточка на ~90 % загруженного (useLoadMore). Пока идёт поиск, на экране
  * остаются прошлые результаты (keepPreviousData) — без мигания пустым состоянием.
  */
-export function ProjectsGrid({ query, onResetQuery }: ProjectsGridProps) {
+export function ProjectsGrid({ query, scope, onResetQuery, onResetScope }: ProjectsGridProps) {
   const projects = useInfiniteQuery({
-    ...projectsInfiniteOptions(query),
+    ...projectsInfiniteOptions(query, scope),
     placeholderData: keepPreviousData,
   })
   const items = projects.data?.pages.flatMap((page) => page.items) ?? []
@@ -55,18 +57,36 @@ export function ProjectsGrid({ query, onResetQuery }: ProjectsGridProps) {
   }
 
   if (items.length === 0) {
-    return query ? (
-      <EmptyState
-        icon="search-off"
-        title="Ничего не найдено"
-        description={`Проектов с «${query}» в названии нет.`}
-        backdrop="dots"
-        action={<Button onClick={onResetQuery}>Сбросить поиск</Button>}
-      />
-    ) : (
+    if (query) {
+      return (
+        <EmptyState
+          icon="search-off"
+          title="Ничего не найдено"
+          description={`Проектов с «${query}» в названии нет.`}
+          backdrop="dots"
+          action={<Button onClick={onResetQuery}>Сбросить поиск</Button>}
+        />
+      )
+    }
+    if (scope === 'shared' || scope === 'examples') {
+      return (
+        <EmptyState
+          icon={scope === 'shared' ? 'users' : 'template'}
+          title={scope === 'shared' ? 'Общих проектов пока нет' : 'Примеров нет'}
+          description={
+            scope === 'shared'
+              ? 'Здесь появятся проекты, куда вас пригласили редактировать.'
+              : undefined
+          }
+          backdrop="dots"
+          action={<Button onClick={onResetScope}>Показать все</Button>}
+        />
+      )
+    }
+    return (
       <EmptyState
         icon="folder"
-        title="Проектов пока нет"
+        title={scope === 'own' ? 'Своих проектов пока нет' : 'Проектов пока нет'}
         description="Проект — это один процесс: источники, вопросы и схема BPMN."
         action={
           <>

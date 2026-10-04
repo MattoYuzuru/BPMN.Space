@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID
 
-from app.domain.access import ProjectMember, ProjectRole, ResourceKind, ShareLink
+from app.domain.access import ProjectMember, ProjectRole, ProjectScope, ResourceKind, ShareLink
 from app.domain.models import (
     LlmCall,
     Project,
@@ -63,6 +63,7 @@ class ProjectRepository(Protocol):
         limit: int,
         owner_id: UUID | None = None,
         scope_to_user: bool = False,
+        scope: ProjectScope = ProjectScope.ALL,
     ) -> list[Project]:
         """Проекты по убыванию (`updated_at`, `id`), строго после ключа `after`.
 
@@ -71,7 +72,12 @@ class ProjectRepository(Protocol):
         ...
 
     async def count(
-        self, *, query: str | None, owner_id: UUID | None = None, scope_to_user: bool = False
+        self,
+        *,
+        query: str | None,
+        owner_id: UUID | None = None,
+        scope_to_user: bool = False,
+        scope: ProjectScope = ProjectScope.ALL,
     ) -> int: ...
 
 

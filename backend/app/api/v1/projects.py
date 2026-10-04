@@ -18,6 +18,7 @@ from app.api.schemas.projects import (
     ProjectPage,
     ProjectUpdate,
 )
+from app.domain.access import ProjectScope
 from app.services.errors import ForbiddenError
 
 router = APIRouter(tags=["projects"])
@@ -31,6 +32,16 @@ async def list_projects(  # noqa: PLR0917 - FastAPI binds each query parameter i
     cursor: Annotated[str | None, Query(description="`next_cursor` прошлой страницы")] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     q: Annotated[str | None, Query(max_length=200, description="Поиск по названию")] = None,
+    scope: Annotated[
+        ProjectScope,
+        Query(
+            description=(
+                "Что показывать: `all` — всё доступное (по умолчанию), `own` — свои, "
+                "`shared` — где вы редактор по приглашению, `examples` — демо-примеры. "
+                "Без аккаунтов параметр не действует."
+            )
+        ),
+    ] = ProjectScope.ALL,
 ) -> ProjectPage:
     """Проекты: сначала недавно изменённые. Курсорная пагинация. Гостям — 401."""
     owner_id = require_account(request, user)
@@ -40,6 +51,7 @@ async def list_projects(  # noqa: PLR0917 - FastAPI binds each query parameter i
         query=q,
         owner_id=owner_id,
         scope_to_user=request.app.state.auth_enabled,
+        scope=scope,
     )
     roles = await project_roles(request, container, [view.project.id for view in page.items], user)
     return ProjectPage(

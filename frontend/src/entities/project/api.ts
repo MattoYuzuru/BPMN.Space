@@ -12,6 +12,7 @@ import { toast } from '@/shared/ui'
 export type Project = Schemas['Project']
 export type ProjectDetail = Schemas['ProjectDetail']
 export type ProjectPage = Schemas['ProjectPage']
+type ProjectScope = Schemas['ProjectScope']
 
 /** Размер страницы списка проектов: две-три «высоты экрана» карточек на широком мониторе. */
 export const PROJECTS_PAGE_SIZE = 12
@@ -23,7 +24,7 @@ export const PROJECTS_PAGE_SIZE = 12
 export const projectKeys = {
   all: ['projects'] as const,
   lists: () => [...projectKeys.all, 'list'] as const,
-  list: (q: string) => [...projectKeys.lists(), { q }] as const,
+  list: (q: string, scope: ProjectScope = 'all') => [...projectKeys.lists(), { q, scope }] as const,
   details: () => [...projectKeys.all, 'detail'] as const,
   detail: (id: string) => [...projectKeys.details(), id] as const,
 }
@@ -33,13 +34,20 @@ export function hasProcessingSources(project: ProjectDetail | undefined): boolea
   return Boolean(project?.sources.some((source) => source.status === 'processing'))
 }
 
-export function projectsInfiniteOptions(q: string) {
+export function projectsInfiniteOptions(q: string, scope: ProjectScope = 'all') {
   return infiniteQueryOptions({
-    queryKey: projectKeys.list(q),
+    queryKey: projectKeys.list(q, scope),
     queryFn: async ({ pageParam, signal }) =>
       unwrap(
         await api.GET('/api/v1/projects', {
-          params: { query: { cursor: pageParam, limit: PROJECTS_PAGE_SIZE, q: q || undefined } },
+          params: {
+            query: {
+              cursor: pageParam,
+              limit: PROJECTS_PAGE_SIZE,
+              q: q || undefined,
+              scope: scope === 'all' ? undefined : scope,
+            },
+          },
           signal,
         }),
       ),

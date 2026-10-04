@@ -1,7 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useMemo, useRef } from 'react'
-import { isRunning, projectCapabilities, projectQueryOptions } from '@/entities/project'
+import { type ReactNode, useEffect, useMemo, useRef } from 'react'
+import {
+  isRunning,
+  type ProjectDetail,
+  projectCapabilities,
+  projectQueryOptions,
+} from '@/entities/project'
 import { useStartRun } from '@/entities/run'
+import { useSession } from '@/entities/session'
+import { projectVersionSource, type VersionSource } from '@/entities/version'
 import { AddTextDialog, AddVoiceDialog } from '@/features/add-source/add-source-dialogs'
 import { useRegisterCommands } from '@/features/command-palette/model'
 import { useRunTracker } from '@/features/run-analysis/use-run-tracker'
@@ -24,7 +31,7 @@ import { SourceSheet } from '@/widgets/sources-panel/source-sheet'
 import { SourcesPanel } from '@/widgets/sources-panel/sources-panel'
 import { ReportSheet } from '@/widgets/version-sheets/report-sheet'
 import { VersionsSheet } from '@/widgets/version-sheets/versions-sheet'
-import { useWorkspaceUi, type WorkspaceApi, WorkspaceContext } from './model'
+import { useWorkspace, useWorkspaceUi, type WorkspaceApi, WorkspaceContext } from './model'
 
 export interface WorkspaceSearch {
   question?: string
@@ -42,11 +49,53 @@ export interface WorkspaceProps {
 const COLLAPSED = '44px'
 
 /**
- * Рабочее место проекта: шапка и три панели с изменяемой шириной (источники, схема, вопросы).
- * Боковые панели сворачиваются в узкую полосу; раскладка запоминается между сессиями.
+ * Рабочее место проекта аккаунта: данные из запроса проекта, ход прогона по SSE, команды палитры.
+ * Сама раскладка — `WorkspaceView`, её же использует публичный просмотр по ссылке.
  */
 export function Workspace({ projectId, search, onSearchChange }: WorkspaceProps) {
   const { data: project } = useQuery(projectQueryOptions(projectId))
+  useRunTracker(projectId, project?.active_run)
+  if (!project) return null
+  return (
+    <WorkspaceView
+      project={project}
+      versions={projectVersionSource}
+      header={<ProjectHeader />}
+      search={search}
+      onSearchChange={onSearchChange}
+    />
+  )
+}
+
+export interface WorkspaceViewProps {
+  project: ProjectDetail
+  /** Откуда брать версии схемы: запросы аккаунта или публичная ссылка. */
+  versions: VersionSource
+  /** Шапка экрана; читает проект из `useWorkspace()`. */
+  header: ReactNode
+  /** Только чтение независимо от роли в проекте (просмотр по ссылке). */
+  readOnly?: boolean
+  /** Регистрировать команды рабочего места в палитре. */
+  commands?: boolean
+  search: WorkspaceSearch
+  onSearchChange: WorkspaceProps['onSearchChange']
+}
+
+/**
+ * Раскладка рабочего места: шапка и три панели с изменяемой шириной (источники, схема, вопросы).
+ * Боковые панели сворачиваются в узкую полосу; раскладка запоминается между сессиями.
+ * Виджет получает проект и источник версий пропсами — откуда они пришли, ему безразлично.
+ */
+export function WorkspaceView({
+  project,
+  versions,
+  header,
+  readOnly = false,
+  commands = true,
+  search,
+  onSearchChange,
+}: WorkspaceViewProps) {
+  const authEnabled = useSession().data?.auth_enabled === true
   const editorRef = useRef<DiagramEditorHandle | null>(null)
   const sourcesRef = usePanelRef()
   const questionsRef = usePanelRef()
@@ -56,15 +105,16 @@ export function Workspace({ projectId, search, onSearchChange }: WorkspaceProps)
     panelIds: ['sources', 'diagram', 'questions'],
   })
 
-  useRunTracker(projectId, project?.active_run)
-  useDocumentTitle(project?.title)
+  useDocumentTitle(project.title)
   useEffect(() => () => useWorkspaceUi.getState().reset(), [])
 
-  const api = useMemo<WorkspaceApi | null>(() => {
-    if (!project) return null
-    return {
+  const api = useMemo<WorkspaceApi>(
+    () => ({
       project,
-      ...projectCapabilities(project.access),
+      versions,
+      ...(readOnly
+        ? { canEdit: false, canManage: false, canShare: false }
+        : projectCapabilities(project.access, authEnabled)),
       editorRef,
       selectedQuestionId: search.question,
       viewedVersionId: search.version,
@@ -79,18 +129,24 @@ export function Workspace({ projectId, search, onSearchChange }: WorkspaceProps)
       openSource: (sourceId, mark) => onSearchChange({ source: sourceId, mark }),
       viewVersion: (versionId) => onSearchChange({ version: versionId }),
       focusElements: (ids) => editorRef.current?.focusElement(ids) ?? false,
-    }
-  }, [project, search.question, search.version, onSearchChange, questionsRef])
-
-  const commands = useWorkspaceCommands(api)
-  useRegisterCommands('workspace', commands)
-
-  if (!api || !project) return null
+    }),
+    [
+      project,
+      versions,
+      readOnly,
+      authEnabled,
+      search.question,
+      search.version,
+      onSearchChange,
+      questionsRef,
+    ],
+  )
 
   return (
     <WorkspaceContext.Provider value={api}>
+      {commands && <WorkspaceCommands />}
       <div className="flex h-dvh flex-col bg-bg">
-        <ProjectHeader />
+        {header}
         <main className="min-h-0 flex-1">
           <ResizablePanelGroup
             orientation="horizontal"
@@ -175,7 +231,7 @@ export function Workspace({ projectId, search, onSearchChange }: WorkspaceProps)
       />
       <QuestionSheet />
       <ReportSheet />
-      <VersionsSheet />
+      {versions.history && <VersionsSheet />}
     </WorkspaceContext.Provider>
   )
 }
@@ -225,18 +281,22 @@ function CollapsedRail({
 }
 
 /** Команды рабочего места в палитре: прогоны, источники, отчёт, версии. */
-function useWorkspaceCommands(api: WorkspaceApi | null): CommandGroup | null {
-  const projectId = api?.project.id ?? ''
-  const start = useStartRun(projectId)
+function WorkspaceCommands() {
+  const api = useWorkspace()
+  useRegisterCommands('workspace', useWorkspaceCommands(api))
+  return null
+}
+
+function useWorkspaceCommands(api: WorkspaceApi): CommandGroup | null {
+  const start = useStartRun(api.project.id)
   const setDialog = useWorkspaceUi((state) => state.setDialog)
   const setSheet = useWorkspaceUi((state) => state.setSheet)
-  const project = api?.project
-  const running = project ? isRunning(project.status) : false
-  const noSources = !project || project.sources.length === 0
-  const hasVersion = Boolean(project?.latest_version)
-  const canEdit = api?.canEdit ?? false
+  const project = api.project
+  const running = isRunning(project.status)
+  const noSources = project.sources.length === 0
+  const hasVersion = Boolean(project.latest_version)
+  const canEdit = api.canEdit
   return useMemo<CommandGroup | null>(() => {
-    if (!project) return null
     const writeItems: CommandGroup['items'] = [
       {
         id: 'run-analyze',

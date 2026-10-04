@@ -7,8 +7,9 @@
 | Маршрут | Что | Файлы |
 |---|---|---|
 | `/login` | Вход и регистрация (`?redirect=` — куда вернуть). Публичный | `routes/login.tsx`, `widgets/login-screen/`, `features/sign-in/` |
-| `/` и `/projects` | Список проектов: поиск (`?q=`), сетка карточек, бесконечная прокрутка, создание проекта | `routes/_app.index.tsx`, `routes/_app.projects.index.tsx`, `widgets/projects-grid/` |
+| `/` и `/projects` | Список проектов: поиск (`?q=`), область (`?scope=` — `own`, `shared`, `examples`), сетка карточек, бесконечная прокрутка, создание проекта | `routes/_app.index.tsx`, `routes/_app.projects.index.tsx`, `widgets/projects-grid/` |
 | `/projects/$projectId` | Рабочее место: шапка, три панели (источники, схема, вопросы), ход прогона, листы вопроса, источника, отчёта и версий | `routes/_app.projects.$projectId.tsx`, `widgets/workspace/` и соседние виджеты |
+| `/share/$token` | Публичная страница по ссылке «поделиться»: просмотр проекта только для чтения (гостю тоже), приглашение редактора, «ссылка недействительна / срок истёк». Лениво, вне `_app` | `routes/share.$token.tsx`, `widgets/share-page/`, `entities/share/` |
 | `/studio/$projectId` | Старые ссылки перенаправляются в единственное рабочее место проекта | `routes/_app.studio.$projectId.tsx` |
 | `/styleguide` | Живой стайлгайд | `routes/styleguide.tsx` |
 | `/dev/diagram` | Витрина редактора BPMN для разработки; в навигации продукта ссылок на неё нет | `routes/dev.diagram.tsx` |
@@ -18,7 +19,7 @@
 
 У серверного проекта одно рабочее место — `/projects/$projectId`. Создание проекта (диалог в корне) ведёт туда же; отдельный редактор для локальных черновиков удалён, а старый `/studio/$projectId` оставлен только для перенаправления старых ссылок.
 
-**Доступ.** Закрытые экраны — под pathless-маршрутом `routes/_app.tsx`: его `beforeLoad` (`requireSession` из `entities/session`) читает `/auth/session` и гостя при включённых аккаунтах отправляет на `/login?redirect=…`. Публичные маршруты (`/login`, `/styleguide`, `/dev/diagram`, позже `/share/$token`) лежат вне `_app`. `entities/session` — запрос сессии, вход, регистрация (сразу входит), выход, очистка кэша данных аккаунта, проверка адреса возврата. 401 посреди работы ловят `QueryCache`/`MutationCache` (`app/query-client.ts`) и ведут на вход (`app/session-expiry.ts`); 429 — спокойный тост. Права в проекте — `projectCapabilities(access)` в `entities/project`, компоненты получают `canEdit` / `canManage`. Подробности — styleguide §16.
+**Доступ.** Закрытые экраны — под pathless-маршрутом `routes/_app.tsx`: его `beforeLoad` (`requireSession` из `entities/session`) читает `/auth/session` и гостя при включённых аккаунтах отправляет на `/login?redirect=…`. Публичные маршруты (`/login`, `/styleguide`, `/dev/diagram`, `/share/$token`) лежат вне `_app`. `entities/session` — запрос сессии, вход, регистрация (сразу входит), выход, очистка кэша данных аккаунта, проверка адреса возврата. 401 посреди работы ловят `QueryCache`/`MutationCache` (`app/query-client.ts`) и ведут на вход (`app/session-expiry.ts`); 429 — спокойный тост. Права в проекте — `projectCapabilities(access)` в `entities/project`, компоненты получают `canEdit` / `canManage`. Подробности — styleguide §16.
 
 Глобальные слои стоят в корне (`routes/__root.tsx`): палитра команд (Ctrl+K / ⌘K) и диалог создания проекта. Экран добавляет в палитру свои команды через `useRegisterCommands` (рабочее место — «Запустить анализ», «Построить схему», «Отчёт проверки»…).
 
@@ -28,11 +29,11 @@
 src/
   app/        провайдеры: QueryClient, тема, LazyMotion + MotionConfig, подсказки, уведомления
   routes/     тонкие маршруты TanStack Router: validateSearch, loader, pending/error, сборка экрана
-  widgets/    крупные блоки экранов: projects-grid, workspace, project-header, sources-panel,
+  widgets/    крупные блоки экранов: projects-grid, workspace, project-header, share-page, sources-panel,
               questions-panel, diagram-panel, run-progress, version-sheets, diagram-editor, skeletons
   features/   действия пользователя: create-project, add-source, voice-record, answer-question,
-              run-analysis, export-diagram, command-palette, theme-switch, sign-in, account-menu
-  entities/   данные предметной области: project, source, question, run, version, example, session —
+              run-analysis, export-diagram, command-palette, theme-switch, sign-in, account-menu, share-project
+  entities/   данные предметной области: project, source, question, run, version, example, session, share —
               ключи запросов, queryOptions, мутации, модели и чистые функции
   shared/     api (клиент openapi-fetch и типы), ui (дизайн-система), lib, hooks, styles
 ```
@@ -47,10 +48,14 @@ src/
 
 | Ключ | Данные | Свежесть |
 |---|---|---|
-| `['projects', 'list', { q }]` | страницы списка (`useInfiniteQuery`, курсор) | 15 с, фокус окна |
+| `['projects', 'list', { q, scope }]` | страницы списка (`useInfiniteQuery`, курсор); у каждой области («все», «мои», «общие», «примеры») свой кэш | 15 с, фокус окна |
 | `['projects', 'detail', id]` | проект целиком: источники, вопросы, сводка, последняя версия без XML, активный прогон | 15 с, фокус окна, SSE |
 | `['projects', 'detail', id, 'versions']` | версии проекта | вложен в проект: инвалидация проекта обновляет и его |
 | `['versions', id]` | версия с XML | неизменна: `staleTime: Infinity` |
+| `['projects', 'detail', id, 'share-links']`, `[…, 'members']` | ссылки доступа и участники (диалог «Поделиться», только владелец) | всегда перечитываются при открытии |
+| `['shares', token]` | проект по ссылке (`SharedProject`: роль и `detail`); без повторов — 401, 404, 410 это состояния страницы | 60 с |
+| `['shares', token, 'version', id]` | XML версии по ссылке; версия = `detail.latest_version` + XML | неизменна |
+| `['share-access', projectId]` | есть ли у вошедшего доступ к проекту (чтобы не предлагать «принять» владельцу) | не кэшируется |
 | `['examples']` | демо-примеры | `staleTime: Infinity`, грузятся при открытии диалога |
 
 **Кнопок «Обновить» нет.** Данные обновляются сами:
@@ -72,6 +77,19 @@ src/
 | сохранение правки схемы | `entities/version/api.ts` (`useSaveDiagram`) | не оптимистично: XML кладётся в кэш новой версии после ответа, редактор не перечитывает схему |
 
 Сводка вопросов при оптимистичном переходе сдвигается функцией `shiftSummary`; точные числа приходят следующим запросом.
+
+## Общий доступ и источник данных рабочего места
+
+Рабочее место не знает, откуда пришёл проект. `WorkspaceView` (`widgets/workspace`) получает пропсами `project` (`ProjectDetail`), `versions` (`VersionSource`), `header` и флаги `readOnly` / `commands`, строит из них `WorkspaceApi` и раздаёт его панелям через контекст (`useWorkspace()`). Два потребителя:
+
+- `Workspace` — проект аккаунта: `useQuery(projectQueryOptions)`, SSE прогона, команды палитры, `projectVersionSource` (запросы по id версии, список версий, скачивание `/versions/{id}/xml`).
+- `SharedWorkspace` (`widgets/share-page`) — просмотр по ссылке: `project` берётся из `SharedProject.detail`, `readOnly`, команд нет, `shareVersionSource(token, detail)`.
+
+`VersionSource` (`entities/version`) — единственный шов: `detail(versionId)` (версия с XML), `list(projectId)`, `xmlUrl(versionId)` и флаг `history`. Для ссылки доступна только последняя версия, поэтому `shareVersionSource` собирает `VersionDetail` из `detail.latest_version` (отчёт, трассировка, дифф уже в ответе) и XML с `/shares/{token}/versions/{id}/xml`, список — из одной версии, `history: false` прячет историю версий и просмотр старых. Панели, листы и скачивание читают версии только через `useWorkspace().versions`, поэтому в общий кэш проектов ничего подставного не кладётся: данные публичной страницы живут под своим корнем `['shares', token]`.
+
+Страница `/share/$token` разбирает ответ сервера в `sharePageState` (чистая функция, `entities/share/model.ts`), роль и права посетителя решаются по ответам API, а не по клиентским догадкам. Выход из аккаунта на этой странице перезагружает её. Общая шапка публичных страниц — `PublicHeader` (`widgets/app-header`); `DownloadMenu` (`widgets/project-header`) общий у шапки проекта и шапки просмотра. Палитра команд и диалог создания проекта в корне на этой странице не монтируются.
+
+Диалог «Поделиться» (`features/share-project`) монтирует содержимое только на время показа: адрес новой ссылки хранится в состоянии компонента и пропадает при закрытии. Токен не попадает в уведомления, заголовок вкладки и тексты ошибок.
 
 ## Прогон и SSE
 

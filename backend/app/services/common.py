@@ -8,7 +8,7 @@ from uuid import UUID
 
 from app.domain.models import Project, Question, Run, Source, Version
 from app.infra.repositories.base import Repositories
-from app.services.errors import NotFoundError
+from app.services.errors import NotFoundError, PayloadTooLargeError
 
 
 def utc_now() -> datetime:
@@ -60,7 +60,10 @@ async def get_version(repos: Repositories, version_id: UUID) -> Version:
 
 async def touch_project(repos: Repositories, project_id: UUID, at: datetime) -> None:
     """Любое изменение внутри проекта поднимает его в начало списка."""
-    project = await repos.projects.get(project_id)
-    if project is not None and at > project.updated_at:
-        project.updated_at = at
-        await repos.projects.update(project)
+    await repos.projects.touch(project_id, at)
+
+
+def too_large(subject: str, limit_bytes: int) -> PayloadTooLargeError:
+    """413 с лимитом в мегабайтах: «Файл больше 20 МБ»."""
+    limit_mb = max(limit_bytes // (1024 * 1024), 1)
+    return PayloadTooLargeError(f"{subject} больше {limit_mb} МБ")

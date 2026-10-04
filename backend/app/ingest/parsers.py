@@ -2,15 +2,21 @@
 
 `.txt`/`.md` читаются напрямую, `.csv` разбирается построчно; `.docx` — упрощённо
 (абзацы без таблиц и колонтитулов);
-`.pdf` — через pypdf с номерами страниц. Для PDF без текстового слоя нужен OCR.
+`.pdf` — через pypdf с номерами страниц (не больше `max_pdf_pages` страниц). CPU-bound разбор
+идёт в отдельном потоке с ограничением по времени, чтобы не блокировать event loop.
+TODO(real): OCR для PDF без текстового слоя (Yandex Vision) и полноценный `.docx` (python-docx:
+таблицы, колонтитулы, списки) — сейчас берутся только абзацы.
 """
 
 import asyncio
 import csv
 import io
 import json
+import time
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from enum import StrEnum
+from functools import partial
 from typing import Protocol
 from xml.etree.ElementTree import ParseError
 
@@ -20,6 +26,13 @@ from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
 from app.domain.analysis import MAX_SOURCE_TEXT_CHARS
+
+# Разбор документов идёт в собственном маленьком пуле, а не в общем пуле потоков по умолчанию
+# (его делят хранилище, DeepSeek и Deepgram): зависший разбор не должен занять потоки остальных.
+# По таймауту поток разбора не прерывается (Python так не умеет) — он «брошен» и доработает сам,
+# занимая слот этого пула; ожидающая задача из очереди при таймауте отменяется.
+_PARSE_WORKERS = 2
+_parse_executor = ThreadPoolExecutor(max_workers=_PARSE_WORKERS, thread_name_prefix="doc-parse")
 
 _WORD_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 _MAX_DOCX_XML_BYTES = 20 * 1024 * 1024
@@ -129,17 +142,37 @@ def _csv_text(data: bytes, *, max_chars: int) -> str:
     return "\n".join(lines)
 
 
-def _pdf_text(data: bytes) -> str:
-    """Извлекает только текст PDF и сохраняет границы страниц для ссылок на цитаты."""
+def _pdf_text(data: bytes, *, max_pages: int, max_chars: int, deadline: float) -> str:
+    """Извлекает только текст PDF и сохраняет границы страниц для ссылок на цитаты.
+
+    Работает в отдельном потоке и сам останавливается по `deadline` (монотонное время):
+    поток нельзя прервать снаружи, поэтому срок проверяется между страницами.
+    """
     try:
         reader = PdfReader(io.BytesIO(data), strict=False)
         if reader.is_encrypted and not reader.decrypt(""):
             raise DocumentParseError("PDF защищён паролем. Снимите защиту и загрузите файл снова")
-        pages = [
-            f"[Страница {page_number}]\n{text.strip()}"
-            for page_number, page in enumerate(reader.pages, start=1)
-            if (text := (page.extract_text() or "")).strip()
-        ]
+        total_pages = len(reader.pages)
+        if total_pages > max_pages:
+            raise DocumentParseError(
+                f"В PDF {total_pages} страниц — больше лимита {max_pages}. "
+                "Разделите файл на части и загрузите их отдельно"
+            )
+        pages: list[str] = []
+        chars = 0
+        for page_number, page in enumerate(reader.pages, start=1):
+            if time.monotonic() > deadline:
+                raise DocumentParseError(_TIMEOUT_MESSAGE)
+            text = (page.extract_text() or "").strip()
+            if not text:
+                continue
+            chars += len(text)
+            if chars > max_chars:
+                raise DocumentParseError(
+                    f"После разбора PDF превышает лимит {max_chars} символов. "
+                    "Разделите файл на части и загрузите их отдельно"
+                )
+            pages.append(f"[Страница {page_number}]\n{text}")
     except DocumentParseError:
         raise
     except (PdfReadError, OSError, ValueError, KeyError, TypeError) as error:
@@ -154,21 +187,55 @@ def _pdf_text(data: bytes) -> str:
     return "\n\n".join(pages)
 
 
+_TIMEOUT_MESSAGE = (
+    "Разбор файла занял слишком много времени и был остановлен. "
+    "Загрузите файл поменьше или вставьте текст вручную"
+)
+
+
 class LocalDocumentParser:
-    def __init__(self, *, max_text_chars: int = MAX_SOURCE_TEXT_CHARS) -> None:
+    def __init__(
+        self,
+        *,
+        max_text_chars: int = MAX_SOURCE_TEXT_CHARS,
+        max_pdf_chars: int | None = None,
+        max_pdf_pages: int = 300,
+        timeout_sec: float = 60.0,
+    ) -> None:
         self._max_text_chars = max_text_chars
+        self._max_pdf_chars = max_pdf_chars if max_pdf_chars is not None else max_text_chars
+        self._max_pdf_pages = max_pdf_pages
+        self._timeout_sec = timeout_sec
 
     async def parse(self, *, file_name: str, data: bytes) -> str:
         fmt = detect_format(file_name)
         if fmt in {DocumentFormat.TXT, DocumentFormat.MD}:
             text = decode_text(data)
-        elif fmt is DocumentFormat.CSV:
-            text = _csv_text(data, max_chars=self._max_text_chars)
-        elif fmt is DocumentFormat.DOCX:
-            text = _docx_text(data)
         else:
-            text = await asyncio.to_thread(_pdf_text, data)
+            text = await self._parse_off_loop(fmt, data)
         text = text.strip()
         if not text:
             raise DocumentParseError("В файле нет текста")
         return text
+
+    async def _parse_off_loop(self, fmt: DocumentFormat, data: bytes) -> str:
+        """CPU-bound разбор не блокирует event loop и ограничен по времени."""
+        deadline = time.monotonic() + self._timeout_sec
+        match fmt:
+            case DocumentFormat.CSV:
+                work = partial(_csv_text, data, max_chars=self._max_text_chars)
+            case DocumentFormat.DOCX:
+                work = partial(_docx_text, data)
+            case _:
+                work = partial(
+                    _pdf_text,
+                    data,
+                    max_pages=self._max_pdf_pages,
+                    max_chars=self._max_pdf_chars,
+                    deadline=deadline,
+                )
+        try:
+            future = asyncio.get_running_loop().run_in_executor(_parse_executor, work)
+            return await asyncio.wait_for(future, timeout=self._timeout_sec)
+        except TimeoutError:
+            raise DocumentParseError(_TIMEOUT_MESSAGE) from None

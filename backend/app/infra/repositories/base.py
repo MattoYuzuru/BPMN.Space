@@ -1,12 +1,23 @@
 """Интерфейсы репозиториев. В приложении используется SQL-реализация, в тестах — in-memory."""
 
+from collections.abc import Callable, Mapping
+from contextlib import AbstractAsyncContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
 from app.domain.access import ProjectMember, ProjectRole, ResourceKind, ShareLink
-from app.domain.models import LlmCall, Project, Question, QuestionStatus, Run, Source, Version
+from app.domain.models import (
+    LlmCall,
+    Project,
+    Question,
+    QuestionStatus,
+    Run,
+    Source,
+    SourceStatus,
+    Version,
+)
 
 type PageKey = tuple[datetime, UUID]
 
@@ -23,8 +34,26 @@ class ProjectRepository(Protocol):
         ...
 
     async def get(self, project_id: UUID) -> Project | None: ...
-    async def update(self, project: Project) -> None: ...
-    async def delete(self, project_id: UUID) -> None: ...
+    async def update(self, project: Project) -> None:
+        """Меняет только название и описание (`updated_at` — через `touch`)."""
+        ...
+
+    async def touch(self, project_id: UUID, at: datetime) -> None:
+        """Поднимает `updated_at` до `at`, если он меньше. Остальные поля не трогает."""
+        ...
+
+    async def lock(self, project_id: UUID) -> Project | None:
+        """Блокирует проект до конца транзакции (`SELECT … FOR UPDATE`), `None` — проекта нет.
+
+        Сериализует действия, которым нужен единый порядок внутри проекта: нумерацию версий,
+        запуск прогона, ручное сохранение схемы, удаление. Вне `Repositories.atomic()`
+        блокировка снимается сразу.
+        """
+        ...
+
+    async def delete(self, project_id: UUID) -> None:
+        """Удаляет проект вместе с источниками, вопросами, прогонами и версиями."""
+        ...
 
     async def list_page(
         self,
@@ -49,26 +78,50 @@ class ProjectRepository(Protocol):
 class SourceRepository(Protocol):
     async def add(self, source: Source) -> None: ...
     async def get(self, source_id: UUID) -> Source | None: ...
-    async def update(self, source: Source) -> None: ...
+    async def patch(
+        self,
+        source_id: UUID,
+        changes: Mapping[str, Any],
+        *,
+        only_status: SourceStatus | None = None,
+    ) -> bool:
+        """Точечно меняет перечисленные поля (`title`, `content`, `status`, `active`, `error`).
+
+        Остальные поля не перезаписываются: пользователь мог изменить их параллельно с фоновым
+        разбором. `only_status` — менять, только если источник сейчас в этом статусе.
+        `False` — источника нет или статус уже другой.
+        """
+        ...
+
     async def delete(self, source_id: UUID) -> None: ...
     async def list_by_project(self, project_id: UUID) -> list[Source]:
         """Источники проекта по возрастанию `created_at`."""
         ...
 
-    async def delete_by_project(self, project_id: UUID) -> None: ...
+    async def fail_processing(self, error: str) -> int:
+        """Все источники в `processing` → `failed` с причиной `error`; возвращает их число."""
+        ...
 
 
 class QuestionRepository(Protocol):
     async def add(self, question: Question) -> None: ...
     async def get(self, question_id: UUID) -> Question | None: ...
     async def update(self, question: Question) -> None: ...
+    async def apply_reconciled(
+        self, question: Question, *, expected_status: QuestionStatus
+    ) -> bool:
+        """Точечно записывает поля сверки (статус, цитата, ответ), только если статус не менялся.
+
+        Возвращает `False`, если вопрос удалён или его статус уже изменён (например, аналитик
+        ответил между чтением и записью): чужая правка не затирается.
+        """
+        ...
+
     async def list_by_project(
         self, project_id: UUID, *, status: QuestionStatus | None = None
     ) -> list[Question]:
         """Вопросы проекта в порядке кодов (Q-1, Q-2, …)."""
         ...
-
-    async def delete_by_project(self, project_id: UUID) -> None: ...
 
 
 class RunRepository(Protocol):
@@ -80,7 +133,6 @@ class RunRepository(Protocol):
         ...
 
     async def active_for_project(self, project_id: UUID) -> Run | None: ...
-    async def delete_by_project(self, project_id: UUID) -> None: ...
 
 
 class VersionRepository(Protocol):
@@ -91,7 +143,6 @@ class VersionRepository(Protocol):
         ...
 
     async def latest(self, project_id: UUID) -> Version | None: ...
-    async def delete_by_project(self, project_id: UUID) -> None: ...
 
 
 class LlmCallRepository(Protocol):
@@ -134,3 +185,15 @@ class Repositories:
     llm_calls: LlmCallRepository
     # None в in-memory режиме: аккаунты и ссылки требуют PostgreSQL.
     access: AccessRepository | None = None
+    # Открывает транзакцию PostgreSQL; None — репозитории и так атомарны (in-memory).
+    transaction: Callable[[], AbstractAsyncContextManager["Repositories"]] | None = None
+
+    def atomic(self) -> AbstractAsyncContextManager["Repositories"]:
+        """Единица работы: все вызовы через выданные репозитории — одна транзакция.
+
+        Внутри уже открытой транзакции вложенный `atomic()` возвращает те же репозитории.
+        Исключение откатывает всё, выход без ошибки — фиксирует.
+        """
+        if self.transaction is None:
+            return nullcontext(self)
+        return self.transaction()

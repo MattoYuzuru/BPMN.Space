@@ -1,9 +1,13 @@
 """SQLAlchemy-репозитории PostgreSQL, сохраняющие публичные dataclass-ы domain."""
 
-from typing import Any
+from collections.abc import AsyncIterator, Callable, Mapping
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from datetime import datetime
+from enum import Enum
+from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import CursorResult, and_, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -45,8 +49,7 @@ from app.infra.db_models import (
 )
 from app.infra.repositories.access_sql import SqlAccessRepository
 from app.infra.repositories.base import ActiveRunConflictError, PageKey, Repositories
-
-type SessionFactory = async_sessionmaker[AsyncSession]
+from app.infra.repositories.session import BoundSessions, SessionFactory
 
 
 def _quote(value: dict[str, Any] | None) -> Quote | None:
@@ -127,6 +130,7 @@ def _run(row: RunRow) -> Run:
         summary=summary,
         version_id=row.version_id,
         error=row.error,
+        warnings=list(row.warnings or []),
         analysis=row.analysis,
         ir=row.ir,
         report=row.report,
@@ -203,17 +207,34 @@ class SqlProjectRepository:
 
     async def update(self, project: Project) -> None:
         async with self.sessions.begin() as session:
-            row = await session.get(ProjectRow, project.id)
-            if row is not None:
-                row.title = project.title
-                row.description = project.description
-                row.updated_at = project.updated_at
+            await session.execute(
+                update(ProjectRow)
+                .where(ProjectRow.id == project.id)
+                .values(title=project.title, description=project.description)
+            )
+
+    async def touch(self, project_id: UUID, at: datetime) -> None:
+        async with self.sessions.begin() as session:
+            await session.execute(
+                update(ProjectRow)
+                .where(ProjectRow.id == project_id, ProjectRow.updated_at < at)
+                .values(updated_at=at)
+            )
+
+    async def lock(self, project_id: UUID) -> Project | None:
+        async with self.sessions() as session:
+            row = await session.scalar(
+                select(ProjectRow)
+                .where(ProjectRow.id == project_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            return _project(row) if row else None
 
     async def delete(self, project_id: UUID) -> None:
+        # Источники, вопросы, прогоны, версии и вызовы модели удаляет сама БД (ON DELETE CASCADE).
         async with self.sessions.begin() as session:
-            row = await session.get(ProjectRow, project_id)
-            if row:
-                await session.delete(row)
+            await session.execute(delete(ProjectRow).where(ProjectRow.id == project_id))
 
     def _filters(self, query: str | None) -> list[Any]:
         if not query:
@@ -273,6 +294,9 @@ class SqlProjectRepository:
             return int(await session.scalar(statement) or 0)
 
 
+_PATCHABLE_SOURCE_FIELDS = frozenset({"title", "content", "status", "active", "error"})
+
+
 class SqlSourceRepository:
     def __init__(self, sessions: SessionFactory) -> None:
         self.sessions = sessions
@@ -307,9 +331,40 @@ class SqlSourceRepository:
             row = await session.get(SourceRow, source_id)
             return _source(row) if row else None
 
-    async def update(self, source: Source) -> None:
+    async def patch(
+        self,
+        source_id: UUID,
+        changes: Mapping[str, Any],
+        *,
+        only_status: SourceStatus | None = None,
+    ) -> bool:
+        unknown = set(changes) - _PATCHABLE_SOURCE_FIELDS
+        if unknown:
+            raise ValueError(f"Поля источника нельзя менять точечно: {sorted(unknown)}")
+        values = {
+            name: value.value if isinstance(value, Enum) else value
+            for name, value in changes.items()
+        }
+        statement = update(SourceRow).where(SourceRow.id == source_id)
+        if only_status is not None:
+            statement = statement.where(SourceRow.status == only_status.value)
+        if not values:
+            raise ValueError("Не указаны поля для изменения")
         async with self.sessions.begin() as session:
-            await session.merge(self._row(source))
+            result = cast(CursorResult[Any], await session.execute(statement.values(**values)))
+        return result.rowcount > 0
+
+    async def fail_processing(self, error: str) -> int:
+        async with self.sessions.begin() as session:
+            result = cast(
+                CursorResult[Any],
+                await session.execute(
+                    update(SourceRow)
+                    .where(SourceRow.status == SourceStatus.PROCESSING.value)
+                    .values(status=SourceStatus.FAILED.value, error=error)
+                ),
+            )
+        return result.rowcount
 
     async def delete(self, source_id: UUID) -> None:
         async with self.sessions.begin() as session:
@@ -327,14 +382,6 @@ class SqlSourceRepository:
                 )
             ).all()
             return [_source(row) for row in rows]
-
-    async def delete_by_project(self, project_id: UUID) -> None:
-        async with self.sessions.begin() as session:
-            rows = (
-                await session.scalars(select(SourceRow).where(SourceRow.project_id == project_id))
-            ).all()
-            for row in rows:
-                await session.delete(row)
 
 
 class SqlQuestionRepository:
@@ -375,6 +422,24 @@ class SqlQuestionRepository:
         async with self.sessions.begin() as session:
             await session.merge(self._row(question))
 
+    async def apply_reconciled(
+        self, question: Question, *, expected_status: QuestionStatus
+    ) -> bool:
+        statement = (
+            update(QuestionRow)
+            .where(QuestionRow.id == question.id, QuestionRow.status == expected_status.value)
+            .values(
+                status=question.status.value,
+                evidence=_quote_json(question.evidence),
+                answer_source_id=question.answer.source_id if question.answer else None,
+                answer_text=question.answer.text if question.answer else None,
+                updated_at=question.updated_at,
+            )
+        )
+        async with self.sessions.begin() as session:
+            result = cast(CursorResult[Any], await session.execute(statement))
+        return result.rowcount > 0
+
     async def list_by_project(
         self, project_id: UUID, *, status: QuestionStatus | None = None
     ) -> list[Question]:
@@ -384,16 +449,6 @@ class SqlQuestionRepository:
                 statement = statement.where(QuestionRow.status == status.value)
             rows = (await session.scalars(statement.order_by(QuestionRow.code))).all()
             return [_question(row) for row in rows]
-
-    async def delete_by_project(self, project_id: UUID) -> None:
-        async with self.sessions.begin() as session:
-            rows = (
-                await session.scalars(
-                    select(QuestionRow).where(QuestionRow.project_id == project_id)
-                )
-            ).all()
-            for row in rows:
-                await session.delete(row)
 
 
 class SqlRunRepository:
@@ -422,6 +477,7 @@ class SqlRunRepository:
             summary=summary,
             version_id=item.version_id,
             error=item.error,
+            warnings=item.warnings,
             analysis=item.analysis,
             ir=item.ir,
             report=item.report,
@@ -475,14 +531,6 @@ class SqlRunRepository:
                 .limit(1)
             )
             return _run(row) if row else None
-
-    async def delete_by_project(self, project_id: UUID) -> None:
-        async with self.sessions.begin() as session:
-            rows = (
-                await session.scalars(select(RunRow).where(RunRow.project_id == project_id))
-            ).all()
-            for row in rows:
-                await session.delete(row)
 
 
 class SqlVersionRepository:
@@ -554,16 +602,6 @@ class SqlVersionRepository:
             )
             return _version(row) if row else None
 
-    async def delete_by_project(self, project_id: UUID) -> None:
-        async with self.sessions.begin() as session:
-            rows = (
-                await session.scalars(
-                    select(DiagramVersionRow).where(DiagramVersionRow.project_id == project_id)
-                )
-            ).all()
-            for row in rows:
-                await session.delete(row)
-
 
 class SqlLlmCallRepository:
     def __init__(self, sessions: SessionFactory) -> None:
@@ -586,16 +624,31 @@ class SqlLlmCallRepository:
 
 
 class SqlStore:
-    def __init__(self, sessions: SessionFactory) -> None:
+    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
 
     def repositories(self) -> Repositories:
+        return self._build(self._sessions, transaction=self._transaction)
+
+    @asynccontextmanager
+    async def _transaction(self) -> AsyncIterator[Repositories]:
+        """Одна транзакция на все репозитории: коммит при выходе, откат при исключении."""
+        async with self._sessions.begin() as session:
+            yield self._build(BoundSessions(session), transaction=None)
+
+    @staticmethod
+    def _build(
+        sessions: SessionFactory,
+        *,
+        transaction: Callable[[], AbstractAsyncContextManager[Repositories]] | None,
+    ) -> Repositories:
         return Repositories(
-            projects=SqlProjectRepository(self._sessions),
-            sources=SqlSourceRepository(self._sessions),
-            questions=SqlQuestionRepository(self._sessions),
-            runs=SqlRunRepository(self._sessions),
-            versions=SqlVersionRepository(self._sessions),
-            llm_calls=SqlLlmCallRepository(self._sessions),
-            access=SqlAccessRepository(self._sessions),
+            projects=SqlProjectRepository(sessions),
+            sources=SqlSourceRepository(sessions),
+            questions=SqlQuestionRepository(sessions),
+            runs=SqlRunRepository(sessions),
+            versions=SqlVersionRepository(sessions),
+            llm_calls=SqlLlmCallRepository(sessions),
+            access=SqlAccessRepository(sessions),
+            transaction=transaction,
         )

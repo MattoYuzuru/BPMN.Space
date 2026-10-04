@@ -8,6 +8,11 @@
 3. Правила `QuestionRule`: новый вопрос, если фраза-триггер есть в источниках.
 4. Если правил для проекта нет и вопросов ещё нет — два типовых вопроса по шагам регламента.
 
+Управляемые режимы для e2e и тестов — маркеры в тексте любого источника (только mock):
+`[[mock:fail-early]]` — анализ падает на этапе `extracting` (вопросов нет);
+`[[mock:fail-structuring]]` — сборка падает на `structuring` после сверки (вопросы уже созданы);
+`[[mock:no-questions]]` — новых вопросов нет, схема строится.
+
 Структура: записанная схема (`DiagramRule`), если её цитаты есть в источниках; иначе
 линейная схема по шагам, извлечённым из текста; после ручной правки — схема аналитика.
 Боевой путь — `deepseek.py` (`LLM_PROVIDER=deepseek`); этот модуль остаётся фикстурой для
@@ -42,6 +47,17 @@ _NUMBERED = re.compile(r"^\s*\d+[.)]\s+(?P<body>.+)$")
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 _DEFAULT_LANE = "Исполнитель"
 
+MARKER_FAIL_EARLY = "[[mock:fail-early]]"
+MARKER_FAIL_STRUCTURING = "[[mock:fail-structuring]]"
+MARKER_NO_QUESTIONS = "[[mock:no-questions]]"
+
+
+_MARKER = re.compile(r"\[\[mock:[a-z-]+\]\]")
+
+
+def _has_marker(marker: str, sources: Sequence[ContextSource]) -> bool:
+    return any(marker in source.content for source in sources)
+
 
 def _trim(text: str) -> str:
     text = text.strip().rstrip(".").strip()
@@ -64,6 +80,11 @@ def _numbered_step(line: str) -> tuple[str, str | None] | None:
     return task.strip().rstrip("."), lane or None
 
 
+def _lines(source: ContextSource) -> list[str]:
+    """Строки источника без маркеров управляемого режима: они не часть процесса."""
+    return _MARKER.sub("", source.content).splitlines()
+
+
 def extract_steps(sources: Sequence[ContextSource]) -> list[tuple[str, str, ContextSource]]:
     """Шаги процесса (название, дорожка, источник) из текстов: нумерованные пункты
     с «Ответственный: …», иначе — предложения по порядку."""
@@ -72,7 +93,7 @@ def extract_steps(sources: Sequence[ContextSource]) -> list[tuple[str, str, Cont
         if source.kind is SourceKind.ANSWER:
             continue
         lane = _DEFAULT_LANE
-        for line in source.content.splitlines():
+        for line in _lines(source):
             numbered = _numbered_step(line)
             if numbered:
                 task, numbered_lane = numbered
@@ -83,7 +104,7 @@ def extract_steps(sources: Sequence[ContextSource]) -> list[tuple[str, str, Cont
     for source in sources:
         if source.kind is SourceKind.ANSWER:
             continue
-        for line in source.content.splitlines():
+        for line in _lines(source):
             if line.lstrip().startswith("#"):
                 continue
             for sentence in _SENTENCE_END.split(line.strip()):
@@ -106,6 +127,8 @@ class MockPipeline:
         return "recorded-fixtures"
 
     async def analyze(self, context: RunContext) -> AnalysisResult:
+        if _has_marker(MARKER_FAIL_EARLY, context.sources):
+            raise PipelineError("Модель не ответила (режим mock: fail-early)")
         by_id = {s.id: s for s in context.sources}
         updates = [
             update
@@ -137,7 +160,9 @@ class MockPipeline:
                     element_ids=list(rule.element_ids),
                 )
             )
-        if not context.questions and not new_questions:
+        if _has_marker(MARKER_NO_QUESTIONS, context.sources):
+            new_questions = []
+        elif not context.questions and not new_questions:
             new_questions = self._generic_questions(context.sources)
         return AnalysisResult(question_updates=updates, new_questions=new_questions)
 
@@ -209,6 +234,8 @@ class MockPipeline:
         context: RunContext,
         analysis: AnalysisResult,  # noqa: ARG002 — mock не использует анализ
     ) -> DiagramDraft:
+        if _has_marker(MARKER_FAIL_STRUCTURING, context.sources):
+            raise PipelineError("Не удалось построить схему (режим mock: fail-structuring)")
         if context.current_is_manual and context.current_xml:
             # Правки аналитика приоритетнее (RFC §5.2). TODO(real): #5 учесть их через ProcessGraph.
             return DiagramDraft(xml=context.current_xml)

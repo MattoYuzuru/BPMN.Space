@@ -18,6 +18,15 @@ from app.domain.models import (
     SourceStatus,
     Version,
 )
+from app.domain.onboarding import (
+    ChecklistItem,
+    CompletedItem,
+    ItemSource,
+    ProjectFacts,
+    TourStatus,
+    TourStepKey,
+    UserOnboarding,
+)
 
 type PageKey = tuple[datetime, UUID]
 
@@ -40,6 +49,10 @@ class ProjectRepository(Protocol):
 
     async def touch(self, project_id: UUID, at: datetime) -> None:
         """Поднимает `updated_at` до `at`, если он меньше. Остальные поля не трогает."""
+        ...
+
+    async def owner_of(self, project_id: UUID) -> UUID | None:
+        """Владелец проекта; `None` — проекта нет, демо-проект или аккаунтов нет."""
         ...
 
     async def lock(self, project_id: UUID) -> Project | None:
@@ -181,6 +194,51 @@ class AccessRepository(Protocol):
     async def add_editor(self, project_id: UUID, user_id: UUID, added_at: datetime) -> None: ...
 
 
+class OnboardingRepository(Protocol):
+    """Состояние тура и отмеченные пункты чек-листа пользователя."""
+
+    async def get(self, user_id: UUID) -> UserOnboarding | None: ...
+
+    async def get_or_create(self, user_id: UUID, now: datetime) -> UserOnboarding:
+        """Строка пользователя; при первом обращении создаётся (`pending`, чек-лист виден).
+
+        Сначала чтение, вставка — только если строки нет.
+        """
+        ...
+
+    async def project_facts(self, user_id: UUID, *, limit: int) -> list[ProjectFacts]:
+        """Факты по проектам, которые пользователь может править (свои и где он редактор).
+
+        Не больше `limit` самых свежих проектов, одним запросом и без текстов источников и XML.
+        Демо-проекты только для чтения не входят.
+        """
+        ...
+
+    async def save_tour(
+        self,
+        user_id: UUID,
+        *,
+        expected_status: TourStatus,
+        status: TourStatus,
+        step: TourStepKey | None,
+        project_id: UUID | None,
+        now: datetime,
+    ) -> bool:
+        """Записывает тур, только если статус всё ещё `expected_status` (`False` — не совпал)."""
+        ...
+
+    async def set_checklist_hidden(self, user_id: UUID, hidden: bool, now: datetime) -> None: ...
+    async def list_items(self, user_id: UUID) -> list[CompletedItem]:
+        """Отмеченные пункты по времени отметки."""
+        ...
+
+    async def add_item(
+        self, user_id: UUID, item: ChecklistItem, source: ItemSource, at: datetime
+    ) -> bool:
+        """Отмечает пункт, если не отмечен; `True` — впервые, повтор ничего не меняет."""
+        ...
+
+
 @dataclass(frozen=True, slots=True)
 class Repositories:
     projects: ProjectRepository
@@ -191,6 +249,8 @@ class Repositories:
     llm_calls: LlmCallRepository
     # None в in-memory режиме: аккаунты и ссылки требуют PostgreSQL.
     access: AccessRepository | None = None
+    # None, если хранилище не умеет онбординг; обе реализации (SQL и in-memory) его дают.
+    onboarding: OnboardingRepository | None = None
     # Открывает транзакцию PostgreSQL; None — репозитории и так атомарны (in-memory).
     transaction: Callable[[], AbstractAsyncContextManager["Repositories"]] | None = None
 

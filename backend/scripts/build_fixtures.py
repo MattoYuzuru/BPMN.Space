@@ -14,7 +14,9 @@
    `npx -y bpmnlint` с конфигом `bpmnlint:recommended` — ошибок быть не должно.
    Осознанное предупреждение одно: `fake-join` в `tp861_v1` (ранняя версия возвращает цикл
    прямо в задачу; v2 это исправляет шлюзом-слиянием — так показываем пользу проверки).
-4. Результат → `app/fixtures/bpmn/<name>.bpmn`; копии схем, исходных текстов и
+4. Учебные материалы («Примеры») → `app/fixtures/samples/` (`.docx` тура собирается stdlib-ом).
+   `--samples` собирает только их, без Node: `uv run python scripts/build_fixtures.py --samples`.
+5. Результат → `app/fixtures/bpmn/<name>.bpmn`; копии схем, исходных текстов и
    `project-finances.docx` (настоящий .docx из `texts/tp861_finances.md`) → `examples/`.
 
 Скрипт не входит в `make check`: он нужен, только если меняются схемы или тексты.
@@ -42,6 +44,7 @@ BPMN_DIR = FIXTURES / "bpmn"
 TEXTS = FIXTURES / "texts"
 XSD = BACKEND / "app" / "domain" / "bpmn" / "xsd" / "BPMN20.xsd"
 EXAMPLES = ROOT / "examples"
+SAMPLES = FIXTURES / "samples"
 
 LAYOUT = ["npx", "-y", "bpmn-auto-layout@2.0.0-alpha.2"]
 LINT = ["npx", "-y", "bpmnlint@11.14.0"]
@@ -579,7 +582,10 @@ def check_lint(paths: list[Path], workdir: Path) -> None:
 
 
 def write_docx(text: str, target: Path) -> None:
-    """Минимальный настоящий .docx (OOXML) без сторонних библиотек: абзац на строку."""
+    """Минимальный настоящий .docx (OOXML) без сторонних библиотек: абзац на строку.
+
+    Без сжатия: результат zlib зависит от версии библиотеки, а файл коммитится и сверяется тестом.
+    """
     paragraphs = "".join(
         f'<w:p><w:r><w:t xml:space="preserve">{escape(line)}</w:t></w:r></w:p>'
         for line in text.splitlines()
@@ -607,14 +613,57 @@ def write_docx(text: str, target: Path) -> None:
         "</Relationships>"
     )
     target.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_STORED) as archive:
         for name, body in (
             ("[Content_Types].xml", content_types),
             ("_rels/.rels", rels),
             ("word/document.xml", document),
         ):
             info = zipfile.ZipInfo(name, date_time=(2026, 9, 29, 12, 0, 0))
-            archive.writestr(info, body, compress_type=zipfile.ZIP_DEFLATED)
+            archive.writestr(info, body, compress_type=zipfile.ZIP_STORED)
+
+
+def sample_files() -> dict[str, bytes]:
+    """Учебные материалы («Примеры», `app/fixtures/samples.py`): имя файла → содержимое.
+
+    Тур: `.docx` — записка со встречи и дополнение с намеренными пробелами в процессе
+    (по ним модель стабильно задаёт 2–4 вопроса); остальные материалы — копии текстов.
+    """
+
+    def text(name: str) -> str:
+        return (TEXTS / name).read_text(encoding="utf-8").strip()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        docx = Path(tmp) / "note.docx"
+        write_docx(
+            "\n".join(
+                [
+                    "Записка со встречи — техприсоединение",
+                    text("tp861_meeting_note.txt"),
+                    text("tour_note_addendum.txt"),
+                ]
+            ),
+            docx,
+        )
+        docx_bytes = docx.read_bytes()
+    return {
+        "tp861-meeting-note.docx": docx_bytes,
+        "repair-outage.md": (text("repair_outage.md") + "\n").encode("utf-8"),
+        "work-permit.txt": (text("work_permit.md") + "\n").encode("utf-8"),
+    }
+
+
+def build_samples(*, check: bool = False) -> None:
+    """Записывает материалы в `samples/`; с `check` — только сверяет с готовыми файлами."""
+    SAMPLES.mkdir(parents=True, exist_ok=True)
+    for name, content in sample_files().items():
+        target = SAMPLES / name
+        if check:
+            if not target.exists() or target.read_bytes() != content:
+                sys.exit(f"{target.relative_to(ROOT)} устарел: запустите make fixtures")
+        else:
+            target.write_bytes(content)
+    print(f"Учебные материалы: {len(sample_files())} файла в {SAMPLES.relative_to(ROOT)}")
 
 
 def copy_examples() -> None:
@@ -636,7 +685,14 @@ def copy_examples() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true", help="только проверить готовые файлы")
+    parser.add_argument(
+        "--samples", action="store_true", help="только учебные материалы (без Node и раскладки)"
+    )
     args = parser.parse_args()
+
+    if args.samples:
+        build_samples(check=args.check)
+        return
 
     BPMN_DIR.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
@@ -650,6 +706,7 @@ def main() -> None:
         for path in paths:
             check_xsd(path)
         check_lint(paths, workdir)
+    build_samples(check=args.check)
     if not args.check:
         copy_examples()
         print(f"Готово: {len(DIAGRAMS)} схем в {BPMN_DIR.relative_to(ROOT)}, примеры в examples/")

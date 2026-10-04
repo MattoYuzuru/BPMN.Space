@@ -172,6 +172,7 @@ class Run:
     summary: RunSummary | None = None
     version_id: UUID | None = None
     error: str | None = None
+    created_by: UUID | None = None  # внутреннее: кто запустил прогон (учёт прогресса онбординга)
     # Предупреждения прогона для пользователя: например, часть материалов не вошла в контекст.
     warnings: list[str] = field(default_factory=list[str])
     analysis: dict[str, Any] | None = None  # внутреннее: снимок анализа для аудита и повтора

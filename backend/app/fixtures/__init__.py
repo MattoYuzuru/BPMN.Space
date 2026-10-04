@@ -17,6 +17,7 @@ from pathlib import Path
 FIXTURES_DIR = Path(__file__).resolve().parent
 TEXTS_DIR = FIXTURES_DIR / "texts"
 BPMN_DIR = FIXTURES_DIR / "bpmn"
+SAMPLES_DIR = FIXTURES_DIR / "samples"
 
 
 @cache

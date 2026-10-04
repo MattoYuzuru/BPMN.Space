@@ -81,6 +81,8 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-flash"
     deepseek_timeout_sec: float = 120.0
+    # Рассуждение DeepSeek съедает лимит ответа и обрезает JSON, поэтому по умолчанию выключено.
+    deepseek_thinking_enabled: bool = False
     # Повторы временных сбоев (HTTP 408/429/5xx, таймаут, обрыв сети): экспоненциальная пауза
     # с джиттером от `base` до `max` секунд, `Retry-After` провайдера учитывается.
     deepseek_max_retries: int = 3

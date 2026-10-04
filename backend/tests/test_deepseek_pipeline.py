@@ -6,6 +6,8 @@ from uuid import uuid4
 
 import pytest
 
+from app.config import Settings
+from app.container import build_container
 from app.domain.analysis import AnalysisResult, ContextSource, RunContext
 from app.domain.models import SourceKind
 from app.llm.base import PipelineError
@@ -31,6 +33,34 @@ def test_request_uses_current_model_and_server_side_bearer_auth() -> None:
     assert "thinking" not in request_body
     assert request_body["response_format"] == {"type": "json_object"}
     assert request_body["max_tokens"] == 4096
+
+
+def test_deepseek_request_disables_thinking_explicitly() -> None:
+    # Без `thinking: disabled` DeepSeek тратит max_tokens на рассуждение и обрезает ответ.
+    payload = {"choices": [{"message": {"content": "{}"}}]}
+    pipeline = OpenAICompatiblePipeline(api_key="test-only", thinking=False)
+
+    with patch("app.llm.openai_compatible.urlopen") as urlopen:
+        urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(payload).encode()
+        pipeline._request_json("system", "prompt")
+        request = urlopen.call_args.args[0]
+
+    assert json.loads(request.data)["thinking"] == {"type": "disabled"}
+
+
+def test_container_disables_thinking_only_for_deepseek() -> None:
+    deepseek = build_container(Settings(llm_provider="deepseek", deepseek_api_key="test-only"))
+    generic = build_container(
+        Settings(
+            llm_provider="openai_compatible",
+            llm_api_key="test-only",
+            llm_base_url="https://llm.example.com/v1",
+            llm_model="any",
+        )
+    )
+
+    assert deepseek.runs._pipeline._thinking is False  # type: ignore[attr-defined]
+    assert generic.runs._pipeline._thinking is None  # type: ignore[attr-defined]
 
 
 def test_request_can_disable_json_mode_for_providers_without_json_object_support() -> None:

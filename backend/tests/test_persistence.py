@@ -1,6 +1,7 @@
 """Проверки схемы и persistent storage; SQL-тест требует TEST_DATABASE_URL."""
 
 import asyncio
+import logging
 import os
 from collections.abc import AsyncIterator
 from dataclasses import replace
@@ -801,3 +802,35 @@ async def test_run_warnings_and_llm_tokens_round_trip(sql_store) -> None:
         call = await session.scalar(select(LlmCallRow).where(LlmCallRow.run_id == run.id))
     assert call is not None
     assert (call.tokens_in, call.tokens_out) == (120, 30)
+
+
+@pytest.mark.asyncio
+async def test_initialize_skips_upgrade_for_newer_schema(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    url = os.getenv("TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("TEST_DATABASE_URL не задан; PostgreSQL-интеграционный тест пропущен")
+    schema = f"test_{uuid4().hex}"
+    admin = create_async_engine(url)
+    async with admin.begin() as connection:
+        await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    database = Database(url, connect_args={"server_settings": {"search_path": schema}})
+    try:
+        await database.initialize()  # применили все миграции этого релиза
+        async with database.engine.begin() as connection:
+            await connection.execute(text("UPDATE alembic_version SET version_num = '9999_future'"))
+        caplog.set_level(logging.WARNING, logger="app.infra.database")
+        await database.initialize()  # старый релиз поверх более новой схемы не падает
+        assert "9999_future" in caplog.text
+        assert "Схема БД новее" in caplog.text
+        async with database.engine.connect() as connection:
+            version = (
+                await connection.execute(text("SELECT version_num FROM alembic_version"))
+            ).scalar_one()
+        assert version == "9999_future"  # чужую ревизию не трогаем
+    finally:
+        await database.dispose()
+        async with admin.begin() as connection:
+            await connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+        await admin.dispose()

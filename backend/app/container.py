@@ -106,7 +106,9 @@ def build_container(
             retry_base = settings.llm_retry_base_sec
             retry_max = settings.llm_retry_max_sec
             timeout = settings.llm_timeout_sec
+            thinking: bool | None = None
             if settings.llm_provider.lower() == "deepseek":
+                thinking = settings.deepseek_thinking_enabled
                 retries = settings.deepseek_max_retries
                 retry_base = settings.deepseek_retry_base_sec
                 retry_max = settings.deepseek_retry_max_sec
@@ -120,6 +122,7 @@ def build_container(
                 max_retries=retries,
                 retry_base_sec=retry_base,
                 retry_max_sec=retry_max,
+                thinking=thinking,
             )
             assistant_model = pipeline
         case provider:

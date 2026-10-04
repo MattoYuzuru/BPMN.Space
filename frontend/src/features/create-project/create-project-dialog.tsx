@@ -6,6 +6,8 @@ import { useCreateProjectFromExample } from '@/entities/project'
 import { ACCEPTED_FILES } from '@/entities/source'
 import { VoiceDictation } from '@/features/voice-record/voice-dictation'
 import { errorMessage } from '@/shared/api/client'
+import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
+import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import {
   Button,
   Dialog,
@@ -33,7 +35,7 @@ const MODES = [
 
 /** Создание проекта: пустого или из демо-примера. После создания — сразу рабочее место. */
 export function CreateProjectDialog() {
-  const { open, mode, setOpen, setMode } = useCreateProjectDialog()
+  const { open, mode, lockMode, setOpen, setMode } = useCreateProjectDialog()
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
@@ -45,12 +47,14 @@ export function CreateProjectDialog() {
         }}
       >
         <div className="flex flex-col gap-5">
-          <SegmentedControl<CreateMode>
-            aria-label="Как создать проект"
-            value={mode}
-            onValueChange={setMode}
-            options={MODES}
-          />
+          {!lockMode && (
+            <SegmentedControl<CreateMode>
+              aria-label="Как создать проект"
+              value={mode}
+              onValueChange={setMode}
+              options={MODES}
+            />
+          )}
           {mode === 'blank' ? <BlankForm /> : <ExampleForm />}
         </div>
       </DialogContent>
@@ -74,7 +78,8 @@ function failureSummary(failures: string[]): string {
 }
 
 function BlankForm() {
-  const [title, setTitle] = useState('')
+  const { title: initialTitle, minimal, onboarding } = useCreateProjectDialog.getState()
+  const [title, setTitle] = useState(initialTitle)
   const [description, setDescription] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [error, setError] = useState<string>()
@@ -90,8 +95,9 @@ function BlankForm() {
     }
     // `mutateAsync`, а не `mutate` с колбэками: если диалог закрыли посреди создания, колбэки
     // `mutate` не сработают, а переход в проект и уведомление должны состояться.
-    create.mutateAsync({ title: name, description, files }).then(
+    create.mutateAsync({ title: name, description, files, onboarding }).then(
       (result) => {
+        emitOnboardingSignal({ type: 'project.created', id: result.projectId })
         if (result.failures.length > 0) {
           toast.error('Проект создан, но не всё получилось', {
             description: failureSummary(result.failures),
@@ -135,58 +141,69 @@ function BlankForm() {
           }}
         />
       </Field>
-      <Field label="Описание процесса" optional>
-        <div className="relative">
-          <Textarea
-            value={description}
-            minRows={3}
-            maxRows={7}
-            placeholder="Кто, что и в каком порядке делает — как рассказали бы коллеге"
-            className="pr-10"
-            onChange={(event) => setDescription(event.target.value)}
-          />
-          <VoiceDictation
-            side="bottom"
-            submitLabel="Добавить в описание"
-            className="absolute top-1.5 right-1.5"
-            onText={(text) =>
-              setDescription((current) => [current.trim(), text].filter(Boolean).join('\n'))
-            }
-          />
-        </div>
-      </Field>
-      <Field label="Документы" optional>
-        <div className="flex flex-col gap-2">
-          <FileDrop
-            size="sm"
-            multiple
-            accept={ACCEPTED_FILES.join(',')}
-            onFiles={addFiles}
-            title="Перетащите документы"
-            hint=".txt, .md, .csv, .docx, .pdf"
-          />
-          {files.length > 0 && (
-            <ul className="flex flex-wrap gap-1.5" aria-label="Выбранные документы">
-              {files.map((file) => (
-                <li key={`${file.name}-${file.size}`} className="max-w-full">
-                  <Tag
-                    icon="file-text"
-                    removeLabel={`Убрать ${file.name}`}
-                    onRemove={() => setFiles((current) => current.filter((item) => item !== file))}
-                  >
-                    {file.name}
-                  </Tag>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </Field>
+      {!minimal && (
+        <Field label="Описание процесса" optional>
+          <div className="relative">
+            <Textarea
+              value={description}
+              minRows={3}
+              maxRows={7}
+              placeholder="Кто, что и в каком порядке делает — как рассказали бы коллеге"
+              className="pr-10"
+              onChange={(event) => setDescription(event.target.value)}
+            />
+            <VoiceDictation
+              side="bottom"
+              submitLabel="Добавить в описание"
+              className="absolute top-1.5 right-1.5"
+              onText={(text) =>
+                setDescription((current) => [current.trim(), text].filter(Boolean).join('\n'))
+              }
+            />
+          </div>
+        </Field>
+      )}
+      {!minimal && (
+        <Field label="Документы" optional>
+          <div className="flex flex-col gap-2">
+            <FileDrop
+              size="sm"
+              multiple
+              accept={ACCEPTED_FILES.join(',')}
+              onFiles={addFiles}
+              title="Перетащите документы"
+              hint=".txt, .md, .csv, .docx, .pdf"
+            />
+            {files.length > 0 && (
+              <ul className="flex flex-wrap gap-1.5" aria-label="Выбранные документы">
+                {files.map((file) => (
+                  <li key={`${file.name}-${file.size}`} className="max-w-full">
+                    <Tag
+                      icon="file-text"
+                      removeLabel={`Убрать ${file.name}`}
+                      onRemove={() =>
+                        setFiles((current) => current.filter((item) => item !== file))
+                      }
+                    >
+                      {file.name}
+                    </Tag>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </Field>
+      )}
       <div className="-mx-5 -mb-5 mt-1 flex justify-end gap-2 border-t border-border px-5 py-3.5">
         <DialogClose asChild>
           <Button variant="ghost">Отмена</Button>
         </DialogClose>
-        <Button type="submit" variant="primary" loading={create.isPending}>
+        <Button
+          type="submit"
+          variant="primary"
+          loading={create.isPending}
+          {...tourAnchor(TOUR_ANCHORS.createSubmit)}
+        >
           Создать проект
         </Button>
       </div>
@@ -209,6 +226,7 @@ function ExampleForm() {
     if (!selected) return
     create.mutate(selected, {
       onSuccess: (project) => {
+        emitOnboardingSignal({ type: 'project.created', id: project.id })
         toast.success('Проект создан из примера', { description: project.title })
         openProject(project.id)
       },

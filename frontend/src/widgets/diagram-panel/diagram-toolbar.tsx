@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { VERSION_ORIGIN, type VersionDetail, versionLabel } from '@/entities/version'
 import { cn } from '@/shared/lib/cn'
 import { formatRelative } from '@/shared/lib/format'
+import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import {
   Badge,
   Button,
@@ -182,6 +183,7 @@ export function DiagramToolbar({
           label={simulation ? 'Остановить симуляцию' : 'Симуляция токена'}
           aria-pressed={simulation}
           disabled={!ready}
+          {...tourAnchor(TOUR_ANCHORS.diagramSimulation)}
           className={toggleClass(simulation)}
           onClick={() => setSimulation(editorRef.current?.toggleSimulation() ?? false)}
         />

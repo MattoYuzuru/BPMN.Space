@@ -5,6 +5,7 @@ import { AUTH_STATE } from './e2e/auth-state'
  * e2e идут против стека в Docker (`make up`), по умолчанию http://localhost:8080.
  * Свой адрес — E2E_BASE_URL (например, vite на :5176 + mock-backend на :8000 с MOCK_DELAY_SCALE=0.2).
  * Проект screenshots снимает ключевые экраны для команды: `make screenshots` → reports/screenshots.
+ * Проект onboarding (приветствие и тур) стартует после проекта e2e.
  *
  * Если на стенде включены аккаунты, `e2e/global-setup.ts` регистрирует тестового пользователя и
  * сохраняет вход; сценарии идут под ним. Экран входа проверяет `auth.spec.ts` без этого состояния.
@@ -41,7 +42,15 @@ export default defineConfig({
   projects: [
     {
       name: 'e2e',
-      testIgnore: /screenshots\.spec\.ts/,
+      testIgnore: /(screenshots|onboarding-tour)\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 }, ...fakeMedia },
+    },
+    {
+      // Обучение идёт после остальных сценариев: его прогоны модели и регистрации (лимит 20 в минуту
+      // на адрес) не мешают соседям на общем стенде.
+      name: 'onboarding',
+      testMatch: /onboarding-tour\.spec\.ts/,
+      dependencies: ['e2e'],
       use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 }, ...fakeMedia },
     },
     {

@@ -3,6 +3,7 @@ import { type ReactNode, useEffect, useState } from 'react'
 import { errorMessage } from '@/shared/api/client'
 import { formatClock } from '@/shared/lib/format'
 import { softTransition } from '@/shared/lib/motion'
+import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import { AudioLevel, Button, Field, Icon, Progress, Textarea } from '@/shared/ui'
 import { useTranscribe } from './api'
 import { type RecorderState, useVoiceRecorder } from './use-voice-recorder'
@@ -92,7 +93,10 @@ export function VoiceCapture({
   if (state.status === 'blocked') {
     const info = BLOCKED[state.reason]
     return (
-      <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-bg-subtle px-5 py-6 text-center animate-fade-in">
+      <div
+        {...tourAnchor(TOUR_ANCHORS.voiceCapture)}
+        className="flex flex-col items-center gap-3 rounded-lg border border-border bg-bg-subtle px-5 py-6 text-center animate-fade-in"
+      >
         <span className="grid size-10 place-items-center rounded-full bg-danger-subtle text-danger-fg">
           <Icon name="microphone-off" size={20} />
         </span>
@@ -111,7 +115,10 @@ export function VoiceCapture({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="relative flex flex-col gap-3 rounded-lg border border-border bg-bg-subtle px-4 pt-4 pb-3">
+      <div
+        {...tourAnchor(TOUR_ANCHORS.voiceCapture)}
+        className="relative flex flex-col gap-3 rounded-lg border border-border bg-bg-subtle px-4 pt-4 pb-3"
+      >
         <div className="flex items-center justify-between gap-3">
           <span className="flex items-center gap-2 type-label text-fg-muted">
             {state.status === 'recording' ? (

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { type Browser, expect, type Page, test } from '@playwright/test'
-import { createExampleProject, dragElement, runViaApi } from './support'
+import { createExampleProject, dragElement, runViaApi, skipWelcome } from './support'
 
 /**
  * Общий доступ: ссылка на просмотр, приглашение редактора, отзыв. Нужны аккаунты на стенде.
@@ -116,6 +116,7 @@ test('приглашение редактора: регистрация, при�
   await guest.getByRole('button', { name: 'Принять приглашение' }).click()
   await expect(guest).toHaveURL(new RegExp(`/projects/${id}$`))
   await expect(guest.getByText('Приглашение принято')).toBeVisible()
+  await skipWelcome(guest)
 
   // Редактор правит: доступны запуск и правка схемы, но нет «Поделиться» и «Только просмотр».
   await expect(guest.getByRole('button', { name: 'Построить схему' })).toBeVisible()

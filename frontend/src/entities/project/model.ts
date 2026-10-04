@@ -32,3 +32,23 @@ export function projectStatusView(project: {
 export function isRunning(status: ProjectStatus): boolean {
   return status === 'analyzing' || status === 'building'
 }
+
+export type ProjectAccess = Schemas['ProjectRole']
+
+/** Что можно делать в проекте. Экраны получают готовые флаги и сами роль не сравнивают. */
+export interface ProjectCapabilities {
+  /** Менять содержимое: источники, вопросы, схему, запуск прогонов, название. */
+  canEdit: boolean
+  /** Удалять проект и управлять доступом (владелец). */
+  canManage: boolean
+}
+
+/** Возможности по роли: viewer только читает, editor правит всё, кроме удаления и доступа. */
+export function projectCapabilities(access: ProjectAccess): ProjectCapabilities {
+  return { canEdit: access !== 'viewer', canManage: access === 'owner' }
+}
+
+/** Проект открыт только для чтения (демо-примеры, ссылка «только просмотр»). */
+export function isReadOnly(access: ProjectAccess): boolean {
+  return !projectCapabilities(access).canEdit
+}

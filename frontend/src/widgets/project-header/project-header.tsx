@@ -27,7 +27,7 @@ import { useWorkspace, useWorkspaceUi } from '@/widgets/workspace/model'
 
 /** Шапка рабочего места: крошки, название, статус, итоги вопросов, запуск прогонов, версии. */
 export function ProjectHeader() {
-  const { project } = useWorkspace()
+  const { project, canEdit } = useWorkspace()
   const run = useRunView(project.id)
   const running = isRunning(project.status) || run?.status === 'running'
   const status = projectStatusView(project)
@@ -52,6 +52,11 @@ export function ProjectHeader() {
       <Badge tone={status.tone} dot className="shrink-0">
         {status.label}
       </Badge>
+      {!canEdit && (
+        <Badge tone="neutral" variant="outline" icon="lock" className="shrink-0">
+          Только просмотр
+        </Badge>
+      )}
       {project.questions.length > 0 && (
         <SummaryChips
           summary={project.summary}
@@ -65,7 +70,7 @@ export function ProjectHeader() {
 
 /** Название проекта с правкой на месте: клик — поле, Enter — сохранить, Esc — отменить. */
 function ProjectTitle() {
-  const { project } = useWorkspace()
+  const { project, canEdit } = useWorkspace()
   const rename = useRenameProject(project.id)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(project.title)
@@ -78,6 +83,13 @@ function ProjectTitle() {
     else setDraft(project.title)
   }
 
+  if (!canEdit) {
+    return (
+      <span className="min-w-0 max-w-[32rem] truncate px-1.5 type-subheading text-fg">
+        {project.title}
+      </span>
+    )
+  }
   if (editing) {
     return (
       <Input
@@ -117,7 +129,7 @@ function ProjectTitle() {
 }
 
 function HeaderActions({ running }: { running: boolean }) {
-  const { project, editorRef, viewedVersionId, viewVersion } = useWorkspace()
+  const { project, canEdit, editorRef, viewedVersionId, viewVersion } = useWorkspace()
   const setSheet = useWorkspaceUi((state) => state.setSheet)
   const start = useStartRun(project.id)
   const latest = project.latest_version
@@ -128,32 +140,36 @@ function HeaderActions({ running }: { running: boolean }) {
 
   return (
     <>
-      <Tooltip
-        content={noSources ? 'Сначала добавьте источник' : 'Найти неясности и задать вопросы'}
-        side="bottom"
-      >
-        <span className="inline-flex">
+      {canEdit && (
+        <>
+          <Tooltip
+            content={noSources ? 'Сначала добавьте источник' : 'Найти неясности и задать вопросы'}
+            side="bottom"
+          >
+            <span className="inline-flex">
+              <Button
+                leadingIcon="sparkles"
+                size="sm"
+                disabled={noSources || running}
+                loading={start.isPending && start.variables === 'analyze'}
+                onClick={() => start.mutate('analyze')}
+              >
+                Анализ
+              </Button>
+            </span>
+          </Tooltip>
           <Button
-            leadingIcon="sparkles"
+            variant={latest ? 'primary' : 'secondary'}
+            leadingIcon="diagram"
             size="sm"
             disabled={noSources || running}
-            loading={start.isPending && start.variables === 'analyze'}
-            onClick={() => start.mutate('analyze')}
+            loading={start.isPending && start.variables === 'build'}
+            onClick={() => start.mutate('build')}
           >
-            Анализ
+            Построить схему
           </Button>
-        </span>
-      </Tooltip>
-      <Button
-        variant={latest ? 'primary' : 'secondary'}
-        leadingIcon="diagram"
-        size="sm"
-        disabled={noSources || running}
-        loading={start.isPending && start.variables === 'build'}
-        onClick={() => start.mutate('build')}
-      >
-        Построить схему
-      </Button>
+        </>
+      )}
 
       {latest && viewed && (
         <>

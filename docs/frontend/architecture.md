@@ -21,7 +21,7 @@
 
 **Доступ.** Закрытые экраны — под pathless-маршрутом `routes/_app.tsx`: его `beforeLoad` (`requireSession` из `entities/session`) читает `/auth/session` и гостя при включённых аккаунтах отправляет на `/login?redirect=…`. Публичные маршруты (`/login`, `/styleguide`, `/dev/diagram`, `/share/$token`) лежат вне `_app`. `entities/session` — запрос сессии, вход, регистрация (сразу входит), выход, очистка кэша данных аккаунта, проверка адреса возврата. 401 посреди работы ловят `QueryCache`/`MutationCache` (`app/query-client.ts`) и ведут на вход (`app/session-expiry.ts`); 429 — спокойный тост. Права в проекте — `projectCapabilities(access)` в `entities/project`, компоненты получают `canEdit` / `canManage`. Подробности — styleguide §16.
 
-Глобальные слои стоят в корне (`routes/__root.tsx`): палитра команд (Ctrl+K / ⌘K) и диалог создания проекта. Экран добавляет в палитру свои команды через `useRegisterCommands` (рабочее место — «Запустить анализ», «Построить схему», «Отчёт проверки»…).
+Глобальные слои стоят в корне (`routes/__root.tsx`): палитра команд (Ctrl+K / ⌘K) и диалог создания проекта. Обучение (приветствие и тур) — в закрытом разделе, `routes/_app.tsx` → `OnboardingRoot`. Экран добавляет в палитру свои команды через `useRegisterCommands` (рабочее место — «Запустить анализ», «Построить схему», «Отчёт проверки»…).
 
 ## Слои
 
@@ -111,7 +111,7 @@ src/
 - Маршруты режутся на чанки автоматически (`autoCodeSplitting`). `pendingComponent` маршрутов в чанк не уходит, поэтому заглушки экранов вынесены в `widgets/skeletons/screen-skeletons.tsx` и не импортируют виджеты — иначе экраны попали бы в стартовый бандл.
 - bpmn-js с плагинами — отдельный чанк `LazyDiagramEditor` (≈ 460 КБ gzip), грузится в loader рабочего места и при наведении на проект.
 - Палитра команд (cmdk), диалог создания проекта, экраны 404 и ошибки — `React.lazy` по первому требованию.
-- Движок обучения (`features/onboarding/tour`, `hint`) — отдельные чанки: грузятся, только когда тур активен или показана подсказка; без тура наблюдателей (`MutationObserver`, `ResizeObserver`) нет. Устройство — [onboarding.md](onboarding.md).
+- Движок и сценарий обучения (`features/onboarding/tour`, `hint`, сборка `widgets/onboarding-root/tour-root`) — отдельные чанки: грузятся, только когда тур активен или показана подсказка; без тура наблюдателей (`MutationObserver`, `ResizeObserver`) нет. Устройство — [onboarding.md](onboarding.md).
 - Возможности motion (`domAnimation`) грузятся отдельным чанком через `LazyMotion`; экраны используют только лёгкие `m.*`.
 - `make build` проверяет бюджет: стартовые JS и CSS ≤ 200 КБ gzip, без bpmn-js (`frontend/scripts/check-bundle.mjs`).
 

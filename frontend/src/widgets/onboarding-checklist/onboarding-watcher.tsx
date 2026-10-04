@@ -4,9 +4,9 @@ import { type ChecklistItemKey, onboardingKeys, useChecklistView } from '@/entit
 import { useCurrentUser } from '@/entities/session'
 import { useTourStore } from '@/features/onboarding/tour/store'
 import { subscribeOnboardingSignals } from '@/shared/lib/onboarding-signals'
+import { dismissHintFor } from './active-hint'
 import { announceProgress } from './progress-notices'
 import { useRecentItems } from './recent'
-import { dismissHintFor } from './visit'
 
 /**
  * Единственное место, где сравниваются ответы `GET /me/onboarding`: что отметилось нового.

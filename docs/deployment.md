@@ -1,10 +1,10 @@
 # Деплой на демо-VM
 
-Текущая production-схема — Ubuntu 24.04, Docker Compose, Caddy на порту 80, FastAPI и PostgreSQL 16 во внутренней сети Compose. PostgreSQL хранит состояние проектов в volume `postgres_data`, загруженные документы — в `uploads_data`. Деплой отправляет архив проверенного Git-коммита по SSH; VM не нужен доступ к приватному GitLab. GitLab CI/CD не используется.
+Текущая production-схема — Ubuntu 24.04, Docker Compose, Caddy на портах 80 и 443, FastAPI и PostgreSQL 16 во внутренней сети Compose. Для `bpmn.space` и `www.bpmn.space` Caddy автоматически получает и обновляет TLS-сертификаты Let's Encrypt. Данные сертификатов сохраняются в volumes `caddy_data` и `caddy_config`. PostgreSQL хранит состояние проектов в volume `postgres_data`, загруженные документы — в `uploads_data`. Деплой отправляет архив проверенного Git-коммита по SSH; VM не нужен доступ к приватному GitLab. GitLab CI/CD не используется.
 
 ## Один раз: подготовить VM
 
-1. Установите Ubuntu 24.04 и разрешите входящий TCP 22 и 80 в сетевых правилах Selectel. Порт 8000 наружу не открывайте.
+1. Установите Ubuntu 24.04 и разрешите входящий TCP 22, 80 и 443 в сетевых правилах Selectel. Порт 80 нужен для перенаправления на HTTPS и проверки владения доменом Let's Encrypt; порт 443 обслуживает сайт. Порт 8000 наружу не открывайте.
 2. Каждый участник создаёт собственную пару SSH-ключей на своём компьютере, например `ssh-keygen -t ed25519 -C "имя-участника" -f ~/.ssh/arkhitektor_deploy`. На VM передаётся только публичный файл `~/.ssh/arkhitektor_deploy.pub`; приватный ключ остаётся у владельца.
 3. Скопируйте bootstrap-скрипт на VM и один раз запустите его от `root`:
 
@@ -52,13 +52,13 @@ DEPLOY_HOST=<IP_VM> scripts/upload-server-env.sh
 
 ## Проверка и восстановление
 
-Откройте `http://<IP_VM>/`, затем проверьте главную страницу, `/health` и тестовые сценарии помощника/голосового ввода. Не используйте `docker compose down -v`: команда удаляет volume PostgreSQL и пользовательские файлы. Диагностика на VM:
+Откройте `https://bpmn.space/` и `https://www.bpmn.space/`, затем проверьте, что `http://bpmn.space/` перенаправляет на HTTPS и страница показывает действующий сертификат. `/health` доступен для проверки через домен. Не используйте `docker compose down -v`: команда удаляет volume PostgreSQL, пользовательские файлы и данные Caddy. Диагностика на VM:
 
 ```bash
 ssh deploy@<IP_VM> 'cd /home/deploy/arkhitektor/current && docker compose --env-file /home/deploy/arkhitektor/shared/.env -p arkhitektor -f compose.yaml -f compose.prod.yaml ps'
 ssh deploy@<IP_VM> 'cd /home/deploy/arkhitektor/current && docker compose --env-file /home/deploy/arkhitektor/shared/.env -p arkhitektor -f compose.yaml -f compose.prod.yaml logs --tail=100'
 ```
 
-Порты 80 и 22 открыты, TLS-домен пока не настроен — HTTP подходит только для временного демо/тестирования.
+Если сертификат не выпущен, проверьте A-записи для `bpmn.space` и `www.bpmn.space`, доступность входящих TCP 80/443 и логи Caddy. Выпуск сертификата выполняется автоматически после старта релиза с доменной конфигурацией; вручную передавать сертификаты или менять production `.env` не требуется.
 
-Вход в аккаунт в production требует HTTPS: cookie сессии получает флаг `Secure`, и по обычному HTTP браузер её не примет. На стенде без HTTPS задайте `SESSION_COOKIE_SECURE=false` в серверном окружении; после подключения HTTPS уберите эту строку. Не используйте production-ключи с публичным адресом без ограничений доступа; перед открытым демо добавьте домен, HTTPS и защиту от неавторизованных запросов.
+Вход в аккаунт в production требует HTTPS: cookie сессии получает флаг `Secure`, и по обычному HTTP браузер её не примет. На стенде без HTTPS задайте `SESSION_COOKIE_SECURE=false` в серверном окружении; после подключения HTTPS уберите эту строку. Не используйте production-ключи с публичным адресом без ограничений доступа.

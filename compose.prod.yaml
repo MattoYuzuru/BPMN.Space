@@ -1,5 +1,9 @@
 # Production overrides. The server keeps its secret configuration outside the release tree.
 services:
+  web:
+    ports:
+      - "80:80"
+      - "443:443"
   db:
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Укажите POSTGRES_PASSWORD в production .env}

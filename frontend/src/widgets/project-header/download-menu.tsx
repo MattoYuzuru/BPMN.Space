@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react'
+import { useReportOnboardingEvent } from '@/entities/onboarding'
 import type { Version } from '@/entities/version'
 import { versionLabel } from '@/entities/version'
 import { EXPORT_FORMATS, exportDiagram } from '@/features/export-diagram/export'
+import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,11 +23,18 @@ import { useWorkspace, useWorkspaceUi } from '@/widgets/workspace/model'
 export function DownloadMenu({ version, extra }: { version: Version; extra?: ReactNode }) {
   const { project, editorRef, versions } = useWorkspace()
   const setSheet = useWorkspaceUi((state) => state.setSheet)
+  const report = useReportOnboardingEvent()
   return (
     <DropdownMenu>
       <Tooltip content="Скачать" side="bottom">
         <DropdownMenuTrigger asChild>
-          <IconButton icon="download" size="sm" label="Скачать схему" tooltip={false} />
+          <IconButton
+            icon="download"
+            size="sm"
+            label="Скачать схему"
+            tooltip={false}
+            {...tourAnchor(TOUR_ANCHORS.headerDownload)}
+          />
         </DropdownMenuTrigger>
       </Tooltip>
       <DropdownMenuContent align="end" className="min-w-60">
@@ -42,6 +51,7 @@ export function DownloadMenu({ version, extra }: { version: Version; extra?: Rea
                 title: project.title,
                 editor: editorRef.current,
                 xmlUrl: versions.xmlUrl(version.id),
+                onSaved: () => report.mutate('diagram_exported'),
               })
             }
           >

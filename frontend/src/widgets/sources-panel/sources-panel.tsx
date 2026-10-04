@@ -11,6 +11,7 @@ import {
 import { useFileUploads } from '@/features/add-source/use-file-uploads'
 import { cn } from '@/shared/lib/cn'
 import { listItem } from '@/shared/lib/motion'
+import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import {
   Button,
   ConfirmDialog,
@@ -159,7 +160,13 @@ function AddSourceMenu({
     <DropdownMenu>
       <Tooltip content="Добавить источник">
         <DropdownMenuTrigger asChild>
-          <IconButton icon="plus" label="Добавить источник" size="sm" tooltip={false} />
+          <IconButton
+            icon="plus"
+            label="Добавить источник"
+            size="sm"
+            tooltip={false}
+            {...tourAnchor(TOUR_ANCHORS.sourcesAdd)}
+          />
         </DropdownMenuTrigger>
       </Tooltip>
       <DropdownMenuContent align="end" className="min-w-52">

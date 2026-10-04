@@ -61,3 +61,27 @@ export const useWorkspaceUi = create<WorkspaceUi>((set) => ({
     set(panel === 'sources' ? { sourcesCollapsed: collapsed } : { questionsCollapsed: collapsed }),
   reset: () => set({ dialog: null, sheet: null, questionSheet: null }),
 }))
+
+/**
+ * Управление рабочим местом снаружи его дерева (подсказки онбординга): раскладка и выбор вопроса
+ * живут в панелях, а не в сторе. `WorkspaceView` регистрирует их, пока открыт.
+ */
+export interface WorkspaceControls {
+  expandPanel: (panel: 'sources' | 'questions') => void
+  selectQuestion: WorkspaceApi['selectQuestion']
+}
+
+let controls: WorkspaceControls | null = null
+
+/** Зарегистрировать управление; возвращает функцию снятия (только своё). */
+export function registerWorkspaceControls(next: WorkspaceControls): () => void {
+  controls = next
+  return () => {
+    if (controls === next) controls = null
+  }
+}
+
+/** Управление открытым рабочим местом или `null`, если оно не на экране. */
+export function getWorkspaceControls(): WorkspaceControls | null {
+  return controls
+}

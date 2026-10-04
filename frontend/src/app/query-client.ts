@@ -1,4 +1,5 @@
 import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query'
+import { onboardingKeys } from '@/entities/onboarding'
 import { ApiError } from '@/shared/api/client'
 import { toast } from '@/shared/ui'
 
@@ -43,7 +44,13 @@ function onMutationError(error: unknown) {
  */
 export const queryClient = new QueryClient({
   queryCache: new QueryCache({ onError: onQueryError }),
-  mutationCache: new MutationCache({ onError: onMutationError }),
+  mutationCache: new MutationCache({
+    onError: onMutationError,
+    // Любое успешное действие (создали проект, ответили, загрузили файл) могло отметить пункт
+    // «Начала работы» на сервере: состояние онбординга перечитывается. Запрос дешёвый, а у
+    // мутаций нет общего ключа, по которому можно было бы отфильтровать нужные.
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: onboardingKeys.all }),
+  }),
   defaultOptions: {
     queries: { staleTime: 15_000, refetchOnWindowFocus: true, retry: shouldRetry },
   },

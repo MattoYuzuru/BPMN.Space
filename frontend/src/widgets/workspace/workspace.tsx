@@ -31,7 +31,13 @@ import { SourceSheet } from '@/widgets/sources-panel/source-sheet'
 import { SourcesPanel } from '@/widgets/sources-panel/sources-panel'
 import { ReportSheet } from '@/widgets/version-sheets/report-sheet'
 import { VersionsSheet } from '@/widgets/version-sheets/versions-sheet'
-import { useWorkspace, useWorkspaceUi, type WorkspaceApi, WorkspaceContext } from './model'
+import {
+  registerWorkspaceControls,
+  useWorkspace,
+  useWorkspaceUi,
+  type WorkspaceApi,
+  WorkspaceContext,
+} from './model'
 
 export interface WorkspaceSearch {
   question?: string
@@ -140,6 +146,16 @@ export function WorkspaceView({
       onSearchChange,
       questionsRef,
     ],
+  )
+
+  const { selectQuestion } = api
+  useEffect(
+    () =>
+      registerWorkspaceControls({
+        expandPanel: (panel) => (panel === 'sources' ? sourcesRef : questionsRef).current?.expand(),
+        selectQuestion,
+      }),
+    [selectQuestion, sourcesRef, questionsRef],
   )
 
   return (

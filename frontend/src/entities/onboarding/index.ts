@@ -10,6 +10,7 @@ export {
   useSetChecklistHidden,
   useUpdateTour,
 } from './api'
+export { type ChecklistView, useChecklistView } from './hooks'
 export {
   CHECKLIST_GROUPS,
   CHECKLIST_ITEMS,
@@ -42,3 +43,4 @@ export {
   type TourState,
   withCompletedItem,
 } from './model'
+export { useOnboardingUi } from './ui'

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
+import { useReportOnboardingEvent } from '@/entities/onboarding'
 import { diagramElements, type VersionDetail, versionLabel } from '@/entities/version'
 import { EXPORT_FORMATS, exportDiagram } from '@/features/export-diagram/export'
 import { cn } from '@/shared/lib/cn'
@@ -49,6 +50,7 @@ export function ReportSheet() {
 function Report({ version }: { version: VersionDetail }) {
   const { project, editorRef, selectQuestion, focusElements, versions } = useWorkspace()
   const setSheet = useWorkspaceUi((state) => state.setSheet)
+  const reportEvent = useReportOnboardingEvent()
   const elements = diagramElements(version.xml)
   const nameOf = (id?: string | null) => (id ? elements.get(id)?.name || id : undefined)
   const { report, diff } = version
@@ -189,6 +191,7 @@ function Report({ version }: { version: VersionDetail }) {
                   title: project.title,
                   editor: editorRef.current,
                   xmlUrl: versions.xmlUrl(version.id),
+                  onSaved: () => reportEvent.mutate('diagram_exported'),
                 })
               }
             >

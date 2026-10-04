@@ -50,7 +50,7 @@ export function PublicHeader({ children, actions, loginRedirect, className }: Pu
             </Link>
           </Button>
         )}
-        <AccountMenu afterLogout={() => window.location.reload()} />
+        <AccountMenu afterLogout={() => window.location.reload()} withChecklist={false} />
       </div>
     </header>
   )

@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet } from '@tanstack/react-router'
 import { requireSession } from '@/entities/session'
+import { OnboardingLayer } from '@/widgets/onboarding-checklist/onboarding-layer'
 
 /**
  * Закрытый раздел: всё, что внутри, видит только вошедший пользователь (или любой — на стенде без
@@ -8,5 +9,14 @@ import { requireSession } from '@/entities/session'
  */
 export const Route = createFileRoute('/_app')({
   beforeLoad: ({ context, location }) => requireSession(context.queryClient, location.href),
-  component: Outlet,
+  component: AppLayout,
 })
+
+function AppLayout() {
+  return (
+    <>
+      <Outlet />
+      <OnboardingLayer />
+    </>
+  )
+}

@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
+import { onboardingKeys } from '@/entities/onboarding'
 import { projectKeys } from '@/entities/project'
 import { upsertQuestion } from '@/entities/question'
 import {
@@ -59,6 +60,8 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
     const finish = (run: Run) => {
       void client.invalidateQueries({ queryKey: projectKeys.detail(projectId) })
       void client.invalidateQueries({ queryKey: projectKeys.lists() })
+      // Сервер мог отметить `diagram_built` / `diagram_rebuilt` — перечитываем чек-лист.
+      void client.invalidateQueries({ queryKey: onboardingKeys.all })
       if (run.status !== 'succeeded') return
       const labels = RUN_MODE_LABEL[run.mode]
       const version = client

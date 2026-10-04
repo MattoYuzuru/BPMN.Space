@@ -1,18 +1,19 @@
 import type { ChecklistItemKey } from '@/entities/onboarding'
 import { hideHint } from '@/features/onboarding/hint'
+import { useHintStore } from '@/features/onboarding/hint/store'
 
-/** Пункт, на который сейчас указывает подсказка: когда он выполнен, подсказка закрывается сама. */
-let hintItem: ChecklistItemKey | null = null
+/** Пункт показанной подсказки и её номер: чужую (позднюю) подсказку закрывать нельзя. */
+let active: { item: ChecklistItemKey; id: number | undefined } | null = null
 
-/** Запомнить пункт показанной подсказки. */
+/** Запомнить пункт только что показанной подсказки (вызывать сразу после `showHint`). */
 export function setActiveHintItem(item: ChecklistItemKey | null): void {
-  hintItem = item
+  active = item ? { item, id: useHintStore.getState().current?.id } : null
 }
 
-/** Закрыть подсказку, если она про один из только что выполненных пунктов. */
+/** Закрыть подсказку, если она про один из только что выполненных пунктов и всё ещё та же. */
 export function dismissHintFor(done: readonly ChecklistItemKey[]): void {
-  if (hintItem && done.includes(hintItem)) {
-    hintItem = null
-    hideHint()
-  }
+  if (!active || !done.includes(active.item)) return
+  const { id } = active
+  active = null
+  if (useHintStore.getState().current?.id === id) hideHint()
 }

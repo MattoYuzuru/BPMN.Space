@@ -42,37 +42,42 @@ describe('переход к пункту чек-листа', () => {
     })
     const controls = { expandPanel: vi.fn(), selectQuestion: vi.fn() }
     const unregister = registerWorkspaceControls(controls)
-    act(() => useOnboardingUi.getState().openChecklist())
-    const { result } = renderHook(() => useVisitItem())
+    try {
+      act(() => useOnboardingUi.getState().openChecklist())
+      const { result } = renderHook(() => useVisitItem())
 
-    await act(() => result.current.visit('question_answered'))
+      await act(() => result.current.visit('question_answered'))
 
-    expect(calls.map((call) => call.path)).toContain(
-      '/api/v1/me/onboarding/items/question_answered/target',
-    )
-    expect(useOnboardingUi.getState().checklistOpen).toBe(false)
-    expect(navigate).toHaveBeenCalledWith({
-      to: '/projects/$projectId',
-      params: { projectId: 'p1' },
-      search: { question: 'q1' },
-    })
-    expect(showHint).toHaveBeenCalledOnce()
-    const request = showHint.mock.calls[0]?.[0] as {
-      anchor: unknown
-      text: string
-      prepare: () => void
+      expect(calls.map((call) => call.path)).toContain(
+        '/api/v1/me/onboarding/items/question_answered/target',
+      )
+      expect(useOnboardingUi.getState().checklistOpen).toBe(false)
+      expect(navigate).toHaveBeenCalledWith({
+        to: '/projects/$projectId',
+        params: { projectId: 'p1' },
+        search: { question: 'q1' },
+      })
+      expect(showHint).toHaveBeenCalledOnce()
+      const request = showHint.mock.calls[0]?.[0] as {
+        anchor: unknown
+        text: string
+        prepare: () => void
+      }
+      expect(request.anchor).toEqual({
+        name: TOUR_ANCHORS.questionAnswer,
+        within: '[data-question-id="q1"]',
+      })
+      expect(request.text).toBe('Нажмите «Ответить» и напишите ответ — он станет новым источником.')
+
+      // prepare: раскрыть панель вопросов и выбрать вопрос с показом на схеме
+      request.prepare()
+      await waitFor(() =>
+        expect(controls.selectQuestion).toHaveBeenCalledWith('q1', { focus: true }),
+      )
+      expect(controls.expandPanel).toHaveBeenCalledWith('questions')
+    } finally {
+      unregister()
     }
-    expect(request.anchor).toEqual({
-      name: TOUR_ANCHORS.questionAnswer,
-      within: '[data-question-id="q1"]',
-    })
-    expect(request.text).toBe('Нажмите «Ответить» и напишите ответ — он станет новым источником.')
-
-    // prepare: раскрыть панель вопросов и выбрать вопрос с показом на схеме
-    request.prepare()
-    await waitFor(() => expect(controls.selectQuestion).toHaveBeenCalledWith('q1', { focus: true }))
-    expect(controls.expandPanel).toHaveBeenCalledWith('questions')
-    unregister()
   })
 
   it('экран проектов: переход на «/» и подсказка на «Новый проект»', async () => {

@@ -128,15 +128,24 @@ function ChecklistRow({
   blocked: boolean
   onVisit: (item: ChecklistItemKey) => void
 }) {
-  // Недавно отмеченный пункт при открытии панели сначала рисуется пустым и через кадр
-  // отмечается: переход виден, а не проскакивает уже готовым.
-  const [revealed, setRevealed] = useState(!recent)
+  // Состояние отметки задаём сами и меняем через два кадра: при смене строки с кнопки на текст
+  // узлы создаются заново, и без этого переход (галочка, зачёркивание) не был бы виден.
+  // Выполненный раньше пункт рисуется готовым сразу.
+  const [shown, setShown] = useState(done && !recent)
   useEffect(() => {
-    if (!recent) return
-    const frame = requestAnimationFrame(() => setRevealed(true))
-    return () => cancelAnimationFrame(frame)
-  }, [recent])
-  const shown = done && revealed
+    if (!done) {
+      setShown(false)
+      return
+    }
+    let second = 0
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => setShown(true))
+    })
+    return () => {
+      cancelAnimationFrame(first)
+      cancelAnimationFrame(second)
+    }
+  }, [done])
 
   const content = (
     <>
@@ -158,7 +167,7 @@ function ChecklistRow({
             shown ? 'scale-x-100' : 'scale-x-0',
           )}
         />
-        {done && <span className="sr-only">, выполнено</span>}
+        <span className="sr-only">{done ? ', выполнено' : ', не выполнено'}</span>
       </span>
     </>
   )
@@ -176,6 +185,7 @@ function ChecklistRow({
         variant="ghost"
         disabled={locked}
         aria-busy={busy || undefined}
+        aria-disabled={blocked || undefined}
         onClick={() => {
           if (!blocked) onVisit(item.key)
         }}

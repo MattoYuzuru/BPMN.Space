@@ -42,8 +42,8 @@ type Navigate = (visit: ItemVisit['destination']) => Promise<unknown>
 
 /** Показать подсказку-указатель по плану (переход уже выполнен). */
 export function presentVisit(item: ChecklistItemKey, visit: ItemVisit): void {
-  setActiveHintItem(item)
   showHint({ anchor: visit.anchor, text: visit.text, prepare: prepareVisit(visit) })
+  setActiveHintItem(item)
 }
 
 /** Перейти по плану и показать подсказку. */

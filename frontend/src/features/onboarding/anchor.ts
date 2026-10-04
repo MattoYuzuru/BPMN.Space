@@ -82,6 +82,13 @@ export function useAnchorElement(
       stopWaiting()
       timeout = window.setTimeout(() => {
         window.clearInterval(poll)
+        // Якорь мог появиться между опросами: сначала ещё раз ищем, и только потом сдаёмся.
+        const late = findAnchor(selector)
+        if (late) {
+          current = late
+          setState({ element: late, timedOut: false, selector })
+          return
+        }
         setState((prev) => (prev.element ? prev : { element: null, timedOut: true, selector }))
       }, timeoutMs)
       poll = window.setInterval(check, POLL_MS)

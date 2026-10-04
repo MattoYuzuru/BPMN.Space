@@ -109,6 +109,7 @@
   --color-surface-raised: var(--color-surface-raised);
   --color-surface-hover: var(--color-surface-hover);
   --color-overlay: var(--color-overlay);
+  --color-scrim: var(--color-scrim);
   --color-hover: var(--color-hover);
   --color-pressed: var(--color-pressed);
   --color-border: var(--color-border);
@@ -229,6 +230,7 @@
   --animate-flow-y: flow-y var(--duration-loop) var(--ease-in-out-soft) infinite;
   --animate-breathe: breathe var(--duration-loop) var(--ease-in-out-soft) infinite;
   --animate-dash: dash 1.4s linear infinite;
+  --animate-beacon: beacon 1.6s var(--ease-soft) 3;
 
   @keyframes fade-in {
     from {
@@ -314,6 +316,16 @@
       transform: scale(2);
     }
   }
+  @keyframes beacon {
+    from {
+      opacity: 0.7;
+      transform: scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: scale(1.18);
+    }
+  }
   @keyframes dash {
     to {
       stroke-dashoffset: -14;
@@ -331,6 +343,8 @@
   --color-surface-raised: var(--palette-frost-0);
   --color-surface-hover: var(--palette-frost-100);
   --color-overlay: oklch(0.2 0.01 265 / 0.3);
+  /* Затемнение обучения: плотнее затемнения окон, чтобы выделенный элемент читался сразу */
+  --color-scrim: oklch(0.2 0.01 265 / 0.55);
   /* Заливки состояний для прозрачных элементов: ghost-кнопки, пункты меню, строки списков */
   --color-hover: oklch(0.232 0.01 265 / 0.045);
   --color-pressed: oklch(0.232 0.01 265 / 0.08);
@@ -391,6 +405,7 @@
   --color-surface-raised: var(--palette-graphite-850);
   --color-surface-hover: var(--palette-graphite-850);
   --color-overlay: oklch(0.1 0.005 265 / 0.62);
+  --color-scrim: oklch(0.1 0.005 265 / 0.72);
   --color-hover: oklch(0.955 0.004 250 / 0.055);
   --color-pressed: oklch(0.955 0.004 250 / 0.095);
 

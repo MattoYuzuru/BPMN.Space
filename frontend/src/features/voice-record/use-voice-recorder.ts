@@ -58,6 +58,8 @@ export function useVoiceRecorder({ maxSeconds = 600 }: { maxSeconds?: number } =
     startedAt: number
     discard: boolean
   } | null>(null)
+  // Поколение запроса микрофона: отмена, закрытие окна и повторный запуск делают прежние устаревшими.
+  const generation = useRef(0)
 
   const cleanup = useCallback(() => {
     const current = session.current
@@ -76,13 +78,20 @@ export function useVoiceRecorder({ maxSeconds = 600 }: { maxSeconds?: number } =
       return
     }
     setState({ status: 'requesting' })
+    generation.current += 1
+    const mine = generation.current
     let stream: MediaStream
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true },
       })
     } catch (error) {
-      setState({ status: 'blocked', reason: blockReason(error) })
+      if (mine === generation.current) setState({ status: 'blocked', reason: blockReason(error) })
+      return
+    }
+    if (mine !== generation.current) {
+      // Пока ждали разрешение, запись отменили или окно закрыли: микрофон сразу отпускаем.
+      for (const track of stream.getTracks()) track.stop()
       return
     }
     const mimeType = pickMimeType((type) => MediaRecorder.isTypeSupported(type))
@@ -149,6 +158,7 @@ export function useVoiceRecorder({ maxSeconds = 600 }: { maxSeconds?: number } =
   }, [])
 
   const cancel = useCallback(() => {
+    generation.current += 1
     const current = session.current
     if (current) {
       current.discard = true
@@ -163,6 +173,7 @@ export function useVoiceRecorder({ maxSeconds = 600 }: { maxSeconds?: number } =
   // Закрыли окно во время записи — микрофон освобождается.
   useEffect(
     () => () => {
+      generation.current += 1
       const current = session.current
       if (!current) return
       current.discard = true

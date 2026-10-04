@@ -88,24 +88,28 @@ function BlankForm() {
       setError('Назовите проект — например, по процессу: «Приёмка оборудования»')
       return
     }
-    create.mutate(
-      { title: name, description, files },
-      {
-        onSuccess: (result) => {
-          if (result.failures.length > 0) {
-            toast.error('Проект создан, но не всё получилось', {
-              description: failureSummary(result.failures),
-              duration: 8000,
-            })
-          } else {
-            toast.success('Проект создан', {
-              description: result.building ? 'Схема уже строится' : result.title,
-            })
-          }
-          openProject(result.projectId)
-        },
-        onError: (err) => setError(errorMessage(err)),
+    // `mutateAsync`, а не `mutate` с колбэками: если диалог закрыли посреди создания, колбэки
+    // `mutate` не сработают, а переход в проект и уведомление должны состояться.
+    create.mutateAsync({ title: name, description, files }).then(
+      (result) => {
+        if (result.failures.length > 0) {
+          toast.error('Проект создан, но не всё получилось', {
+            description: failureSummary(result.failures),
+            duration: 8000,
+          })
+        } else if (result.waitTimedOut) {
+          toast.success('Проект создан', {
+            description: 'Документы ещё обрабатываются. Запустите схему, когда они будут готовы.',
+            duration: 8000,
+          })
+        } else {
+          toast.success('Проект создан', {
+            description: result.building ? 'Схема уже строится' : result.title,
+          })
+        }
+        openProject(result.projectId)
       },
+      (err) => setError(errorMessage(err)),
     )
   }
 

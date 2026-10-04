@@ -77,6 +77,65 @@ describe('openRunStream', () => {
     expect(onLost).toHaveBeenCalledOnce()
   })
 
+  it('сессия закончилась: вместо повторных подключений сообщаем об этом один раз', async () => {
+    const onLost = vi.fn()
+    const onSessionExpired = vi.fn()
+    const checkSession = vi.fn(async () => false)
+    openRunStream(
+      'r1',
+      { onEvent: () => {}, onLost, onSessionExpired },
+      { EventSourceImpl: Impl, checkSession },
+    )
+    FakeEventSource.instances[0]?.drop(FakeEventSource.CLOSED)
+    await vi.advanceTimersByTimeAsync(retryDelay(0))
+
+    expect(checkSession).toHaveBeenCalledOnce()
+    expect(onSessionExpired).toHaveBeenCalledOnce()
+    expect(onLost).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(FakeEventSource.instances).toHaveLength(1)
+  })
+
+  it('сессия жива: переподключаемся как обычно', async () => {
+    const checkSession = vi.fn(async () => true)
+    openRunStream('r1', { onEvent: () => {} }, { EventSourceImpl: Impl, checkSession })
+    FakeEventSource.instances[0]?.drop(FakeEventSource.CLOSED)
+    await vi.advanceTimersByTimeAsync(retryDelay(0))
+
+    expect(FakeEventSource.instances).toHaveLength(2)
+  })
+
+  it('сбой самой проверки не мешает переподключению', async () => {
+    const checkSession = vi.fn(async () => {
+      throw new Error('сеть')
+    })
+    openRunStream('r1', { onEvent: () => {} }, { EventSourceImpl: Impl, checkSession })
+    FakeEventSource.instances[0]?.drop(FakeEventSource.CLOSED)
+    await vi.advanceTimersByTimeAsync(retryDelay(0))
+
+    expect(FakeEventSource.instances).toHaveLength(2)
+  })
+
+  it('отписка во время проверки сессии отменяет переподключение', async () => {
+    let answer: (alive: boolean) => void = () => {}
+    const checkSession = () =>
+      new Promise<boolean>((resolve) => {
+        answer = resolve
+      })
+    const close = openRunStream(
+      'r1',
+      { onEvent: () => {} },
+      { EventSourceImpl: Impl, checkSession },
+    )
+    FakeEventSource.instances[0]?.drop(FakeEventSource.CLOSED)
+    await vi.advanceTimersByTimeAsync(retryDelay(0))
+    close()
+    answer(true)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(FakeEventSource.instances).toHaveLength(1)
+  })
+
   it('отписка закрывает поток и отменяет повтор', () => {
     const close = openRunStream('r1', { onEvent: () => {} }, { EventSourceImpl: Impl })
     FakeEventSource.instances[0]?.drop(FakeEventSource.CLOSED)

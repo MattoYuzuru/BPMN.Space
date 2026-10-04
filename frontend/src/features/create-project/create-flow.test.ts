@@ -17,6 +17,8 @@ function deps(overrides: Partial<CreateFlowDeps> = {}) {
     startBuild: vi.fn(async () => {
       calls.push('build')
     }),
+    fetchProject: vi.fn(async () => ({ sources: [{ status: 'ready' }] })),
+    poll: { intervalMs: 1, timeoutMs: 5 },
     ...overrides,
   }
   return { calls, value }
@@ -121,5 +123,113 @@ describe('runCreateFlow', () => {
 
     expect(value.uploadFile).not.toHaveBeenCalled()
     expect(result.failures).toEqual(['формат «photo.png» не поддерживается'])
+  })
+
+  it('сборка ждёт, пока документы разберутся: processing -> ready', async () => {
+    const states = [[{ status: 'processing' }], [{ status: 'processing' }], [{ status: 'ready' }]]
+    const fetchProject = vi.fn(async () => ({ sources: states.shift() ?? [{ status: 'ready' }] }))
+    const { calls, value } = deps({ fetchProject, poll: { intervalMs: 1, timeoutMs: 50 } })
+
+    const result = await runCreateFlow(
+      { title: 'T', description: '', files: [file('a.pdf')] },
+      value,
+    )
+
+    expect(fetchProject).toHaveBeenCalledTimes(3)
+    expect(calls).toEqual(['create', 'file:a.pdf', 'build'])
+    expect(result).toMatchObject({ building: true, waitTimedOut: false, failures: [] })
+  })
+
+  it('без файлов состояние проекта не опрашивается', async () => {
+    const { value } = deps()
+
+    await runCreateFlow({ title: 'T', description: 'текст', files: [] }, value)
+
+    expect(value.fetchProject).not.toHaveBeenCalled()
+  })
+
+  it('источник со статусом failed не блокирует сборку', async () => {
+    const { value } = deps({
+      fetchProject: vi.fn(async () => ({ sources: [{ status: 'failed' }, { status: 'ready' }] })),
+    })
+
+    const result = await runCreateFlow(
+      { title: 'T', description: '', files: [file('a.pdf')] },
+      value,
+    )
+
+    expect(result.building).toBe(true)
+  })
+
+  it('по истечении лимита сборка не запускается, а проект остаётся', async () => {
+    const fetchProject = vi.fn(async () => ({ sources: [{ status: 'processing' }] }))
+    const { value } = deps({ fetchProject, poll: { intervalMs: 1, timeoutMs: 4 } })
+
+    const result = await runCreateFlow(
+      { title: 'T', description: 'текст', files: [file('a.docx')] },
+      value,
+    )
+
+    expect(fetchProject).toHaveBeenCalledTimes(4)
+    expect(value.startBuild).not.toHaveBeenCalled()
+    expect(result).toMatchObject({
+      projectId: 'p1',
+      building: false,
+      waitTimedOut: true,
+      failures: [],
+    })
+  })
+
+  it('сбой опроса временный: следующая попытка проходит', async () => {
+    const fetchProject = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('сеть'))
+      .mockResolvedValue({ sources: [{ status: 'ready' }] })
+    const { value } = deps({ fetchProject })
+
+    const result = await runCreateFlow(
+      { title: 'T', description: '', files: [file('a.pdf')] },
+      value,
+    )
+
+    expect(result.building).toBe(true)
+  })
+
+  it('постоянный сбой опроса заканчивается таймаутом, а не ошибкой', async () => {
+    const { value } = deps({ fetchProject: vi.fn().mockRejectedValue(new Error('сеть')) })
+
+    const result = await runCreateFlow(
+      { title: 'T', description: '', files: [file('a.pdf')] },
+      value,
+    )
+
+    expect(result.waitTimedOut).toBe(true)
+    expect(value.startBuild).not.toHaveBeenCalled()
+  })
+
+  it('отмена прерывает ожидание без сборки', async () => {
+    const controller = new AbortController()
+    const fetchProject = vi.fn(async () => {
+      controller.abort()
+      return { sources: [{ status: 'processing' }] }
+    })
+    const { value } = deps({ fetchProject, poll: { intervalMs: 1000, timeoutMs: 60_000 } })
+
+    const result = await runCreateFlow(
+      { title: 'T', description: '', files: [file('a.pdf')], signal: controller.signal },
+      value,
+    )
+
+    expect(fetchProject).toHaveBeenCalledTimes(1)
+    expect(value.startBuild).not.toHaveBeenCalled()
+    expect(result).toMatchObject({ building: false, waitTimedOut: false })
+  })
+
+  it('сбой загрузки файла не ждёт разбора', async () => {
+    const { value } = deps({ uploadFile: vi.fn().mockRejectedValue(new Error('500')) })
+
+    await runCreateFlow({ title: 'T', description: 'текст', files: [file('a.pdf')] }, value)
+
+    expect(value.fetchProject).not.toHaveBeenCalled()
   })
 })

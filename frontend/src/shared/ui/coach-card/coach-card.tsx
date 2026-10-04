@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { useTourLayerTracking } from '@/shared/hooks/use-tour-layer'
 import { cn } from '@/shared/lib/cn'
 import { TOUR_LAYER_ATTR } from '@/shared/lib/tour-anchors'
 import { Button } from '../button/button'
@@ -108,6 +109,7 @@ export function CoachCard({
   children,
   className,
 }: CoachCardProps) {
+  useTourLayerTracking()
   const headingId = useId()
   const headingRef = useRef<HTMLHeadingElement | null>(null)
   // Портал Radix монтирует содержимое со второго рендера, поэтому фокус ставим и при появлении заголовка.

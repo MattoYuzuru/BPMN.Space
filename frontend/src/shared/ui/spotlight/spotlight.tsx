@@ -1,6 +1,7 @@
 import { animate, useReducedMotion } from 'motion/react'
 import { useEffect, useId, useRef } from 'react'
 import type { Rect } from '@/shared/hooks/use-element-rect'
+import { useTourLayerTracking } from '@/shared/hooks/use-tour-layer'
 import { cn } from '@/shared/lib/cn'
 import { DURATION, EASE_SOFT } from '@/shared/lib/motion'
 import { TOUR_LAYER_ATTR } from '@/shared/lib/tour-anchors'
@@ -70,6 +71,7 @@ export function Spotlight({
   position = 'fixed',
   className,
 }: SpotlightProps) {
+  useTourLayerTracking()
   const maskId = useId()
   const reduced = useReducedMotion()
   const holeRef = useRef<SVGRectElement>(null)

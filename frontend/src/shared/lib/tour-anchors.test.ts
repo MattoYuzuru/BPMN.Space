@@ -6,6 +6,7 @@ import {
   TOUR_ANCHORS,
   TOUR_LAYER_ATTR,
   tourAnchor,
+  trackTourLayerPointer,
 } from './tour-anchors'
 
 describe('якоря обучения', () => {
@@ -44,5 +45,30 @@ describe('якоря обучения', () => {
     expect(isInsideTourLayer(null)).toBe(false)
     layer.remove()
     outer.remove()
+  })
+
+  it('касание: нажатие началось в слое, а кнопка к проверке «клика снаружи» уже исчезла', () => {
+    const release = trackTourLayerPointer()
+    const layer = document.createElement('div')
+    layer.setAttribute(TOUR_LAYER_ATTR, '')
+    const button = document.createElement('button')
+    layer.append(button)
+    document.body.append(layer)
+    button.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    // шаг сменился: кнопка карточки вынута из DOM до проверки на click
+    button.remove()
+    layer.remove()
+    const event = {
+      type: 'dismissableLayer.pointerDownOutside',
+      target: button,
+      preventDefault: vi.fn(),
+    }
+    guardTourLayer(event)
+    expect(event.preventDefault).toHaveBeenCalledOnce()
+    release()
+    // слой снят: память о нажатии сброшена
+    const after = { ...event, preventDefault: vi.fn() }
+    guardTourLayer(after)
+    expect(after.preventDefault).not.toHaveBeenCalled()
   })
 })

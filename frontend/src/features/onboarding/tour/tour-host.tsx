@@ -5,7 +5,13 @@ import { cn } from '@/shared/lib/cn'
 import { subscribeOnboardingSignals } from '@/shared/lib/onboarding-signals'
 import { anchorSelector, TOUR_LAYER_ATTR } from '@/shared/lib/tour-anchors'
 import { Button, type CoachAction, CoachCard, Spotlight } from '@/shared/ui'
-import { ANCHOR_TIMEOUT_MS, modalAround, useAnchorElement, useFloatingLayerOpen } from '../anchor'
+import {
+  ANCHOR_TIMEOUT_MS,
+  modalAround,
+  useAnchorElement,
+  useAnimationsSettled,
+  useFloatingLayerOpen,
+} from '../anchor'
 import { createTourController, nextVisibleStep, resolveView, stepCounter } from './machine'
 import { persistQuietly } from './persistence'
 import { startTour, useTourStore } from './store'
@@ -255,6 +261,7 @@ export default function TourHost<Ctx>({
   const rect = useElementRect(anchor.element)
   const modal = modalAround(anchor.element)
   const floating = useFloatingLayerOpen(active && !paused)
+  const modalSettled = useAnimationsSettled(modal)
 
   // Необязательный шаг без якоря молча пропускается.
   useEffect(() => {
@@ -322,7 +329,7 @@ export default function TourHost<Ctx>({
   const waiting = Boolean(selector) && !anchor.element && !anchor.timedOut
   const dim = !modal && !floating
   const block = dim && !view.allowOutside
-  const showCard = !waiting || confirming
+  const showCard = (!waiting && modalSettled) || confirming
   const centered = !cutout
 
   const counter = stepCounter(steps, step.key, context)

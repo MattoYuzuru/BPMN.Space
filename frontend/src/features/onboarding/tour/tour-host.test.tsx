@@ -420,7 +420,7 @@ describe('TourHost и маршруты', () => {
 
     // пользователь сам ушёл на другой экран: пауза и пилюля
     await act(async () => {
-      await router.navigate({ to: '/b' })
+      await router.navigate({ to: '/b' } as never)
     })
     const pill = await screen.findByRole(
       'region',

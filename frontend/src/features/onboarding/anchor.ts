@@ -142,3 +142,33 @@ export function useFloatingLayerOpen(enabled: boolean): boolean {
 
   return open
 }
+
+/**
+ * Окно перестало «выезжать». Пока у окна идёт анимация появления, оно — containing block для
+ * fixed-потомков (transform), и Floating UI считает позицию карточки от него; после окончания
+ * анимации позиция не пересчитывается и карточка уезжает. Поэтому карточку внутрь окна
+ * показываем, только когда анимации завершились (не больше 800 мс).
+ */
+export function useAnimationsSettled(element: HTMLElement | null): boolean {
+  const [settledFor, setSettledFor] = useState<HTMLElement | null>(null)
+
+  useEffect(() => {
+    if (!element) return
+    if (typeof element.getAnimations !== 'function') {
+      setSettledFor(element)
+      return
+    }
+    let cancelled = false
+    const done = () => {
+      if (!cancelled) setSettledFor(element)
+    }
+    Promise.allSettled(element.getAnimations().map((animation) => animation.finished)).then(done)
+    const timer = window.setTimeout(done, 800)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [element])
+
+  return !element || settledFor === element
+}

@@ -19,10 +19,17 @@ export interface RunStreamHandlers {
   onEvent: (event: RunEvent) => void
   /** Поток не удалось восстановить за отведённые попытки. */
   onLost?: () => void
+  /** Перед повторным подключением выяснилось, что сессия закончилась: переподключаться незачем. */
+  onSessionExpired?: () => void
 }
 
 export interface RunStreamOptions {
   maxAttempts?: number
+  /**
+   * Проверка перед повторным подключением: `false` — сессии больше нет. Без неё сервер на каждой
+   * из попыток отвечал бы 401, и мы зря ждали бы все повторы. Сбой самой проверки не мешает.
+   */
+  checkSession?: () => Promise<boolean>
   /** Подмена EventSource в тестах. */
   EventSourceImpl?: typeof EventSource
 }
@@ -36,7 +43,7 @@ export interface RunStreamOptions {
 export function openRunStream(
   runId: string,
   handlers: RunStreamHandlers,
-  { maxAttempts = 8, EventSourceImpl = EventSource }: RunStreamOptions = {},
+  { maxAttempts = 8, EventSourceImpl = EventSource, checkSession }: RunStreamOptions = {},
 ): () => void {
   let source: EventSource | null = null
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -87,8 +94,20 @@ export function openRunStream(
       handlers.onLost?.()
       return
     }
-    timer = setTimeout(connect, retryDelay(attempt))
+    timer = setTimeout(reconnect, retryDelay(attempt))
     attempt += 1
+  }
+
+  const reconnect = () => {
+    if (!checkSession) return connect()
+    void checkSession()
+      .catch(() => true)
+      .then((alive) => {
+        if (finished) return
+        if (alive) return connect()
+        finished = true
+        handlers.onSessionExpired?.()
+      })
   }
 
   connect()

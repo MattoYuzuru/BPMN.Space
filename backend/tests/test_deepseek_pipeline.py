@@ -33,6 +33,19 @@ def test_request_uses_current_model_and_server_side_bearer_auth() -> None:
     assert "thinking" not in request_body
     assert request_body["response_format"] == {"type": "json_object"}
     assert request_body["max_tokens"] == 4096
+    assert request_body["temperature"] == 0.0
+
+
+def test_text_request_keeps_provider_default_temperature() -> None:
+    payload = {"choices": [{"message": {"content": "ответ"}}]}
+    pipeline = OpenAICompatiblePipeline(api_key="test-only")
+
+    with patch("app.llm.openai_compatible.urlopen") as urlopen:
+        urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(payload).encode()
+        pipeline._request_text("system", "prompt")
+        request = urlopen.call_args.args[0]
+
+    assert "temperature" not in json.loads(request.data)
 
 
 def test_deepseek_request_disables_thinking_explicitly() -> None:

@@ -35,6 +35,27 @@ export function BrandSection() {
           </div>
         </Specimen>
 
+        <Specimen
+          title="Сетка-подложка: линза"
+          note="<GridBackdrop interactive />, data-lens-block"
+          bodyClassName="p-0"
+        >
+          <div className="relative isolate grid h-56 place-items-center">
+            <GridBackdrop glow interactive />
+            <Card variant="elevated" padding="md" className="max-w-xs text-center" data-lens-block>
+              <span className="type-heading text-fg">Карточка с data-lens-block</span>
+              <p className="type-caption mt-1 text-fg-muted">
+                Над ней линза гаснет, содержимое не искажается.
+              </p>
+            </Card>
+          </div>
+          <p className="type-caption border-t border-border px-4 py-3 text-fg-muted">
+            Проведите курсором по сетке: она мягко приподнимается под курсором, а в покое остаётся
+            неподвижной. Без мыши, при «сократить движение» и без WebGL2 — обычная сетка. Только для
+            первого экрана, не под плотным содержимым.
+          </p>
+        </Specimen>
+
         <Specimen title="Свечение тока" note="shadow-glow, Card glow" canvas>
           <div className="flex h-44 items-center justify-center gap-5">
             <Card variant="elevated" className="w-52">

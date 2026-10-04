@@ -4,12 +4,13 @@ from collections.abc import AsyncIterator
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Header, Request, status
+from fastapi import APIRouter, Depends, Header, Request, status
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
-from app.api.access import ensure_project_access, ensure_resource_access
+from app.api.access import ResourceKind, ensure_project_access, ensure_resource_access
 from app.api.auth import OptionalUserDep
 from app.api.deps import ContainerDep
+from app.api.ratelimit import limit_expensive
 from app.api.schemas.common import ApiModel, errors
 from app.api.schemas.questions import Question
 from app.api.schemas.runs import (
@@ -35,7 +36,8 @@ SSE_PING_SEC = 15
 @router.post(
     "/projects/{project_id}/runs",
     status_code=status.HTTP_202_ACCEPTED,
-    responses=errors(404, 409, 422),
+    dependencies=[Depends(limit_expensive)],
+    responses=errors(401, 403, 404, 409, 422, 429),
 )
 async def start_run(
     project_id: UUID,
@@ -50,14 +52,16 @@ async def start_run(
     return Run.of(await container.runs.start(project_id, mode=body.mode))
 
 
-@router.get("/runs/{run_id}", responses=errors(404, 422))
+@router.get("/runs/{run_id}", responses=errors(401, 404, 422))
 async def get_run(
     run_id: UUID,
     request: Request,
     container: ContainerDep,
     user: OptionalUserDep,
 ) -> Run:
-    await ensure_resource_access(request, container, run_id, user, resource="run", write=False)
+    await ensure_resource_access(
+        request, container, run_id, user, resource=ResourceKind.RUN, write=False
+    )
     return Run.of(await container.runs.get(run_id))
 
 
@@ -90,7 +94,7 @@ def _event_data(event: DomainRunEvent) -> ApiModel:
             "description": "Поток SSE (`text/event-stream`); схема — одно сообщение",
             "content": {"text/event-stream": {"schema": {"$ref": "#/components/schemas/RunEvent"}}},
         },
-        **errors(404, 422),
+        **errors(401, 404, 422),
     },
 )
 async def run_events(
@@ -102,7 +106,9 @@ async def run_events(
 ) -> EventSourceResponse:
     """События прогона: `stage`, `question`, `summary`, `version`, `error`, `done`.
     Сначала приходит вся история прогона, затем новые события; поток закрывается после `done`."""
-    await ensure_resource_access(request, container, run_id, user, resource="run", write=False)
+    await ensure_resource_access(
+        request, container, run_id, user, resource=ResourceKind.RUN, write=False
+    )
     after = int(last_event_id) if last_event_id and last_event_id.isdigit() else 0
     events = await container.runs.events(run_id, after=after)
 

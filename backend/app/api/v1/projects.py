@@ -18,11 +18,12 @@ from app.api.schemas.projects import (
     ProjectPage,
     ProjectUpdate,
 )
+from app.services.errors import ForbiddenError
 
 router = APIRouter(tags=["projects"])
 
 
-@router.get("/projects", responses=errors(422))
+@router.get("/projects", responses=errors(401, 422))
 async def list_projects(  # noqa: PLR0917 - FastAPI binds each query parameter independently
     request: Request,
     container: ContainerDep,
@@ -31,12 +32,13 @@ async def list_projects(  # noqa: PLR0917 - FastAPI binds each query parameter i
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     q: Annotated[str | None, Query(max_length=200, description="Поиск по названию")] = None,
 ) -> ProjectPage:
-    """Проекты: сначала недавно изменённые. Курсорная пагинация."""
+    """Проекты: сначала недавно изменённые. Курсорная пагинация. Гостям — 401."""
+    owner_id = require_account(request, user)
     page = await container.projects.list(
         cursor=cursor,
         limit=limit,
         query=q,
-        owner_id=user.id if user else None,
+        owner_id=owner_id,
         scope_to_user=request.app.state.auth_enabled,
     )
     roles = await project_roles(request, container, [view.project.id for view in page.items], user)
@@ -49,7 +51,7 @@ async def list_projects(  # noqa: PLR0917 - FastAPI binds each query parameter i
     )
 
 
-@router.post("/projects", status_code=status.HTTP_201_CREATED, responses=errors(422))
+@router.post("/projects", status_code=status.HTTP_201_CREATED, responses=errors(401, 422))
 async def create_project(
     body: ProjectCreate,
     request: Request,
@@ -64,7 +66,7 @@ async def create_project(
 
 
 @router.post(
-    "/projects/from-example", status_code=status.HTTP_201_CREATED, responses=errors(404, 422)
+    "/projects/from-example", status_code=status.HTTP_201_CREATED, responses=errors(401, 404, 422)
 )
 async def create_project_from_example(
     body: ProjectFromExample,
@@ -80,7 +82,7 @@ async def create_project_from_example(
     )
 
 
-@router.get("/projects/{project_id}", responses=errors(404, 422))
+@router.get("/projects/{project_id}", responses=errors(401, 404, 422))
 async def get_project(
     project_id: UUID,
     request: Request,
@@ -92,7 +94,7 @@ async def get_project(
     return ProjectDetail.of_detail(await container.projects.detail(project_id), role)
 
 
-@router.patch("/projects/{project_id}", responses=errors(404, 422))
+@router.patch("/projects/{project_id}", responses=errors(401, 403, 404, 422))
 async def update_project(
     project_id: UUID,
     body: ProjectUpdate,
@@ -110,7 +112,7 @@ async def update_project(
 @router.delete(
     "/projects/{project_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    responses=errors(404, 409, 422),
+    responses=errors(401, 403, 404, 409, 422),
 )
 async def delete_project(
     project_id: UUID,
@@ -118,7 +120,9 @@ async def delete_project(
     container: ContainerDep,
     user: OptionalUserDep,
 ) -> Response:
-    await ensure_project_access(request, container, project_id, user, write=True)
+    role = await ensure_project_access(request, container, project_id, user, write=True)
+    if role is not ProjectRole.OWNER:
+        raise ForbiddenError("Удалить проект может только владелец")
     await container.projects.delete(project_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

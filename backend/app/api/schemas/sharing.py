@@ -1,4 +1,4 @@
-"""Контракты доступа по адресу и ролям проекта."""
+"""Контракты доступа по ссылке и ролям проекта."""
 
 from datetime import datetime
 from enum import StrEnum
@@ -17,7 +17,15 @@ class ShareRole(StrEnum):
 
 class ShareLinkCreate(ApiModel):
     role: ShareRole
-    expires_in_days: int | None = Field(default=None, ge=1, le=365)
+    expires_in_days: int | None = Field(
+        default=None,
+        ge=1,
+        le=365,
+        description=(
+            "Срок ссылки в днях. Для `editor`: по умолчанию 7, максимум 30. "
+            "Для `viewer`: по умолчанию 30, максимум 365. Бессрочных ссылок нет."
+        ),
+    )
 
 
 class ShareLinkCreated(ApiModel):

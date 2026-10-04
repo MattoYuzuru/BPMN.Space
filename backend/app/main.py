@@ -20,6 +20,7 @@ from app.api.v1.runs import OPENAPI_EXTRA_MODELS
 from app.config import Settings, get_settings
 from app.container import Container, build_container
 from app.infra.seed import build_seed
+from app.log_filters import install_log_filters
 from app.services.auth import optional_user
 
 
@@ -42,6 +43,7 @@ def _openapi(app: FastAPI) -> dict[str, Any]:
 def create_app(settings: Settings | None = None, *, container: Container | None = None) -> FastAPI:
     settings = settings or get_settings()
     container = container or build_container(settings)
+    install_log_filters()
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -91,6 +93,17 @@ def create_app(settings: Settings | None = None, *, container: Container | None 
                     status_code=403, content={"detail": "CSRF-токен отсутствует или не совпадает"}
                 )
         return await call_next(request)
+
+    shares_prefix = settings.api_prefix + "/shares/"
+
+    @app.middleware("http")
+    async def share_privacy(request, call_next):
+        """Ответы по ссылке «поделиться»: адрес с секретом не утекает в Referer и поиск."""
+        response = await call_next(request)
+        if request.url.path.startswith(shares_prefix):
+            response.headers["Referrer-Policy"] = "no-referrer"
+            response.headers["X-Robots-Tag"] = "noindex"
+        return response
 
     install_error_handlers(app)
     app.include_router(api_router, prefix=settings.api_prefix)

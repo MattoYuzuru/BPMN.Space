@@ -183,3 +183,51 @@ test('отозванная ссылка перестаёт открыватьс�
   await expect(guest.getByRole('region', { name: 'Вопросы' })).toHaveCount(0)
   await guest.context().close()
 })
+
+test('владелец открывает свою ссылку: видит «Открыть проект» и переходит в проект', async ({
+  page,
+  request,
+}) => {
+  const id = await readyProject(request)
+  await page.goto(`/projects/${id}`)
+  const url = await createLink(page, 'Просмотр')
+
+  await page.goto(url)
+  await expect(page.getByText('Только просмотр').first()).toBeVisible()
+  const open = page.getByRole('link', { name: 'Открыть проект' })
+  await expect(open).toBeVisible()
+  await open.click()
+  await expect(page).toHaveURL(new RegExp(`/projects/${id}$`))
+  await expect(page.getByRole('button', { name: 'Поделиться' })).toBeVisible()
+})
+
+test('ссылка на просмотр из чужого аккаунта остаётся только для чтения', async ({
+  page,
+  request,
+  browser,
+  baseURL,
+}) => {
+  const id = await readyProject(request)
+  await page.goto(`/projects/${id}`)
+  const url = await createLink(page, 'Просмотр')
+
+  const other = await freshPage(browser, baseURL)
+  await other.goto('/login')
+  await other.getByRole('radio', { name: 'Регистрация' }).click()
+  await other.getByRole('textbox', { name: 'Почта' }).fill(`viewer-${randomUUID()}@example.com`)
+  await other.getByLabel('Пароль', { exact: true }).fill(`pw-${randomUUID()}`)
+  await other.keyboard.press('Enter')
+  await expect(other).toHaveURL(/\/projects/)
+
+  await other.goto(url)
+  await expect(other.getByRole('region', { name: 'Вопросы' })).toBeVisible()
+  await expect(other.getByText('Только просмотр').first()).toBeVisible()
+  // Доступа к проекту у чужого аккаунта нет: ни перехода, ни действий записи.
+  await expect(other.getByRole('link', { name: 'Открыть проект' })).toHaveCount(0)
+  for (const name of ['Анализ', 'Построить схему', 'Добавить источник', 'Поделиться']) {
+    await expect(other.getByRole('button', { name, exact: true })).toHaveCount(0)
+  }
+  await other.goto(`/projects/${id}`)
+  await expect(other.getByText('Проект не найден')).toBeVisible()
+  await other.context().close()
+})

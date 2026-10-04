@@ -14,7 +14,7 @@ import { ApiError } from '@/shared/api/client'
 import { useDocumentTitle } from '@/shared/hooks/use-document-title'
 import { GridBackdrop, toast } from '@/shared/ui'
 import { ShareStateScreen } from '@/widgets/route-states/route-states'
-import { ShareSkeleton } from '@/widgets/skeletons/screen-skeletons'
+import { WorkspaceSkeleton } from '@/widgets/skeletons/screen-skeletons'
 import { InviteCard, type InviteCardState } from './invite-card'
 import { SharedWorkspace, type SharedWorkspaceSearch } from './shared-workspace'
 
@@ -48,7 +48,7 @@ export function SharePage({ token, search, onSearchChange }: SharePageProps) {
         : undefined,
   )
 
-  if (state.kind === 'loading') return <ShareSkeleton />
+  if (state.kind === 'loading') return <WorkspaceSkeleton />
   if (state.kind === 'invalid' || state.kind === 'expired') {
     return <ShareStateScreen kind={state.kind} />
   }

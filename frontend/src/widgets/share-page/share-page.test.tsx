@@ -123,6 +123,51 @@ describe('страница по ссылке: просмотр', () => {
   })
 })
 
+describe('страница по ссылке: запросы и ожидание', () => {
+  const projectCalls = (calls: { path: string; method: string }[]) =>
+    calls.filter((call) => call.path.startsWith('/api/v1/projects'))
+
+  it('гость при просмотре не трогает закрытые /api/v1/projects/*', async () => {
+    const calls = stubApi({
+      'GET /api/v1/auth/session': { body: guestSession },
+      [`GET ${SHARE}`]: { body: shared('viewer') },
+    })
+    mount()
+    await screen.findByTestId('workspace')
+    expect(projectCalls(calls)).toEqual([])
+  })
+
+  it('вошедший: единственный запрос к проектам — проверка своего доступа', async () => {
+    const calls = stubApi({
+      'GET /api/v1/auth/session': { body: signedSession },
+      [`GET ${SHARE}`]: { body: shared('viewer') },
+      'GET /api/v1/projects/p1': { body: { ...detail, access: 'viewer' } },
+    })
+    mount()
+    await screen.findByTestId('workspace')
+    await waitFor(() => expect(projectCalls(calls).length).toBeGreaterThan(0))
+    expect(projectCalls(calls).map((call) => `${call.method} ${call.path}`)).toEqual([
+      'GET /api/v1/projects/p1',
+    ])
+  })
+
+  it('пока роль неизвестна, ожидание нейтральное: скелетон рабочего места, не карточки', async () => {
+    stubApi({
+      'GET /api/v1/auth/session': { body: guestSession },
+      [`GET ${SHARE}`]: { body: shared('viewer') },
+    })
+    mount()
+    const busy = await waitFor(() => {
+      const node = document.querySelector('[aria-busy="true"]')
+      expect(node).not.toBeNull()
+      return node as Element
+    })
+    expect(busy.querySelector('.pattern-dots')).not.toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Приглашение в проект' })).not.toBeInTheDocument()
+    await screen.findByTestId('workspace')
+  })
+})
+
 describe('страница по ссылке: приглашение редактора', () => {
   it('гость (401) входит с возвратом на эту же ссылку', async () => {
     stubApi({

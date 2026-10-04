@@ -107,7 +107,7 @@ export function ProjectCard({ project }: { project: Project }) {
           </div>
         </Link>
       </Card>
-      {projectCapabilities(project.access).canManage && <ProjectMenu project={project} />}
+      {projectCapabilities(project.access, false).canManage && <ProjectMenu project={project} />}
     </div>
   )
 }

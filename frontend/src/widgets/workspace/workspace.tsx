@@ -7,6 +7,7 @@ import {
   projectQueryOptions,
 } from '@/entities/project'
 import { useStartRun } from '@/entities/run'
+import { useSession } from '@/entities/session'
 import { projectVersionSource, type VersionSource } from '@/entities/version'
 import { AddTextDialog, AddVoiceDialog } from '@/features/add-source/add-source-dialogs'
 import { useRegisterCommands } from '@/features/command-palette/model'
@@ -94,6 +95,7 @@ export function WorkspaceView({
   search,
   onSearchChange,
 }: WorkspaceViewProps) {
+  const authEnabled = useSession().data?.auth_enabled === true
   const editorRef = useRef<DiagramEditorHandle | null>(null)
   const sourcesRef = usePanelRef()
   const questionsRef = usePanelRef()
@@ -110,7 +112,9 @@ export function WorkspaceView({
     () => ({
       project,
       versions,
-      ...(readOnly ? { canEdit: false, canManage: false } : projectCapabilities(project.access)),
+      ...(readOnly
+        ? { canEdit: false, canManage: false, canShare: false }
+        : projectCapabilities(project.access, authEnabled)),
       editorRef,
       selectedQuestionId: search.question,
       viewedVersionId: search.version,
@@ -126,7 +130,16 @@ export function WorkspaceView({
       viewVersion: (versionId) => onSearchChange({ version: versionId }),
       focusElements: (ids) => editorRef.current?.focusElement(ids) ?? false,
     }),
-    [project, versions, readOnly, search.question, search.version, onSearchChange, questionsRef],
+    [
+      project,
+      versions,
+      readOnly,
+      authEnabled,
+      search.question,
+      search.version,
+      onSearchChange,
+      questionsRef,
+    ],
   )
 
   return (

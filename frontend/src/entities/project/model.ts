@@ -41,16 +41,26 @@ export interface ProjectCapabilities {
   canEdit: boolean
   /** Удалять проект и управлять доступом (владелец). */
   canManage: boolean
+  /** Делиться проектом: владелец и только при включённых аккаунтах (ссылки хранятся в Postgres). */
+  canShare: boolean
 }
 
-/** Возможности по роли: viewer только читает, editor правит всё, кроме удаления и доступа. */
-export function projectCapabilities(access: ProjectAccess): ProjectCapabilities {
-  return { canEdit: access !== 'viewer', canManage: access === 'owner' }
+/**
+ * Возможности по роли: viewer только читает, editor правит всё, кроме удаления и доступа.
+ * Без аккаунтов (`authEnabled: false`) сервер считает всех владельцами, но делиться нечем:
+ * ссылки и участники живут в аккаунтах, поэтому `canShare` там всегда ложь.
+ */
+export function projectCapabilities(
+  access: ProjectAccess,
+  authEnabled: boolean,
+): ProjectCapabilities {
+  const canManage = access === 'owner'
+  return { canEdit: access !== 'viewer', canManage, canShare: canManage && authEnabled }
 }
 
 /** Проект открыт только для чтения (демо-примеры, ссылка «только просмотр»). */
 export function isReadOnly(access: ProjectAccess): boolean {
-  return !projectCapabilities(access).canEdit
+  return !projectCapabilities(access, false).canEdit
 }
 
 export type ProjectScope = Schemas['ProjectScope']

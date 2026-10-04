@@ -1,8 +1,29 @@
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { type FullConfig, request } from '@playwright/test'
+import { type APIRequestContext, type FullConfig, request } from '@playwright/test'
 import { AUTH_STATE } from './auth-state'
+
+/**
+ * Тестовый пользователь «уже знаком с продуктом»: тур отклонён, чек-лист скрыт. Иначе
+ * приветствие и плашка «Начало работы» перекрывали бы сценарии и скриншоты. Если онбординг
+ * на стенде выключен (`ONBOARDING_ENABLED=false`), делать нечего.
+ */
+async function silenceOnboarding(context: APIRequestContext, headers: Record<string, string>) {
+  const state = await (await context.get('/api/v1/me/onboarding')).json()
+  if (!state.enabled) return
+  const dismissed = await context.patch('/api/v1/me/onboarding/tour', {
+    data: { status: 'dismissed' },
+    headers,
+  })
+  if (!dismissed.ok())
+    throw new Error(`Отказ от обучения тестового пользователя: ${dismissed.status()}`)
+  const hidden = await context.patch('/api/v1/me/onboarding/checklist', {
+    data: { hidden: true },
+    headers,
+  })
+  if (!hidden.ok()) throw new Error(`Скрытие чек-листа тестового пользователя: ${hidden.status()}`)
+}
 
 /**
  * Перед прогоном: если на стенде включены аккаунты, регистрируем одноразового пользователя,
@@ -35,6 +56,7 @@ export default async function globalSetup(config: FullConfig) {
       headers,
     })
     if (!loggedIn.ok()) throw new Error(`Вход тестового пользователя: ${loggedIn.status()}`)
+    await silenceOnboarding(context, headers)
     await context.storageState({ path: AUTH_STATE })
   } finally {
     await context.dispose()

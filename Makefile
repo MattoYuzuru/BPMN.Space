@@ -70,7 +70,7 @@ test-backend: ## pytest с покрытием ≥80%
 test-postgres: ## SQL-репозитории и HTTP-тесты с авторизацией на временной схеме PostgreSQL
 	set -a; [ ! -f .env ] || . ./.env; set +a; docker compose up -d --wait db; \
 	TEST_DATABASE_URL="$${TEST_DATABASE_URL:-$${DATABASE_URL:-postgresql+asyncpg://arkhitektor:local-dev-only@localhost:5433/arkhitektor}}" \
-	$(UV) pytest tests/test_persistence.py tests/test_auth_http.py
+	$(UV) pytest tests/test_persistence.py tests/test_auth_http.py tests/test_onboarding_http.py
 
 test-frontend: ## vitest
 	$(NPM_FRONT) test

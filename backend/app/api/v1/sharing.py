@@ -20,6 +20,7 @@ from app.api.schemas.sharing import (
     ShareRole,
 )
 from app.container import Container
+from app.domain.onboarding import ChecklistItem
 from app.services.auth import UserRow
 from app.services.errors import ForbiddenError, NotFoundError, UnauthorizedError
 
@@ -107,6 +108,7 @@ async def create_share_link(
         expires_in_days=body.expires_in_days,
         created_by=user.id,
     )
+    await container.onboarding.record(user.id, ChecklistItem.PROJECT_SHARED)
     return ShareLinkCreated(
         id=created.link.id,
         role=body.role,

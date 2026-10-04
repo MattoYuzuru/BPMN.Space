@@ -10,6 +10,7 @@ from app.api.deps import ContainerDep
 from app.api.responses import bpmn_attachment
 from app.api.schemas.common import errors
 from app.api.schemas.versions import DiagramSave, Version, VersionDetail
+from app.domain.onboarding import ChecklistItem
 
 router = APIRouter(tags=["versions"])
 
@@ -78,4 +79,6 @@ async def save_diagram(
 
     Пока по проекту идёт прогон — 409: его версия перекрыла бы правку."""
     await ensure_project_access(request, container, project_id, user, write=True)
-    return Version.model_validate(await container.versions.save_manual(project_id, xml=body.xml))
+    saved = await container.versions.save_manual(project_id, xml=body.xml)
+    await container.onboarding.record(user.id if user else None, ChecklistItem.DIAGRAM_EDITED)
+    return Version.model_validate(saved)

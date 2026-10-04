@@ -1,4 +1,4 @@
-"""PostgreSQL connection lifecycle, migrations and repositories."""
+"""Подключение к PostgreSQL: жизненный цикл, миграции и сид демо-данных."""
 
 from collections.abc import Callable
 from dataclasses import replace
@@ -17,8 +17,16 @@ from app.infra.repositories.sql import SqlStore
 
 
 class Database:
-    def __init__(self, url: str, *, migrations_dir: Path | None = None) -> None:
-        self.engine: AsyncEngine = create_async_engine(url, pool_pre_ping=True)
+    def __init__(
+        self,
+        url: str,
+        *,
+        migrations_dir: Path | None = None,
+        connect_args: dict[str, Any] | None = None,
+    ) -> None:
+        self.engine: AsyncEngine = create_async_engine(
+            url, pool_pre_ping=True, connect_args=connect_args or {}
+        )
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
         self.store = SqlStore(self.sessions)
         self._migrations_dir = migrations_dir or Path(__file__).resolve().parents[2] / "migrations"
@@ -51,6 +59,7 @@ class Database:
         repos = self.store.repositories()
         for project in data.projects:
             if await repos.projects.get(project.id) is not None:
+                # Демо-проект открыт на чтение всем вошедшим; чужие проекты (без сида) не трогаем.
                 async with self.sessions.begin() as session:
                     await session.execute(
                         update(ProjectRow)
@@ -58,7 +67,7 @@ class Database:
                         .values(public_read_only=True)
                     )
                 continue
-            await repos.projects.add(project)
+            await repos.projects.add(project, public=True)
             for source in data.sources:
                 if source.project_id == project.id:
                     await repos.sources.add(source)

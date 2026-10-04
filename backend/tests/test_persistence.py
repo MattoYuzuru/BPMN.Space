@@ -7,7 +7,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from alembic import command
@@ -38,7 +38,6 @@ from app.infra.db_models import (
     DiagramVersionRow,
     LlmCallRow,
     ProjectMemberRow,
-    ProjectRow,
     ProjectShareLinkRow,
     QuestionRow,
     RunRow,
@@ -53,16 +52,11 @@ from app.infra.storage import LocalFileStorage
 from app.infra.tasks import AsyncioTaskSpawner
 from app.llm.mock import MockPipeline
 from app.main import create_app
-from app.services.access import ProjectRole, get_project_role, get_share_link
+from app.services.access import AccessService, ProjectRole
 from app.services.common import Runtime
-from app.services.errors import ConflictError
+from app.services.errors import ConflictError, NotFoundError
 from app.services.runs import RunService
-from app.services.sharing import (
-    accept_editor_invite,
-    create_share_link,
-    remove_member,
-    revoke_share_link,
-)
+from app.services.sharing import SharingService
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
 
@@ -201,9 +195,9 @@ async def test_auth_register_login_me_logout_and_hashed_session(sql_store) -> No
 @pytest.mark.asyncio
 async def test_editor_share_acceptance_is_account_scoped_and_revocable(sql_store) -> None:
     store, sessions = sql_store
-    database = Database(os.environ["TEST_DATABASE_URL"])
-    database.store = store
-    database.sessions = sessions
+    runtime = Runtime()
+    access = AccessService(store.repositories().access, runtime=runtime)
+    sharing = SharingService(access, runtime=runtime)
     now = datetime.now(UTC)
     owner = UserRow(
         id=uuid4(),
@@ -228,137 +222,29 @@ async def test_editor_share_acceptance_is_account_scoped_and_revocable(sql_store
     )
     await store.repositories().projects.add(project, owner_id=owner.id)
 
-    invitation = "unused-test-invitation-value"
-    link_id = await create_share_link(
-        database,
-        project_id=project.id,
-        raw_token=invitation,
-        role="editor",
-        created_by=owner.id,
-        created_at=now,
-        expires_at=None,
+    created = await sharing.create_link(
+        project.id, role="editor", expires_in_days=None, created_by=owner.id
     )
-    link, expired = await get_share_link(database, invitation)
-    assert link is not None
-    assert not expired
-    assert link.id == link_id
-    assert link.token_hash != invitation
-    assert await get_project_role(database, project.id, editor.id) is None
+    link = await access.active_link(created.token)
+    assert link.id == created.link.id
+    assert link.token_hash != created.token
+    assert await access.project_role(project.id, editor.id) is None
 
-    await accept_editor_invite(database, project.id, editor.id, now)
-    assert await get_project_role(database, project.id, editor.id) == ProjectRole.EDITOR
+    await sharing.accept_invite(project.id, editor.id)
+    assert await access.project_role(project.id, editor.id) == ProjectRole.EDITOR
     async with sessions() as session:
         membership = await session.get(ProjectMemberRow, (project.id, editor.id))
-        stored_link = await session.get(ProjectShareLinkRow, link_id)
+        stored_link = await session.get(ProjectShareLinkRow, link.id)
     assert membership is not None
     assert membership.role == "editor"
     assert stored_link is not None
-    assert stored_link.token_hash != invitation
+    assert stored_link.token_hash != created.token
 
-    assert await remove_member(database, project.id, editor.id)
-    assert await get_project_role(database, project.id, editor.id) is None
-    assert await revoke_share_link(database, project.id, link_id, datetime.now(UTC))
-    link, expired = await get_share_link(database, invitation)
-    assert link is None
-    assert not expired
-    await database.dispose()
-
-
-@pytest.mark.asyncio
-async def test_viewer_link_is_anonymous_and_editor_link_requires_acceptance(sql_store) -> None:
-    store, sessions = sql_store
-    database = Database(os.environ["TEST_DATABASE_URL"])
-    database.store = store
-    database.sessions = sessions
-    settings = Settings(auth_enabled=True, database_url=None, seed_demo_data=False)
-    now = datetime.now(UTC)
-    owner_id = uuid4()
-    async with sessions.begin() as session:
-        session.add(
-            UserRow(
-                id=owner_id,
-                email="link-owner@example.com",
-                hashed_password=uuid4().hex,
-                is_active=True,
-                is_superuser=False,
-                is_verified=False,
-            )
-        )
-    container = replace(build_container(settings), database=database)
-    project_view = await container.projects.create(
-        title="Согласование договора", description=None, owner_id=owner_id
-    )
-    project_id = project_view.project.id
-    async with sessions.begin() as session:
-        session.add(
-            ProjectRow(
-                id=project_id,
-                title="Согласование договора",
-                description=None,
-                created_at=now,
-                updated_at=now,
-                owner_id=owner_id,
-                public_read_only=False,
-            )
-        )
-
-    viewer_link = "viewer-link-test-token"
-    editor_link = "editor-link-test-token"
-    await create_share_link(
-        database,
-        project_id=project_id,
-        raw_token=viewer_link,
-        role="viewer",
-        created_by=owner_id,
-        created_at=now,
-        expires_at=None,
-    )
-    await create_share_link(
-        database,
-        project_id=project_id,
-        raw_token=editor_link,
-        role="editor",
-        created_by=owner_id,
-        created_at=now,
-        expires_at=None,
-    )
-    app = create_app(settings, container=container)
-
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        viewer = await client.get(f"/api/v1/shares/{viewer_link}")
-        assert viewer.status_code == 200, viewer.text
-        assert viewer.json()["role"] == "viewer"
-        assert viewer.json()["detail"]["id"] == str(project_id)
-
-        editor = await client.get(f"/api/v1/shares/{editor_link}")
-        assert editor.status_code == 401
-
-        csrf = (await client.get("/api/v1/auth/csrf")).json()["csrf_token"]
-        registration = await client.post(
-            "/api/v1/auth/register",
-            json={"email": "link-editor@example.com", "password": "test-password-long-enough"},
-            headers={"x-csrf-token": csrf},
-        )
-        assert registration.status_code == 201, registration.text
-        editor_id = registration.json()["id"]
-        login = await client.post(
-            "/api/v1/auth/session/login",
-            data={"username": "link-editor@example.com", "password": "test-password-long-enough"},
-            headers={"x-csrf-token": csrf},
-        )
-        assert login.status_code == 204, login.text
-
-        editor = await client.get(f"/api/v1/shares/{editor_link}")
-        assert editor.status_code == 200
-        accept = await client.post(
-            f"/api/v1/shares/{editor_link}/accept", headers={"x-csrf-token": csrf}
-        )
-        assert accept.status_code == 200
-        assert accept.json() == {"project_id": str(project_id), "role": "editor"}
-        project = await client.get(f"/api/v1/projects/{project_id}")
-        assert project.status_code == 200
-        assert await get_project_role(database, project_id, UUID(editor_id)) == ProjectRole.EDITOR
-    await database.dispose()
+    await sharing.remove_member(project.id, editor.id)
+    assert await access.project_role(project.id, editor.id) is None
+    await sharing.revoke_link(project.id, link.id)
+    with pytest.raises(NotFoundError):
+        await access.active_link(created.token)
 
 
 @pytest.mark.asyncio

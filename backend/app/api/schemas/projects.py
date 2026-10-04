@@ -10,9 +10,9 @@ from app.api.schemas.questions import Question
 from app.api.schemas.runs import QuestionsSummary, Run
 from app.api.schemas.sources import Source
 from app.api.schemas.versions import Version
+from app.domain.access import ProjectRole
 from app.domain.models import ProjectStatus
 from app.services import projects as svc
-from app.services.access import ProjectRole
 
 
 class ProjectCounts(ApiModel):

@@ -1,20 +1,29 @@
-"""HTTP mapping for project permission checks."""
+"""HTTP-слой проверки прав: гость → 401, чужой проект → 404, роль без права → 403."""
 
 from uuid import UUID
 
-from fastapi import HTTPException, Request, status
+from fastapi import Request
 
-from app.api.auth import UserRow
 from app.container import Container
-from app.infra.db_models import ProjectShareLinkRow
-from app.services.access import ProjectRole, get_project_role, get_project_roles
-from app.services.access import get_resource_project_id as resolve_project_id
-from app.services.access import get_share_link as resolve_share_link
+from app.domain.access import ProjectRole, ResourceKind, ShareLink
+from app.services.auth import UserRow
+from app.services.errors import ForbiddenError, NotFoundError, UnauthorizedError
+
+__all__ = [
+    "ProjectRole",
+    "ResourceKind",
+    "ensure_project_access",
+    "ensure_resource_access",
+    "get_active_share_link",
+    "project_roles",
+    "require_account",
+]
 
 
 def require_account(request: Request, user: UserRow | None) -> UUID | None:
+    """При включённой auth гостям — 401; без auth стенд однопользовательский."""
     if request.app.state.auth_enabled and user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Войдите в аккаунт")
+        raise UnauthorizedError("Войдите в аккаунт")
     return user.id if user is not None else None
 
 
@@ -29,15 +38,13 @@ async def ensure_project_access(
     """Скрывать чужие проекты как 404 и запрещать viewer изменяющие запросы."""
     if not request.app.state.auth_enabled:
         return ProjectRole.OWNER
-    if container.database is None:
-        raise HTTPException(status_code=503, detail="Для доступа к проектам требуется PostgreSQL")
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Войдите в аккаунт")
-    role = await get_project_role(container.database, project_id, user.id)
+    user_id = require_account(request, user)
+    assert user_id is not None  # noqa: S101 — require_account пропускает гостя только без auth
+    role = await container.access.project_role(project_id, user_id)
     if role is None:
-        raise HTTPException(status_code=404, detail="Проект не найден")
+        raise NotFoundError("Проект не найден")
     if write and role is ProjectRole.VIEWER:
-        raise HTTPException(status_code=403, detail="Для изменения проекта нужны права редактора")
+        raise ForbiddenError("Для изменения проекта нужны права редактора")
     return role
 
 
@@ -45,9 +52,9 @@ async def project_roles(
     request: Request, container: Container, project_ids: list[UUID], user: UserRow | None
 ) -> dict[UUID, ProjectRole]:
     """Роль для каждой карточки списка; без auth стенд однопользовательский — всё своё."""
-    if not request.app.state.auth_enabled or container.database is None:
+    if not request.app.state.auth_enabled:
         return dict.fromkeys(project_ids, ProjectRole.OWNER)
-    return await get_project_roles(container.database, project_ids, user.id if user else None)
+    return await container.access.project_roles(project_ids, user.id if user else None)
 
 
 async def ensure_resource_access(
@@ -56,26 +63,16 @@ async def ensure_resource_access(
     resource_id: UUID,
     user: UserRow | None,
     *,
-    resource: str,
+    resource: ResourceKind,
     write: bool,
 ) -> ProjectRole:
     """Проверить доступ через проект-владелец объекта."""
     if not request.app.state.auth_enabled:
         return ProjectRole.OWNER
-    if container.database is None:
-        raise HTTPException(status_code=503, detail="Для доступа к проектам требуется PostgreSQL")
-    project_id = await resolve_project_id(container.database, resource_id, resource)
-    if project_id is None:
-        raise HTTPException(status_code=404, detail="Объект не найден")
+    require_account(request, user)
+    project_id = await container.access.resource_project_id(resource, resource_id)
     return await ensure_project_access(request, container, project_id, user, write=write)
 
 
-async def get_active_share_link(container: Container, token: str) -> ProjectShareLinkRow:
-    if container.database is None:
-        raise HTTPException(status_code=503, detail="Для ссылок доступа требуется PostgreSQL")
-    link, expired = await resolve_share_link(container.database, token)
-    if link is None:
-        if expired:
-            raise HTTPException(status_code=410, detail="Срок действия ссылки истёк")
-        raise HTTPException(status_code=404, detail="Ссылка не найдена или отключена")
-    return link
+async def get_active_share_link(container: Container, token: str) -> ShareLink:
+    return await container.access.active_link(token)

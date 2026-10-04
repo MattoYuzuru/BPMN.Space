@@ -378,9 +378,9 @@ def _verified_quote(
     source = next((item for item in sources if item.id == parsed_id), None)
     if source is None:
         return None, None
-    # PDF extraction often inserts line breaks in the middle of a sentence.
-    # Match normalized whitespace/case/ё, but keep the original source excerpt
-    # in the trace so users see a verbatim citation.
+    # Текст из PDF часто разорван переносами посреди предложения. Сравниваем с нормализацией
+    # пробелов, регистра и «ё», но в трассировку кладём исходный фрагмент источника,
+    # чтобы пользователь видел дословную цитату.
     normalized = normalize(quote[:1200])
     if not normalized:
         return None, None

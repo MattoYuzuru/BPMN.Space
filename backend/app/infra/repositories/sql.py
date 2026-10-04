@@ -43,6 +43,7 @@ from app.infra.db_models import (
     RunRow,
     SourceRow,
 )
+from app.infra.repositories.access_sql import SqlAccessRepository
 from app.infra.repositories.base import ActiveRunConflictError, PageKey, Repositories
 
 type SessionFactory = async_sessionmaker[AsyncSession]
@@ -179,7 +180,9 @@ class SqlProjectRepository:
     def __init__(self, sessions: SessionFactory) -> None:
         self.sessions = sessions
 
-    async def add(self, project: Project, *, owner_id: UUID | None = None) -> None:
+    async def add(
+        self, project: Project, *, owner_id: UUID | None = None, public: bool = False
+    ) -> None:
         async with self.sessions.begin() as session:
             session.add(
                 ProjectRow(
@@ -189,7 +192,7 @@ class SqlProjectRepository:
                     created_at=project.created_at,
                     updated_at=project.updated_at,
                     owner_id=owner_id,
-                    public_read_only=owner_id is None,
+                    public_read_only=public,
                 )
             )
 
@@ -219,6 +222,18 @@ class SqlProjectRepository:
         title = func.replace(func.lower(ProjectRow.title), "ё", "е")
         return [title.contains(normalized)]
 
+    @staticmethod
+    def _visible_to(user_id: UUID | None) -> Any:
+        """Демо-проекты видны всем, свои и «совместные» — только их участникам."""
+        visible = ProjectRow.public_read_only.is_(True)
+        if user_id is None:
+            return visible
+        membership = select(ProjectMemberRow.project_id).where(
+            ProjectMemberRow.project_id == ProjectRow.id,
+            ProjectMemberRow.user_id == user_id,
+        )
+        return or_(visible, ProjectRow.owner_id == user_id, membership.exists())
+
     async def list_page(
         self,
         *,
@@ -231,18 +246,7 @@ class SqlProjectRepository:
         async with self.sessions() as session:
             statement = select(ProjectRow).where(*self._filters(query))
             if scope_to_user:
-                membership = select(ProjectMemberRow.project_id).where(
-                    ProjectMemberRow.project_id == ProjectRow.id,
-                    ProjectMemberRow.user_id == owner_id,
-                )
-                access_filter = ProjectRow.public_read_only.is_(True)
-                if owner_id is not None:
-                    access_filter = or_(
-                        access_filter,
-                        ProjectRow.owner_id == owner_id,
-                        membership.exists(),
-                    )
-                statement = statement.where(access_filter)
+                statement = statement.where(self._visible_to(owner_id))
             if after:
                 statement = statement.where(
                     or_(
@@ -265,18 +269,7 @@ class SqlProjectRepository:
         async with self.sessions() as session:
             statement = select(func.count()).select_from(ProjectRow).where(*self._filters(query))
             if scope_to_user:
-                membership = select(ProjectMemberRow.project_id).where(
-                    ProjectMemberRow.project_id == ProjectRow.id,
-                    ProjectMemberRow.user_id == owner_id,
-                )
-                access_filter = ProjectRow.public_read_only.is_(True)
-                if owner_id is not None:
-                    access_filter = or_(
-                        access_filter,
-                        ProjectRow.owner_id == owner_id,
-                        membership.exists(),
-                    )
-                statement = statement.where(access_filter)
+                statement = statement.where(self._visible_to(owner_id))
             return int(await session.scalar(statement) or 0)
 
 
@@ -604,4 +597,5 @@ class SqlStore:
             runs=SqlRunRepository(self._sessions),
             versions=SqlVersionRepository(self._sessions),
             llm_calls=SqlLlmCallRepository(self._sessions),
+            access=SqlAccessRepository(self._sessions),
         )

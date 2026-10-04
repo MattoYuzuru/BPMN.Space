@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { useTourLayerTracking } from '@/shared/hooks/use-tour-layer'
 import { cn } from '@/shared/lib/cn'
 import { TOUR_LAYER_ATTR } from '@/shared/lib/tour-anchors'
@@ -51,7 +52,7 @@ export interface CoachCardProps {
   pageIndex?: number
   /** default; waiting — спиннер у счётчика (ждём прогон); error — заголовок тона Сурик. */
   tone?: 'default' | 'waiting' | 'error'
-  /** До двух кнопок справа. «Назад» передаётся отдельно. */
+  /** Кнопки справа; вместе с «Назад» не больше трёх. «Назад» передаётся отдельно. */
   actions?: CoachAction[]
   /** Есть — показывается «Назад»; также `←` на клавиатуре. */
   onBack?: () => void
@@ -65,6 +66,8 @@ export interface CoachCardProps {
   onConfirmEnd?: () => void
   onCancelEnd?: () => void
   /** Дополнительное содержимое под текстом (тур его не использует). */
+  /** Забирать фокус на заголовок при показе и смене страницы. По умолчанию — кроме `inline`. */
+  autoFocus?: boolean
   children?: ReactNode
   className?: string
 }
@@ -106,6 +109,7 @@ export function CoachCard({
   onRequestEnd,
   onConfirmEnd,
   onCancelEnd,
+  autoFocus = placement !== 'inline',
   children,
   className,
 }: CoachCardProps) {
@@ -113,16 +117,19 @@ export function CoachCard({
   const headingId = useId()
   const headingRef = useRef<HTMLHeadingElement | null>(null)
   // Портал Radix монтирует содержимое со второго рендера, поэтому фокус ставим и при появлении заголовка.
-  const setHeading = useCallback((node: HTMLHeadingElement | null) => {
-    headingRef.current = node
-    node?.focus({ preventScroll: true })
-  }, [])
+  const setHeading = useCallback(
+    (node: HTMLHeadingElement | null) => {
+      headingRef.current = node
+      if (autoFocus) node?.focus({ preventScroll: true })
+    },
+    [autoFocus],
+  )
   const [flash, setFlash] = useState(false)
 
   // Фокус на заголовок при смене шага/страницы и при входе в подтверждение.
   // biome-ignore lint/correctness/useExhaustiveDependencies: pageKey и confirming — триггеры
   useEffect(() => {
-    headingRef.current?.focus({ preventScroll: true })
+    if (autoFocus) headingRef.current?.focus({ preventScroll: true })
   }, [pageKey, confirming])
 
   useEffect(() => {
@@ -211,9 +218,19 @@ export function CoachCard({
         {confirming ? (
           body
         ) : (
-          <Typewriter key={pageKey} text={body} instant={textRead} className="min-h-5" />
+          <Typewriter
+            key={pageKey}
+            text={body}
+            instant={textRead}
+            live={false}
+            className="min-h-5"
+          />
         )}
       </div>
+      {/* Один постоянный регион: смена текста объявляется, а не монтируется вместе со страницей. */}
+      <span aria-live="polite" className="sr-only">
+        {body}
+      </span>
       {children}
       <div className="mt-4 flex items-center justify-between gap-3">
         {confirming ? (
@@ -289,7 +306,7 @@ export function CoachCard({
   }
 
   if (placement === 'center') {
-    return (
+    const centered = (
       <div
         {...{ [TOUR_LAYER_ATTR]: '' }}
         className="pointer-events-none fixed inset-0 z-70 grid place-items-center p-4"
@@ -305,6 +322,7 @@ export function CoachCard({
         </section>
       </div>
     )
+    return createPortal(centered, portalContainer ?? document.body)
   }
 
   return (

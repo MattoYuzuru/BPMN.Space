@@ -16,6 +16,7 @@ function setup(props: Partial<CoachCardProps> = {}) {
   render(
     <CoachCard
       placement="inline"
+      autoFocus
       eyebrow="Источники · Шаг 2 из 11"
       title="Добавьте источник"
       text="Откройте меню и выберите пример."
@@ -123,5 +124,32 @@ describe('CoachCard', () => {
     render(<CoachCard placement="center" title="Финал" text="Готово." />)
     const dialog = screen.getByRole('dialog', { name: 'Финал' })
     expect(dialog).toHaveAttribute('aria-modal', 'false')
+  })
+
+  it('inline-карточка не забирает фокус, если не просили', () => {
+    function Host({ show }: { show: boolean }) {
+      return (
+        <>
+          <input aria-label="поле" />
+          {show && <CoachCard placement="inline" title="T" text="t" />}
+        </>
+      )
+    }
+    const { rerender } = render(<Host show={false} />)
+    screen.getByLabelText('поле').focus()
+    rerender(<Host show />)
+    expect(screen.getByLabelText('поле')).toHaveFocus()
+  })
+
+  it('текст объявляется одним постоянным регионом aria-live, который обновляется', () => {
+    const { rerender } = render(
+      <CoachCard placement="inline" title="T" text="Первая." pageKey="a" />,
+    )
+    const live = document.querySelector('[aria-live="polite"]')
+    expect(document.querySelectorAll('[aria-live]')).toHaveLength(1)
+    rerender(<CoachCard placement="inline" title="T" text="Вторая." pageKey="b" />)
+    // тот же узел: смена текста объявляется, а не монтируется заново
+    expect(document.querySelector('[aria-live="polite"]')).toBe(live)
+    expect(live).toHaveTextContent('Вторая.')
   })
 })

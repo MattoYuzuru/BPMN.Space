@@ -1,5 +1,6 @@
 import { useRouter } from '@tanstack/react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { type Rect, toDomRect, useElementRect } from '@/shared/hooks/use-element-rect'
 import { cn } from '@/shared/lib/cn'
 import { subscribeOnboardingSignals } from '@/shared/lib/onboarding-signals'
@@ -8,13 +9,14 @@ import { Button, type CoachAction, CoachCard, Spotlight } from '@/shared/ui'
 import {
   ANCHOR_TIMEOUT_MS,
   modalAround,
+  topOpenModal,
   useAnchorElement,
   useAnimationsSettled,
   useFloatingLayerOpen,
 } from '../anchor'
 import { createTourController, nextVisibleStep, resolveView, stepCounter } from './machine'
 import { persistQuietly } from './persistence'
-import { startTour, useTourStore } from './store'
+import { startTour, stopTour, useTourStore } from './store'
 import type { RouteTarget, StepAction, TourEndReason, TourPersistence, TourStep } from './types'
 
 export interface TourHostProps<Ctx> {
@@ -48,7 +50,7 @@ function routeMatches(router: RouterLike, target: RouteTarget): boolean {
 /** Пилюля паузы: пользователь ушёл с экрана шага. */
 function PausePill({ onResume, onEnd }: { onResume: () => void; onEnd: () => void }) {
   const [confirming, setConfirming] = useState(false)
-  return (
+  const pill = (
     <section
       {...{ [TOUR_LAYER_ATTR]: '' }}
       aria-label="Обучение приостановлено"
@@ -77,6 +79,7 @@ function PausePill({ onResume, onEnd }: { onResume: () => void; onEnd: () => voi
       )}
     </section>
   )
+  return createPortal(pill, document.body)
 }
 
 /**
@@ -133,7 +136,14 @@ export default function TourHost<Ctx>({
   const step = active ? steps.find((item) => item.key === stepKey) : undefined
   const [, setTick] = useState(0)
   const [locationTick, setLocationTick] = useState(0)
-  const expectNavigation = useRef(false)
+  // Навигации, запущенные самим туром и ещё не завершённые (их может быть несколько подряд).
+  const pendingNavigations = useRef(0)
+
+  // Неизвестный ключ шага (опечатка в startTour): тур не показываем и останавливаем.
+  const unknownStep = active && stepKey !== null && !steps.some((item) => item.key === stepKey)
+  useEffect(() => {
+    if (unknownStep) stopTour()
+  }, [unknownStep])
 
   // Восстановление шага с сервера при загрузке любой вкладки приложения.
   useEffect(() => {
@@ -170,6 +180,8 @@ export default function TourHost<Ctx>({
     return subscribeOnboardingSignals((signal) => {
       const store = useTourStore.getState()
       store.recordSignal(signal)
+      // Пока тур на паузе, пользователя в другой экран не утаскиваем.
+      if (store.paused) return
       const current = stepsRef.current.find((item) => item.key === store.stepKey)
       if (!current || (current.kind !== 'action' && current.kind !== 'wait')) return
       if (current.until?.(signal, contextRef.current)) controller.skipStep()
@@ -178,7 +190,7 @@ export default function TourHost<Ctx>({
 
   // Условия по состоянию приложения: `doneWhen` и `skipIf` проверяются после каждого обновления.
   useEffect(() => {
-    if (!step) return
+    if (!step || paused) return
     if ((step.kind === 'action' || step.kind === 'wait') && step.doneWhen?.(context)) {
       controller.skipStep()
     } else if (step.kind !== 'finish' && step.skipIf?.(context)) {
@@ -212,22 +224,24 @@ export default function TourHost<Ctx>({
     return router.subscribe('onResolved', () => setLocationTick((n) => n + 1))
   }, [router])
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: переход — только при входе в шаг и снятии паузы
+  // Экран шага может появиться позже (id проекта приходит после создания): цель — в зависимостях.
+  const routeKey = step ? JSON.stringify(step.route?.(context) ?? null) : null
+  // biome-ignore lint/correctness/useExhaustiveDependencies: переход — при входе в шаг, снятии паузы и смене цели
   useEffect(() => {
     if (!active || paused || !router || !stepKey) return
     const current = stepsRef.current.find((item) => item.key === stepKey)
     const target = current?.route?.(contextRef.current)
     if (!target || routeMatches(router, target)) return
-    expectNavigation.current = true
+    pendingNavigations.current += 1
     Promise.resolve(
       router.navigate({ to: target.to, params: target.params, search: target.search }),
     )
       .catch(() => {})
       .finally(() => {
-        expectNavigation.current = false
+        pendingNavigations.current -= 1
         setLocationTick((n) => n + 1)
       })
-  }, [active, paused, stepKey])
+  }, [active, paused, stepKey, routeKey])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: locationTick и context — триггеры перепроверки маршрута
   useEffect(() => {
@@ -241,10 +255,10 @@ export default function TourHost<Ctx>({
       if (paused) useTourStore.getState().setPaused(false)
       return
     }
-    if (paused || expectNavigation.current) return
+    if (paused || pendingNavigations.current > 0) return
     // Пауза с задержкой: действие шага может само сменить экран и тут же продвинуть тур по сигналу.
     const timer = window.setTimeout(() => {
-      if (!onRoute() && !expectNavigation.current) useTourStore.getState().setPaused(true)
+      if (!onRoute() && pendingNavigations.current === 0) useTourStore.getState().setPaused(true)
     }, 250)
     return () => window.clearTimeout(timer)
   }, [active, paused, stepKey, locationTick, router, context])
@@ -259,8 +273,10 @@ export default function TourHost<Ctx>({
     enabled: active && !paused,
   })
   const rect = useElementRect(anchor.element)
-  const modal = modalAround(anchor.element)
   const floating = useFloatingLayerOpen(active && !paused)
+  // Окно, в котором лежит якорь, а если якоря нет или он вне окна — верхнее открытое окно:
+  // иначе затемнение и карточка оказались бы поверх него, вне FocusScope и под aria-hidden.
+  const modal = modalAround(anchor.element) ?? (floating ? topOpenModal() : null)
   const modalSettled = useAnimationsSettled(modal)
 
   // Необязательный шаг без якоря молча пропускается.
@@ -314,7 +330,7 @@ export default function TourHost<Ctx>({
       />
     )
   }
-  if (!active || !step || !view) return null
+  if (!active || !step || !view || unknownStep) return null
 
   if (paused) {
     return (
@@ -328,7 +344,9 @@ export default function TourHost<Ctx>({
   const cutout = Boolean(anchor.element && rect)
   const waiting = Boolean(selector) && !anchor.element && !anchor.timedOut
   const dim = !modal && !floating
-  const block = dim && !view.allowOutside
+  // Шаг-действие без найденного якоря не должен запирать экран: действие нужно сделать.
+  const stuckAction = anchor.timedOut && (step.kind === 'action' || step.kind === 'wait')
+  const block = dim && !view.allowOutside && !stuckAction
   const showCard = (!waiting && modalSettled) || confirming
   const centered = !cutout
 

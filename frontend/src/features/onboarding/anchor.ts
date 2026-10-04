@@ -7,6 +7,7 @@ const POLL_MS = 250
 
 /** Окно или панель (Radix Dialog), внутри которых лежит элемент; слои обучения не считаются. */
 const MODAL_SELECTOR = '[role="dialog"], [role="alertdialog"]'
+const OPEN_MODALS = '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]'
 
 /** Элемент найден и показан: подключён к документу и не `display: none`. */
 export function isUsable(element: Element | null): element is HTMLElement {
@@ -31,13 +32,27 @@ export function modalAround(element: Element | null): HTMLElement | null {
   return modal
 }
 
+/** Верхнее открытое модальное окно или панель (не слой обучения): запасной контейнер для карточки. */
+export function topOpenModal(): HTMLElement | null {
+  const all = [...document.querySelectorAll<HTMLElement>(OPEN_MODALS)].filter(
+    (node) => !node.closest(`[${TOUR_LAYER_ATTR}]`),
+  )
+  return all.at(-1) ?? null
+}
+
 export interface AnchorState {
   element: HTMLElement | null
   /** Якорь не появился за таймаут. */
   timedOut: boolean
 }
 
+interface StoredAnchor extends AnchorState {
+  /** Селектор, для которого получено состояние: чужое состояние на рендере не показываем. */
+  selector: string | null
+}
+
 const EMPTY: AnchorState = { element: null, timedOut: false }
+const EMPTY_STORED: StoredAnchor = { ...EMPTY, selector: null }
 
 /**
  * Ждёт появления элемента: MutationObserver за документом плюс опрос раз в 250 мс, пока ждём
@@ -49,11 +64,11 @@ export function useAnchorElement(
   selector: string | null,
   { timeoutMs = ANCHOR_TIMEOUT_MS, enabled = true }: { timeoutMs?: number; enabled?: boolean } = {},
 ): AnchorState {
-  const [state, setState] = useState<AnchorState>(EMPTY)
+  const [state, setState] = useState<StoredAnchor>(EMPTY_STORED)
 
   useEffect(() => {
     if (!enabled || !selector) {
-      setState(EMPTY)
+      setState(EMPTY_STORED)
       return
     }
     let current: HTMLElement | null = null
@@ -67,7 +82,7 @@ export function useAnchorElement(
       stopWaiting()
       timeout = window.setTimeout(() => {
         window.clearInterval(poll)
-        setState((prev) => (prev.element ? prev : { element: null, timedOut: true }))
+        setState((prev) => (prev.element ? prev : { element: null, timedOut: true, selector }))
       }, timeoutMs)
       poll = window.setInterval(check, POLL_MS)
     }
@@ -77,17 +92,26 @@ export function useAnchorElement(
       current = found
       if (found) {
         stopWaiting()
-        setState({ element: found, timedOut: false })
+        setState({ element: found, timedOut: false, selector })
       } else {
-        setState(EMPTY)
+        setState({ ...EMPTY, selector })
         startWaiting()
       }
     }
 
-    setState(EMPTY)
+    setState({ ...EMPTY, selector })
     check()
     if (!current) startWaiting()
-    const observer = new MutationObserver(check)
+    // Наблюдатель не чаще раза в кадр: на тяжёлых экранах (холст схемы) мутаций много.
+    let frame = 0
+    const observer = new MutationObserver(() => {
+      if (!frame) {
+        frame = requestAnimationFrame(() => {
+          frame = 0
+          check()
+        })
+      }
+    })
     observer.observe(document.body, {
       childList: true,
       subtree: true,
@@ -96,15 +120,18 @@ export function useAnchorElement(
     })
     return () => {
       stopWaiting()
+      if (frame) cancelAnimationFrame(frame)
       observer.disconnect()
     }
   }, [selector, timeoutMs, enabled])
 
-  return state
+  // Состояние предыдущего шага на первом рендере нового не показываем.
+  if (!enabled || state.selector !== selector) return EMPTY
+  return { element: state.element, timedOut: state.timedOut }
 }
 
 /**
- * Открыто ли меню или список выбора поверх страницы (не слой обучения). Меню лежит на z-50 под
+ * Открыто ли меню, список выбора или окно поверх страницы (не слой обучения). Они лежат на z-50 под
  * затемнением тура, поэтому на время его показа тур снимает затемнение и перехват кликов.
  */
 export function useFloatingLayerOpen(enabled: boolean): boolean {
@@ -119,7 +146,7 @@ export function useFloatingLayerOpen(enabled: boolean): boolean {
     const check = () => {
       frame = 0
       const layers = document.querySelectorAll(
-        '[role="menu"][data-state="open"], [role="listbox"][data-state="open"]',
+        `[role="menu"][data-state="open"], [role="listbox"][data-state="open"], ${OPEN_MODALS}`,
       )
       setOpen([...layers].some((layer) => !layer.closest(`[${TOUR_LAYER_ATTR}]`)))
     }

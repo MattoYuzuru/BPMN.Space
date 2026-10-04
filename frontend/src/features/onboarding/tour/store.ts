@@ -69,7 +69,6 @@ export const useTourStore = create<TourState & TourActions>((set) => ({
       page: 0,
       seen: {},
       confirming: false,
-      paused: false,
       enteredAt: Date.now(),
       restored: false,
     }),

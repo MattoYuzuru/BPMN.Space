@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import type { Rect } from '@/shared/hooks/use-element-rect'
 import { useTourLayerTracking } from '@/shared/hooks/use-tour-layer'
 import { cn } from '@/shared/lib/cn'
@@ -27,7 +28,7 @@ export function Beacon({
 }: BeaconProps) {
   useTourLayerTracking()
   if (!target) return null
-  return (
+  const ring = (
     <div
       {...{ [TOUR_LAYER_ATTR]: '' }}
       aria-hidden="true"
@@ -48,4 +49,5 @@ export function Beacon({
       <span className="absolute inset-0 rounded-[inherit] bg-accent/10 ring-2 ring-accent animate-beacon motion-reduce:animate-none" />
     </div>
   )
+  return position === 'fixed' ? createPortal(ring, document.body) : ring
 }

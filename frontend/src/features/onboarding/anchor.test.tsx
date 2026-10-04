@@ -68,6 +68,7 @@ describe('useAnchorElement', () => {
     await act(async () => {
       element.remove()
       await Promise.resolve()
+      vi.advanceTimersByTime(50)
     })
     expect(result.current.element).toBeNull()
     expect(result.current.timedOut).toBe(false)
@@ -83,5 +84,33 @@ describe('useAnchorElement', () => {
     renderHook(() => useAnchorElement('[data-tour="x"]', { enabled: false }))
     expect(observe).not.toHaveBeenCalled()
     observe.mockRestore()
+  })
+
+  it('состояние прошлого селектора на первом рендере нового не показывается', () => {
+    const { result, rerender } = renderHook(
+      ({ selector }) => useAnchorElement(selector, { timeoutMs: 100 }),
+      { initialProps: { selector: '[data-tour="none"]' } },
+    )
+    act(() => {
+      vi.advanceTimersByTime(150)
+    })
+    expect(result.current.timedOut).toBe(true)
+    const seen: boolean[] = []
+    const probe = renderHook(
+      ({ selector }) => {
+        const state = useAnchorElement(selector, { timeoutMs: 100 })
+        seen.push(state.timedOut)
+        return state
+      },
+      { initialProps: { selector: '[data-tour="none"]' } },
+    )
+    act(() => {
+      vi.advanceTimersByTime(150)
+    })
+    seen.length = 0
+    probe.rerender({ selector: '[data-tour="other"]' })
+    // первый же рендер с новым селектором — без устаревшего timedOut
+    expect(seen[0]).toBe(false)
+    rerender({ selector: '[data-tour="none"]' })
   })
 })

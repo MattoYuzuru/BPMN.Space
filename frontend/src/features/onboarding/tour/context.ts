@@ -20,8 +20,8 @@ export interface TourUi {
   interceptCreate: (title: (() => string) | null) => void
   /** Закрыть диалоги источников рабочего места. */
   closeDialogs: () => void
-  /** Закрыть верхнее открытое окно (после создания ссылки доступа). */
-  closeTopDialog: () => void
+  /** Закрыть окно «Поделиться» (после создания ссылки доступа). */
+  closeShareDialog: () => void
   openChecklist: () => void
 }
 

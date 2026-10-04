@@ -11,9 +11,16 @@ export type OnboardingSignal =
   | { type: 'source.added'; kind: string }
   | { type: 'voice.permission-denied' }
   | { type: 'voice.unavailable' }
-  | { type: 'run.started'; id: string }
-  | { type: 'run.status'; status: RunSignalStatus }
-  | { type: 'run.finished'; status: string; openQuestions: number; hasDiagram: boolean }
+  /** Прогон реально запущен пользователем (не повторное подключение к идущему). */
+  | { type: 'run.started'; id: string; projectId: string }
+  | { type: 'run.status'; status: RunSignalStatus; projectId: string }
+  | {
+      type: 'run.finished'
+      status: string
+      openQuestions: number
+      hasDiagram: boolean
+      projectId: string
+    }
   | { type: 'question.answered'; id: string }
   | { type: 'question.ignored'; id: string }
   | { type: 'share.created' }

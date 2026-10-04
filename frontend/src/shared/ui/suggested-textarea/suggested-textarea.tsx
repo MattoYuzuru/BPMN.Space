@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useTypewriter } from '@/shared/hooks/use-typewriter'
 import { Button } from '../button/button'
 import { Textarea, type TextareaProps } from '../textarea/textarea'
@@ -50,6 +50,7 @@ export function SuggestedTextarea({
   ...props
 }: SuggestedTextareaProps) {
   const text = suggestion ?? ''
+  const hintId = useId()
   const [phase, setPhase] = useState<Phase>('offer')
   const typed = useTypewriter({
     text,
@@ -78,11 +79,15 @@ export function SuggestedTextarea({
 
   return (
     <div className="flex flex-col gap-2">
+      <span id={hintId} className="sr-only">
+        Есть подсказка: Tab — вставить её в поле
+      </span>
       <Textarea
         {...props}
         value={value}
         placeholder={offered ? suggestionPreview(text) : placeholder}
         data-suggested={offered || undefined}
+        aria-describedby={offered ? hintId : props['aria-describedby']}
         onChange={(event) => {
           if (phase === 'typing') return
           if (phase === 'offer' && text) {

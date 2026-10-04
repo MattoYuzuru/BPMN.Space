@@ -71,14 +71,24 @@ async function newPlayer(browser: Browser, baseURL: string | undefined): Promise
   const email = `e2e-tour-${randomUUID()}@example.com`
   const password = `pw-${randomUUID()}`
   const request = context.request
-  const { csrf_token: csrf } = await (await request.get('/api/v1/auth/csrf')).json()
-  const headers = { 'X-CSRF-Token': csrf }
+  // Лимит регистраций на адрес — 20 в минуту: при 429 ждём Retry-After и пробуем ещё раз.
+  const authorize = async (
+    url: string,
+    options: { data?: unknown; form?: Record<string, string> },
+  ) => {
+    let response = await request.post(url, { ...options, headers: await csrfHeaders(request) })
+    if (response.status() === 429) {
+      const wait = Number(response.headers()['retry-after'] ?? 5)
+      await new Promise((resolve) => setTimeout(resolve, Math.min(wait, 60) * 1000))
+      response = await request.post(url, { ...options, headers: await csrfHeaders(request) })
+    }
+    return response
+  }
   expect(
-    (await request.post('/api/v1/auth/register', { data: { email, password }, headers })).ok(),
+    (await authorize('/api/v1/auth/register', { data: { email, password } })).ok(),
   ).toBeTruthy()
-  const login = await request.post('/api/v1/auth/session/login', {
+  const login = await authorize('/api/v1/auth/session/login', {
     form: { username: email, password },
-    headers,
   })
   expect(login.ok()).toBeTruthy()
   return { context, page: await context.newPage(), request, email, password }
@@ -252,7 +262,7 @@ test('приветствие и весь тур от создания проек
     await dialog.getByRole('button', { name: 'Создать ссылку' }).click()
     await expect(dialog.getByRole('textbox', { name: 'Ссылка' })).toBeVisible()
     await expect(coach(page, 'Поделитесь схемой')).toContainText('Ссылка создана')
-    await coach(page, 'Поделитесь схемой').getByRole('button', { name: 'Дальше' }).click()
+    await coach(page, 'Поделитесь схемой').getByRole('button', { name: 'Далее' }).click()
   })
 
   await test.step('шаг 11: финал, сервер знает о прохождении', async () => {
@@ -278,29 +288,26 @@ test('приветствие и весь тур от создания проек
   await context.close()
 })
 
-for (const way of ['кнопка'] as const) {
-  test(`«Я уже знаком» (${way}): нет оверлеев, после перезагрузки приветствия нет`, async ({
-    browser,
-    baseURL,
-  }) => {
-    const { page, request, context } = await newPlayer(browser, baseURL)
-    await page.goto('/projects')
-    const welcome = page.getByRole('dialog', { name: 'Добро пожаловать в Архитектор' })
-    await expect(welcome).toBeVisible()
-    if (way === 'кнопка') await welcome.getByRole('button', { name: 'Я уже знаком' }).click()
-    else await page.keyboard.press('Escape')
-    await expect(welcome).toBeHidden()
-    await expect(page.getByText('Обучение всегда можно пройти в меню аккаунта')).toBeVisible()
-    await expect.poll(async () => (await tourState(request)).tour.status).toBe('dismissed')
-    await expect(page.locator('[data-tour-layer]')).toHaveCount(0)
+test('«Я уже знаком»: нет оверлеев, после перезагрузки приветствия нет', async ({
+  browser,
+  baseURL,
+}) => {
+  const { page, request, context } = await newPlayer(browser, baseURL)
+  await page.goto('/projects')
+  const welcome = page.getByRole('dialog', { name: 'Добро пожаловать в Архитектор' })
+  await expect(welcome).toBeVisible()
+  await welcome.getByRole('button', { name: 'Я уже знаком' }).click()
+  await expect(welcome).toBeHidden()
+  await expect(page.getByText('Обучение всегда можно пройти в меню аккаунта')).toBeVisible()
+  await expect.poll(async () => (await tourState(request)).tour.status).toBe('dismissed')
+  await expect(page.locator('[data-tour-layer]')).toHaveCount(0)
 
-    await page.reload()
-    await expect(page.getByRole('heading', { name: 'Проекты' })).toBeVisible()
-    await page.waitForTimeout(1200)
-    await expect(page.getByRole('dialog')).toHaveCount(0)
-    await context.close()
-  })
-}
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Проекты' })).toBeVisible()
+  await page.waitForTimeout(1200)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await context.close()
+})
 
 test('перезагрузка на шаге 7 продолжает тур с шага 7', async ({ browser, baseURL }) => {
   test.setTimeout(120_000)
@@ -387,11 +394,19 @@ test('fail-early: «Повторить» запускает прогон сно�
   await expect(coach(page, 'Постройте схему')).toBeVisible()
   await page.getByRole('banner').getByRole('button', { name: 'Построить схему' }).click()
 
+  const runStarts: string[] = []
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith(`/projects/${projectId}/runs`)) {
+      runStarts.push(request.url())
+    }
+  })
   const failed = coach(page, 'Прогон не удался')
   await expect(failed).toBeVisible({ timeout: 60_000 })
+  expect(runStarts).toHaveLength(1)
   await expect(failed).toContainText('Модель не ответила. Попробуем ещё раз?')
   await failed.getByRole('button', { name: 'Повторить' }).click()
-  // Новый прогон: шаг 6 заново, затем та же ошибка.
+  // «Повторить» запустил второй прогон (а не просто перерисовал текст): шаг 6 заново, затем та же ошибка.
+  await expect.poll(() => runStarts.length).toBe(2)
   await expect(coach(page, 'Модель работает')).toBeVisible()
   await expect(coach(page, 'Прогон не удался')).toBeVisible({ timeout: 60_000 })
   await coach(page, 'Прогон не удался').getByRole('button', { name: 'Пропустить главу' }).click()

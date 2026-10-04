@@ -93,7 +93,10 @@ function WelcomeGate({ state, tourRunning }: { state: OnboardingState; tourRunni
       { status: 'dismissed' },
       {
         onSuccess: () => toast(WELCOME.skipToast),
-        onError: () => setChoice(null),
+        onError: (error) => {
+          setChoice(null)
+          toast.error('Не удалось сохранить выбор', { description: errorMessage(error) })
+        },
       },
     )
   }

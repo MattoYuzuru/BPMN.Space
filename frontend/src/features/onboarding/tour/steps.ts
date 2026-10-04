@@ -45,9 +45,12 @@ function inQuestion(id: string, ...names: string[]) {
   }
 }
 
-/** Идёт ли прогон, итог которого ещё неизвестен. */
+/** Прогон завершён, открытых вопросов нет. */
 const finishedWithoutQuestions = (ctx: TourContext) =>
   ctx.result !== null && ctx.result.openQuestions === 0
+
+/** Вопрос шага 8: открытый, не тот, что подсвечивали в шаге 7. */
+const ignoreTarget = (ctx: TourContext) => ctx.openQuestionIds.find((id) => id !== ctx.pickedId)
 
 /** Прогон упал, и вопросов нет: продолжать тур нечем. */
 const failedEmpty = (ctx: TourContext) =>
@@ -103,6 +106,7 @@ const baseSteps: TourStep<TourContext>[] = [
     route: workspace,
     anchor: TOUR_ANCHORS.sourcesAdd,
     side: 'right',
+    align: 'start',
     pages: [{ text: COPY.sample.intro }, { text: COPY.sample.pick }],
     prepare: (ctx) => {
       ctx.ui.expandPanel('sources')
@@ -134,6 +138,7 @@ const baseSteps: TourStep<TourContext>[] = [
     anchor: (ctx) =>
       ctx.present.textContent ? TOUR_ANCHORS.sourceTextContent : TOUR_ANCHORS.sourcesAdd,
     side: 'right',
+    align: 'start',
     pages: [{ text: COPY.text.suggested }],
     view: ({ ctx }) => ({
       pages: [
@@ -162,6 +167,7 @@ const baseSteps: TourStep<TourContext>[] = [
     anchor: (ctx) =>
       ctx.present.voiceCapture ? TOUR_ANCHORS.voiceCapture : TOUR_ANCHORS.sourcesAdd,
     side: 'right',
+    align: 'start',
     pages: [{ text: COPY.voice.open }],
     prepare: (ctx) => {
       ctx.ui.expandPanel('sources')
@@ -185,6 +191,8 @@ const baseSteps: TourStep<TourContext>[] = [
     anchor: TOUR_ANCHORS.runBuild,
     side: 'bottom',
     pages: [{ text: COPY.build.text }],
+    // «Пропустить шаг» тут вёл бы в ожидание несуществующего прогона: пропускаем главу целиком.
+    actions: [skipChapter],
     // Диалоги источников закрываем: за ними кнопки шапки не достать.
     prepare: (ctx) => {
       ctx.ui.closeDialogs()
@@ -199,6 +207,7 @@ const baseSteps: TourStep<TourContext>[] = [
           pages: [{ text: COPY.build.noSources }],
           anchor: TOUR_ANCHORS.sourcesAdd,
           side: 'right',
+          align: 'start',
         }
       }
       return undefined
@@ -248,7 +257,12 @@ const baseSteps: TourStep<TourContext>[] = [
           ],
         }
       }
-      const text = elapsedMs >= RUN_SLOW_MS ? COPY.run.slow : runStageText(ctx, elapsedMs)
+      const queuedText = ctx.queued && elapsedMs >= QUEUED_NOTICE_MS
+      const text = queuedText
+        ? COPY.run.queued
+        : elapsedMs >= RUN_SLOW_MS
+          ? COPY.run.slow
+          : runStageText(ctx, elapsedMs)
       return {
         tone: 'waiting',
         pages: [{ text }],
@@ -265,11 +279,17 @@ const baseSteps: TourStep<TourContext>[] = [
     title: COPY.answer.title,
     kind: 'action',
     route: workspace,
-    anchor: (ctx) =>
-      ctx.pickedId
-        ? inQuestion(ctx.pickedId, TOUR_ANCHORS.answerSubmit, TOUR_ANCHORS.questionAnswer)
-        : undefined,
+    anchor: (ctx) => {
+      const id = ctx.pickedId ?? ctx.openQuestionIds[0]
+      return id ? inQuestion(id, TOUR_ANCHORS.answerSubmit, TOUR_ANCHORS.questionAnswer) : undefined
+    },
+    // Карточка стоит у всей карточки вопроса, а подсвечена кнопка внутри неё.
+    cardAnchor: (ctx) => {
+      const id = ctx.pickedId ?? ctx.openQuestionIds[0]
+      return id ? { selector: `[data-question-id="${id}"]` } : undefined
+    },
     side: 'left',
+    align: 'start',
     pages: [{ text: COPY.answer.text }],
     prepare: (ctx) => {
       ctx.ui.expandPanel('questions')
@@ -286,10 +306,15 @@ const baseSteps: TourStep<TourContext>[] = [
     kind: 'action',
     route: workspace,
     anchor: (ctx) => {
-      const id = ctx.openQuestionIds.find((item) => item !== ctx.pickedId)
+      const id = ignoreTarget(ctx)
       return id ? inQuestion(id, TOUR_ANCHORS.questionIgnore) : undefined
     },
+    cardAnchor: (ctx) => {
+      const id = ignoreTarget(ctx)
+      return id ? { selector: `[data-question-id="${id}"]` } : undefined
+    },
     side: 'left',
+    align: 'start',
     pages: [{ text: COPY.ignore.text }],
     prepare: (ctx) => {
       ctx.ui.expandPanel('questions')
@@ -340,7 +365,7 @@ const baseSteps: TourStep<TourContext>[] = [
                 variant: 'primary',
                 // Ссылку уже скопировали или не хотят: закрываем окно, чтобы финал не лёг на него.
                 run: (api) => {
-                  ctx.ui.closeTopDialog()
+                  ctx.ui.closeShareDialog()
                   api.next()
                 },
               },
@@ -399,7 +424,10 @@ function withDeletedGuard(step: TourStep<TourContext>): TourStep<TourContext> {
                 label: COPY.deleted.restart,
                 variant: 'primary',
                 run: (api) => {
-                  void view.ctx.ops.restart().then(() => api.goto('project.create'))
+                  view.ctx.ops
+                    .restart()
+                    .then(() => api.goto('project.create'))
+                    .catch(() => undefined)
                 },
               },
               {

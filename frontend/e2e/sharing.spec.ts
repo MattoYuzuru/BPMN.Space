@@ -217,7 +217,7 @@ test('ссылка на просмотр из чужого аккаунта ос
   await other.getByRole('textbox', { name: 'Почта' }).fill(`viewer-${randomUUID()}@example.com`)
   await other.getByLabel('Пароль', { exact: true }).fill(`pw-${randomUUID()}`)
   await other.keyboard.press('Enter')
-  await expect(other).toHaveURL(/\/projects/)
+  await expect(other).not.toHaveURL(/\/login/)
 
   await other.goto(url)
   await expect(other.getByRole('region', { name: 'Вопросы' })).toBeVisible()

@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import type { AuthMode } from '@/entities/session'
 import { SignInForm } from '@/features/sign-in/sign-in-form'
 import { ThemeSwitch } from '@/features/theme-switch/theme-switch'
@@ -11,8 +10,15 @@ const TITLES: Record<AuthMode, string> = {
 }
 
 /** Экран входа: узкая карточка на сетке-подложке, как у пустых и ошибочных экранов. */
-export function LoginScreen({ redirectTo }: { redirectTo: string }) {
-  const [mode, setMode] = useState<AuthMode>('login')
+export function LoginScreen({
+  mode,
+  onModeChange,
+  redirectTo,
+}: {
+  mode: AuthMode
+  onModeChange: (mode: AuthMode) => void
+  redirectTo: string
+}) {
   useDocumentTitle(TITLES[mode])
   return (
     <div className="flex min-h-dvh flex-col bg-bg">
@@ -27,7 +33,7 @@ export function LoginScreen({ redirectTo }: { redirectTo: string }) {
             <h1 className="type-title text-fg">Архитектор</h1>
           </div>
           <Card variant="elevated" padding="lg" className="w-full">
-            <SignInForm mode={mode} onModeChange={setMode} redirectTo={redirectTo} />
+            <SignInForm mode={mode} onModeChange={onModeChange} redirectTo={redirectTo} />
           </Card>
         </div>
       </main>

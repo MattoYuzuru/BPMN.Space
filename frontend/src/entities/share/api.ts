@@ -214,6 +214,6 @@ export function useAcceptInvite(token: string) {
     // Проект теперь в списке «Общие».
     onSuccess: () => client.invalidateQueries({ queryKey: projectKeys.lists() }),
     onError: (error) =>
-      toast.error('Не удалось принять приглашение', { description: errorMessage(error) }),
+      toast.error('Не удалось сохранить доступ к проекту', { description: errorMessage(error) }),
   })
 }

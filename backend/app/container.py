@@ -21,7 +21,7 @@ from app.infra.tasks import AsyncioTaskSpawner
 from app.ingest.deepgram import DeepgramSpeechToText
 from app.ingest.parsers import LocalDocumentParser
 from app.ingest.stt import MockSpeechToText
-from app.llm.deepseek import DeepSeekPipeline
+from app.llm.deepseek import OpenAICompatiblePipeline
 from app.llm.mock import MockPipeline
 from app.services.access import AccessService
 from app.services.assistant import AssistantModel, AssistantService
@@ -35,6 +35,16 @@ from app.services.samples import SampleService
 from app.services.sharing import SharingService
 from app.services.sources import SourceService
 from app.services.versions import VersionService
+
+
+def _mock_pace(settings: Settings):
+    async def pace(stage: RunStage) -> None:
+        # TODO(real): #5 убрать задержки, когда mock перестанет быть основным демо-режимом.
+        delay = settings.mock_delay(settings.mock_stage_delays.get(stage.value, 0.0))
+        if delay:
+            await asyncio.sleep(delay)
+
+    return pace
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,18 +100,26 @@ def build_container(
     match settings.llm_provider.lower():
         case "mock":
             pipeline = MockPipeline(playbook=PLAYBOOK, read_bpmn=read_bpmn)
-        case "deepseek":
-            if not settings.deepseek_api_key:
-                raise ValueError("LLM_PROVIDER=deepseek требует DEEPSEEK_API_KEY в .env")
-            pipeline = DeepSeekPipeline(
-                api_key=settings.deepseek_api_key,
-                base_url=settings.deepseek_base_url,
-                model=settings.deepseek_model,
-                timeout_sec=settings.deepseek_timeout_sec,
-                thinking_enabled=settings.deepseek_thinking_enabled,
-                max_retries=settings.deepseek_max_retries,
-                retry_base_sec=settings.deepseek_retry_base_sec,
-                retry_max_sec=settings.deepseek_retry_max_sec,
+        case "openai_compatible" | "deepseek":
+            api_key, base_url, model = settings.llm_connection()
+            retries = settings.llm_max_retries
+            retry_base = settings.llm_retry_base_sec
+            retry_max = settings.llm_retry_max_sec
+            timeout = settings.llm_timeout_sec
+            if settings.llm_provider.lower() == "deepseek":
+                retries = settings.deepseek_max_retries
+                retry_base = settings.deepseek_retry_base_sec
+                retry_max = settings.deepseek_retry_max_sec
+                timeout = settings.deepseek_timeout_sec
+            pipeline = OpenAICompatiblePipeline(
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                timeout_sec=timeout,
+                json_mode=settings.llm_json_mode,
+                max_retries=retries,
+                retry_base_sec=retry_base,
+                retry_max_sec=retry_max,
             )
             assistant_model = pipeline
         case provider:
@@ -118,13 +136,6 @@ def build_container(
             stt = DeepgramSpeechToText(settings.deepgram_api_key)
         case provider:
             raise ValueError(f"Неизвестный STT_PROVIDER: {provider}")
-
-    async def mock_pace(stage: RunStage) -> None:
-        # TODO(real): #5 задержки имитируют работу модели и действуют при любом LLM_PROVIDER,
-        # в том числе с DeepSeek; убрать, когда mock перестанет быть основным демо-режимом.
-        delay = settings.mock_delay(settings.mock_stage_delays.get(stage.value, 0.0))
-        if delay:
-            await asyncio.sleep(delay)
 
     onboarding = OnboardingService(
         repos,
@@ -163,7 +174,7 @@ def build_container(
             spawner=spawner,
             runtime=runtime,
             max_concurrent=settings.max_concurrent_runs,
-            pace=mock_pace,
+            pace=_mock_pace(settings),
             context_budget_chars=settings.llm_context_budget_chars,
             deadline_sec=settings.run_deadline_sec,
             progress=onboarding,

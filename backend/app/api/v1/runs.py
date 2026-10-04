@@ -50,7 +50,12 @@ async def start_run(
     Если по проекту уже идёт прогон или нет источников — 409."""
     await ensure_project_access(request, container, project_id, user, write=True)
     return Run.of(
-        await container.runs.start(project_id, mode=body.mode, created_by=user.id if user else None)
+        await container.runs.start(
+            project_id,
+            mode=body.mode,
+            created_by=user.id if user else None,
+            actor_email=user.email if user else None,
+        )
     )
 
 

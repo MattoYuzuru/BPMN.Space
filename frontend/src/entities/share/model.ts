@@ -22,36 +22,31 @@ export interface ExpiryOption {
 }
 
 /**
- * Сроки по ролям. Пределы совпадают с серверными: приглашение редактора живёт до 30 дней,
- * ссылка на просмотр — до 365. Бессрочных ссылок нет.
+ * Одинаковые сроки для просмотра и редактирования: 7 дней, 30 дней, год или бессрочно.
  */
-const EXPIRY: Record<ShareRole, { days: number; label: string }[]> = {
-  viewer: [
-    { days: 7, label: '7 дней' },
-    { days: 30, label: '30 дней' },
-    { days: 90, label: '3 месяца' },
-    { days: 365, label: 'Год' },
-  ],
-  editor: [
-    { days: 1, label: '1 день' },
-    { days: 7, label: '7 дней' },
-    { days: 30, label: '30 дней' },
-  ],
-}
+const EXPIRY = [
+  { days: 7, label: '7 дней' },
+  { days: 30, label: '30 дней' },
+  { days: 365, label: 'Год' },
+  { days: 0, label: 'Бессрочно' },
+]
 
-const DEFAULT_EXPIRY: Record<ShareRole, number> = { viewer: 30, editor: 7 }
+const DEFAULT_EXPIRY = 30
 
 export function expiryOptions(role: ShareRole): ExpiryOption[] {
-  return EXPIRY[role].map(({ days, label }) => ({ value: String(days), label }))
+  void role
+  return EXPIRY.map(({ days, label }) => ({ value: String(days), label }))
 }
 
 export function defaultExpiryDays(role: ShareRole): number {
-  return DEFAULT_EXPIRY[role]
+  void role
+  return DEFAULT_EXPIRY
 }
 
 /** При смене роли срок сохраняется, если он допустим для новой роли; иначе — срок по умолчанию. */
 export function expiryForRole(role: ShareRole, days: number): number {
-  return EXPIRY[role].some((option) => option.days === days) ? days : DEFAULT_EXPIRY[role]
+  void role
+  return EXPIRY.some((option) => option.days === days) ? days : DEFAULT_EXPIRY
 }
 
 /** Полный адрес ссылки: путь с секретом приходит от сервера один раз. */

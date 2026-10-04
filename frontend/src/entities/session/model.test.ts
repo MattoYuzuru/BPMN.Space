@@ -80,7 +80,7 @@ describe('authFormError', () => {
     const error = new ApiError(400, 'x', { code: 'REGISTER_INVALID_PASSWORD' })
     const result = authFormError(error, 'register')
     expect(result.field).toBe('password')
-    expect(result.message).toContain('12')
+    expect(result.message).toContain('8')
   })
 
   it('422 по полю email и password', () => {
@@ -124,12 +124,12 @@ describe('validateAuthForm', () => {
   it('регистрация: короткий пароль и кривая почта', () => {
     const errors = validateAuthForm('register', { email: 'not-an-email', password: 'short' })
     expect(errors.email).toBe('Проверьте адрес почты')
-    expect(errors.password).toContain('12')
+    expect(errors.password).toContain('8')
   })
 
   it('регистрация: корректные данные', () => {
     expect(
-      validateAuthForm('register', { email: 'anna@company.ru', password: '123456789012' }),
+      validateAuthForm('register', { email: 'anna@company.ru', password: '12345678' }),
     ).toEqual({})
   })
 })

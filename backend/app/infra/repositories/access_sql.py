@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import case, delete, select
 from sqlalchemy.dialects.postgresql import insert
 
 from app.domain.access import ProjectMember, ProjectRole, ResourceKind, ShareLink
@@ -54,8 +54,8 @@ class SqlAccessRepository:
             if project.owner_id == user_id:
                 return ProjectRole.OWNER
             membership = await session.get(ProjectMemberRow, (project_id, user_id))
-            if membership is not None and membership.role == ProjectRole.EDITOR:
-                return ProjectRole.EDITOR
+            if membership is not None:
+                return ProjectRole(membership.role)
             return ProjectRole.VIEWER if project.public_read_only else None
 
     async def project_roles(
@@ -71,23 +71,23 @@ class SqlAccessRepository:
                     )
                 )
             ).all()
-            editable: set[UUID] = set()
+            memberships: dict[UUID, ProjectRole] = {}
             if user_id is not None:
-                editable = set(
-                    await session.scalars(
-                        select(ProjectMemberRow.project_id).where(
+                rows = (
+                    await session.execute(
+                        select(ProjectMemberRow.project_id, ProjectMemberRow.role).where(
                             ProjectMemberRow.project_id.in_(project_ids),
                             ProjectMemberRow.user_id == user_id,
-                            ProjectMemberRow.role == ProjectRole.EDITOR,
                         )
                     )
-                )
+                ).all()
+                memberships = {project_id: ProjectRole(role) for project_id, role in rows}
         roles: dict[UUID, ProjectRole] = {}
         for project_id, owner_id, public in projects:
             if user_id is not None and owner_id == user_id:
                 roles[project_id] = ProjectRole.OWNER
-            elif project_id in editable:
-                roles[project_id] = ProjectRole.EDITOR
+            elif project_id in memberships:
+                roles[project_id] = memberships[project_id]
             elif public:
                 roles[project_id] = ProjectRole.VIEWER
         return roles
@@ -174,18 +174,28 @@ class SqlAccessRepository:
             )
             return result.scalar_one_or_none() is not None
 
-    async def add_editor(self, project_id: UUID, user_id: UUID, added_at: datetime) -> None:
+    async def add_member(
+        self, project_id: UUID, user_id: UUID, role: ProjectRole, added_at: datetime
+    ) -> None:
         async with self.sessions.begin() as session:
             await session.execute(
                 insert(ProjectMemberRow)
                 .values(
                     project_id=project_id,
                     user_id=user_id,
-                    role=ProjectRole.EDITOR.value,
+                    role=role.value,
                     added_at=added_at,
                 )
                 .on_conflict_do_update(
                     index_elements=[ProjectMemberRow.project_id, ProjectMemberRow.user_id],
-                    set_={"role": ProjectRole.EDITOR.value},
+                    set_={
+                        "role": case(
+                            (
+                                ProjectMemberRow.role == ProjectRole.EDITOR.value,
+                                ProjectRole.EDITOR.value,
+                            ),
+                            else_=role.value,
+                        )
+                    },
                 )
             )

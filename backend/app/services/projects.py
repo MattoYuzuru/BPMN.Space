@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
+from app.domain.access import ProjectScope
 from app.domain.models import (
     Project,
     ProjectStatus,
@@ -152,6 +153,7 @@ class ProjectService:
         query: str | None,
         owner_id: UUID | None = None,
         scope_to_user: bool = False,
+        scope: ProjectScope = ProjectScope.ALL,
     ) -> ProjectPage:
         """Курсорная страница. TODO(real): #6 счётчики — одним агрегирующим SQL-запросом."""
         limit = min(max(limit, 1), MAX_PAGE)
@@ -166,6 +168,7 @@ class ProjectService:
             limit=limit + 1,
             owner_id=owner_id,
             scope_to_user=scope_to_user,
+            scope=scope,
         )
         has_more = len(projects) > limit
         projects = projects[:limit]
@@ -174,7 +177,7 @@ class ProjectService:
             items=[await self._view(p) for p in projects],
             next_cursor=Cursor(last.updated_at, last.id).encode() if has_more and last else None,
             total=await self._repos.projects.count(
-                query=query, owner_id=owner_id, scope_to_user=scope_to_user
+                query=query, owner_id=owner_id, scope_to_user=scope_to_user, scope=scope
             ),
         )
 

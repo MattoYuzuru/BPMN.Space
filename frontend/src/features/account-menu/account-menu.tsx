@@ -14,22 +14,32 @@ import {
 } from '@/shared/ui'
 
 /** Меню аккаунта в шапке. Без аккаунтов (стенд без входа) и для гостя его нет. */
-export function AccountMenu() {
+export function AccountMenu({ afterLogout }: { afterLogout?: () => void }) {
   const session = useSession()
   const user = session.data?.auth_enabled ? session.data.user : null
   if (!user) return null
-  return <AccountMenuFor user={user} />
+  return <AccountMenuFor user={user} afterLogout={afterLogout} />
 }
 
 /** Меню конкретного пользователя: почта и выход; для витрины стайлгайда принимает пользователя напрямую. */
-export function AccountMenuFor({ user, onLogout }: { user: SessionUser; onLogout?: () => void }) {
+export function AccountMenuFor({
+  user,
+  onLogout,
+  afterLogout,
+}: {
+  user: SessionUser
+  onLogout?: () => void
+  /** Что делать после выхода вместо перехода на экран входа (публичные страницы остаются на месте). */
+  afterLogout?: () => void
+}) {
   const logout = useLogout()
   const navigate = useNavigate()
 
   const signOut = () => {
     if (onLogout) return onLogout()
     logout.mutate(undefined, {
-      onSuccess: () => void navigate({ to: '/login', replace: true }),
+      onSuccess: () =>
+        afterLogout ? afterLogout() : void navigate({ to: '/login', replace: true }),
       onError: () => toast.error('Не удалось выйти', { description: 'Повторите попытку.' }),
     })
   }

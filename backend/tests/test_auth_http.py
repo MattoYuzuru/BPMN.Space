@@ -376,6 +376,56 @@ async def test_projects_created_without_public_flag_stay_private(stack: Stack) -
     assert DEMO in ids
 
 
+async def test_projects_scope_filters_list_and_total(stack: Stack) -> None:
+    """`scope`: all — всё доступное, own — свои, shared — где я редактор, examples — демо."""
+    owner = await stack.user("scope-owner@example.com")
+    editor = await stack.user("scope-editor@example.com")
+    own_id = (await owner.post("/projects", json={"title": "Мой процесс"})).json()["id"]
+    invited_id = (await owner.post("/projects", json={"title": "Общий процесс"})).json()["id"]
+    link = await owner.post(f"/projects/{invited_id}/share-links", json={"role": "editor"})
+    token = link.json()["url_path"].removeprefix("/share/")
+    assert (await editor.post(f"/shares/{token}/accept")).status_code == 200
+    mine_editor = (await editor.post("/projects", json={"title": "Свой у редактора"})).json()["id"]
+
+    async def listing(account: Account, **params: str) -> tuple[set[str], int]:
+        page = (await account.get("/projects", params=params)).json()
+        return {item["id"] for item in page["items"]}, page["total"]
+
+    ids, total = await listing(owner)
+    assert (ids, total) == ({own_id, invited_id, DEMO}, 3)
+    assert await listing(owner, scope="all") == (ids, 3)
+    assert await listing(owner, scope="own") == ({own_id, invited_id}, 2)
+    assert await listing(owner, scope="shared") == (set(), 0)
+    assert await listing(owner, scope="examples") == ({DEMO}, 1)
+
+    assert await listing(editor, scope="own") == ({mine_editor}, 1)
+    assert await listing(editor, scope="shared") == ({invited_id}, 1)
+    assert await listing(editor, scope="examples") == ({DEMO}, 1)
+    assert await listing(editor) == ({mine_editor, invited_id, DEMO}, 3)
+
+    # Поиск и страницы работают поверх области.
+    assert await listing(editor, scope="shared", q="общий") == ({invited_id}, 1)
+    assert await listing(editor, scope="shared", q="мой") == (set(), 0)
+    first = (await owner.get("/projects", params={"scope": "own", "limit": 1})).json()
+    assert len(first["items"]) == 1
+    assert first["total"] == 2
+    assert first["next_cursor"]
+    second = (
+        await owner.get(
+            "/projects", params={"scope": "own", "limit": 1, "cursor": first["next_cursor"]}
+        )
+    ).json()
+    assert second["items"][0]["id"] != first["items"][0]["id"]
+
+    # Участник, которого убрали, больше не видит проект в «Общих».
+    assert (
+        await owner.delete(f"/projects/{invited_id}/members/{editor.user_id}")
+    ).status_code == 204
+    assert await listing(editor, scope="shared") == (set(), 0)
+    bad = await owner.get("/projects", params={"scope": "everything"})
+    assert bad.status_code == 422
+
+
 # ---------- роли ----------
 
 

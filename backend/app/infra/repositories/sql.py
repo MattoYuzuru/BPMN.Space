@@ -11,6 +11,7 @@ from sqlalchemy import CursorResult, and_, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.domain.access import ProjectScope
 from app.domain.models import (
     Answer,
     AssumptionMark,
@@ -244,16 +245,29 @@ class SqlProjectRepository:
         return [title.contains(normalized)]
 
     @staticmethod
-    def _visible_to(user_id: UUID | None) -> Any:
-        """Демо-проекты видны всем, свои и «совместные» — только их участникам."""
-        visible = ProjectRow.public_read_only.is_(True)
-        if user_id is None:
-            return visible
-        membership = select(ProjectMemberRow.project_id).where(
-            ProjectMemberRow.project_id == ProjectRow.id,
-            ProjectMemberRow.user_id == user_id,
+    def _visible_to(user_id: UUID | None, scope: ProjectScope = ProjectScope.ALL) -> Any:
+        """Что видит пользователь: демо — все, свои и «совместные» — только участники.
+
+        `scope` сужает выдачу: свои проекты, проекты, где пользователь редактор, или демо.
+        """
+        public = ProjectRow.public_read_only.is_(True)
+        if scope is ProjectScope.EXAMPLES or user_id is None:
+            return public
+        membership = (
+            select(ProjectMemberRow.project_id)
+            .where(
+                ProjectMemberRow.project_id == ProjectRow.id,
+                ProjectMemberRow.user_id == user_id,
+            )
+            .exists()
         )
-        return or_(visible, ProjectRow.owner_id == user_id, membership.exists())
+        match scope:
+            case ProjectScope.OWN:
+                return ProjectRow.owner_id == user_id
+            case ProjectScope.SHARED:
+                return and_(membership, ProjectRow.owner_id.is_distinct_from(user_id))
+            case _:
+                return or_(public, ProjectRow.owner_id == user_id, membership)
 
     async def list_page(
         self,
@@ -263,11 +277,12 @@ class SqlProjectRepository:
         limit: int,
         owner_id: UUID | None = None,
         scope_to_user: bool = False,
+        scope: ProjectScope = ProjectScope.ALL,
     ) -> list[Project]:
         async with self.sessions() as session:
             statement = select(ProjectRow).where(*self._filters(query))
             if scope_to_user:
-                statement = statement.where(self._visible_to(owner_id))
+                statement = statement.where(self._visible_to(owner_id, scope))
             if after:
                 statement = statement.where(
                     or_(
@@ -285,12 +300,17 @@ class SqlProjectRepository:
             return [_project(row) for row in rows]
 
     async def count(
-        self, *, query: str | None, owner_id: UUID | None = None, scope_to_user: bool = False
+        self,
+        *,
+        query: str | None,
+        owner_id: UUID | None = None,
+        scope_to_user: bool = False,
+        scope: ProjectScope = ProjectScope.ALL,
     ) -> int:
         async with self.sessions() as session:
             statement = select(func.count()).select_from(ProjectRow).where(*self._filters(query))
             if scope_to_user:
-                statement = statement.where(self._visible_to(owner_id))
+                statement = statement.where(self._visible_to(owner_id, scope))
             return int(await session.scalar(statement) or 0)
 
 

@@ -1,5 +1,7 @@
 """Cookie `Secure`, заголовки скачивания XML и проверка пользовательского XML."""
 
+import logging
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -7,6 +9,7 @@ from app.config import Settings
 from app.container import build_container
 from app.domain.bpmn.document import BpmnFormatError, ensure_safe_xml
 from app.fixtures import read_bpmn
+from app.log_filters import ShareTokenFilter, mask_share_token
 from app.main import create_app
 from app.services.auth import build_fastapi_users
 from tests.conftest import API, DEMO
@@ -133,3 +136,49 @@ def test_manual_save_returns_422_for_dangerous_xml(client: TestClient) -> None:
 
     assert response.status_code == 422
     assert "вне пространств имён BPMN 2.0" in response.json()["detail"]
+
+
+def test_share_responses_forbid_referrer_and_indexing() -> None:
+    config = Settings(database_url=None, seed_demo_data=False)
+    with TestClient(create_app(config, container=build_container(config))) as client:
+        shared = client.get(f"{API}/shares/some-token")
+        other = client.get("/health")
+    assert shared.headers["referrer-policy"] == "no-referrer"
+    assert shared.headers["x-robots-tag"] == "noindex"
+    assert "referrer-policy" not in other.headers
+    assert "x-robots-tag" not in other.headers
+
+
+def test_access_log_masks_share_token() -> None:
+    assert mask_share_token("/api/v1/shares/s3cr3t-Tok_en") == "/api/v1/shares/***"
+    assert (
+        mask_share_token("/api/v1/shares/s3cr3t/versions/1/xml?x=1")
+        == "/api/v1/shares/***/versions/1/xml?x=1"
+    )
+    assert mask_share_token("/api/v1/projects/p1/share-links") == "/api/v1/projects/p1/share-links"
+
+    # Запись такая же, как у uvicorn.access: аргументы (клиент, метод, путь, версия, статус).
+    record = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        1,
+        '%s - "%s %s HTTP/%s" %d',
+        ("127.0.0.1:1", "GET", "/api/v1/shares/s3cr3t/accept", "1.1", 200),
+        None,
+    )
+    assert ShareTokenFilter().filter(record) is True
+    assert "s3cr3t" not in record.getMessage()
+    assert "/api/v1/shares/***/accept" in record.getMessage()
+
+
+def test_app_installs_access_log_filter_once() -> None:
+    config = Settings(database_url=None, seed_demo_data=False)
+    create_app(config, container=build_container(config))
+    create_app(config, container=build_container(config))
+    filters = [
+        item
+        for item in logging.getLogger("uvicorn.access").filters
+        if isinstance(item, ShareTokenFilter)
+    ]
+    assert len(filters) == 1

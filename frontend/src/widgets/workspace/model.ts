@@ -1,6 +1,7 @@
 import { createContext, type RefObject, useContext } from 'react'
 import { create } from 'zustand'
 import type { ProjectCapabilities, ProjectDetail } from '@/entities/project'
+import type { VersionSource } from '@/entities/version'
 import type { DiagramEditorHandle } from '@/widgets/diagram-editor'
 
 /**
@@ -9,6 +10,8 @@ import type { DiagramEditorHandle } from '@/widgets/diagram-editor'
  */
 export interface WorkspaceApi extends ProjectCapabilities {
   project: ProjectDetail
+  /** Откуда берутся версии схемы и куда ведёт скачивание. */
+  versions: VersionSource
   editorRef: RefObject<DiagramEditorHandle | null>
   selectedQuestionId?: string
   /** Просматриваемая версия; undefined — последняя. */

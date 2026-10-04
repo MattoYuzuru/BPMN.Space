@@ -12,6 +12,15 @@ class ProjectRole(StrEnum):
     VIEWER = "viewer"
 
 
+class ProjectScope(StrEnum):
+    """Какие проекты показывать в списке: все доступные, свои, где я редактор, демо-примеры."""
+
+    ALL = "all"
+    OWN = "own"
+    SHARED = "shared"
+    EXAMPLES = "examples"
+
+
 class ResourceKind(StrEnum):
     """Объекты, доступ к которым определяется через проект-владелец."""
 

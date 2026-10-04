@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+from app.domain.access import ProjectScope
 from app.domain.models import (
     LlmCall,
     Project,
@@ -120,6 +121,22 @@ class InMemoryProjectRepository:
         needle = normalize(query or "")
         return [p for p in self._items.values() if needle in normalize(p.title)]
 
+    def _visible(
+        self, items: list[Project], owner_id: UUID | None, scope: ProjectScope
+    ) -> list[Project]:
+        """Видимость в памяти: демо и свои проекты; редакторов без аккаунтов (PostgreSQL) нет."""
+        public = self._store.public_projects
+        own = [p for p in items if owner_id and self._store.project_owners.get(p.id) == owner_id]
+        match scope:
+            case ProjectScope.OWN:
+                return own
+            case ProjectScope.SHARED:
+                return []
+            case ProjectScope.EXAMPLES:
+                return [p for p in items if p.id in public]
+            case _:
+                return [p for p in items if p.id in public or p in own]
+
     async def list_page(
         self,
         *,
@@ -128,30 +145,26 @@ class InMemoryProjectRepository:
         limit: int,
         owner_id: UUID | None = None,
         scope_to_user: bool = False,
+        scope: ProjectScope = ProjectScope.ALL,
     ) -> list[Project]:
         items = sorted(self._matching(query), key=_sort_key, reverse=True)
         if scope_to_user:
-            items = [
-                project
-                for project in items
-                if project.id in self._store.public_projects
-                or (owner_id is not None and self._store.project_owners.get(project.id) == owner_id)
-            ]
+            items = self._visible(items, owner_id, scope)
         if after is not None:
             items = [p for p in items if _sort_key(p) < after]
         return [copy.deepcopy(p) for p in items[:limit]]
 
     async def count(
-        self, *, query: str | None, owner_id: UUID | None = None, scope_to_user: bool = False
+        self,
+        *,
+        query: str | None,
+        owner_id: UUID | None = None,
+        scope_to_user: bool = False,
+        scope: ProjectScope = ProjectScope.ALL,
     ) -> int:
         items = self._matching(query)
         if scope_to_user:
-            items = [
-                project
-                for project in items
-                if project.id in self._store.public_projects
-                or (owner_id is not None and self._store.project_owners.get(project.id) == owner_id)
-            ]
+            items = self._visible(items, owner_id, scope)
         return len(items)
 
 

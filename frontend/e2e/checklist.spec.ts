@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import {
   type APIResponse,
   type Browser,
+  type BrowserContext,
   expect,
   type Page,
   request as playwrightRequest,
@@ -35,21 +36,22 @@ interface Newcomer {
  * запросов» ждём `Retry-After` и повторяем.
  */
 async function postThrottled(send: () => Promise<APIResponse>) {
-  for (let attempt = 0; attempt < 6; attempt += 1) {
+  const deadline = Date.now() + 70_000
+  for (;;) {
     const response = await send()
     if (response.ok()) return
     if (response.status() !== 429) throw new Error(`Запрос отклонён: ${response.status()}`)
-    const wait = Number(response.headers()['retry-after'] ?? 10)
-    await new Promise((resolve) => setTimeout(resolve, (wait + 1) * 1000))
+    const wait = (Number(response.headers()['retry-after'] ?? 10) + 1) * 1000
+    if (Date.now() + wait > deadline) throw new Error('Лимит запросов не снялся за 70 с')
+    await new Promise((resolve) => setTimeout(resolve, wait))
   }
-  throw new Error('Не удалось пройти ограничение запросов')
 }
 
 /** Новый пользователь: регистрация, вход, отказ от тура (чек-лист остаётся видимым). */
 async function newcomer(
   browser: Browser,
   baseURL: string | undefined,
-  viewport = { width: 1440, height: 900 },
+  { viewport = { width: 1440, height: 900 }, track = true } = {},
 ): Promise<Newcomer> {
   const api = await playwrightRequest.newContext({ baseURL })
   const { csrf_token: csrf } = await (await api.get('/api/v1/auth/csrf')).json()
@@ -73,8 +75,21 @@ async function newcomer(
     viewport,
     storageState: await api.storageState(),
   })
+  if (track) {
+    opened.push({ context, api })
+  }
   return { page: await context.newPage(), api }
 }
+
+/** Контексты сценариев, которые надо закрыть после теста (общий пользователь серии закрывается сам). */
+const opened: { context: BrowserContext; api: RequestContext }[] = []
+
+test.afterEach(async () => {
+  for (const { context, api } of opened.splice(0)) {
+    await context.close()
+    await api.dispose()
+  }
+})
 
 const pill = (page: Page) => page.getByRole('button', { name: /^Начало работы, выполнено/ })
 
@@ -225,7 +240,7 @@ test.describe('переход к пункту и уведомления', () => 
   let user: Newcomer
 
   test.beforeAll(async ({ browser, baseURL }) => {
-    user = await newcomer(browser, baseURL)
+    user = await newcomer(browser, baseURL, { track: false })
   })
 
   test.afterAll(async () => {

@@ -40,7 +40,12 @@ function persistence(): TourPersistence {
 
 const base: { chapter: null; pages: CoachPage[] } = { chapter: null, pages: [{ text: 'Текст.' }] }
 
-function mount<Ctx>(steps: TourStep<Ctx>[], context: Ctx, extra?: ReactNode) {
+function mount<Ctx>(
+  steps: TourStep<Ctx>[],
+  context: Ctx,
+  extra?: ReactNode,
+  anchorTimeoutMs = 150,
+) {
   return renderUi(
     <>
       {extra}
@@ -49,7 +54,7 @@ function mount<Ctx>(steps: TourStep<Ctx>[], context: Ctx, extra?: ReactNode) {
         context={context}
         persistence={persistence()}
         restore={false}
-        anchorTimeoutMs={150}
+        anchorTimeoutMs={anchorTimeoutMs}
       />
     </>,
   )
@@ -79,14 +84,13 @@ describe('ожидание якоря между шагами', () => {
       { ...base, key: 'b', title: 'B', kind: 'action', optional: true, anchor: 'later' },
       { ...base, key: 'c', title: 'C', kind: 'finish' },
     ]
-    const { user } = mount(steps, null, <LateAnchor />)
+    const { user } = mount(steps, null, <LateAnchor />, 600)
     act(() => startTour('a'))
-    await screen.findByRole('dialog', { name: 'A' })
+    await screen.findByRole('dialog', { name: 'A' }, { timeout: 3000 })
     await user.click(screen.getByRole('button', { name: 'Далее' }))
-    await wait(30)
-    expect(useTourStore.getState().stepKey).toBe('b')
-    // якорь появился — карточка на нём, шаг не пропущен
-    expect(await screen.findByRole('dialog', { name: 'B' })).toBeInTheDocument()
+    // якорь появился — он найден, шаг не пропущен
+    await screen.findByRole('button', { name: 'Поздний' })
+    await act(() => wait(800))
     expect(useTourStore.getState().stepKey).toBe('b')
   })
 

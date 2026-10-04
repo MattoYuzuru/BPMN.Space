@@ -38,7 +38,7 @@ function mount() {
       </TooltipProvider>
     </QueryClientProvider>,
   )
-  return calls
+  return { calls, client }
 }
 
 const events = (calls: ReturnType<typeof stubApi>) =>
@@ -54,7 +54,7 @@ describe('скачивание схемы и чек-лист', () => {
   })
 
   it('первое скачивание сообщает diagram_exported, повторное — запроса не шлёт', async () => {
-    const calls = mount()
+    const { calls, client } = mount()
     const user = userEvent.setup()
     const download = async () => {
       await user.click(screen.getByRole('button', { name: 'Скачать схему' }))
@@ -66,7 +66,7 @@ describe('скачивание схемы и чек-лист', () => {
 
     await download()
     // отметка уже в кэше: даём время на лишний запрос, которого быть не должно
-    await new Promise((resolve) => setTimeout(resolve, 30))
+    await waitFor(() => expect(client.isMutating()).toBe(0))
     expect(events(calls)).toHaveLength(1)
   })
 })

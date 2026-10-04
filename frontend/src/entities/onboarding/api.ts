@@ -97,6 +97,8 @@ export function useReportOnboardingEvent() {
   const userId = useCurrentUser()?.id
   const key = useOnboardingKey()
   return useMutation({
+    // Сама отметка кладёт состояние в кэш и перечитывает его ниже: общий перехват не нужен.
+    meta: { skipOnboarding: true },
     mutationFn: async (item: ChecklistItemKey): Promise<'sent' | 'skipped'> => {
       if (!userId) return 'skipped'
       // Состояние могло ещё не загрузиться (событие раньше первого запроса): дожидаемся его,

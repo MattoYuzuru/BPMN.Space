@@ -183,4 +183,58 @@ describe('OnboardingWatcher', () => {
     )
     expect(spy).toHaveBeenCalledWith({ queryKey: onboardingKeys.all })
   })
+
+  it('другой пользователь: его первый ответ не объявляется', async () => {
+    const { client, update } = setup(state(['project_created']))
+    await act(async () => {
+      client.setQueryData(sessionKeys.all, {
+        auth_enabled: true,
+        user: { id: 'u2', email: 'b@example.com' },
+      })
+      client.setQueryData(
+        onboardingKeys.user('u2'),
+        state(['project_created', 'text_source_added']),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    })
+    expect(success).not.toHaveBeenCalled()
+    await act(async () => {
+      client.setQueryData(
+        onboardingKeys.user('u2'),
+        state(['project_created', 'text_source_added', 'voice_added']),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    })
+    expect(success).toHaveBeenCalledTimes(1)
+    void update
+  })
+
+  it('финал во время тура объявляется, когда тур закончился', async () => {
+    const { update } = setup(state(ALL.slice(0, 11), 'active'))
+    await update(state(ALL, 'active'))
+    expect(success).not.toHaveBeenCalled()
+    await update(state(ALL, 'completed'))
+    expect(success).toHaveBeenCalledTimes(1)
+    expect(success.mock.calls[0]?.[0]).toBe('Вы освоили Архитектор')
+  })
+
+  it('успешная мутация перечитывает состояние, помеченная skipOnboarding — нет', async () => {
+    const { client } = setup(state([]))
+    const spy = vi.spyOn(client, 'invalidateQueries')
+    await act(async () => {
+      await client
+        .getMutationCache()
+        .build(client, { mutationFn: async () => 'ok' })
+        .execute(undefined)
+    })
+    expect(spy).toHaveBeenCalledWith({ queryKey: onboardingKeys.all })
+    spy.mockClear()
+    await act(async () => {
+      await client
+        .getMutationCache()
+        .build(client, { mutationFn: async () => 'ok', meta: { skipOnboarding: true } })
+        .execute(undefined)
+    })
+    expect(spy).not.toHaveBeenCalled()
+  })
 })

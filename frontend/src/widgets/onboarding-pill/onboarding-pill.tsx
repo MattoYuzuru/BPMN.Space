@@ -1,8 +1,6 @@
 import { useMatch } from '@tanstack/react-router'
-import { AnimatePresence, m } from 'motion/react'
-import { useEffect, useState } from 'react'
-import { CHECKLIST_TOTAL, useChecklistView, useOnboardingUi } from '@/entities/onboarding'
-import { useTourStore } from '@/features/onboarding/tour/store'
+import { lazy, Suspense } from 'react'
+import { CHECKLIST_TOTAL, useChecklistView } from '@/entities/onboarding'
 import { cn } from '@/shared/lib/cn'
 import { Button, ProgressRing } from '@/shared/ui'
 
@@ -41,83 +39,23 @@ export function OnboardingPillView({
   )
 }
 
-/** Есть ли на экране открытое окно или панель (они закрывают плашку). */
-function useDialogOpen(): boolean {
-  const [open, setOpen] = useState(false)
-  useEffect(() => {
-    const check = () =>
-      setOpen(document.querySelector('[role="dialog"], [role="alertdialog"]') !== null)
-    check()
-    // Окна Radix выводятся порталом прямо в body: достаточно следить за его прямыми детьми.
-    const observer = new MutationObserver(check)
-    observer.observe(document.body, { childList: true })
-    return () => observer.disconnect()
-  }, [])
-  return open
-}
-
-/** Подождать после конца тура: `true`, когда плашке уже можно появляться. */
-function useSettledAfterTour(tourActive: boolean): boolean {
-  const [settled, setSettled] = useState(true)
-  const [wasActive, setWasActive] = useState(false)
-  useEffect(() => {
-    if (tourActive) {
-      setWasActive(true)
-      setSettled(false)
-      return
-    }
-    if (!wasActive) return
-    const timer = window.setTimeout(() => {
-      setSettled(true)
-      setWasActive(false)
-    }, PILL_DELAY_AFTER_TOUR_MS)
-    return () => window.clearTimeout(timer)
-  }, [tourActive, wasActive])
-  return settled
-}
+const LazyPill = lazy(() => import('./pill-on-projects'))
 
 /**
  * Плашка прогресса внизу слева. Только на экране проектов: в рабочем месте она закрыла бы зону
  * перетаскивания документов под панелью «Источники», а прогресс там виден в меню аккаунта.
  * Видна, пока онбординг включён, тур не идёт, чек-лист не скрыт и не завершён, нет окна и панели.
+ * Код плашки (с анимацией) грузится, только когда она может понадобиться.
  */
 export function OnboardingPill() {
   const onHome = useMatch({ from: '/_app/', shouldThrow: false })
   const onProjects = useMatch({ from: '/_app/projects/', shouldThrow: false })
-  if (!onHome && !onProjects) return null
-  return <PillOnProjects />
-}
-
-function PillOnProjects() {
   const view = useChecklistView()
-  const panelOpen = useOnboardingUi((state) => state.checklistOpen)
-  const openChecklist = useOnboardingUi((state) => state.openChecklist)
-  const tourRunning = useTourStore((state) => state.status === 'active')
-  const dialogOpen = useDialogOpen()
-  const settled = useSettledAfterTour(view.tourActive || tourRunning)
-  const visible =
-    view.enabled &&
-    !view.hidden &&
-    !view.complete &&
-    !view.tourActive &&
-    !tourRunning &&
-    settled &&
-    !panelOpen &&
-    !dialogOpen
+  if (!onHome && !onProjects) return null
+  if (!view.enabled || view.hidden || view.complete) return null
   return (
-    <AnimatePresence>
-      {visible && (
-        <m.div
-          key="onboarding-pill"
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 8 }}
-          transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-          className="fixed bottom-5 left-5 z-20"
-        >
-          <OnboardingPillView done={view.done} onClick={openChecklist} />
-        </m.div>
-      )}
-    </AnimatePresence>
+    <Suspense fallback={null}>
+      <LazyPill />
+    </Suspense>
   )
 }

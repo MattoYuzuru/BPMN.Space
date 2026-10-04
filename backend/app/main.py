@@ -13,6 +13,7 @@ from pydantic.json_schema import models_json_schema
 
 from app.api.auth import CSRF_COOKIE, build_auth_router
 from app.api.errors import install_error_handlers
+from app.api.limits import BodyLimitMiddleware
 from app.api.ratelimit import install_rate_limits
 from app.api.v1 import api_router
 from app.api.v1.runs import OPENAPI_EXTRA_MODELS
@@ -68,6 +69,8 @@ def create_app(settings: Settings | None = None, *, container: Container | None 
         app.dependency_overrides[optional_user] = lambda: None
     # Лимиты ставим раньше CORS: тогда 429 тоже получает CORS-заголовки.
     install_rate_limits(app, settings)
+    # Лимит тела — внутри CORS: ответ 413 тоже получает CORS-заголовки.
+    app.add_middleware(BodyLimitMiddleware, settings=settings)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

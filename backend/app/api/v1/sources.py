@@ -23,6 +23,7 @@ from app.api.access import (
 )
 from app.api.auth import OptionalUserDep
 from app.api.deps import ContainerDep
+from app.api.limits import read_upload
 from app.api.ratelimit import limit_expensive
 from app.api.schemas.common import errors
 from app.api.schemas.projects import Transcription
@@ -73,7 +74,7 @@ async def create_file_source(  # noqa: PLR0917 - multipart form fields are separ
     """Документ. `.txt`/`.md`/`.csv` готовы сразу; `.docx`/`.pdf` приходят в `processing`
     и становятся `ready` или `failed` в фоне — обновляйте проект, пока есть `processing`."""
     await ensure_project_access(request, container, project_id, user, write=True)
-    data = await file.read()
+    data = await read_upload(file, subject="Файл", limit=container.settings.max_upload_bytes)
     source, slow = await container.sources.create_file(
         project_id,
         file_name=file.filename or "document.txt",
@@ -141,6 +142,6 @@ async def transcribe(
 ) -> Transcription:
     """Расшифровка голоса для правки перед сохранением (источник или ответ на вопрос)."""
     require_account(request, user)
-    data = await file.read()
+    data = await read_upload(file, subject="Запись", limit=container.settings.max_audio_bytes)
     transcript = await container.transcriptions.transcribe(data, mime=file.content_type)
     return Transcription.model_validate(transcript)

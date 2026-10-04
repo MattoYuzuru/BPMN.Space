@@ -1011,6 +1011,14 @@
             ],
             "description": "Версия, собранная прогоном",
             "title": "Version Id"
+          },
+          "warnings": {
+            "description": "Предупреждения прогона, не мешающие результату: например, часть материалов не поместилась в контекст модели и была обрезана или пропущена",
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "required": [
@@ -3033,7 +3041,7 @@
     },
     "/api/v1/projects/{project_id}/diagram": {
       "put": {
-        "description": "Сохранить правку из bpmn-js как новую версию `manual`.",
+        "description": "Сохранить правку из bpmn-js как новую версию `manual`.\n\nПока по проекту идёт прогон — 409: его версия перекрыла бы правку.",
         "operationId": "save_diagram",
         "parameters": [
           {
@@ -3097,6 +3105,16 @@
               }
             },
             "description": "Не найдено"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Конфликт состояния"
           },
           "413": {
             "content": {

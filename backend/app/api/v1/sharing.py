@@ -1,14 +1,13 @@
-"""Google-подобное общее чтение и адресные ссылки на роль проекта."""
+"""Участники проекта и ссылки доступа: управление (владелец) и открытие по ссылке."""
 
-import secrets
-from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, Request, Response, status
 
 from app.api.access import ProjectRole, ensure_project_access, get_active_share_link
 from app.api.auth import OptionalUserDep
 from app.api.deps import ContainerDep
+from app.api.responses import bpmn_attachment
 from app.api.schemas.common import errors
 from app.api.schemas.projects import ProjectDetail as ProjectDetailSchema
 from app.api.schemas.sharing import (
@@ -21,33 +20,18 @@ from app.api.schemas.sharing import (
     ShareRole,
 )
 from app.container import Container
-from app.infra.database import Database
-from app.services.sharing import (
-    accept_editor_invite as persist_editor_invite,
-)
-from app.services.sharing import (
-    create_share_link as persist_share_link,
-)
-from app.services.sharing import (
-    list_members as get_members,
-)
-from app.services.sharing import (
-    list_share_links as get_share_links,
-)
-from app.services.sharing import (
-    remove_member as delete_member,
-)
-from app.services.sharing import (
-    revoke_share_link as deactivate_share_link,
-)
+from app.services.auth import UserRow
+from app.services.errors import ForbiddenError, NotFoundError, UnauthorizedError
 
 router = APIRouter(tags=["sharing"])
 
 
-def _database(container: Container) -> Database:
-    if container.database is None:
-        raise HTTPException(status_code=503, detail="Для ссылок доступа требуется PostgreSQL")
-    return container.database
+async def _ensure_owner(
+    request: Request, container: Container, project_id: UUID, user: UserRow | None, message: str
+) -> None:
+    role = await ensure_project_access(request, container, project_id, user, write=False)
+    if role is not ProjectRole.OWNER:
+        raise ForbiddenError(message)
 
 
 @router.get(
@@ -61,18 +45,17 @@ async def list_project_members(
     container: ContainerDep,
     user: OptionalUserDep,
 ) -> list[ProjectMemberRead]:
-    role = await ensure_project_access(request, container, project_id, user, write=False)
-    if role is not ProjectRole.OWNER:
-        raise HTTPException(status_code=403, detail="Состав участников видит только владелец")
-    members = await get_members(_database(container), project_id)
+    await _ensure_owner(
+        request, container, project_id, user, "Состав участников видит только владелец"
+    )
     return [
         ProjectMemberRead(
             user_id=member.user_id,
-            email=email,
+            email=member.email,
             role=ShareRole(member.role),
             added_at=member.added_at,
         )
-        for member, email in members
+        for member in await container.sharing.list_members(project_id)
     ]
 
 
@@ -88,12 +71,10 @@ async def remove_project_member(
     container: ContainerDep,
     user: OptionalUserDep,
 ) -> Response:
-    role = await ensure_project_access(request, container, project_id, user, write=False)
-    if role is not ProjectRole.OWNER:
-        raise HTTPException(status_code=403, detail="Участников может удалять только владелец")
-    removed = await delete_member(_database(container), project_id, member_id)
-    if not removed:
-        raise HTTPException(status_code=404, detail="Участник не найден")
+    await _ensure_owner(
+        request, container, project_id, user, "Участников может удалять только владелец"
+    )
+    await container.sharing.remove_member(project_id, member_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -110,33 +91,28 @@ async def create_share_link(
     container: ContainerDep,
     user: OptionalUserDep,
 ) -> ShareLinkCreated:
-    """Создать ссылку на чтение либо приглашение редактора; сырой токен выдаётся один раз."""
-    role = await ensure_project_access(request, container, project_id, user, write=False)
-    if role is not ProjectRole.OWNER:
-        raise HTTPException(
-            status_code=403, detail="Ссылки доступа может создавать только владелец"
-        )
-    if user is None:
-        raise HTTPException(status_code=503, detail="Для ссылок доступа требуется учётная запись")
+    """Создать ссылку на чтение либо приглашение редактора; сырой токен выдаётся один раз.
 
-    token = secrets.token_urlsafe(32)
-    now = datetime.now(UTC)
-    expires = now + timedelta(days=body.expires_in_days) if body.expires_in_days else None
-    link_id = await persist_share_link(
-        _database(container),
-        project_id=project_id,
-        raw_token=token,
+    Срок всегда ограничен: приглашение редактора — по умолчанию 7 дней (максимум 30), ссылка
+    на чтение — 30 дней (максимум 365).
+    """
+    await _ensure_owner(
+        request, container, project_id, user, "Ссылки доступа может создавать только владелец"
+    )
+    if user is None:  # без аккаунтов владельца нет, ссылки недоступны
+        raise UnauthorizedError("Войдите в аккаунт")
+    created = await container.sharing.create_link(
+        project_id,
         role=body.role.value,
+        expires_in_days=body.expires_in_days,
         created_by=user.id,
-        created_at=now,
-        expires_at=expires,
     )
     return ShareLinkCreated(
-        id=link_id,
+        id=created.link.id,
         role=body.role,
-        url_path=f"/share/{token}",
-        created_at=now,
-        expires_at=expires,
+        url_path=f"/share/{created.token}",
+        created_at=created.link.created_at,
+        expires_at=created.link.expires_at,
     )
 
 
@@ -151,19 +127,16 @@ async def list_share_links(
     container: ContainerDep,
     user: OptionalUserDep,
 ) -> list[ShareLinkRead]:
-    role = await ensure_project_access(request, container, project_id, user, write=False)
-    if role is not ProjectRole.OWNER:
-        raise HTTPException(status_code=403, detail="Списком ссылок управляет владелец")
-    rows = await get_share_links(_database(container), project_id)
+    await _ensure_owner(request, container, project_id, user, "Списком ссылок управляет владелец")
     return [
         ShareLinkRead(
-            id=row.id,
-            role=ShareRole(row.role),
-            created_at=row.created_at,
-            expires_at=row.expires_at,
-            revoked_at=row.revoked_at,
+            id=link.id,
+            role=ShareRole(link.role),
+            created_at=link.created_at,
+            expires_at=link.expires_at,
+            revoked_at=link.revoked_at,
         )
-        for row in rows
+        for link in await container.sharing.list_links(project_id)
     ]
 
 
@@ -179,17 +152,8 @@ async def revoke_share_link(
     container: ContainerDep,
     user: OptionalUserDep,
 ) -> Response:
-    role = await ensure_project_access(request, container, project_id, user, write=False)
-    if role is not ProjectRole.OWNER:
-        raise HTTPException(status_code=403, detail="Ссылками доступа управляет владелец")
-    revoked = await deactivate_share_link(
-        _database(container),
-        project_id,
-        link_id,
-        datetime.now(UTC),
-    )
-    if not revoked:
-        raise HTTPException(status_code=404, detail="Ссылка не найдена")
+    await _ensure_owner(request, container, project_id, user, "Ссылками доступа управляет владелец")
+    await container.sharing.revoke_link(project_id, link_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -199,12 +163,11 @@ async def read_shared_project(
     container: ContainerDep,
     user: OptionalUserDep,
 ) -> SharedProject:
+    """Открыть проект по ссылке. Ссылка на чтение работает без входа (гостям тоже)."""
     link = await get_active_share_link(container, token)
     role = ShareRole(link.role)
     if role is ShareRole.EDITOR and user is None:
-        raise HTTPException(
-            status_code=401, detail="Войдите или зарегистрируйтесь, чтобы открыть проект редактором"
-        )
+        raise UnauthorizedError("Войдите или зарегистрируйтесь, чтобы открыть проект редактором")
     detail = await container.projects.detail(link.project_id)
     return SharedProject(
         role=role,
@@ -221,7 +184,7 @@ async def read_shared_project(
     responses={
         200: {
             "content": {"application/xml": {}},
-            "description": "Диаграмма BPMN по ссылке доступа",
+            "description": "Диаграмма BPMN по ссылке доступа (вложением)",
         },
         **errors(401, 404, 410, 422),
     },
@@ -234,11 +197,11 @@ async def download_shared_diagram(
 ) -> Response:
     link = await get_active_share_link(container, token)
     if link.role == ShareRole.EDITOR.value and user is None:
-        raise HTTPException(status_code=401, detail="Войдите, чтобы открыть ссылку редактора")
+        raise UnauthorizedError("Войдите, чтобы открыть ссылку редактора")
     version = await container.versions.get(version_id)
     if version.project_id != link.project_id:
-        raise HTTPException(status_code=404, detail="Версия не относится к этому проекту")
-    return Response(content=version.xml, media_type="application/xml")
+        raise NotFoundError("Версия не относится к этому проекту")
+    return bpmn_attachment(version.xml, number=version.number)
 
 
 @router.post(
@@ -253,15 +216,8 @@ async def accept_editor_invite(
 ) -> ShareAccepted:
     link = await get_active_share_link(container, token)
     if link.role != ShareRole.EDITOR:
-        raise HTTPException(status_code=403, detail="Ссылка предназначена только для просмотра")
+        raise ForbiddenError("Ссылка предназначена только для просмотра")
     if user is None:
-        raise HTTPException(
-            status_code=401, detail="Войдите или зарегистрируйтесь, чтобы стать редактором"
-        )
-    await persist_editor_invite(
-        _database(container),
-        link.project_id,
-        user.id,
-        datetime.now(UTC),
-    )
+        raise UnauthorizedError("Войдите или зарегистрируйтесь, чтобы стать редактором")
+    await container.sharing.accept_invite(link.project_id, user.id)
     return ShareAccepted(project_id=link.project_id)

@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
+from app.domain.access import ProjectMember, ProjectRole, ResourceKind, ShareLink
 from app.domain.models import LlmCall, Project, Question, QuestionStatus, Run, Source, Version
 
 type PageKey = tuple[datetime, UUID]
@@ -15,7 +16,12 @@ class ActiveRunConflictError(Exception):
 
 
 class ProjectRepository(Protocol):
-    async def add(self, project: Project, *, owner_id: UUID | None = None) -> None: ...
+    async def add(
+        self, project: Project, *, owner_id: UUID | None = None, public: bool = False
+    ) -> None:
+        """`public=True` — демо-проект, доступный всем вошедшим на чтение (только сид)."""
+        ...
+
     async def get(self, project_id: UUID) -> Project | None: ...
     async def update(self, project: Project) -> None: ...
     async def delete(self, project_id: UUID) -> None: ...
@@ -92,6 +98,32 @@ class LlmCallRepository(Protocol):
     async def add(self, call: LlmCall) -> None: ...
 
 
+class AccessRepository(Protocol):
+    """Роли пользователей, участники и ссылки доступа. Есть только у PostgreSQL-хранилища."""
+
+    async def project_role(self, project_id: UUID, user_id: UUID) -> ProjectRole | None: ...
+
+    async def project_roles(
+        self, project_ids: list[UUID], user_id: UUID | None
+    ) -> dict[UUID, ProjectRole]:
+        """Роли для страницы проектов двумя запросами; недоступные проекты в ответ не попадают."""
+        ...
+
+    async def resource_project_id(self, kind: ResourceKind, resource_id: UUID) -> UUID | None: ...
+    async def find_share_link(self, token_hash: str) -> ShareLink | None: ...
+    async def add_share_link(self, link: ShareLink) -> None: ...
+    async def list_share_links(self, project_id: UUID) -> list[ShareLink]: ...
+
+    async def revoke_share_link(
+        self, project_id: UUID, link_id: UUID, revoked_at: datetime
+    ) -> bool: ...
+
+    async def list_members(self, project_id: UUID) -> list[ProjectMember]: ...
+    async def remove_member(self, project_id: UUID, user_id: UUID) -> bool: ...
+
+    async def add_editor(self, project_id: UUID, user_id: UUID, added_at: datetime) -> None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class Repositories:
     projects: ProjectRepository
@@ -100,3 +132,5 @@ class Repositories:
     runs: RunRepository
     versions: VersionRepository
     llm_calls: LlmCallRepository
+    # None в in-memory режиме: аккаунты и ссылки требуют PostgreSQL.
+    access: AccessRepository | None = None

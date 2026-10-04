@@ -3,6 +3,7 @@ import {
   createRootRouteWithContext,
   type ErrorComponentProps,
   Outlet,
+  useMatch,
 } from '@tanstack/react-router'
 import { lazy, Suspense } from 'react'
 import { CommandCenter } from '@/features/command-palette/command-center'
@@ -40,14 +41,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   ),
 })
 
-/** Корень: экран маршрута и глобальные слои — палитра команд и создание проекта. */
+/** Корень: экран маршрута и глобальные слои — палитра команд и создание проекта (кроме входа). */
 function RootLayout() {
+  const onLogin = useMatch({ from: '/login', shouldThrow: false })
   const createRequested = useCreateProjectDialog((state) => state.open || state.loaded)
   return (
     <>
       <Outlet />
-      <CommandCenter />
-      {createRequested && (
+      {!onLogin && <CommandCenter />}
+      {!onLogin && createRequested && (
         <Suspense fallback={null}>
           <CreateProjectDialog />
         </Suspense>

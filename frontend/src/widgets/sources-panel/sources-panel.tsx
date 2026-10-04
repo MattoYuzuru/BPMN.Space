@@ -32,7 +32,7 @@ import { useWorkspace, useWorkspaceUi } from '@/widgets/workspace/model'
 
 /** Левая панель: источники проекта, добавление текста, файла и голоса. */
 export function SourcesPanel({ onCollapse }: { onCollapse: () => void }) {
-  const { project } = useWorkspace()
+  const { project, canEdit } = useWorkspace()
   const setDialog = useWorkspaceUi((state) => state.setDialog)
   const { uploads, upload } = useFileUploads(project.id)
   const [dragging, setDragging] = useState(false)
@@ -44,7 +44,7 @@ export function SourcesPanel({ onCollapse }: { onCollapse: () => void }) {
       aria-label="Источники"
       className="relative flex h-full flex-col bg-bg-subtle"
       onDragEnter={(event) => {
-        if (dragHasFiles(event)) setDragging(true)
+        if (canEdit && dragHasFiles(event)) setDragging(true)
       }}
       onDragLeave={(event) => {
         // Файл увели за пределы панели — прячем зону.
@@ -58,7 +58,7 @@ export function SourcesPanel({ onCollapse }: { onCollapse: () => void }) {
           {sources.length}
         </span>
         <div className="ml-auto flex items-center gap-0.5">
-          <AddSourceMenu onPick={setDialog} onFiles={upload} />
+          {canEdit && <AddSourceMenu onPick={setDialog} onFiles={upload} />}
           <IconButton
             icon="sidebar-left-collapse"
             label="Свернуть панель"
@@ -109,19 +109,21 @@ export function SourcesPanel({ onCollapse }: { onCollapse: () => void }) {
 
           {answers.length > 0 && <AnswersGroup answers={answers} />}
 
-          <FileDrop
-            size="sm"
-            accept={ACCEPTED_FILES.join(',')}
-            multiple
-            onFiles={upload}
-            title="Перетащите документ"
-            hint=".txt, .md, .csv, .docx, .pdf"
-            className="mx-1"
-          />
+          {canEdit && (
+            <FileDrop
+              size="sm"
+              accept={ACCEPTED_FILES.join(',')}
+              multiple
+              onFiles={upload}
+              title="Перетащите документ"
+              hint=".txt, .md, .csv, .docx, .pdf"
+              className="mx-1"
+            />
+          )}
         </div>
       </ScrollArea>
 
-      {dragging && (
+      {canEdit && dragging && (
         <FileDrop
           accept={ACCEPTED_FILES.join(',')}
           multiple
@@ -176,7 +178,7 @@ function AddSourceMenu({
 }
 
 function SourceRow({ source }: { source: Source }) {
-  const { project, openSource } = useWorkspace()
+  const { project, canEdit, openSource } = useWorkspace()
   const update = useUpdateSource(project.id)
   const remove = useDeleteSource(project.id)
   const [confirm, setConfirm] = useState(false)
@@ -242,17 +244,21 @@ function SourceRow({ source }: { source: Source }) {
             <DropdownMenuItem icon="eye" onSelect={() => openSource(source.id)}>
               Открыть
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem icon="trash" tone="danger" onSelect={() => setConfirm(true)}>
-              Удалить
-            </DropdownMenuItem>
+            {canEdit && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem icon="trash" tone="danger" onSelect={() => setConfirm(true)}>
+                  Удалить
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
         <Tooltip content={source.active ? 'Участвует в анализе' : 'Не участвует в анализе'}>
           <span className="inline-flex">
             <Switch
               checked={source.active}
-              disabled={processing}
+              disabled={processing || !canEdit}
               aria-label={`Использовать «${source.title}» в анализе`}
               onCheckedChange={(active) => update.mutate({ id: source.id, active })}
             />

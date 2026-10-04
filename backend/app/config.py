@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _MB = 1024 * 1024
@@ -26,6 +27,7 @@ class Settings(BaseSettings):
     rate_limit_api_per_min: int = 600  # весь API, на IP
     rate_limit_auth_per_min: int = 20  # вход и регистрация, на IP
     rate_limit_expensive_per_min: int = 60  # прогоны, помощник, расшифровка, загрузка, на аккаунт
+    rate_limit_expensive_ip_per_min: int = 120  # те же вызовы суммарно с одного IP (все аккаунты)
 
     # --- Прогоны (RFC §5.1) ---
     max_concurrent_runs: int = 2
@@ -76,6 +78,20 @@ class Settings(BaseSettings):
     deepseek_retry_max_sec: float = 30.0
     stt_provider: str = "mock"
     deepgram_api_key: str | None = None
+
+    @field_validator(
+        "database_url",
+        "session_cookie_secure",
+        "deepseek_api_key",
+        "deepgram_api_key",
+        mode="before",
+    )
+    @classmethod
+    def _empty_as_none(cls, value: object) -> object:
+        """Пустое значение переменной (`NAME=` в .env или compose) значит «не задано»."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @property
     def cookie_secure(self) -> bool:

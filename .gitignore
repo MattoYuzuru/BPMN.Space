@@ -69,3 +69,6 @@ Thumbs.db
 # --- Отчёты verify/e2e и кэш роутера ---
 reports/
 .tanstack/
+
+# --- e2e: вход тестового пользователя ---
+frontend/e2e/.auth/

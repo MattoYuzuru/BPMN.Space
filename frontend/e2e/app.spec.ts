@@ -46,6 +46,36 @@ test('новый пустой проект: онбординг и текстов
   await expect(page.getByRole('button', { name: 'Анализ', exact: true })).toBeEnabled()
 })
 
+test('новый проект с описанием сразу запускает сборку схемы', async ({ page }) => {
+  await page.goto('/projects')
+  await page.getByRole('button', { name: 'Новый проект' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Новый проект' })
+  await dialog.getByRole('textbox', { name: 'Название' }).fill('Согласование договора')
+  await dialog
+    .getByRole('textbox', { name: 'Описание процесса' })
+    .fill(
+      'Юрист проверяет договор. Если есть замечания, он возвращает договор автору. Затем директор подписывает.',
+    )
+  await dialog.getByRole('button', { name: 'Создать проект' }).click()
+
+  await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/)
+  await expect(page.getByRole('status', { name: /Ход прогона/ })).toBeVisible()
+  await expect(page.getByText('Описание процесса').first()).toBeVisible()
+})
+
+test('описание процесса можно надиктовать голосом', async ({ page }) => {
+  await page.goto('/projects')
+  await page.getByRole('button', { name: 'Новый проект' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Новый проект' })
+  await dialog.getByRole('button', { name: 'Надиктовать' }).click()
+  await expect(page.getByText('Идёт запись')).toBeVisible()
+  await page.waitForTimeout(1200)
+  await page.getByRole('button', { name: 'Остановить' }).click()
+  await expect(page.getByRole('textbox', { name: 'Расшифровка' })).not.toHaveValue('')
+  await page.getByRole('button', { name: 'Добавить в описание' }).click()
+  await expect(dialog.getByRole('textbox', { name: 'Описание процесса' })).not.toHaveValue('')
+})
+
 test('диалог создания проекта показывает форму целиком', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto('/projects')

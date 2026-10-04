@@ -26,7 +26,7 @@ export interface QuestionCardProps {
  * Выбранная карточка светится током, её элементы подсвечены на схеме.
  */
 export function QuestionCard({ question, settling = false, fresh = false }: QuestionCardProps) {
-  const { project, selectedQuestionId, selectQuestion, focusElements } = useWorkspace()
+  const { project, canEdit, selectedQuestionId, selectQuestion, focusElements } = useWorkspace()
   const openSheet = useWorkspaceUi((state) => state.openQuestionSheet)
   const action = useQuestionAction(project.id)
   const [answering, setAnswering] = useState(false)
@@ -120,7 +120,7 @@ export function QuestionCard({ question, settling = false, fresh = false }: Ques
           <AssumptionFrame
             label={question.status === 'ignored' ? 'Принято допущение' : 'Допущение'}
             actions={
-              question.status === 'ignored' ? (
+              question.status === 'ignored' && canEdit ? (
                 <Button
                   size="sm"
                   variant="ghost"
@@ -136,7 +136,7 @@ export function QuestionCard({ question, settling = false, fresh = false }: Ques
           </AssumptionFrame>
         )}
 
-        {answering ? (
+        {answering && canEdit ? (
           <AnswerComposer
             projectId={project.id}
             question={question}
@@ -145,7 +145,7 @@ export function QuestionCard({ question, settling = false, fresh = false }: Ques
           />
         ) : (
           <div className="flex flex-wrap items-center gap-1">
-            {question.status === 'open' && (
+            {canEdit && question.status === 'open' && (
               <>
                 <Button
                   size="sm"

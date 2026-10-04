@@ -7,7 +7,8 @@ import { createExampleProject, DEMO_PROJECT_ID, questionCard } from './support'
  * Набор скриншотов ключевых экранов для команды и жюри: `make screenshots` → reports/screenshots.
  * Снимается на свежем mock-бэкенде (демо-проект «Технологическое присоединение» в исходном
  * состоянии), окно 1600×1000, плотность 2×. Кадры идут по порядку: анализ демо-проекта меняет
- * его состояние, поэтому он снимается последним.
+ * его состояние, поэтому он снимается последним. Если на стенде включены аккаунты, кадры
+ * идут от имени тестового пользователя (`e2e/global-setup.ts`).
  */
 const OUT = fileURLToPath(new URL('../../reports/screenshots/', import.meta.url))
 mkdirSync(OUT, { recursive: true })
@@ -169,8 +170,10 @@ test('10 запись голоса', async ({ page, request }) => {
   await dialog.getByRole('button', { name: 'Отменить' }).click()
 })
 
-test('08–09 ход и итог анализа демо-проекта', async ({ page }) => {
-  await openDemo(page)
+test('08–09 ход и итог анализа проекта из примера', async ({ page, request }) => {
+  // Демо-проект открыт только для чтения, поэтому анализ запускаем на своём проекте из примера.
+  const projectId = await createExampleProject(request)
+  await open(page, `/projects/${projectId}`)
   await hideToasts(page)
   await page.getByRole('button', { name: 'Анализ', exact: true }).click()
   const card = page.getByRole('status', { name: /Ход прогона/ })

@@ -15,13 +15,22 @@ export function readExample(path: string): string {
   return readFileSync(path, 'utf8')
 }
 
+/**
+ * Изменяющий запрос к API от имени вошедшего пользователя. Когда на стенде включены аккаунты,
+ * сервер требует CSRF-токен из `/auth/csrf` (cookie уже в состоянии входа) — берём свежий.
+ */
+export async function apiPost(request: APIRequestContext, url: string, data: unknown) {
+  const { csrf_token: csrf } = await (await request.get('/api/v1/auth/csrf')).json()
+  return request.post(url, { data, headers: { 'X-CSRF-Token': csrf } })
+}
+
 /** Свежий проект из примера: сценарии не зависят от того, что делали с демо-проектом раньше. */
 export async function createExampleProject(
   request: APIRequestContext,
   exampleId = 'tp861',
 ): Promise<string> {
-  const response = await request.post('/api/v1/projects/from-example', {
-    data: { example_id: exampleId },
+  const response = await apiPost(request, '/api/v1/projects/from-example', {
+    example_id: exampleId,
   })
   expect(response.ok()).toBeTruthy()
   return (await response.json()).id as string
@@ -33,7 +42,7 @@ export async function runViaApi(
   projectId: string,
   mode: 'analyze' | 'build',
 ) {
-  const started = await request.post(`/api/v1/projects/${projectId}/runs`, { data: { mode } })
+  const started = await apiPost(request, `/api/v1/projects/${projectId}/runs`, { mode })
   expect(started.ok()).toBeTruthy()
   const run = await started.json()
   await expect

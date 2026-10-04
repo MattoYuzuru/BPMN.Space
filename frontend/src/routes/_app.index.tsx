@@ -8,7 +8,7 @@ interface ProjectsSearch {
 }
 
 /** Список проектов. Первая страница грузится в loader — экран появляется уже с данными. */
-export const Route = createFileRoute('/')({
+export const Route = createFileRoute('/_app/')({
   validateSearch: (search: Record<string, unknown>): ProjectsSearch => ({
     q: typeof search.q === 'string' && search.q.trim() ? search.q : undefined,
   }),

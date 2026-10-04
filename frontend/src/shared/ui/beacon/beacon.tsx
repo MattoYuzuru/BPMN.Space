@@ -1,4 +1,5 @@
 import type { Rect } from '@/shared/hooks/use-element-rect'
+import { useTourLayerTracking } from '@/shared/hooks/use-tour-layer'
 import { cn } from '@/shared/lib/cn'
 import { TOUR_LAYER_ATTR } from '@/shared/lib/tour-anchors'
 
@@ -24,6 +25,7 @@ export function Beacon({
   position = 'fixed',
   className,
 }: BeaconProps) {
+  useTourLayerTracking()
   if (!target) return null
   return (
     <div

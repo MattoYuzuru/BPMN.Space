@@ -59,10 +59,42 @@ export function isInsideTourLayer(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest(`[${TOUR_LAYER_ATTR}]`) !== null
 }
 
+/** Последнее нажатие указателя началось в слое обучения (запоминается, пока слой на экране). */
+let pointerStartedInLayer = false
+let trackers = 0
+
+function rememberPointer(event: PointerEvent) {
+  pointerStartedInLayer = isInsideTourLayer(event.target)
+}
+
+/**
+ * Слой обучения на экране: запоминаем, где началось нажатие. Нужно для касаний: Radix проверяет
+ * «клик снаружи» уже на `click`, когда нажатая кнопка карточки успела исчезнуть из DOM (шаг
+ * сменился), и проверка по `target` не находит слой. Возвращает функцию снятия.
+ */
+export function trackTourLayerPointer(): () => void {
+  if (trackers === 0) document.addEventListener('pointerdown', rememberPointer, true)
+  trackers += 1
+  return () => {
+    trackers -= 1
+    if (trackers === 0) {
+      document.removeEventListener('pointerdown', rememberPointer, true)
+      pointerStartedInLayer = false
+    }
+  }
+}
+
 /**
  * Для `onInteractOutside` / `onEscapeKeyDown` модальных слоёв: событие внутри слоя обучения
  * не закрывает окно или меню. Без тура ничего не меняет.
  */
-export function guardTourLayer(event: { target: EventTarget | null; preventDefault(): void }) {
-  if (isInsideTourLayer(event.target)) event.preventDefault()
+export function guardTourLayer(event: {
+  type?: string
+  target: EventTarget | null
+  preventDefault(): void
+}) {
+  const byPointer = event.type?.includes('pointerDownOutside') ?? false
+  if (isInsideTourLayer(event.target) || (byPointer && pointerStartedInLayer)) {
+    event.preventDefault()
+  }
 }

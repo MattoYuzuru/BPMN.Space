@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     max_audio_bytes: int = 60 * _MB
     max_diagram_bytes: int = 5 * _MB
     max_text_chars: int = 200_000
+    # Разбор документов: у PDF ограничены число страниц и время (в отдельном потоке).
+    max_pdf_pages: int = 300
+    parse_timeout_sec: float = 60.0
 
     # --- Mock-реализация (#2): задержки имитируют работу модели и STT ---
     # Множитель всех задержек: 0 — мгновенно (тесты), 1 — как в демо.

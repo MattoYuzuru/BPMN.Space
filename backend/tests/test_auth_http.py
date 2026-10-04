@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config import Settings
 from app.container import build_container
-from app.domain.models import Project
+from app.domain.models import Project, Source, SourceKind, SourceStatus
 from app.infra.database import Database
 from app.infra.db_models import ProjectShareLinkRow
 from app.infra.seed import DEMO_PROJECT_ID, SeedData, build_seed
@@ -624,3 +624,27 @@ async def test_container_exposes_database_replacement() -> None:
         assert replace(container, database=None).database is None
     finally:
         await marker.dispose()
+
+
+async def test_startup_fails_sources_left_in_processing(stack: Stack) -> None:
+    repos = stack.database.store.repositories()
+    stuck = Source(
+        id=uuid4(),
+        project_id=DEMO_PROJECT_ID,
+        kind=SourceKind.FILE,
+        title="Большой PDF",
+        content="",
+        status=SourceStatus.PROCESSING,
+        active=True,
+        created_at=datetime.now(UTC),
+        file_name="big.pdf",
+    )
+    await repos.sources.add(stuck)
+
+    await stack.database.initialize()  # то, что происходит при старте после перезапуска
+
+    restored = await repos.sources.get(stuck.id)
+    assert restored is not None
+    assert restored.status is SourceStatus.FAILED
+    assert restored.error is not None
+    assert "перезапуск" in restored.error

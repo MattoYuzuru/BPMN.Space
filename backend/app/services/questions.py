@@ -68,10 +68,7 @@ class QuestionService:
         except rules.QuestionTransitionError as error:
             raise ConflictError(str(error)) from error
         if answer_source_id is not None:
-            source = await self._repos.sources.get(answer_source_id)
-            if source is not None:
-                source.active = False
-                await self._repos.sources.update(source)
+            await self._repos.sources.patch(answer_source_id, {"active": False})
         await self._repos.questions.update(question)
         await touch_project(self._repos, question.project_id, now)
         return question

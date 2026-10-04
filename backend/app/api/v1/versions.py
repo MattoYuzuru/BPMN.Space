@@ -65,7 +65,7 @@ async def download_version(
 @router.put(
     "/projects/{project_id}/diagram",
     status_code=status.HTTP_201_CREATED,
-    responses=errors(401, 403, 404, 413, 422),
+    responses=errors(401, 403, 404, 409, 413, 422),
 )
 async def save_diagram(
     project_id: UUID,
@@ -74,6 +74,8 @@ async def save_diagram(
     container: ContainerDep,
     user: OptionalUserDep,
 ) -> Version:
-    """Сохранить правку из bpmn-js как новую версию `manual`."""
+    """Сохранить правку из bpmn-js как новую версию `manual`.
+
+    Пока по проекту идёт прогон — 409: его версия перекрыла бы правку."""
     await ensure_project_access(request, container, project_id, user, write=True)
     return Version.model_validate(await container.versions.save_manual(project_id, xml=body.xml))

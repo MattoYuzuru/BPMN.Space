@@ -9,8 +9,12 @@ from app.domain.models import LintIssue, Quote, Version, VersionOrigin
 from app.domain.versions import build_version
 from app.infra.bpmn_tools import BpmnTools
 from app.infra.repositories.base import Repositories
-from app.services.common import Runtime, get_project, get_version, touch_project
-from app.services.errors import InvalidInputError, PayloadTooLargeError
+from app.services.common import Runtime, get_project, get_version, too_large
+from app.services.errors import (
+    ConflictError,
+    InvalidInputError,
+    NotFoundError,
+)
 
 
 async def add_version(
@@ -24,26 +28,33 @@ async def add_version(
     trace: Mapping[str, Quote],
     run_id: UUID | None = None,
 ) -> Version:
-    """Новая версия: номер, дифф с прошлой, допущения по текущим вопросам, дорожки."""
-    previous = await repos.versions.latest(project_id)
-    questions = await repos.questions.list_by_project(project_id)
-    now = runtime.clock()
-    version = build_version(
-        version_id=runtime.new_id(),
-        project_id=project_id,
-        number=previous.number + 1 if previous else 1,
-        origin=origin,
-        xml=xml,
-        previous_xml=previous.xml if previous else None,
-        questions=questions,
-        lint=lint,
-        xsd_valid=not xsd_errors(xml),
-        trace=trace,
-        created_at=now,
-        run_id=run_id,
-    )
-    await repos.versions.add(version)
-    await touch_project(repos, project_id, now)
+    """Новая версия: номер, дифф с прошлой, допущения по текущим вопросам, дорожки.
+
+    Номер берётся под блокировкой проекта в одной транзакции: ручное сохранение и прогон
+    (или два редактора) получают подряд идущие номера и не упираются в уникальный индекс.
+    """
+    async with repos.atomic() as tx:
+        if await tx.projects.lock(project_id) is None:
+            raise NotFoundError("Проект не найден")
+        previous = await tx.versions.latest(project_id)
+        questions = await tx.questions.list_by_project(project_id)
+        now = runtime.clock()
+        version = build_version(
+            version_id=runtime.new_id(),
+            project_id=project_id,
+            number=previous.number + 1 if previous else 1,
+            origin=origin,
+            xml=xml,
+            previous_xml=previous.xml if previous else None,
+            questions=questions,
+            lint=lint,
+            xsd_valid=not xsd_errors(xml),
+            trace=trace,
+            created_at=now,
+            run_id=run_id,
+        )
+        await tx.versions.add(version)
+        await tx.projects.touch(project_id, now)
     return version
 
 
@@ -77,8 +88,7 @@ class VersionService:
         """
         await get_project(self._repos, project_id)
         if len(xml.encode("utf-8")) > self._max_bytes:
-            limit_mb = self._max_bytes // (1024 * 1024)
-            raise PayloadTooLargeError(f"Схема больше {limit_mb} МБ")
+            raise too_large("Схема", self._max_bytes)
         if not xml.strip():
             raise InvalidInputError("Схема пустая")
         try:
@@ -87,14 +97,25 @@ class VersionService:
             lint = await self._tools.lint(xml)
         except BpmnFormatError as error:
             raise InvalidInputError(str(error)) from error
-        previous = await self._repos.versions.latest(project_id)
-        trace = dict(previous.trace) if previous else {}
-        return await add_version(
-            self._repos,
-            self._rt,
-            project_id=project_id,
-            xml=xml,
-            origin=VersionOrigin.MANUAL,
-            lint=lint,
-            trace=trace,
-        )
+        async with self._repos.atomic() as repos:
+            if await repos.projects.lock(project_id) is None:
+                raise NotFoundError("Проект не найден")
+            # Прогон собирает схему от состояния на момент старта: правка, сохранённая посреди
+            # прогона, молча потерялась бы под новой версией. Блокировка проекта общая с запуском
+            # прогона, поэтому проверка не обгоняется.
+            if await repos.runs.active_for_project(project_id):
+                raise ConflictError(
+                    "Сейчас идёт прогон — дождитесь его завершения и сохраните правку снова, "
+                    "иначе новая версия перекроет её"
+                )
+            previous = await repos.versions.latest(project_id)
+            trace = dict(previous.trace) if previous else {}
+            return await add_version(
+                repos,
+                self._rt,
+                project_id=project_id,
+                xml=xml,
+                origin=VersionOrigin.MANUAL,
+                lint=lint,
+                trace=trace,
+            )

@@ -47,7 +47,7 @@ from app.infra.tasks import TaskSpawner
 from app.ingest.context import build_run_context
 from app.llm.base import PipelineError, ProcessPipeline
 from app.services.common import Runtime, get_project, get_run, touch_project
-from app.services.errors import ConflictError
+from app.services.errors import ConflictError, NotFoundError
 from app.services.versions import add_version
 
 logger = logging.getLogger(__name__)
@@ -107,11 +107,13 @@ class RunService:
         self._start_lock = asyncio.Lock()
 
     async def start(self, project_id: UUID, *, mode: RunMode) -> Run:
-        async with self._start_lock:
-            await get_project(self._repos, project_id)
-            if await self._repos.runs.active_for_project(project_id):
+        async with self._start_lock, self._repos.atomic() as repos:
+            # Блокировка проекта общая с ручным сохранением схемы и удалением проекта.
+            if await repos.projects.lock(project_id) is None:
+                raise NotFoundError("Проект не найден")
+            if await repos.runs.active_for_project(project_id):
                 raise ConflictError("По проекту уже идёт прогон — дождитесь его завершения")
-            sources = await self._repos.sources.list_by_project(project_id)
+            sources = await repos.sources.list_by_project(project_id)
             usable = [
                 s
                 for s in sources
@@ -129,12 +131,12 @@ class RunService:
                 model=getattr(self._pipeline, "model_name", type(self._pipeline).__name__),
             )
             try:
-                await self._repos.runs.add(run)
+                await repos.runs.add(run)
             except ActiveRunConflictError as error:
                 raise ConflictError(
                     "По проекту уже идёт прогон — дождитесь его завершения"
                 ) from error
-            await touch_project(self._repos, project_id, now)
+            await repos.projects.touch(project_id, now)
         self._spawner.spawn(self._execute(run.id), name=f"run-{run.id}")
         return run
 

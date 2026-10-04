@@ -2,15 +2,28 @@
 
 Хранит копии сущностей: изменение объекта без `update()` не попадает в хранилище — так же,
 как будет с БД. Данные живут до рестарта процесса.
-TODO(real): #6 заменить на `infra/db/` (SQLAlchemy + Postgres), см. `base.py`.
+Нужен для тестов сервисов и локального режима без БД; в приложении с `DATABASE_URL` работает
+SQL-реализация (`sql.py`). Операции здесь не прерываются между `await`, поэтому атомарны сами:
+`Repositories.atomic()` — пустой контекст, `lock()` ничего не блокирует.
 """
 
 import copy
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any
 from uuid import UUID
 
-from app.domain.models import LlmCall, Project, Question, QuestionStatus, Run, Source, Version
+from app.domain.models import (
+    LlmCall,
+    Project,
+    Question,
+    QuestionStatus,
+    Run,
+    Source,
+    SourceStatus,
+    Version,
+)
 from app.domain.questions import normalize
 from app.domain.runs import ACTIVE_STATUSES
 from app.infra.repositories.base import PageKey, Repositories
@@ -78,10 +91,28 @@ class InMemoryProjectRepository:
         return copy.deepcopy(item) if item else None
 
     async def update(self, project: Project) -> None:
-        self._items[project.id] = copy.deepcopy(project)
+        stored = self._items.get(project.id)
+        if stored is not None:
+            stored.title = project.title
+            stored.description = project.description
+
+    async def touch(self, project_id: UUID, at: datetime) -> None:
+        stored = self._items.get(project_id)
+        if stored is not None and at > stored.updated_at:
+            stored.updated_at = at
+
+    async def lock(self, project_id: UUID) -> Project | None:
+        return await self.get(project_id)
 
     async def delete(self, project_id: UUID) -> None:
-        self._items.pop(project_id, None)
+        store = self._store
+        if self._items.pop(project_id, None) is None:
+            return
+        for items in (store.sources, store.questions, store.runs, store.versions):
+            for key in [k for k, item in items.items() if item.project_id == project_id]:
+                del items[key]
+        for key in [k for k, call in store.llm_calls.items() if call.run_id not in store.runs]:
+            del store.llm_calls[key]
         self._store.project_owners.pop(project_id, None)
         self._store.public_projects.discard(project_id)
 
@@ -135,8 +166,29 @@ class InMemorySourceRepository:
         item = self._items.get(source_id)
         return copy.deepcopy(item) if item else None
 
-    async def update(self, source: Source) -> None:
-        self._items[source.id] = copy.deepcopy(source)
+    async def patch(
+        self,
+        source_id: UUID,
+        changes: Mapping[str, Any],
+        *,
+        only_status: SourceStatus | None = None,
+    ) -> bool:
+        unknown = set(changes) - {"title", "content", "status", "active", "error"}
+        if unknown:
+            raise ValueError(f"Поля источника нельзя менять точечно: {sorted(unknown)}")
+        stored = self._items.get(source_id)
+        if stored is None or (only_status is not None and stored.status is not only_status):
+            return False
+        for name, value in changes.items():
+            setattr(stored, name, value)
+        return True
+
+    async def fail_processing(self, error: str) -> int:
+        stuck = [s for s in self._items.values() if s.status is SourceStatus.PROCESSING]
+        for source in stuck:
+            source.status = SourceStatus.FAILED
+            source.error = error
+        return len(stuck)
 
     async def delete(self, source_id: UUID) -> None:
         self._items.pop(source_id, None)
@@ -144,10 +196,6 @@ class InMemorySourceRepository:
     async def list_by_project(self, project_id: UUID) -> list[Source]:
         items = [s for s in self._items.values() if s.project_id == project_id]
         return [copy.deepcopy(s) for s in sorted(items, key=lambda s: (s.created_at, s.id))]
-
-    async def delete_by_project(self, project_id: UUID) -> None:
-        for key in [k for k, s in self._items.items() if s.project_id == project_id]:
-            del self._items[key]
 
 
 def _code_number(question: Question) -> int:
@@ -179,10 +227,6 @@ class InMemoryQuestionRepository:
         ]
         return [copy.deepcopy(q) for q in sorted(items, key=_code_number)]
 
-    async def delete_by_project(self, project_id: UUID) -> None:
-        for key in [k for k, q in self._items.items() if q.project_id == project_id]:
-            del self._items[key]
-
 
 class InMemoryRunRepository:
     def __init__(self, store: InMemoryStore) -> None:
@@ -208,10 +252,6 @@ class InMemoryRunRepository:
                 return copy.deepcopy(run)
         return None
 
-    async def delete_by_project(self, project_id: UUID) -> None:
-        for key in [k for k, r in self._items.items() if r.project_id == project_id]:
-            del self._items[key]
-
 
 class InMemoryVersionRepository:
     def __init__(self, store: InMemoryStore) -> None:
@@ -231,10 +271,6 @@ class InMemoryVersionRepository:
     async def latest(self, project_id: UUID) -> Version | None:
         items = await self.list_by_project(project_id)
         return items[0] if items else None
-
-    async def delete_by_project(self, project_id: UUID) -> None:
-        for key in [k for k, v in self._items.items() if v.project_id == project_id]:
-            del self._items[key]
 
 
 class InMemoryLlmCallRepository:

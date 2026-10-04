@@ -138,7 +138,7 @@ def test_file_upload_errors(client: TestClient, container: Container) -> None:
     container.sources._max_upload = 4
     status, body = _upload(client, project_id, "big.txt", b"12345")
     assert status == 413
-    assert body == {"detail": "Файл больше 0 МБ"}
+    assert body == {"detail": "Файл больше 1 МБ"}
 
 
 def test_update_and_toggle_source(client: TestClient) -> None:

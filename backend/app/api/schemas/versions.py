@@ -45,6 +45,9 @@ class Version(ApiModel):
     origin: VersionOrigin
     created_at: datetime
     run_id: UUID | None = None
+    actor_email: str | None = Field(
+        default=None, description="Автор версии; null для старых записей"
+    )
     diff: VersionDiff
     report: VersionReport
     trace: dict[str, Quote] = Field(description="Трассировка: id элемента схемы → цитата")

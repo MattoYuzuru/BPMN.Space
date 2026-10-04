@@ -1,5 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
-import { hasDiff, VERSION_ORIGIN, type Version, versionLabel } from '@/entities/version'
+import { useState } from 'react'
+import {
+  diagramElements,
+  elementTypeLabel,
+  hasDiff,
+  VERSION_ORIGIN,
+  type Version,
+  type VersionSource,
+  versionLabel,
+} from '@/entities/version'
 import { cn } from '@/shared/lib/cn'
 import { formatDate, formatTime } from '@/shared/lib/format'
 import { Badge, Button, Icon, Sheet, SheetContent, Skeleton } from '@/shared/ui'
@@ -12,6 +21,7 @@ export function VersionsSheet() {
   const setSheet = useWorkspaceUi((state) => state.setSheet)
   const versions = useQuery({ ...source.list(project.id), enabled: sheet === 'versions' })
   const currentId = viewedVersionId ?? project.latest_version?.id
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   return (
     <Sheet open={sheet === 'versions'} onOpenChange={(open) => setSheet(open ? 'versions' : null)}>
@@ -31,6 +41,10 @@ export function VersionsSheet() {
                 latest={index === 0}
                 last={index === list.length - 1}
                 current={version.id === currentId}
+                previous={list[index + 1]}
+                source={source}
+                expanded={expandedId === version.id}
+                onExpand={() => setExpandedId(expandedId === version.id ? null : version.id)}
                 onOpen={() => {
                   viewVersion(index === 0 ? undefined : version.id)
                   setSheet(null)
@@ -50,12 +64,20 @@ function VersionItem({
   last,
   current,
   onOpen,
+  previous,
+  source,
+  expanded,
+  onExpand,
 }: {
   version: Version
   latest: boolean
   last: boolean
   current: boolean
   onOpen: () => void
+  previous?: Version
+  source: VersionSource
+  expanded: boolean
+  onExpand: () => void
 }) {
   const origin = VERSION_ORIGIN[version.origin]
   const date = new Date(version.created_at)
@@ -108,6 +130,19 @@ function VersionItem({
             </Badge>
           )}
         </div>
+        <p className="type-caption text-fg-muted">
+          {version.actor_email ? `Автор: ${version.actor_email}` : 'Автор неизвестен'}
+        </p>
+        <Button
+          size="sm"
+          variant="ghost"
+          trailingIcon={expanded ? 'chevron-up' : 'chevron-down'}
+          className="self-start"
+          onClick={onExpand}
+        >
+          Что изменилось
+        </Button>
+        {expanded && <VersionChanges version={version} previous={previous} source={source} />}
         {!current && (
           <Button
             size="sm"
@@ -121,5 +156,63 @@ function VersionItem({
         )}
       </div>
     </li>
+  )
+}
+
+/** Подробности по именованным элементам, вычисленные из двух неизменяемых XML-версий. */
+function VersionChanges({
+  version,
+  previous,
+  source,
+}: {
+  version: Version
+  previous?: Version
+  source: VersionSource
+}) {
+  const current = useQuery(source.detail(version.id))
+  const before = useQuery({ ...source.detail(previous?.id ?? version.id), enabled: !!previous })
+  if (current.isPending || (previous && before.isPending)) {
+    return <Skeleton className="h-12 rounded-md" />
+  }
+  if (!current.data || (previous && !before.data)) {
+    return <p className="type-caption text-fg-muted">Не удалось загрузить сравнение версий</p>
+  }
+  const currentElements = diagramElements(current.data.xml)
+  const beforeElements = diagramElements(before.data?.xml ?? '')
+  const changes = [
+    ...[...currentElements.values()]
+      .filter((element) => !beforeElements.has(element.id))
+      .map((element) => ({ kind: 'Добавлено', element })),
+    ...[...beforeElements.values()]
+      .filter((element) => !currentElements.has(element.id))
+      .map((element) => ({ kind: 'Удалено', element })),
+    ...[...currentElements.values()]
+      .filter((element) => {
+        const old = beforeElements.get(element.id)
+        return old && old.signature !== element.signature
+      })
+      .map((element) => ({ kind: 'Изменено', element })),
+  ]
+  return changes.length ? (
+    <ul className="flex flex-col gap-1 border-t border-border pt-2">
+      {changes.map(({ kind, element }) => (
+        <li key={`${kind}-${element.id}`} className="type-caption text-fg-muted">
+          <span
+            className={
+              kind === 'Добавлено'
+                ? 'text-success-fg'
+                : kind === 'Удалено'
+                  ? 'text-danger-fg'
+                  : 'text-amber-fg'
+            }
+          >
+            {kind}
+          </span>{' '}
+          {elementTypeLabel(element.type).toLowerCase()} «{element.name || element.id}»
+        </li>
+      ))}
+    </ul>
+  ) : (
+    <p className="type-caption text-fg-muted">Состав и подписи элементов не изменились</p>
   )
 }

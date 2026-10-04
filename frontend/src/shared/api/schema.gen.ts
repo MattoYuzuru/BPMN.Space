@@ -406,6 +406,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/presence/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Project Presence
+         * @description Показывает только вошедших пользователей с доступом к проекту.
+         */
+        get: operations["project_presence"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/questions": {
         parameters: {
             query?: never;
@@ -1812,6 +1832,11 @@ export interface components {
         /** Version */
         Version: {
             /**
+             * Actor Email
+             * @description Автор версии; null для старых записей
+             */
+            actor_email?: string | null;
+            /**
              * Created At
              * Format: date-time
              */
@@ -1848,6 +1873,11 @@ export interface components {
         };
         /** VersionDetail */
         VersionDetail: {
+            /**
+             * Actor Email
+             * @description Автор версии; null для старых записей
+             */
+            actor_email?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -3066,6 +3096,53 @@ export interface operations {
             };
             /** @description Недостаточно прав для операции */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    project_presence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Снимки присутствия в SSE-событиях `presence` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

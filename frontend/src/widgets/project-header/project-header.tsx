@@ -24,6 +24,7 @@ import { AppHeader } from '@/widgets/app-header/app-header'
 import { SummaryChips } from '@/widgets/run-progress/summary-chips'
 import { useWorkspace, useWorkspaceUi } from '@/widgets/workspace/model'
 import { DownloadMenu } from './download-menu'
+import { PresenceIndicator } from './presence-indicator'
 
 /** Шапка рабочего места: крошки, название, статус, итоги вопросов, запуск прогонов, версии. */
 export function ProjectHeader() {
@@ -211,6 +212,7 @@ function HeaderActions({ running }: { running: boolean }) {
         </>
       )}
       {canShare && <ShareProjectButton projectId={project.id} />}
+      <PresenceIndicator projectId={project.id} />
       <span aria-hidden="true" className="mx-1 h-5 w-px bg-border" />
     </>
   )

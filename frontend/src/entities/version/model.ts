@@ -38,6 +38,8 @@ export interface DiagramElement {
   id: string
   type: string
   name: string
+  /** Атрибуты и вложенные условия BPMN, без графических координат DI. */
+  signature: string
 }
 
 /** Элементы модели BPMN (задачи, события, шлюзы, дорожки, потоки) с подписями. */
@@ -53,6 +55,14 @@ export function diagramElements(xml: string): Map<string, DiagramElement> {
       id,
       type: element.localName,
       name: (element.getAttribute('name') ?? '').replace(/\s+/g, ' ').trim(),
+      signature: [
+        element.localName,
+        ...Array.from(element.attributes)
+          .filter((attribute) => attribute.name !== 'id' && !attribute.name.startsWith('xmlns'))
+          .map((attribute) => `${attribute.name}=${attribute.value.trim()}`)
+          .sort(),
+        element.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+      ].join('|'),
     })
   }
   return result

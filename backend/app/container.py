@@ -22,12 +22,14 @@ from app.ingest.parsers import LocalDocumentParser
 from app.ingest.stt import MockSpeechToText
 from app.llm.deepseek import DeepSeekPipeline
 from app.llm.mock import MockPipeline
+from app.services.access import AccessService
 from app.services.assistant import AssistantModel, AssistantService
 from app.services.catalog import ExampleService, TranscriptionService
 from app.services.common import Runtime
 from app.services.projects import ProjectService
 from app.services.questions import QuestionService
 from app.services.runs import RunService
+from app.services.sharing import SharingService
 from app.services.sources import SourceService
 from app.services.versions import VersionService
 
@@ -47,12 +49,18 @@ class Container:
     examples: ExampleService
     transcriptions: TranscriptionService
     assistant: AssistantService | None
+    access: AccessService
+    sharing: SharingService
 
 
-def build_container(settings: Settings, *, runtime: Runtime | None = None) -> Container:
+def build_container(
+    settings: Settings, *, runtime: Runtime | None = None, database: Database | None = None
+) -> Container:
+    """`database` позволяет подставить готовое подключение (тесты со своей схемой PostgreSQL)."""
     runtime = runtime or Runtime()
 
-    database = Database(settings.database_url) if settings.database_url else None
+    if database is None and settings.database_url:
+        database = Database(settings.database_url)
     if database:
         repos = database.store.repositories()
         storage = LocalFileStorage(settings.upload_dir)
@@ -69,6 +77,7 @@ def build_container(settings: Settings, *, runtime: Runtime | None = None) -> Co
             )
         repos = store.repositories()
         storage = InMemoryFileStorage()
+    access = AccessService(repos.access, runtime=runtime)
     spawner = AsyncioTaskSpawner()
     assistant_model: AssistantModel | None = None
     # TODO(real): #6 HTTP-клиент bpmn-tools и python-docx; PDF уже разбирается через pypdf.
@@ -149,4 +158,6 @@ def build_container(settings: Settings, *, runtime: Runtime | None = None) -> Co
         assistant=(
             AssistantService(repos, model=assistant_model) if assistant_model is not None else None
         ),
+        access=access,
+        sharing=SharingService(access, runtime=runtime),
     )

@@ -8,7 +8,7 @@ interface ProjectsSearch {
 }
 
 /** Список проектов доступен из главной страницы и загружается сразу с первой страницей данных. */
-export const Route = createFileRoute('/projects/')({
+export const Route = createFileRoute('/_app/projects/')({
   validateSearch: (search: Record<string, unknown>): ProjectsSearch => ({
     q: typeof search.q === 'string' && search.q.trim() ? search.q : undefined,
   }),

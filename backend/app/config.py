@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _MB = 1024 * 1024
@@ -16,6 +17,17 @@ class Settings(BaseSettings):
     api_prefix: str = "/api/v1"
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:8080"]
     auth_enabled: bool = True
+    # Secure у session- и CSRF-cookie: None — включить в production (`APP_ENV=prod|production`).
+    # Явное true/false нужно, когда HTTPS ещё нет (false) или TLS завершается снаружи (true).
+    session_cookie_secure: bool | None = None
+
+    # --- Анти-спам лимиты (скользящее окно в памяти процесса, запросов в минуту) ---
+    # Намеренно щедрые: защита от скриптов и подбора пароля, а не ограничение продукта.
+    rate_limit_enabled: bool = True
+    rate_limit_api_per_min: int = 600  # весь API, на IP
+    rate_limit_auth_per_min: int = 20  # вход и регистрация, на IP
+    rate_limit_expensive_per_min: int = 60  # прогоны, помощник, расшифровка, загрузка, на аккаунт
+    rate_limit_expensive_ip_per_min: int = 120  # те же вызовы суммарно с одного IP (все аккаунты)
 
     # --- Прогоны (RFC §5.1) ---
     max_concurrent_runs: int = 2
@@ -52,6 +64,26 @@ class Settings(BaseSettings):
     deepseek_thinking_enabled: bool = False
     stt_provider: str = "mock"
     deepgram_api_key: str | None = None
+
+    @field_validator(
+        "database_url",
+        "session_cookie_secure",
+        "deepseek_api_key",
+        "deepgram_api_key",
+        mode="before",
+    )
+    @classmethod
+    def _empty_as_none(cls, value: object) -> object:
+        """Пустое значение переменной (`NAME=` в .env или compose) значит «не задано»."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @property
+    def cookie_secure(self) -> bool:
+        if self.session_cookie_secure is not None:
+            return self.session_cookie_secure
+        return self.app_env.lower() in {"prod", "production"}
 
     def mock_delay(self, seconds: float) -> float:
         return max(seconds, 0.0) * max(self.mock_delay_scale, 0.0)

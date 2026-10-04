@@ -8,4 +8,6 @@
   - [Настройка LLM и распознавания речи](backend/подключение-провайдеров.md)
 - [Frontend: принципы и устройство](frontend/README.md)
 - [Деплой на VM](deployment.md)
-- ADR: [Cookie-сессии и роли доступа к проектам](adr/0001-auth-and-project-sharing.md)
+- ADR:
+  - [Cookie-сессии и роли доступа к проектам](adr/0001-auth-and-project-sharing.md)
+  - [Ограничение частоты запросов и Secure-cookie](adr/0002-rate-limits-and-secure-cookies.md)

@@ -1,114 +1,66 @@
-"""Хранение участников и управление ссылками доступа к проекту."""
+"""Участники проекта и ссылки доступа: создание, отзыв, принятие приглашения."""
 
-from datetime import datetime
+import secrets
+from dataclasses import dataclass
+from datetime import timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, select
-from sqlalchemy.dialects.postgresql import insert
+from app.domain.access import ProjectMember, ShareLink
+from app.services.access import AccessService, token_digest
+from app.services.common import Runtime
+from app.services.errors import InvalidInputError, NotFoundError
 
-from app.infra.database import Database
-from app.infra.db_models import ProjectMemberRow, ProjectShareLinkRow, UserRow
-from app.services.access import ProjectRole, token_digest
-
-
-async def list_members(database: Database, project_id: UUID) -> list[tuple[ProjectMemberRow, str]]:
-    async with database.sessions() as session:
-        rows = (
-            await session.execute(
-                select(ProjectMemberRow, UserRow)
-                .join(
-                    UserRow,
-                    UserRow.__table__.c.id == ProjectMemberRow.__table__.c.user_id,
-                )
-                .where(ProjectMemberRow.project_id == project_id)
-                .order_by(ProjectMemberRow.added_at)
-            )
-        ).all()
-    return [(member, user.email) for member, user in rows]
+# Срок ссылки в днях: (по умолчанию, максимум). Приглашение редактора живёт недолго,
+# потому что даёт запись; ссылка на чтение — безопаснее, поэтому срок длиннее.
+EXPIRY_DAYS: dict[str, tuple[int, int]] = {"editor": (7, 30), "viewer": (30, 365)}
 
 
-async def remove_member(database: Database, project_id: UUID, user_id: UUID) -> bool:
-    async with database.sessions.begin() as session:
-        result = await session.execute(
-            delete(ProjectMemberRow)
-            .where(
-                ProjectMemberRow.project_id == project_id,
-                ProjectMemberRow.user_id == user_id,
-            )
-            .returning(ProjectMemberRow.user_id)
+@dataclass(frozen=True, slots=True)
+class CreatedLink:
+    link: ShareLink
+    token: str
+
+
+class SharingService:
+    def __init__(self, access: AccessService, *, runtime: Runtime) -> None:
+        self._access = access
+        self._rt = runtime
+
+    async def create_link(
+        self, project_id: UUID, *, role: str, expires_in_days: int | None, created_by: UUID
+    ) -> CreatedLink:
+        """Новая ссылка; сырой токен возвращается один раз, в БД остаётся его хеш."""
+        default, maximum = EXPIRY_DAYS[role]
+        days = default if expires_in_days is None else expires_in_days
+        if not 1 <= days <= maximum:
+            raise InvalidInputError(f"Срок ссылки с ролью «{role}» — от 1 до {maximum} дней")
+        now = self._rt.clock()
+        token = secrets.token_urlsafe(32)
+        link = ShareLink(
+            id=uuid4(),
+            project_id=project_id,
+            role=role,
+            token_hash=token_digest(token),
+            created_by=created_by,
+            created_at=now,
+            expires_at=now + timedelta(days=days),
         )
-        return result.scalar_one_or_none() is not None
+        await self._access.repo.add_share_link(link)
+        return CreatedLink(link=link, token=token)
 
+    async def list_links(self, project_id: UUID) -> list[ShareLink]:
+        return await self._access.repo.list_share_links(project_id)
 
-async def create_share_link(
-    database: Database,
-    *,
-    project_id: UUID,
-    raw_token: str,
-    role: str,
-    created_by: UUID,
-    created_at: datetime,
-    expires_at: datetime | None,
-) -> UUID:
-    link_id = uuid4()
-    row = ProjectShareLinkRow(
-        id=link_id,
-        project_id=project_id,
-        token_hash=token_digest(raw_token),
-        role=role,
-        created_by=created_by,
-        created_at=created_at,
-        expires_at=expires_at,
-    )
-    async with database.sessions.begin() as session:
-        session.add(row)
-    return link_id
+    async def revoke_link(self, project_id: UUID, link_id: UUID) -> None:
+        if not await self._access.repo.revoke_share_link(project_id, link_id, self._rt.clock()):
+            raise NotFoundError("Ссылка не найдена")
 
+    async def list_members(self, project_id: UUID) -> list[ProjectMember]:
+        return await self._access.repo.list_members(project_id)
 
-async def list_share_links(database: Database, project_id: UUID) -> list[ProjectShareLinkRow]:
-    async with database.sessions() as session:
-        return list(
-            (
-                await session.scalars(
-                    select(ProjectShareLinkRow)
-                    .where(ProjectShareLinkRow.project_id == project_id)
-                    .order_by(ProjectShareLinkRow.created_at.desc())
-                )
-            ).all()
-        )
+    async def remove_member(self, project_id: UUID, user_id: UUID) -> None:
+        if not await self._access.repo.remove_member(project_id, user_id):
+            raise NotFoundError("Участник не найден")
 
-
-async def revoke_share_link(
-    database: Database, project_id: UUID, link_id: UUID, revoked_at: datetime
-) -> bool:
-    async with database.sessions.begin() as session:
-        link = await session.scalar(
-            select(ProjectShareLinkRow).where(
-                ProjectShareLinkRow.id == link_id,
-                ProjectShareLinkRow.project_id == project_id,
-            )
-        )
-        if link is None:
-            return False
-        if link.revoked_at is None:
-            link.revoked_at = revoked_at
-    return True
-
-
-async def accept_editor_invite(
-    database: Database, project_id: UUID, user_id: UUID, added_at: datetime
-) -> None:
-    async with database.sessions.begin() as session:
-        await session.execute(
-            insert(ProjectMemberRow)
-            .values(
-                project_id=project_id,
-                user_id=user_id,
-                role=ProjectRole.EDITOR.value,
-                added_at=added_at,
-            )
-            .on_conflict_do_update(
-                index_elements=[ProjectMemberRow.project_id, ProjectMemberRow.user_id],
-                set_={"role": ProjectRole.EDITOR.value},
-            )
-        )
+    async def accept_invite(self, project_id: UUID, user_id: UUID) -> None:
+        await self._access.repo.add_editor(project_id, user_id, self._rt.clock())

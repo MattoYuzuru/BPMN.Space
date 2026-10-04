@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { ThemeSwitch } from '@/features/theme-switch/theme-switch'
 import { cn } from '@/shared/lib/cn'
 import { Badge, Icon, Kbd, ScrollArea } from '@/shared/ui'
+import { AccountSection } from './account'
 import { BrandSection, HeroComposition } from './brand'
 import { ButtonsSection, ChoiceSection, FieldsSection } from './controls'
 import { FeedbackSection, LayoutSection, NavigationSection, StatusSection } from './display'
@@ -47,7 +48,13 @@ const NAV = [
       ['layout', 'Карточки и области'],
     ],
   },
-  { group: 'Сборка', items: [['example', 'Пример экрана']] },
+  {
+    group: 'Сборка',
+    items: [
+      ['account', 'Аккаунт и доступ'],
+      ['example', 'Пример экрана'],
+    ],
+  },
 ] as const
 
 const SECTION_IDS = NAV.flatMap((group) => group.items.map(([id]) => id))
@@ -189,6 +196,7 @@ export function StyleguidePage() {
           <StatusSection />
           <FeedbackSection />
           <LayoutSection />
+          <AccountSection />
           <ExampleSection />
         </div>
       </main>

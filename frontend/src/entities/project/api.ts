@@ -89,11 +89,15 @@ export function patchProjectInLists(
   )
 }
 
+/** Создать пустой проект (без уведомлений и кэша — для составных сценариев). */
+export async function createProject(body: Schemas['ProjectCreate']) {
+  return unwrap(await api.POST('/api/v1/projects', { body }))
+}
+
 export function useCreateProject() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: async (body: Schemas['ProjectCreate']) =>
-      unwrap(await api.POST('/api/v1/projects', { body })),
+    mutationFn: createProject,
     onSuccess: () => client.invalidateQueries({ queryKey: projectKeys.lists() }),
   })
 }

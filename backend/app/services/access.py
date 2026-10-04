@@ -1,70 +1,57 @@
 """Проверка роли пользователя и срока действия ссылок проекта."""
 
-from datetime import UTC, datetime
-from enum import StrEnum
+from datetime import datetime
 from hashlib import sha256
 from uuid import UUID
 
-from sqlalchemy import select
+from app.domain.access import ProjectRole, ResourceKind, ShareLink
+from app.infra.repositories.base import AccessRepository
+from app.services.common import Runtime
+from app.services.errors import GoneError, NotFoundError, UnavailableError
 
-from app.infra.database import Database
-from app.infra.db_models import (
-    DiagramVersionRow,
-    ProjectMemberRow,
-    ProjectRow,
-    ProjectShareLinkRow,
-    QuestionRow,
-    RunRow,
-    SourceRow,
-)
-
-
-class ProjectRole(StrEnum):
-    OWNER = "owner"
-    EDITOR = "editor"
-    VIEWER = "viewer"
+__all__ = ["AccessService", "ProjectRole", "token_digest"]
 
 
 def token_digest(token: str) -> str:
     return sha256(token.encode("utf-8")).hexdigest()
 
 
-async def get_project_role(
-    database: Database, project_id: UUID, user_id: UUID
-) -> ProjectRole | None:
-    async with database.sessions() as session:
-        project = await session.get(ProjectRow, project_id)
-        if project is None:
-            return None
-        if project.owner_id == user_id:
-            return ProjectRole.OWNER
-        membership = await session.get(ProjectMemberRow, (project_id, user_id))
-        if membership is not None and membership.role == ProjectRole.EDITOR:
-            return ProjectRole.EDITOR
-        return ProjectRole.VIEWER if project.public_read_only else None
+def is_expired(link: ShareLink, now: datetime) -> bool:
+    return link.expires_at is not None and link.expires_at <= now
 
 
-async def get_resource_project_id(
-    database: Database, resource_id: UUID, resource: str
-) -> UUID | None:
-    models = {
-        "source": SourceRow,
-        "question": QuestionRow,
-        "run": RunRow,
-        "version": DiagramVersionRow,
-    }
-    row_type = models[resource]
-    async with database.sessions() as session:
-        return await session.scalar(select(row_type.project_id).where(row_type.id == resource_id))
+class AccessService:
+    """Роли и ссылки. Без PostgreSQL (`repo is None`) любая проверка отвечает 503."""
 
+    def __init__(self, repo: AccessRepository | None, *, runtime: Runtime) -> None:
+        self._repo = repo
+        self._rt = runtime
 
-async def get_share_link(database: Database, token: str) -> tuple[ProjectShareLinkRow | None, bool]:
-    async with database.sessions() as session:
-        link = await session.scalar(
-            select(ProjectShareLinkRow).where(ProjectShareLinkRow.token_hash == token_digest(token))
-        )
+    @property
+    def repo(self) -> AccessRepository:
+        if self._repo is None:
+            raise UnavailableError("Для аккаунтов и общего доступа требуется PostgreSQL")
+        return self._repo
+
+    async def project_role(self, project_id: UUID, user_id: UUID) -> ProjectRole | None:
+        return await self.repo.project_role(project_id, user_id)
+
+    async def project_roles(
+        self, project_ids: list[UUID], user_id: UUID | None
+    ) -> dict[UUID, ProjectRole]:
+        return await self.repo.project_roles(project_ids, user_id)
+
+    async def resource_project_id(self, kind: ResourceKind, resource_id: UUID) -> UUID:
+        project_id = await self.repo.resource_project_id(kind, resource_id)
+        if project_id is None:
+            raise NotFoundError("Объект не найден")
+        return project_id
+
+    async def active_link(self, token: str) -> ShareLink:
+        """Живая ссылка по сырому токену: неизвестная или отозванная — 404, истёкшая — 410."""
+        link = await self.repo.find_share_link(token_digest(token))
         if link is None or link.revoked_at is not None:
-            return None, False
-        if link.expires_at is not None and link.expires_at <= datetime.now(UTC):
-            return None, True
-        return link, False
+            raise NotFoundError("Ссылка не найдена или отключена")
+        if is_expired(link, self._rt.clock()):
+            raise GoneError("Срок действия ссылки истёк")
+        return link

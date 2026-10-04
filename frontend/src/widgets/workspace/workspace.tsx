@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef } from 'react'
-import { isRunning, projectQueryOptions } from '@/entities/project'
+import { isRunning, projectCapabilities, projectQueryOptions } from '@/entities/project'
 import { useStartRun } from '@/entities/run'
 import { AddTextDialog, AddVoiceDialog } from '@/features/add-source/add-source-dialogs'
 import { useRegisterCommands } from '@/features/command-palette/model'
@@ -64,6 +64,7 @@ export function Workspace({ projectId, search, onSearchChange }: WorkspaceProps)
     if (!project) return null
     return {
       project,
+      ...projectCapabilities(project.access),
       editorRef,
       selectedQuestionId: search.question,
       viewedVersionId: search.version,
@@ -153,16 +154,20 @@ export function Workspace({ projectId, search, onSearchChange }: WorkspaceProps)
         </main>
       </div>
 
-      <AddTextDialog
-        projectId={project.id}
-        open={ui.dialog === 'text'}
-        onOpenChange={(open) => ui.setDialog(open ? 'text' : null)}
-      />
-      <AddVoiceDialog
-        projectId={project.id}
-        open={ui.dialog === 'voice'}
-        onOpenChange={(open) => ui.setDialog(open ? 'voice' : null)}
-      />
+      {api.canEdit && (
+        <>
+          <AddTextDialog
+            projectId={project.id}
+            open={ui.dialog === 'text'}
+            onOpenChange={(open) => ui.setDialog(open ? 'text' : null)}
+          />
+          <AddVoiceDialog
+            projectId={project.id}
+            open={ui.dialog === 'voice'}
+            onOpenChange={(open) => ui.setDialog(open ? 'voice' : null)}
+          />
+        </>
+      )}
       <SourceSheet
         sourceId={search.source}
         mark={search.mark}
@@ -229,41 +234,46 @@ function useWorkspaceCommands(api: WorkspaceApi | null): CommandGroup | null {
   const running = project ? isRunning(project.status) : false
   const noSources = !project || project.sources.length === 0
   const hasVersion = Boolean(project?.latest_version)
+  const canEdit = api?.canEdit ?? false
   return useMemo<CommandGroup | null>(() => {
     if (!project) return null
+    const writeItems: CommandGroup['items'] = [
+      {
+        id: 'run-analyze',
+        label: 'Запустить анализ',
+        icon: 'sparkles',
+        keywords: ['analyze', 'вопросы', 'прогон'],
+        disabled: running || noSources,
+        onSelect: () => start.mutate('analyze'),
+      },
+      {
+        id: 'run-build',
+        label: 'Построить схему',
+        icon: 'diagram',
+        keywords: ['build', 'схема', 'bpmn', 'прогон'],
+        disabled: running || noSources,
+        onSelect: () => start.mutate('build'),
+      },
+      {
+        id: 'add-text',
+        label: 'Добавить текстовый источник',
+        icon: 'notes',
+        keywords: ['источник', 'текст'],
+        onSelect: () => setDialog('text'),
+      },
+      {
+        id: 'add-voice',
+        label: 'Записать голосовую заметку',
+        icon: 'microphone',
+        keywords: ['голос', 'микрофон', 'voice'],
+        onSelect: () => setDialog('voice'),
+      },
+    ]
     return {
       heading: project.title,
       items: [
-        {
-          id: 'run-analyze',
-          label: 'Запустить анализ',
-          icon: 'sparkles',
-          keywords: ['analyze', 'вопросы', 'прогон'],
-          disabled: running || noSources,
-          onSelect: () => start.mutate('analyze'),
-        },
-        {
-          id: 'run-build',
-          label: 'Построить схему',
-          icon: 'diagram',
-          keywords: ['build', 'схема', 'bpmn', 'прогон'],
-          disabled: running || noSources,
-          onSelect: () => start.mutate('build'),
-        },
-        {
-          id: 'add-text',
-          label: 'Добавить текстовый источник',
-          icon: 'notes',
-          keywords: ['источник', 'текст'],
-          onSelect: () => setDialog('text'),
-        },
-        {
-          id: 'add-voice',
-          label: 'Записать голосовую заметку',
-          icon: 'microphone',
-          keywords: ['голос', 'микрофон', 'voice'],
-          onSelect: () => setDialog('voice'),
-        },
+        // Зрителю команды, меняющие проект, не показываем.
+        ...(canEdit ? writeItems : []),
         {
           id: 'open-report',
           label: 'Отчёт проверки',
@@ -282,5 +292,5 @@ function useWorkspaceCommands(api: WorkspaceApi | null): CommandGroup | null {
         },
       ],
     }
-  }, [project, running, noSources, hasVersion, start.mutate, setDialog, setSheet])
+  }, [project, canEdit, running, noSources, hasVersion, start.mutate, setDialog, setSheet])
 }

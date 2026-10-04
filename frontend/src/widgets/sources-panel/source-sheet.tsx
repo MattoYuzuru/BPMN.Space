@@ -52,7 +52,7 @@ export function SourceSheet({ sourceId, mark, onClose }: SourceSheetProps) {
 }
 
 function SourceDetail({ source, mark }: { source: Source; mark?: string }) {
-  const { project } = useWorkspace()
+  const { project, canEdit } = useWorkspace()
   const update = useUpdateSource(project.id)
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(source.title)
@@ -154,10 +154,11 @@ function SourceDetail({ source, mark }: { source: Source; mark?: string }) {
             <Switch
               label="Участвует в анализе"
               checked={source.active}
+              disabled={!canEdit}
               onCheckedChange={(active) => update.mutate({ id: source.id, active })}
             />
             <span className="flex-1" />
-            {source.kind !== 'answer' && source.status === 'ready' && (
+            {canEdit && source.kind !== 'answer' && source.status === 'ready' && (
               <Button leadingIcon="pencil" onClick={() => setEditing(true)}>
                 Править текст
               </Button>

@@ -24,7 +24,7 @@ const SAVE_DEBOUNCE_MS = 1500
 
 /** Центральная панель: схема в bpmn-js, тулбар, ход прогона и карточка элемента. */
 export function DiagramPanel() {
-  const { project, editorRef, viewedVersionId, selectedQuestionId } = useWorkspace()
+  const { project, canEdit, editorRef, viewedVersionId, selectedQuestionId } = useWorkspace()
   const latest = project.latest_version
   const versionId = viewedVersionId ?? latest?.id
   const version = useQuery({ ...versionDetailOptions(versionId ?? ''), enabled: !!versionId })
@@ -33,7 +33,7 @@ export function DiagramPanel() {
   const isLatest = !viewedVersionId || viewedVersionId === latest?.id
   // Анализ схему не меняет — править можно; сборка заменит схему, поэтому на её время только просмотр.
   const building = project.status === 'building'
-  const readOnly = !isLatest || building
+  const readOnly = !isLatest || building || !canEdit
 
   const [markers, setMarkers] = useState<MarkerToggles>({ assumptions: true, added: true })
   const [inspected, setInspected] = useState<string | null>(null)

@@ -64,11 +64,13 @@ class InMemoryProjectRepository:
         self._store = store
         self._items = store.projects
 
-    async def add(self, project: Project, *, owner_id: UUID | None = None) -> None:
+    async def add(
+        self, project: Project, *, owner_id: UUID | None = None, public: bool = False
+    ) -> None:
         self._items[project.id] = copy.deepcopy(project)
-        if owner_id is None:
+        if public:
             self._store.public_projects.add(project.id)
-        else:
+        if owner_id is not None:
             self._store.project_owners[project.id] = owner_id
 
     async def get(self, project_id: UUID) -> Project | None:

@@ -2,11 +2,12 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.api.access import ensure_project_access, require_account
 from app.api.auth import OptionalUserDep
 from app.api.deps import ContainerDep
+from app.api.ratelimit import limit_expensive
 from app.api.schemas.assistant import AssistantRequest, AssistantResponse, LocalAssistantRequest
 from app.api.schemas.common import errors
 from app.llm.base import PipelineError
@@ -17,7 +18,8 @@ router = APIRouter(tags=["assistant"])
 @router.post(
     "/projects/{project_id}/assistant",
     response_model=AssistantResponse,
-    responses=errors(404, 422, 502, 503),
+    dependencies=[Depends(limit_expensive)],
+    responses=errors(401, 403, 404, 422, 429, 502, 503),
 )
 async def ask_assistant(
     project_id: UUID,
@@ -50,7 +52,8 @@ async def ask_assistant(
 @router.post(
     "/assistant/chat",
     response_model=AssistantResponse,
-    responses=errors(422, 502, 503),
+    dependencies=[Depends(limit_expensive)],
+    responses=errors(401, 422, 429, 502, 503),
 )
 async def ask_about_local_draft(
     body: LocalAssistantRequest,

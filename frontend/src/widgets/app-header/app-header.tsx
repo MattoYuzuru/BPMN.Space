@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
+import { AccountMenu } from '@/features/account-menu/account-menu'
 import { openCommandPalette } from '@/features/command-palette/model'
 import { ThemeSwitch } from '@/features/theme-switch/theme-switch'
 import { cn } from '@/shared/lib/cn'
@@ -61,6 +62,7 @@ export function AppHeader({
           <Kbd keys={['mod', 'k']} />
         </Button>
         <ThemeSwitch compact />
+        <AccountMenu />
       </div>
       {edge}
     </header>

@@ -1,24 +1,11 @@
-import { useMutation } from '@tanstack/react-query'
 import { AnimatePresence, m } from 'motion/react'
 import { type ReactNode, useEffect, useState } from 'react'
-import { errorMessage, postForm, type Schemas } from '@/shared/api/client'
+import { errorMessage } from '@/shared/api/client'
 import { formatClock } from '@/shared/lib/format'
 import { softTransition } from '@/shared/lib/motion'
 import { AudioLevel, Button, Field, Icon, Progress, Textarea } from '@/shared/ui'
+import { useTranscribe } from './api'
 import { type RecorderState, useVoiceRecorder } from './use-voice-recorder'
-
-type Transcription = Schemas['Transcription']
-
-function useTranscribe() {
-  return useMutation({
-    mutationFn: (blob: Blob) => {
-      const form = new FormData()
-      const ext = blob.type.includes('ogg') ? 'ogg' : 'webm'
-      form.append('file', blob, `voice.${ext}`)
-      return postForm<Transcription>('/api/v1/transcriptions', form)
-    },
-  })
-}
 
 const BLOCKED: Record<
   Extract<RecorderState, { status: 'blocked' }>['reason'],

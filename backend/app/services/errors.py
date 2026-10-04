@@ -28,3 +28,19 @@ class UnsupportedMediaError(ServiceError):
 
 class PayloadTooLargeError(ServiceError):
     """413: файл больше допустимого."""
+
+
+class GoneError(ServiceError):
+    """410: объект существовал, но больше недоступен (истёкшая ссылка)."""
+
+
+class ForbiddenError(ServiceError):
+    """403: роль пользователя не позволяет действие."""
+
+
+class UnauthorizedError(ServiceError):
+    """401: нужен вход в аккаунт."""
+
+
+class UnavailableError(ServiceError):
+    """503: нужная часть системы не подключена (например, нет PostgreSQL)."""

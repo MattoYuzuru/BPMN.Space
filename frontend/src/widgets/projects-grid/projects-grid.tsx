@@ -6,6 +6,7 @@ import { errorMessage } from '@/shared/api/client'
 import { useGridColumns, useLoadMore } from '@/shared/hooks/use-load-more'
 import { formatCount } from '@/shared/lib/format'
 import { listItem, staggerDelay } from '@/shared/lib/motion'
+import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import { Button, EmptyState } from '@/shared/ui'
 import {
   PROJECTS_GRID as GRID,
@@ -90,7 +91,12 @@ export function ProjectsGrid({ query, scope, onResetQuery, onResetScope }: Proje
         description="Проект — это один процесс: источники, вопросы и схема BPMN."
         action={
           <>
-            <Button variant="primary" leadingIcon="plus" onClick={() => showCreate('blank')}>
+            <Button
+              variant="primary"
+              leadingIcon="plus"
+              {...tourAnchor(TOUR_ANCHORS.projectsNew)}
+              onClick={() => showCreate('blank')}
+            >
               Новый проект
             </Button>
             <Button leadingIcon="template" onClick={() => showCreate('example')}>

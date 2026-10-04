@@ -3,6 +3,7 @@ import { QUESTION_KIND, type Question, SEVERITY, useQuestionAction } from '@/ent
 import type { Source } from '@/entities/source'
 import { AnswerComposer } from '@/features/answer-question/answer-composer'
 import { cn } from '@/shared/lib/cn'
+import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import { AssumptionFrame, Badge, Button, Card, Icon, IconButton } from '@/shared/ui'
 import { useWorkspace, useWorkspaceUi } from '@/widgets/workspace/model'
 import { QuoteLink } from './quote-link'
@@ -43,6 +44,7 @@ export function QuestionCard({ question, settling = false, fresh = false }: Ques
       padding="none"
       glow={selected && !resolved}
       data-question={question.code}
+      data-question-id={question.id}
       aria-current={selected || undefined}
       onClick={(event) => {
         // Клик по свободному месту карточки выбирает вопрос; кнопки и ссылки работают сами.
@@ -151,6 +153,7 @@ export function QuestionCard({ question, settling = false, fresh = false }: Ques
                   size="sm"
                   variant="secondary"
                   leadingIcon="message-question"
+                  {...tourAnchor(TOUR_ANCHORS.questionAnswer)}
                   onClick={() => {
                     setAnswering(true)
                     selectQuestion(question.id)
@@ -162,6 +165,7 @@ export function QuestionCard({ question, settling = false, fresh = false }: Ques
                   size="sm"
                   variant="ghost"
                   leadingIcon="eye-off"
+                  {...tourAnchor(TOUR_ANCHORS.questionIgnore)}
                   onClick={() => action.mutate({ question, action: { type: 'ignore' } })}
                 >
                   Игнорировать

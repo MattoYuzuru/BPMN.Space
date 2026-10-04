@@ -47,6 +47,17 @@ function routeMatches(router: RouterLike, target: RouteTarget): boolean {
   )
 }
 
+/** В окне уже печатают (фокус в поле ввода): карточка не отбирает у человека фокус. */
+function typingInside(modal: HTMLElement | null): boolean {
+  const active = document.activeElement
+  return Boolean(
+    modal &&
+      active instanceof HTMLElement &&
+      modal.contains(active) &&
+      active.matches('input, textarea, [contenteditable="true"]'),
+  )
+}
+
 /** Пилюля паузы: пользователь ушёл с экрана шага. */
 function PausePill({ onResume, onEnd }: { onResume: () => void; onEnd: () => void }) {
   const [confirming, setConfirming] = useState(false)
@@ -209,14 +220,14 @@ export default function TourHost<Ctx>({
   useEffect(() => {
     if (!active || !stepKey) return
     const current = stepsRef.current.find((item) => item.key === stepKey)
-    const start = useTourStore.getState().enteredAt
+    const start = enteredAt
     const timers = (current?.ticks ?? []).map((at) =>
       window.setTimeout(() => setTick((n) => n + 1), Math.max(0, at - (Date.now() - start))),
     )
     return () => {
       for (const timer of timers) window.clearTimeout(timer)
     }
-  }, [active, stepKey])
+  }, [active, stepKey, enteredAt])
 
   // Маршрутизация: переход на экран шага, пауза при уходе, возврат.
   useEffect(() => {
@@ -273,6 +284,15 @@ export default function TourHost<Ctx>({
     enabled: active && !paused,
   })
   const rect = useElementRect(anchor.element)
+  // Опора карточки отдельно от выреза: карточка стоит у неё, а подсвечена кнопка внутри.
+  const cardSelector = view?.cardAnchor ? anchorSelector(view.cardAnchor) : null
+  const cardAnchor = useAnchorElement(cardSelector, {
+    timeoutMs: anchorTimeoutMs,
+    enabled: active && !paused,
+  })
+  const cardRect = useElementRect(cardAnchor.element)
+  const cardRectRef = useRef<Rect | null>(null)
+  cardRectRef.current = cardAnchor.element ? cardRect : null
   const floating = useFloatingLayerOpen(active && !paused)
   // Окно, в котором лежит якорь, а если якоря нет или он вне окна — верхнее открытое окно:
   // иначе затемнение и карточка оказались бы поверх него, вне FocusScope и под aria-hidden.
@@ -294,7 +314,8 @@ export default function TourHost<Ctx>({
   const virtualRef = useRef({
     getBoundingClientRect: () =>
       toDomRect(
-        frameRef.current ??
+        cardRectRef.current ??
+          frameRef.current ??
           lastTarget.current ?? {
             x: window.innerWidth / 2,
             y: window.innerHeight / 2,
@@ -412,7 +433,9 @@ export default function TourHost<Ctx>({
           placement={centered ? 'center' : 'anchor'}
           anchorRef={virtualRef}
           side={view.side}
+          align={view.align}
           portalContainer={modal}
+          autoFocus={!typingInside(modal)}
           eyebrow={eyebrow}
           title={view.title}
           text={view.text}

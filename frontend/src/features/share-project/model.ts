@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { create } from 'zustand'
 import {
   defaultExpiryDays,
   expiryForRole,
@@ -56,3 +57,15 @@ export function useCopy(successMessage = 'Ссылка скопирована') 
   )
   return { copied, copy }
 }
+
+interface ShareDialogControl {
+  /** Растёт на каждую просьбу закрыть окно «Поделиться». */
+  closeRequest: number
+  requestClose: () => void
+}
+
+/** Нейтральная точка: попросить закрыть окно «Поделиться» снаружи (обучение после создания ссылки). */
+export const useShareDialogControl = create<ShareDialogControl>((set) => ({
+  closeRequest: 0,
+  requestClose: () => set((state) => ({ closeRequest: state.closeRequest + 1 })),
+}))

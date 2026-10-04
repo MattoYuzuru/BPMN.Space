@@ -42,3 +42,4 @@ export {
   type TourState,
   withCompletedItem,
 } from './model'
+export { useOnboardingUi } from './ui'

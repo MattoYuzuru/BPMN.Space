@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import type { Version } from '@/entities/version'
 import { versionLabel } from '@/entities/version'
 import { EXPORT_FORMATS, exportDiagram } from '@/features/export-diagram/export'
+import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,7 +26,13 @@ export function DownloadMenu({ version, extra }: { version: Version; extra?: Rea
     <DropdownMenu>
       <Tooltip content="Скачать" side="bottom">
         <DropdownMenuTrigger asChild>
-          <IconButton icon="download" size="sm" label="Скачать схему" tooltip={false} />
+          <IconButton
+            icon="download"
+            size="sm"
+            label="Скачать схему"
+            tooltip={false}
+            {...tourAnchor(TOUR_ANCHORS.headerDownload)}
+          />
         </DropdownMenuTrigger>
       </Tooltip>
       <DropdownMenuContent align="end" className="min-w-60">

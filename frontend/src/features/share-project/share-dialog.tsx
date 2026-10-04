@@ -1,5 +1,5 @@
 import { type UseQueryResult, useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   activeLinks,
   type ProjectMember,
@@ -24,7 +24,7 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/shared/ui'
-import { fullShareUrl, useShareForm } from './model'
+import { fullShareUrl, useShareDialogControl, useShareForm } from './model'
 import { MemberRow, ShareCreateForm, ShareLinkResult, ShareLinkRow } from './share-parts'
 
 export interface ShareDialogProps {
@@ -39,6 +39,15 @@ export interface ShareDialogProps {
  * исчезает вместе с закрытием окна и нигде не хранится.
  */
 export function ShareDialog({ projectId, open, onOpenChange }: ShareDialogProps) {
+  const closeRequest = useShareDialogControl((state) => state.closeRequest)
+  const seen = useRef(closeRequest)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: реагируем только на новую просьбу закрыть
+  useEffect(() => {
+    if (closeRequest !== seen.current) {
+      seen.current = closeRequest
+      onOpenChange(false)
+    }
+  }, [closeRequest])
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent title="Поделиться проектом" size="md">

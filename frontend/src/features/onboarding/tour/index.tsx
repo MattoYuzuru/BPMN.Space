@@ -12,6 +12,7 @@ export type {
   StepAction,
   StepView,
   StepViewContext,
+  TourAlign,
   TourApi,
   TourEndReason,
   TourPersistence,

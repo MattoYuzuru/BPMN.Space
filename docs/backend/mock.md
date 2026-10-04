@@ -1,11 +1,15 @@
-# Backend: что уже работает и что остаётся заменить
+# Backend: что ещё заглушено и что нужно для настоящей реализации
 
-Бэкенд уже в финальной структуре слоёв (RFC §5.6), контракт API — настоящий: из Pydantic-схем
-генерируются `docs/api/openapi.json` и `frontend/src/shared/api/schema.gen.ts`. Заглушки стоят
-за интерфейсами (Protocol), а выбор реализаций сделан в одном месте — `backend/app/container.py`.
-Хранение уже переведено на Postgres; ingest, STT, bpmn-tools и LLM-пайплайн остаются в работе.
+Бэкенд в финальной структуре слоёв (RFC §5.6), контракт API настоящий: из Pydantic-схем
+генерируются `docs/api/openapi.json` и `frontend/src/shared/api/schema.gen.ts`. Хранение,
+аккаунты и общий доступ работают на Postgres (`persistence.md`, `auth-and-sharing.md`),
+LLM-анализ и ответы помощника — на DeepSeek (`LLM_PROVIDER=deepseek`), расшифровка — на
+Deepgram (`STT_PROVIDER=deepgram`). Заглушки стоят за интерфейсами (Protocol), реализации
+выбирает `backend/app/container.py`.
 
-Детали БД и миграций — в `docs/backend/persistence.md`.
+Этот документ — честный список того, что ещё не сделано по-настоящему. Команда оставляет его
+для следующих этапов: места в коде помечены `TODO(real)`
+(`grep -rn "TODO(real)" backend/app`).
 
 ## Карта слоёв
 
@@ -13,7 +17,7 @@
 flowchart TB
     api["api/ — роуты v1, схемы контракта, SSE, ошибки {detail}"] --> services
     services["services/ — сценарии: projects, sources, questions, runs, versions, catalog"] --> llm & ingest & infra & domain
-    llm["llm/ — base.py: ProcessPipeline · mock.py"] --> domain
+    llm["llm/ — base.py: ProcessPipeline · deepseek.py · mock.py"] --> domain
     ingest["ingest/ — parsers.py · stt.py · context.py"] --> domain
     infra["infra/ — repositories/ · events.py · tasks.py · bpmn_tools.py · storage.py · seed.py"] --> domain
     domain["domain/ — модели, вопросы и сверка, статусы, курсор, bpmn/ (разбор, дифф, линтер, линейный компилятор, xsd/)"]
@@ -26,24 +30,28 @@ flowchart TB
 Границы проверяет import-linter (`make lint`): слои `api → services → (llm | ingest | infra) → domain`,
 `domain` без внешних зависимостей, `fixtures` не импортирует слои приложения.
 
-## Что заглушено
+## Что ещё заглушено
 
-| Интерфейс | Где | Mock | Настоящая реализация |
+| Что | Как работает сейчас | Что нужно для настоящей реализации | RFC / issue |
 |---|---|---|---|
-| Репозитории проектов, источников, вопросов, прогонов, версий и вызовов модели | `infra/repositories/base.py` | `memory.py` — тестовый режим | `infra/repositories/sql.py`: SQLAlchemy 2 + Alembic, Postgres 16 |
-| `ProcessPipeline` (анализ + структура) | `llm/base.py` | `llm/mock.py`: правила из `fixtures/playbook.py` срабатывают по цитатам в источниках | #5: Pydantic AI, IR → ProcessGraph → XML, repair |
-| `SpeechToText` | `ingest/stt.py` | ждёт ~1 с, отдаёт правдоподобную расшифровку | #6: Yandex SpeechKit + ffmpeg |
-| `DocumentParser` | `ingest/parsers.py` | `.txt`/`.md` — напрямую; `.csv` — построчно с сохранением ячеек, до 40 000 символов контекста; `.docx` — упрощённо (абзацы); `.pdf` — pypdf по страницам, сканы без текстового слоя получают ошибку | OCR через Yandex Vision — P2 |
-| `BpmnTools` (layout, lint) | `infra/bpmn_tools.py` | раскладку не делает (схемы уже с DI), линтер — `domain/bpmn/lint.py` | #6: HTTP-клиент к Node-сервису bpmn-tools |
-| XSD-проверка | `domain/bpmn/xsd.py` | только корректность XML и корень `bpmn:definitions` | #5: lxml + `domain/bpmn/xsd/*.xsd` |
-| `RunEventBus` | `infra/events.py` | in-process журнал событий прогона | остаётся (один backend); итог завершённого прогона синтезируется из БД после рестарта |
-| `TaskSpawner` | `infra/tasks.py` | `asyncio`-задачи | остаётся; при старте queued/running прогоны переводятся в `failed` |
-| `FileStorage` | `infra/storage.py` | `InMemoryFileStorage` в тестах | `LocalFileStorage`: volume `/data/uploads`, позже S3 |
-| Задержки этапов | `container.py` → `mock_pace` | из `MOCK_STAGE_DELAYS × MOCK_DELAY_SCALE` | #5: убрать — этапы занимают время сами |
+| XSD-проверка (`domain/bpmn/xsd.py`) | Всегда возвращает `[]`: проверяется только корректность XML и корень `bpmn:definitions`. Поэтому `xsd_valid` в отчёте версии всегда `true`, в том числе у ручных правок. XSD-валидность схем-фикстур проверяют только тесты (lxml, dev-зависимость) | `lxml.etree.XMLSchema` по `domain/bpmn/xsd/BPMN20.xsd` с кэшем схемы, ошибки с номерами строк, lxml — в основные зависимости; ошибки идут в repair-цикл и в `422` при ручном сохранении | §5.5 · #5 |
+| Раскладка и линтер (`infra/bpmn_tools.py`) | `layout` возвращает XML как есть (схемы уже с DI); `lint` — подмножество правил bpmnlint на Python (`domain/bpmn/lint.py`) | HTTP-клиент Node-сервиса bpmn-tools: `POST /layout` (bpmn-auto-layout 2.0.0-alpha.2, версия закреплена) и `POST /lint` (`bpmnlint:recommended`); таймауты, запасной раскладчик «ранг × полоса дорожки», сервис в Compose, URL в `config.py` | §4, §5.5, §11 · #6 |
+| Импортёр XML → ProcessGraph (`domain/bpmn/document.py`) | Плоский разбор узлов, дорожек и потоков. Ручная правка схемы сохраняется версией `manual`, но следующий прогон её логику не учитывает: DeepSeek строит процесс заново из источников, mock возвращает схему аналитика как есть | `domain/importer.py` с подпроцессами, граничными событиями и message flow; ProcessGraph ручной правки — в контекст прогона с пометкой «правки аналитика приоритетнее» | §5.2, §5.3, §5.6 · #5 |
+| Дифф версий (`domain/bpmn/diff.py`) | Сравнение узлов и дорожек по `id` | Дифф на уровне ProcessGraph: потоки и условия, сопоставление узлов без общих `id` (переименование против «удалить + добавить») | §5.6 · #5 |
+| IR процесса со шлюзами (`llm/deepseek.py`, `domain/bpmn/linear.py`) | Модель отдаёт линейный список шагов с цитатами, код строит «старт → задачи → конец». Нет XOR/AND-шлюзов, циклов, условий, событий; `runs.ir` пустой. Repair — только по неподтверждённым цитатам (до 2 кругов) | JSON-схема IR (Pydantic), компилятор `domain/compiler.py` (IR → ProcessGraph → XML), валидатор с repair до 3 кругов, few-shot в `llm/prompts/`; Pydantic AI — вариант вместо ручного JSON-режима | §5.3–5.5 · #5 |
+| Mock-пайплайн (`llm/mock.py`) | Записанные ответы по фразам-триггерам (`fixtures/playbook.py`); режим по умолчанию (`LLM_PROVIDER=mock`) | Остаётся фикстурой для тестов и демо без ключа; golden set и замеры качества — скилл `prompt-eval` | §9.1 · #5 |
+| Бюджет контекста модели (`ingest/context.py`) | Лимит символов на все источники (`LLM_CONTEXT_BUDGET_CHARS`): лишнее обрезается поровну, самые старые источники сверх лимита пропускаются, обрезка видна в `warnings` прогона. Токенов не считаем, символы | Дайджест больших документов: строится один раз, кэшируется в `Source.digest` со ссылками на цитаты; бюджет в токенах модели | §5.2 п. 3 · #6 |
+| Разбор документов (`ingest/parsers.py`) | `.docx` — только абзацы (без таблиц, колонтитулов, списков); PDF — pypdf, сканы без текстового слоя получают ошибку; `.csv` — построчно | python-docx; OCR сканов (Yandex Vision) — P2 | §5.2 · #6 |
+| Распознавание речи (`ingest/stt.py`, `ingest/deepgram.py`) | По умолчанию mock (правдоподобная расшифровка); `STT_PROVIDER=deepgram` — один синхронный запрос без перепаковки | Yandex SpeechKit из RFC: ffmpeg → OGG_OPUS mono, клип ≤ 30 с — v1 синхронно, длиннее — v3 `recognizeFileAsync` + `getRecognition` | §5.2 · #6 |
+| Задержки этапов (`container.py` → `mock_pace`) | Имитация работы модели из `MOCK_STAGE_DELAYS × MOCK_DELAY_SCALE`; действует при любом `LLM_PROVIDER`, поэтому с DeepSeek к реальному времени добавляется ≈ 7 с | Убрать, когда mock перестанет быть основным демо-режимом | §5.1 · #5 |
+| Счётчики в списке проектов (`services/projects.py`) | На каждый проект несколько запросов (источники, вопросы, версии) | Один агрегирующий SQL-запрос на страницу | #6 |
+| Фоновые задачи (`infra/tasks.py`) и SSE-журнал (`infra/events.py`) | `asyncio` внутри процесса. После перезапуска прогоны и разбор файлов в работе помечаются `failed` с понятной причиной, возобновления нет; журнал SSE живёт в памяти | Осознанно остаётся (один backend, RFC §6 — без Redis); при масштабировании — очередь и общий журнал | §5.1, §6 |
+| Хранилище файлов (`infra/storage.py`) | `LocalFileStorage` на volume `/data/uploads` | S3-совместимое хранилище, если понадобится несколько узлов | §4 |
 
 Не заглушено и остаётся: контракт API, сервисы, правила вопросов и сверки (`domain/questions.py`:
 «решено» только с цитатой, найденной в источнике), статусы проекта, курсорная пагинация,
-дифф версий, отчёт с допущениями, SSE.
+SSE, версии с допущениями, Postgres-репозитории с единицей работы (`Repositories.atomic()`),
+аккаунты и общий доступ, повторы запросов к DeepSeek, срок прогона.
 
 ## Как устроен mock-прогон
 
@@ -60,7 +68,10 @@ flowchart TB
 | `validating` «Проверяю схему» | — | да | `domain/bpmn/xsd.py` |
 | `layout` «Раскладываю схему» | — | да | `bpmn_tools.layout` + `lint` → новая версия → событие `version` |
 
-Последним всегда идёт `done {run}`; при ошибке перед ним — `error {message}`. Подписчик SSE получает
+Последним всегда идёт `done {run}`; при ошибке перед ним — `error {message}`. `done` гарантирован:
+даже если сохранить ошибку в БД не удалось, поток закрывается. Прогон ограничен сроком
+`RUN_DEADLINE_SEC` (по истечении — `failed`), а пока он идёт, ручное сохранение схемы
+(`PUT /projects/{id}/diagram`) отвечает `409`: версия прогона перекрыла бы правку. Подписчик SSE получает
 историю прогона, затем новые события; `Last-Event-ID` продолжает поток. Для прогонов без журнала
 (засеянных) поток состоит из одного `done`. Суммарно: анализ ≈ 5 с, сборка ≈ 7,5 с; в тестах
 `Settings(mock_delay_scale=0)`.
@@ -91,30 +102,6 @@ Mock-модель (`llm/mock.py`) детерминирована и зависи
 Тот же сценарий проходит проект из примера `tp861` (`POST /projects/from-example`) с загрузкой
 `examples/tp861/input/project-finances.docx`.
 
-## Замена mock на реализацию
-
-### #6 — хранение, ingest, bpmn-tools
-
-1. `ingest/parsers.py`: добавить python-docx вместо упрощённого `_docx_text`; PDF уже извлекается через pypdf, лимит текста задаётся в config.
-2. `ingest/stt.py`: класс `YandexSpeechToText` с тем же `transcribe`; ffmpeg в образе.
-3. `infra/bpmn_tools.py`: `HttpBpmnTools` (`/layout`, `/lint`), URL — в `config.py`.
-4. Результаты `analysis`, отчёт, модель и задержка прогона сохраняются в БД; вызовы этапов
-   записываются в `llm_calls`. Токены пока неизвестны в общем формате и остаются `null`.
-5. Добавить JSON IR, когда пайплайн будет возвращать промежуточное представление согласно RFC;
-   сейчас структура возвращает готовый BPMN-черновик, поэтому `runs.ir` пустой.
-6. API-контракт и роуты пока остаются прежними.
-
-### #5 — LLM-пайплайн и domain
-
-1. `llm/agents.py`, `llm/providers.py`, `llm/prompts/`: класс с методами `analyze` и `structure`
-   из `llm/base.py`. `structure` получает IR от модели и вызывает `domain/compiler.py`
-   (IR → ProcessGraph → XML) с repair-циклом по ошибкам валидатора.
-2. `domain/bpmn/xsd.py`: настоящая проверка lxml по `xsd/BPMN20.xsd`; lxml — в основные зависимости.
-3. `domain/importer.py`: XML → ProcessGraph, чтобы ручная правка (`PUT /projects/{id}/diagram`)
-   учитывалась следующим прогоном; `domain/bpmn/diff.py` — дифф по ProcessGraph.
-4. Убрать `mock_pace` из `container.py`.
-5. `llm/mock.py` и `fixtures/playbook.py` остаются фикстурой для тестов сервисов.
-
 ## Как добавить фикстуру
 
 1. Текст источника — `backend/app/fixtures/texts/<name>.md`.
@@ -133,6 +120,10 @@ Mock-модель (`llm/mock.py`) детерминирована и зависи
 
 ## Конфигурация
 
-`backend/app/config.py`: `MOCK_DELAY_SCALE` (0 — мгновенно), `MOCK_STAGE_DELAYS`,
-`MOCK_TRANSCRIPTION_DELAY_SEC`, `MOCK_PARSE_DELAY_SEC`, `SEED_DEMO_DATA`, `MAX_CONCURRENT_RUNS`,
-`MAX_UPLOAD_BYTES`, `MAX_AUDIO_BYTES`, `MAX_DIAGRAM_BYTES`, `MAX_TEXT_CHARS`.
+Всё задаётся в `backend/app/config.py` и `.env.example`. Для этого документа важны:
+`LLM_PROVIDER`, `STT_PROVIDER`; mock — `MOCK_DELAY_SCALE` (0 — мгновенно), `MOCK_STAGE_DELAYS`,
+`MOCK_TRANSCRIPTION_DELAY_SEC`, `MOCK_PARSE_DELAY_SEC`, `SEED_DEMO_DATA`; прогоны —
+`MAX_CONCURRENT_RUNS`, `RUN_DEADLINE_SEC`, `LLM_CONTEXT_BUDGET_CHARS`; DeepSeek —
+`DEEPSEEK_TIMEOUT_SEC`, `DEEPSEEK_MAX_RETRIES`, `DEEPSEEK_RETRY_BASE_SEC`,
+`DEEPSEEK_RETRY_MAX_SEC`; загрузки — `MAX_UPLOAD_BYTES`, `MAX_AUDIO_BYTES`, `MAX_DIAGRAM_BYTES`,
+`MAX_TEXT_CHARS`, `MAX_PDF_PAGES`, `PARSE_TIMEOUT_SEC`.

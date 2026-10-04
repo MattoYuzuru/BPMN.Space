@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { RUN_MODE_LABEL, type RunView, runSteps, useRunStore, useRunView } from '@/entities/run'
 import { formatDuration } from '@/shared/lib/format'
 import { floatingPanel } from '@/shared/lib/motion'
+import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import { Card, FlowLine, Icon, IconButton, Stepper } from '@/shared/ui'
 import { SummaryChips } from './summary-chips'
 
@@ -62,6 +63,7 @@ function RunCard({ view, onClose }: { view: RunView; onClose: () => void }) {
       role="status"
       aria-live="polite"
       aria-label={`Ход прогона: ${labels.title}`}
+      {...tourAnchor(TOUR_ANCHORS.runProgress)}
       className="overflow-hidden bg-surface-raised shadow-lg"
     >
       <FlowLine

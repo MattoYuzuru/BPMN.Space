@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { type ProjectDetail, patchProjectInLists, projectKeys } from '@/entities/project'
 import { api, errorMessage, unwrap } from '@/shared/api/client'
+import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
 import { toast } from '@/shared/ui'
 import type { RunMode } from './model'
 import { useRunStore } from './store'
@@ -13,6 +14,11 @@ export async function startRun(projectId: string, mode: RunMode) {
       body: { mode },
     }),
   )
+}
+
+/** Состояние прогона по id: опрос, когда поток событий потерян. */
+export async function fetchRun(runId: string) {
+  return unwrap(await api.GET('/api/v1/runs/{run_id}', { params: { path: { run_id: runId } } }))
 }
 
 /**
@@ -32,6 +38,7 @@ export function useStartRun(projectId: string) {
       )
       patchProjectInLists(client, projectId, (project) => ({ ...project, status }))
       track(run)
+      emitOnboardingSignal({ type: 'run.started', id: run.id, projectId })
     },
     onError: (error) =>
       toast.error('Прогон не запущен', { description: errorMessage(error), duration: 8000 }),

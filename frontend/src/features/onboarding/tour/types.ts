@@ -2,6 +2,7 @@ import type { OnboardingSignal, OnboardingSignalType } from '@/shared/lib/onboar
 import type { AnchorRef } from '@/shared/lib/tour-anchors'
 
 export type TourSide = 'top' | 'right' | 'bottom' | 'left'
+export type TourAlign = 'start' | 'center' | 'end'
 
 /** Где живёт шаг. Движок сам переходит на этот маршрут и ставит тур на паузу, если пользователь ушёл. */
 export interface RouteTarget {
@@ -21,6 +22,10 @@ export interface CoachPage {
   /** Свой якорь страницы; `null` — по центру экрана без выреза. */
   anchor?: AnchorRef | null
   side?: TourSide
+  /** Выравнивание карточки вдоль стороны. */
+  align?: TourAlign
+  /** Опора карточки: элемент, рядом с которым она стоит, отдельно от выреза (`null` — сам якорь). */
+  cardAnchor?: AnchorRef | null
   allowOutside?: boolean
 }
 
@@ -73,6 +78,8 @@ export interface StepView {
   /** `null` — по центру экрана без выреза. */
   anchor?: AnchorRef | null
   side?: TourSide
+  align?: TourAlign
+  cardAnchor?: AnchorRef | null
   allowOutside?: boolean
 }
 
@@ -99,6 +106,9 @@ export interface TourStep<Ctx = unknown> {
   /** Якорь `data-tour`; нет — карточка по центру. */
   anchor?: AnchorRef | ((ctx: Ctx) => AnchorRef | undefined)
   side?: TourSide
+  align?: TourAlign
+  /** Опора карточки (например, вся карточка вопроса при подсвеченной кнопке в ней). */
+  cardAnchor?: AnchorRef | ((ctx: Ctx) => AnchorRef | undefined)
   /** Шаг-действие или ожидание завершены этим сигналом. */
   until?: (signal: OnboardingSignal, ctx: Ctx) => boolean
   /** То же по состоянию приложения: проверяется после каждого обновления контекста. */

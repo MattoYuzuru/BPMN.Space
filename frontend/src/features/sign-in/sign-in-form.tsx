@@ -5,6 +5,7 @@ import {
   type AuthFormError,
   type AuthMode,
   authFormError,
+  PASSWORD_MIN_LENGTH,
   useLogin,
   useRegister,
   validateAuthForm,
@@ -19,11 +20,11 @@ const MODES = [
 
 /**
  * Правила пароля для Safari / iCloud Keychain: он генерирует пароль под них. Атрибута нет в типах
- * React, поэтому передаём через типизированный spread. Совпадает с проверкой на сервере (12–128).
+ * React, поэтому передаём через типизированный spread. Минимум — общая константа с проверкой формы
+ * и сервера (`PASSWORD_MIN_LENGTH`–128).
  */
 const SAFARI_PASSWORD_RULES: Record<string, string> = {
-  passwordrules:
-    'minlength: 12; maxlength: 128; required: lower; required: upper; required: digit;',
+  passwordrules: `minlength: ${PASSWORD_MIN_LENGTH}; maxlength: 128; required: lower; required: upper; required: digit;`,
 }
 
 export interface SignInFormProps {

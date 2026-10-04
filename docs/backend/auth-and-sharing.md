@@ -73,7 +73,7 @@ X-Content-Type-Options: nosniff
 Content-Security-Policy: default-src 'none'; sandbox
 ```
 
-При ручном сохранении схемы (`PUT /projects/{id}/diagram`) XML проверяется: допускаются только пространства имён BPMN 2.0 (model, BPMNDI, DC, DI), цвета bpmn-js (`color`, `biocolor`) и `xsi`. Отклоняются (`422`, русское сообщение) DTD и сущности, инструкции обработки, любые другие элементы и атрибуты и элемент `script`. Последнее запрещает и штатный `bpmn:script` у `scriptTask`: схемы с телом скрипта придётся сохранять без него.
+При ручном сохранении схемы (`PUT /projects/{id}/diagram`) XML проверяется: допускаются только пространства имён BPMN 2.0 (model, BPMNDI, DC, DI), цвета bpmn-js (`color`, `biocolor`) и `xsi`. Отклоняются (`422`, русское сообщение) DTD и сущности, инструкции обработки, любые другие элементы и атрибуты — в том числе `<script>` из XHTML/SVG. Штатный `bpmn:script` у `scriptTask` разрешён: браузер его не исполняет.
 
 ## Лимиты частоты
 

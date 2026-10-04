@@ -68,6 +68,13 @@ def test_safe_xml_accepts_generated_and_bpmn_js_documents() -> None:
     ensure_safe_xml(colored)
 
 
+def test_bpmn_script_of_script_task_is_allowed() -> None:
+    ensure_safe_xml(
+        f"<bpmn:definitions {BPMN}><bpmn:process id='p'><bpmn:scriptTask id='t'>"
+        "<bpmn:script>1</bpmn:script></bpmn:scriptTask></bpmn:process></bpmn:definitions>"
+    )
+
+
 @pytest.mark.parametrize(
     ("xml", "fragment"),
     [
@@ -82,7 +89,6 @@ def test_safe_xml_accepts_generated_and_bpmn_js_documents() -> None:
             f"<bpmn:definitions {BPMN}>&e;</bpmn:definitions>",
             "DTD",
         ),
-        (f"<bpmn:definitions {BPMN}><bpmn:script>1</bpmn:script></bpmn:definitions>", "script"),
         (
             f'<bpmn:definitions {BPMN}><s:SCRIPT xmlns:s="http://www.w3.org/1999/xhtml"/>'
             "</bpmn:definitions>",

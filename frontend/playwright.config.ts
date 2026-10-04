@@ -1,9 +1,13 @@
 import { defineConfig, devices } from '@playwright/test'
+import { AUTH_STATE } from './e2e/auth-state'
 
 /**
  * e2e идут против стека в Docker (`make up`), по умолчанию http://localhost:8080.
  * Свой адрес — E2E_BASE_URL (например, vite на :5176 + mock-backend на :8000 с MOCK_DELAY_SCALE=0.2).
  * Проект screenshots снимает ключевые экраны для команды: `make screenshots` → reports/screenshots.
+ *
+ * Если на стенде включены аккаунты, `e2e/global-setup.ts` регистрирует тестового пользователя и
+ * сохраняет вход; сценарии идут под ним. Экран входа проверяет `auth.spec.ts` без этого состояния.
  *
  * Микрофон — поддельный: Chromium отдаёт тестовый сигнал без запроса разрешения, поэтому
  * сценарий записи голоса проходит без человека.
@@ -17,6 +21,7 @@ const fakeMedia = {
 
 export default defineConfig({
   testDir: './e2e',
+  globalSetup: './e2e/global-setup.ts',
   fullyParallel: true,
   // E2E-сценарии используют общий демо-проект. Последовательный режим в CI
   // исключает взаимное изменение вопросов и прогонов между тестами.
@@ -31,6 +36,7 @@ export default defineConfig({
     locale: 'ru-RU',
     trace: 'retain-on-failure',
     viewport: { width: 1440, height: 900 },
+    storageState: AUTH_STATE,
   },
   projects: [
     {

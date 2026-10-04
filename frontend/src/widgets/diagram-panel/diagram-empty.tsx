@@ -10,12 +10,12 @@ import { useWorkspace, useWorkspaceUi } from '@/widgets/workspace/model'
  * действие: построить схему (неотвеченные вопросы станут допущениями).
  */
 export function DiagramEmpty() {
-  const { project } = useWorkspace()
+  const { project, canEdit } = useWorkspace()
   const start = useStartRun(project.id)
   const running = isRunning(project.status)
   const building = project.status === 'building'
 
-  if (project.sources.length === 0) return <Onboarding />
+  if (project.sources.length === 0 && canEdit) return <Onboarding />
 
   return (
     <EmptyState
@@ -25,10 +25,12 @@ export function DiagramEmpty() {
       description={
         building
           ? 'Схема появится здесь, как только прогон дойдёт до раскладки.'
-          : 'Постройте её сейчас: на неотвеченные вопросы модель примет допущения и подсветит их на схеме.'
+          : !canEdit
+            ? 'В этом проекте её ещё не строили.'
+            : 'Постройте её сейчас: на неотвеченные вопросы модель примет допущения и подсветит их на схеме.'
       }
       action={
-        building ? undefined : (
+        building || !canEdit ? undefined : (
           <>
             <Button
               variant="primary"

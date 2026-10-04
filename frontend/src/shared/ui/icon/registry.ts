@@ -75,6 +75,8 @@ import {
   IconLink,
   IconListCheck,
   IconLock,
+  IconLogout,
+  IconMail,
   IconMap,
   IconMenu2,
   IconMessageQuestion,
@@ -181,6 +183,8 @@ export const iconRegistry = {
   calendar: IconCalendar,
   history: IconHistory,
   lock: IconLock,
+  logout: IconLogout,
+  mail: IconMail,
   eye: IconEye,
   'eye-off': IconEyeOff,
   // Предметная область

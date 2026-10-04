@@ -8,6 +8,7 @@ export { AssumptionFrame, type AssumptionFrameProps } from './assumption-frame/a
 export { AudioLevel, type AudioLevelProps } from './audio-level/audio-level'
 export { Avatar, type AvatarProps, initials } from './avatar/avatar'
 export { Badge, type BadgeProps, type BadgeTone } from './badge/badge'
+export { Beacon, type BeaconProps } from './beacon/beacon'
 export { BrandMark, type BrandMarkProps } from './brand-mark/brand-mark'
 export {
   Button,
@@ -18,6 +19,11 @@ export {
 } from './button/button'
 export { Card, CardHeader, type CardHeaderProps, type CardProps } from './card/card'
 export { Checkbox, type CheckboxProps } from './checkbox/checkbox'
+export {
+  type CoachAction,
+  CoachCard,
+  type CoachCardProps,
+} from './coach-card/coach-card'
 export { CommandPalette, preloadCommandPalette } from './command-palette/command-palette'
 export type { CommandGroup, CommandItem, CommandPaletteProps } from './command-palette/types'
 export { ConfirmDialog, type ConfirmDialogProps } from './dialog/confirm-dialog'
@@ -90,6 +96,7 @@ export {
   SheetTrigger,
 } from './sheet/sheet'
 export { Skeleton, SkeletonText } from './skeleton/skeleton'
+export { type Rect, Spotlight, type SpotlightProps } from './spotlight/spotlight'
 export { type StepItem, Stepper, type StepperProps, type StepStatus } from './stepper/stepper'
 export { Switch, type SwitchProps } from './switch/switch'
 export { Tabs, TabsContent, TabsList, TabsTrigger, type TabsTriggerProps } from './tabs/tabs'
@@ -97,3 +104,4 @@ export { Tag, type TagProps } from './tag/tag'
 export { Textarea, type TextareaProps } from './textarea/textarea'
 export { Toaster, type ToastOptions, toast } from './toast/toast'
 export { Tooltip, type TooltipProps, TooltipProvider } from './tooltip/tooltip'
+export { Typewriter, type TypewriterProps } from './typewriter/typewriter'

@@ -536,11 +536,6 @@ MALICIOUS_XML = {
         '<bpmn:process id="p"/><html:script xmlns:html="http://www.w3.org/1999/xhtml">'
         "alert(1)</html:script></bpmn:definitions>"
     ),
-    "bpmn-script": (
-        '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
-        '<bpmn:process id="p"><bpmn:script>alert(1)</bpmn:script></bpmn:process>'
-        "</bpmn:definitions>"
-    ),
     "foreign-attribute": (
         '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" '
         'xmlns:x="http://evil.example/ns" x:onload="alert(1)"><bpmn:process id="p"/>'
@@ -568,6 +563,15 @@ async def test_manual_save_rejects_malicious_xml(stack: Stack) -> None:
         response = await owner.put(path, json={"xml": xml})
         assert response.status_code == 422, (name, response.text)
         assert response.json()["detail"], name
+
+    # Допустимое содержимое не режем: `bpmn:script` внутри scriptTask — часть стандарта.
+    script_task = (
+        '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+        '<bpmn:process id="p"><bpmn:scriptTask id="t"><bpmn:script>x = 1</bpmn:script>'
+        "</bpmn:scriptTask></bpmn:process></bpmn:definitions>"
+    )
+    allowed = await owner.put(path, json={"xml": script_task})
+    assert allowed.status_code == 201, allowed.text
 
     # Не навредили: версий не прибавилось, а корректный XML (в т.ч. bpmn-js) сохраняется.
     versions = (await owner.get(f"/projects/{ids['project']}/versions")).json()

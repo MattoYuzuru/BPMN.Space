@@ -111,6 +111,7 @@ src/
 - Маршруты режутся на чанки автоматически (`autoCodeSplitting`). `pendingComponent` маршрутов в чанк не уходит, поэтому заглушки экранов вынесены в `widgets/skeletons/screen-skeletons.tsx` и не импортируют виджеты — иначе экраны попали бы в стартовый бандл.
 - bpmn-js с плагинами — отдельный чанк `LazyDiagramEditor` (≈ 460 КБ gzip), грузится в loader рабочего места и при наведении на проект.
 - Палитра команд (cmdk), диалог создания проекта, экраны 404 и ошибки — `React.lazy` по первому требованию.
+- Движок обучения (`features/onboarding/tour`, `hint`) — отдельные чанки: грузятся, только когда тур активен или показана подсказка; без тура наблюдателей (`MutationObserver`, `ResizeObserver`) нет. Устройство — [onboarding.md](onboarding.md).
 - Возможности motion (`domAnimation`) грузятся отдельным чанком через `LazyMotion`; экраны используют только лёгкие `m.*`.
 - `make build` проверяет бюджет: стартовые JS и CSS ≤ 200 КБ gzip, без bpmn-js (`frontend/scripts/check-bundle.mjs`).
 

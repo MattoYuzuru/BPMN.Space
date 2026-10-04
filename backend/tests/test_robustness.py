@@ -91,7 +91,7 @@ async def test_manual_save_during_active_run_is_conflict(service_container: Cont
     service_container.runs._pace = hold
     project_id = await _project_with_text(service_container)
     xml = read_bpmn("tp861_v2")
-    await service_container.runs.start(project_id, mode=RunMode.BUILD)
+    await service_container.runs.start(project_id, mode=RunMode.BUILD, created_by=None)
 
     with pytest.raises(ConflictError, match="идёт сборка"):
         await service_container.versions.save_manual(project_id, xml=xml)
@@ -114,7 +114,7 @@ async def test_manual_save_during_active_analyze_run_is_allowed(
 
     service_container.runs._pace = hold
     project_id = await _project_with_text(service_container)
-    await service_container.runs.start(project_id, mode=RunMode.ANALYZE)
+    await service_container.runs.start(project_id, mode=RunMode.ANALYZE, created_by=None)
 
     saved = await service_container.versions.save_manual(project_id, xml=read_bpmn("tp861_v2"))
     assert saved.number == 1  # анализ версий не создаёт, правка ему не мешает
@@ -254,7 +254,7 @@ async def test_memory_source_patch_rejects_unknown_fields(service_container: Con
 
 async def test_memory_project_delete_removes_everything(service_container: Container) -> None:
     project_id = await _project_with_text(service_container)
-    await service_container.runs.start(project_id, mode=RunMode.BUILD)
+    await service_container.runs.start(project_id, mode=RunMode.BUILD, created_by=None)
     await service_container.spawner.wait_idle()
     store = _store(service_container)
     assert all([store.runs, store.versions, store.llm_calls])
@@ -611,7 +611,7 @@ async def test_no_new_model_request_after_deadline() -> None:
 
 
 async def _run_to_end(container: Container, project_id: UUID, mode: RunMode = RunMode.BUILD):
-    run = await container.runs.start(project_id, mode=mode)
+    run = await container.runs.start(project_id, mode=mode, created_by=None)
     await container.spawner.wait_idle()
     return run, [e async for e in await container.runs.events(run.id)]
 
@@ -712,7 +712,7 @@ async def test_stream_is_closed_even_if_saving_the_failure_fails(
         raise PipelineError("модель недоступна")
 
     service_container.runs._pace = boom
-    run = await service_container.runs.start(project_id, mode=RunMode.ANALYZE)
+    run = await service_container.runs.start(project_id, mode=RunMode.ANALYZE, created_by=None)
     await asyncio.wait_for(service_container.spawner.wait_idle(), 5)
 
     events = [e async for e in await service_container.runs.events(run.id)]
@@ -733,7 +733,7 @@ async def test_stream_is_closed_if_final_save_of_a_successful_run_fails(
 
     runs.update = broken_update  # type: ignore[method-assign]
     service_container.runs._pipeline = _Pipeline(tokens=None)
-    run = await service_container.runs.start(project_id, mode=RunMode.ANALYZE)
+    run = await service_container.runs.start(project_id, mode=RunMode.ANALYZE, created_by=None)
     await asyncio.wait_for(service_container.spawner.wait_idle(), 5)
 
     events = [e async for e in await service_container.runs.events(run.id)]

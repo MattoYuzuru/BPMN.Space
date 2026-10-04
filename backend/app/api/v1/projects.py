@@ -19,6 +19,7 @@ from app.api.schemas.projects import (
     ProjectUpdate,
 )
 from app.domain.access import ProjectScope
+from app.domain.onboarding import ChecklistItem
 from app.services.errors import ForbiddenError
 
 router = APIRouter(tags=["projects"])
@@ -74,6 +75,7 @@ async def create_project(
     view = await container.projects.create(
         title=body.title, description=body.description, owner_id=owner_id
     )
+    await container.onboarding.record(owner_id, ChecklistItem.PROJECT_CREATED)
     return Project.of(view, ProjectRole.OWNER)
 
 
@@ -88,10 +90,9 @@ async def create_project_from_example(
 ) -> Project:
     """Проект с текстом примера в качестве первого источника."""
     owner_id = require_account(request, user)
-    return Project.of(
-        await container.projects.create_from_example(body.example_id, owner_id=owner_id),
-        ProjectRole.OWNER,
-    )
+    view = await container.projects.create_from_example(body.example_id, owner_id=owner_id)
+    await container.onboarding.record(owner_id, ChecklistItem.PROJECT_CREATED)
+    return Project.of(view, ProjectRole.OWNER)
 
 
 @router.get("/projects/{project_id}", responses=errors(401, 404, 422))

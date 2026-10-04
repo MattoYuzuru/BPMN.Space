@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     api_prefix: str = "/api/v1"
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:8080"]
     auth_enabled: bool = True
+    # Обучение и чек-лист «Начало работы»: работают только вместе с аккаунтами (`auth_enabled`).
+    onboarding_enabled: bool = True
     # Secure у session- и CSRF-cookie: None — включить в production (`APP_ENV=prod|production`).
     # Явное true/false нужно, когда HTTPS ещё нет (false) или TLS завершается снаружи (true).
     session_cookie_secure: bool | None = None

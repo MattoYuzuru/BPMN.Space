@@ -11,6 +11,7 @@ from app.api.deps import ContainerDep
 from app.api.schemas.common import errors
 from app.api.schemas.questions import Question, QuestionAnswerCreate
 from app.domain.models import QuestionStatus
+from app.domain.onboarding import ChecklistItem
 
 router = APIRouter(tags=["questions"])
 
@@ -41,7 +42,9 @@ async def answer_question(
     await ensure_resource_access(
         request, container, question_id, user, resource=ResourceKind.QUESTION, write=True
     )
-    return Question.model_validate(await container.questions.answer(question_id, text=body.text))
+    answered = await container.questions.answer(question_id, text=body.text)
+    await container.onboarding.record(user.id if user else None, ChecklistItem.QUESTION_ANSWERED)
+    return Question.model_validate(answered)
 
 
 @router.post("/questions/{question_id}/ignore", responses=errors(401, 403, 404, 409, 422))
@@ -55,7 +58,9 @@ async def ignore_question(
     await ensure_resource_access(
         request, container, question_id, user, resource=ResourceKind.QUESTION, write=True
     )
-    return Question.model_validate(await container.questions.ignore(question_id))
+    ignored = await container.questions.ignore(question_id)
+    await container.onboarding.record(user.id if user else None, ChecklistItem.ASSUMPTION_ACCEPTED)
+    return Question.model_validate(ignored)
 
 
 @router.post("/questions/{question_id}/reopen", responses=errors(401, 403, 404, 409, 422))

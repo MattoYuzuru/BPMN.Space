@@ -146,6 +146,130 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/onboarding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Onboarding
+         * @description Состояние обучения и чек-листа «Начало работы». Строка пользователя создаётся при
+         *     первом запросе. Всегда `200`: без сессии или при выключенном онбординге — `enabled=false`.
+         */
+        get: operations["get_onboarding"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/onboarding/checklist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Checklist
+         * @description Скрыть или вернуть плашку и чек-лист «Начало работы».
+         */
+        patch: operations["update_checklist"];
+        trace?: never;
+    };
+    "/api/v1/me/onboarding/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report Event
+         * @description Клиент сообщает о действии, которого не видит сервер (`simulation_run`,
+         *     `diagram_exported`). Другие ключи — 422; повтор безопасен.
+         */
+        post: operations["report_event"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/onboarding/items/{item}/target": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Item Target
+         * @description Куда вести по невыполненному пункту чек-листа: проекты, которые пользователь может
+         *     редактировать (свои и по ссылке на редактирование); демо только для чтения не считаются.
+         */
+        get: operations["item_target"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/onboarding/tour": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Tour
+         * @description Сменить шаг или статус тура. Недопустимый переход — 409; чужой или несуществующий
+         *     `project_id` — 404; неизвестный ключ шага — 422.
+         */
+        patch: operations["update_tour"];
+        trace?: never;
+    };
+    "/api/v1/me/onboarding/tour/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restart Tour
+         * @description Начать тур заново: `active`, шаг `project.create`, без учебного проекта.
+         */
+        post: operations["restart_tour"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects": {
         parameters: {
             query?: never;
@@ -382,6 +506,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/sources/sample": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Sample Source
+         * @description Добавить учебный материал из `GET /samples` как обычный источник: документ проходит тот
+         *     же разбор, что и `sources/file`, голосовая заметка сразу готова (`kind=voice`).
+         */
+        post: operations["create_sample_source"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/sources/text": {
         parameters: {
             query?: never;
@@ -513,6 +658,26 @@ export interface paths {
          *     Сначала приходит вся история прогона, затем новые события; поток закрывается после `done`.
          */
         get: operations["run_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/samples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Samples
+         * @description Учебные материалы для «Примеров» в меню источника; доступ — как у `/examples`.
+         */
+        get: operations["list_samples"];
         put?: never;
         post?: never;
         delete?: never;
@@ -748,6 +913,40 @@ export interface components {
              */
             file: string;
         };
+        /** ChecklistEntry */
+        ChecklistEntry: {
+            /**
+             * Completed At
+             * Format: date-time
+             */
+            completed_at: string;
+            key: components["schemas"]["ChecklistItem"];
+            source: components["schemas"]["ItemSource"];
+        };
+        /**
+         * ChecklistItem
+         * @description 12 пунктов чек-листа в порядке показа (группы: источники, анализ, схема, команда).
+         * @enum {string}
+         */
+        ChecklistItem: "project_created" | "text_source_added" | "document_uploaded" | "voice_added" | "diagram_built" | "question_answered" | "assumption_accepted" | "diagram_rebuilt" | "diagram_edited" | "simulation_run" | "diagram_exported" | "project_shared";
+        /** ChecklistState */
+        ChecklistState: {
+            /**
+             * Hidden
+             * @description Плашка и чек-лист скрыты пользователем
+             */
+            hidden: boolean;
+            /**
+             * Items
+             * @description Отмеченные пункты по времени отметки
+             */
+            items: components["schemas"]["ChecklistEntry"][];
+        };
+        /** ChecklistUpdate */
+        ChecklistUpdate: {
+            /** Hidden */
+            hidden: boolean;
+        };
         /** DiagramSave */
         DiagramSave: {
             /**
@@ -799,6 +998,12 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /**
+         * ItemSource
+         * @description Кто отметил пункт: сервер при действии или клиент (то, чего сервер не видит).
+         * @enum {string}
+         */
+        ItemSource: "server" | "client";
         /** LintIssue */
         LintIssue: {
             /** Element Id */
@@ -835,6 +1040,42 @@ export interface components {
              * @default
              */
             source: string;
+        };
+        /** OnboardingEvent */
+        OnboardingEvent: {
+            /** @description Только `simulation_run` и `diagram_exported` */
+            item: components["schemas"]["ChecklistItem"];
+        };
+        /**
+         * OnboardingState
+         * @description Всегда `200`: без аккаунтов, без входа и при `ONBOARDING_ENABLED=false` — `enabled=false`
+         *     и пустые остальные поля.
+         */
+        OnboardingState: {
+            checklist?: components["schemas"]["ChecklistState"] | null;
+            /** Enabled */
+            enabled: boolean;
+            tour?: components["schemas"]["TourState"] | null;
+            /**
+             * Tour Text Suggestion
+             * @description Текст-подсказка для шага тура «Опишите процесс»
+             */
+            tour_text_suggestion?: string | null;
+        };
+        /**
+         * OnboardingTarget
+         * @description Куда вести по пункту. Якорь и тексты подсказок выбирает фронтенд по `item` и `hint`.
+         */
+        OnboardingTarget: {
+            hint: components["schemas"]["TargetHint"];
+            /** Project Id */
+            project_id?: string | null;
+            /**
+             * Question Id
+             * @description Самый ранний открытый вопрос (для пунктов про вопросы)
+             */
+            question_id?: string | null;
+            route: components["schemas"]["TargetRoute"];
         };
         /** Project */
         Project: {
@@ -1244,6 +1485,42 @@ export interface components {
              */
             event: "version";
         };
+        /** Sample */
+        Sample: {
+            /**
+             * Format
+             * @description docx, md, txt или voice
+             */
+            format: string;
+            /** Id */
+            id: string;
+            kind: components["schemas"]["SampleKind"];
+            /**
+             * Size Bytes
+             * @description Размер файла или текста расшифровки
+             */
+            size_bytes: number;
+            /**
+             * Title
+             * @description Для документа — имя файла с расширением
+             */
+            title: string;
+            /**
+             * Tour
+             * @description Документ, на котором строится тур
+             */
+            tour: boolean;
+        };
+        /** SampleAdd */
+        SampleAdd: {
+            /** Sample Id */
+            sample_id: string;
+        };
+        /**
+         * SampleKind
+         * @enum {string}
+         */
+        SampleKind: "document" | "voice";
         /**
          * SessionState
          * @description Состояние входа для клиента: всегда 200, чтобы не путать «гость» с ошибкой сети.
@@ -1429,6 +1706,56 @@ export interface components {
             /** Progress */
             progress: number;
             stage: components["schemas"]["RunStage"];
+        };
+        /**
+         * TargetHint
+         * @description Что показать пользователю: сделать пункт здесь или сначала подготовить предыдущий шаг.
+         * @enum {string}
+         */
+        TargetHint: "do_item" | "need_project" | "need_source" | "need_diagram" | "need_questions";
+        /**
+         * TargetRoute
+         * @enum {string}
+         */
+        TargetRoute: "projects" | "workspace";
+        /** TourState */
+        TourState: {
+            /**
+             * Project Id
+             * @description Учебный проект пользователя
+             */
+            project_id: string | null;
+            status: components["schemas"]["TourStatus"];
+            /** @description Ключ текущего шага; null вне тура */
+            step: components["schemas"]["TourStepKey"] | null;
+            /**
+             * Updated At
+             * Format: date-time
+             * @description Последнее изменение (смена шага — для длительности)
+             */
+            updated_at: string;
+        };
+        /**
+         * TourStatus
+         * @enum {string}
+         */
+        TourStatus: "pending" | "active" | "completed" | "dismissed";
+        /**
+         * TourStepKey
+         * @description 11 шагов тура. Бэкенд знает только ключи; последовательность определяет фронтенд.
+         * @enum {string}
+         */
+        TourStepKey: "project.create" | "sources.sample" | "sources.text" | "sources.voice" | "run.start" | "run.wait" | "question.answer" | "question.ignore" | "diagram.tour" | "share.create" | "finish";
+        /**
+         * TourUpdate
+         * @description Смена шага или статуса тура. Не переданные поля не меняются;
+         *     `project_id: null` снимает учебный проект.
+         */
+        TourUpdate: {
+            /** Project Id */
+            project_id?: string | null;
+            status?: components["schemas"]["TourStatus"] | null;
+            step?: components["schemas"]["TourStepKey"] | null;
         };
         /** Transcription */
         Transcription: {
@@ -1898,6 +2225,273 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Example"][];
+                };
+            };
+        };
+    };
+    get_onboarding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingState"];
+                };
+            };
+        };
+    };
+    update_checklist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChecklistUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingState"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    report_event: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OnboardingEvent"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    item_target: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item: components["schemas"]["ChecklistItem"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingTarget"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    update_tour: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TourUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingState"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Конфликт состояния */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    restart_tour: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingState"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -2898,6 +3492,77 @@ export interface operations {
             };
         };
     };
+    create_sample_source: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SampleAdd"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Source"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Слишком много запросов; повторите через `Retry-After` секунд */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     create_text_source: {
         parameters: {
             query?: never;
@@ -3311,6 +3976,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_samples: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Sample"][];
                 };
             };
         };

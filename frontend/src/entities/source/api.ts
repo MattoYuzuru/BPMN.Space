@@ -1,8 +1,8 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type ProjectDetail, projectKeys } from '@/entities/project'
 import { api, errorMessage, postForm, type Schemas, unwrap } from '@/shared/api/client'
 import { toast } from '@/shared/ui'
-import type { Source } from './model'
+import type { Sample, Source } from './model'
 
 function useProjectCache(projectId: string) {
   const client = useQueryClient()
@@ -75,6 +75,46 @@ export function useAddFileSource(projectId: string) {
         description: errorMessage(error),
         duration: 8000,
       }),
+    onSettled: cache.invalidate,
+  })
+}
+
+/** Ключ учебных материалов: список один на всех и не меняется во время сессии. */
+export const sampleKeys = { all: ['samples'] as const }
+
+export const samplesQueryOptions = queryOptions({
+  queryKey: sampleKeys.all,
+  queryFn: async ({ signal }): Promise<Sample[]> =>
+    unwrap(await api.GET('/api/v1/samples', { signal })),
+  staleTime: Number.POSITIVE_INFINITY,
+})
+
+/** Учебные материалы («Примеры» в меню «Добавить источник»). */
+export function useSamples() {
+  return useQuery(samplesQueryOptions)
+}
+
+/** Добавить учебный материал источником (без уведомлений — для составных сценариев). */
+export async function addSampleSource(projectId: string, sampleId: string) {
+  return unwrap(
+    await api.POST('/api/v1/projects/{project_id}/sources/sample', {
+      params: { path: { project_id: projectId } },
+      body: { sample_id: sampleId },
+    }),
+  )
+}
+
+/** Материал из «Примеров»: документ разбирается в фоне (processing → ready), голос готов сразу. */
+export function useAddSampleSource(projectId: string) {
+  const cache = useProjectCache(projectId)
+  return useMutation({
+    mutationFn: (sampleId: string) => addSampleSource(projectId, sampleId),
+    onSuccess: (source) => {
+      cache.appendSource(source)
+      toast.success('Источник добавлен', { description: source.title })
+    },
+    onError: (error) =>
+      toast.error('Источник не добавлен', { description: errorMessage(error), duration: 8000 }),
     onSettled: cache.invalidate,
   })
 }

@@ -1,10 +1,15 @@
 export {
+  addSampleSource,
   addTextSource,
   type FileUpload,
+  sampleKeys,
+  samplesQueryOptions,
   uploadFileSource,
   useAddFileSource,
+  useAddSampleSource,
   useAddTextSource,
   useDeleteSource,
+  useSamples,
   useUpdateSource,
 } from './api'
 export {
@@ -14,6 +19,8 @@ export {
   type Quote,
   type QuoteMark,
   type QuoteRange,
+  type Sample,
+  type SampleKind,
   SOURCE_KIND,
   type Source,
   type SourceKind,

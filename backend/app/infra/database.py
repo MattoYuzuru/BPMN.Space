@@ -1,5 +1,6 @@
 """Подключение к PostgreSQL: жизненный цикл, миграции и сид демо-данных."""
 
+import logging
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -8,6 +9,10 @@ from typing import Any
 
 from alembic import command
 from alembic.config import Config
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
+from alembic.script.revision import ResolutionError
+from alembic.util.exc import CommandError
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
@@ -15,10 +20,25 @@ from app.domain.models import RunStatus
 from app.infra.db_models import Base, ProjectRow, RunRow
 from app.infra.repositories.sql import SqlStore
 
+logger = logging.getLogger(__name__)
+
 INTERRUPTED_PARSE_ERROR = (
     "Разбор файла прервался из-за перезапуска сервера. "
     "Загрузите файл ещё раз или вставьте текст вручную"
 )
+
+
+def unknown_db_revisions(sync_connection: Any, config: Config) -> list[str]:
+    """Ревизии БД, которых нет среди миграций этого релиза (схему применил более новый релиз)."""
+    scripts = ScriptDirectory.from_config(config)
+    unknown: list[str] = []
+    for revision in MigrationContext.configure(sync_connection).get_current_heads():
+        try:
+            if scripts.get_revision(revision) is None:
+                unknown.append(revision)
+        except (CommandError, ResolutionError):
+            unknown.append(revision)
+    return unknown
 
 
 class Database:
@@ -43,6 +63,15 @@ class Database:
             config.set_main_option("script_location", str(self._migrations_dir))
 
             def migrate(sync_connection: Any) -> None:
+                unknown = unknown_db_revisions(sync_connection, config)
+                if unknown:
+                    # Откат релиза после применения миграций: старый код стартует поверх более
+                    # новой схемы (миграции аддитивные), а не падает на «Can't locate revision».
+                    logger.warning(
+                        "Схема БД новее этого релиза (ревизия %s), миграции пропущены",
+                        ", ".join(unknown),
+                    )
+                    return
                 config.attributes["connection"] = sync_connection
                 command.upgrade(config, "head")
 

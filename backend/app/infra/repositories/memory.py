@@ -22,8 +22,18 @@ from app.domain.models import (
     QuestionStatus,
     Run,
     Source,
+    SourceKind,
     SourceStatus,
     Version,
+)
+from app.domain.onboarding import (
+    ChecklistItem,
+    CompletedItem,
+    ItemSource,
+    ProjectFacts,
+    TourStatus,
+    TourStepKey,
+    UserOnboarding,
 )
 from app.domain.questions import normalize
 from app.domain.runs import ACTIVE_STATUSES
@@ -40,6 +50,10 @@ class InMemoryStore:
     llm_calls: dict[UUID, LlmCall] = field(default_factory=dict[UUID, LlmCall])
     project_owners: dict[UUID, UUID] = field(default_factory=dict[UUID, UUID])
     public_projects: set[UUID] = field(default_factory=set[UUID])
+    onboarding: dict[UUID, UserOnboarding] = field(default_factory=dict[UUID, UserOnboarding])
+    onboarding_items: dict[tuple[UUID, ChecklistItem], CompletedItem] = field(
+        default_factory=dict[tuple[UUID, ChecklistItem], CompletedItem]
+    )
 
     def load(
         self,
@@ -66,6 +80,7 @@ class InMemoryStore:
             runs=InMemoryRunRepository(self),
             versions=InMemoryVersionRepository(self),
             llm_calls=InMemoryLlmCallRepository(self),
+            onboarding=InMemoryOnboardingRepository(self),
         )
 
 
@@ -102,6 +117,9 @@ class InMemoryProjectRepository:
         if stored is not None and at > stored.updated_at:
             stored.updated_at = at
 
+    async def owner_of(self, project_id: UUID) -> UUID | None:
+        return self._store.project_owners.get(project_id)
+
     async def lock(self, project_id: UUID) -> Project | None:
         return await self.get(project_id)
 
@@ -116,6 +134,9 @@ class InMemoryProjectRepository:
             del store.llm_calls[key]
         self._store.project_owners.pop(project_id, None)
         self._store.public_projects.discard(project_id)
+        for state in store.onboarding.values():
+            if state.tour_project_id == project_id:
+                state.tour_project_id = None  # как ON DELETE SET NULL в PostgreSQL
 
     def _matching(self, query: str | None) -> list[Project]:
         needle = normalize(query or "")
@@ -304,3 +325,101 @@ class InMemoryLlmCallRepository:
 
     async def add(self, call: LlmCall) -> None:
         self._items[call.id] = copy.deepcopy(call)
+
+
+class InMemoryOnboardingRepository:
+    def __init__(self, store: InMemoryStore) -> None:
+        self._store = store
+
+    async def get(self, user_id: UUID) -> UserOnboarding | None:
+        state = self._store.onboarding.get(user_id)
+        return copy.deepcopy(state) if state else None
+
+    async def project_facts(self, user_id: UUID, *, limit: int) -> list[ProjectFacts]:
+        store = self._store
+        own = [
+            p
+            for p in store.projects.values()
+            if store.project_owners.get(p.id) == user_id  # редакторов без аккаунтов (PG) нет
+        ]
+        own.sort(key=lambda p: (p.updated_at, p.id), reverse=True)
+        return [self._facts(project.id, project.updated_at) for project in own[:limit]]
+
+    def _facts(self, project_id: UUID, updated_at: datetime) -> ProjectFacts:
+        store = self._store
+        sources = [s for s in store.sources.values() if s.project_id == project_id]
+        material = [s for s in sources if s.active and s.kind is not SourceKind.ANSWER]
+        opened = [
+            q
+            for q in store.questions.values()
+            if q.project_id == project_id and q.status is QuestionStatus.OPEN
+        ]
+        first_open = min(opened, key=lambda q: (q.created_at, len(q.code), q.code), default=None)
+        versions = [v.created_at for v in store.versions.values() if v.project_id == project_id]
+        latest = max(versions, default=None)
+        return ProjectFacts(
+            project_id=project_id,
+            updated_at=updated_at,
+            owned=True,
+            has_sources=any(s.status is not SourceStatus.FAILED for s in material),
+            has_ready_sources=any(s.status is SourceStatus.READY for s in material),
+            has_diagram=latest is not None,
+            open_question_id=first_open.id if first_open else None,
+            answered_after_diagram=latest is not None
+            and any(s.kind is SourceKind.ANSWER and s.created_at > latest for s in sources),
+        )
+
+    async def get_or_create(self, user_id: UUID, now: datetime) -> UserOnboarding:
+        state = self._store.onboarding.get(user_id)
+        if state is None:
+            state = UserOnboarding(
+                user_id=user_id,
+                tour_status=TourStatus.PENDING,
+                tour_step=None,
+                tour_project_id=None,
+                checklist_hidden=False,
+                created_at=now,
+                updated_at=now,
+            )
+            self._store.onboarding[user_id] = state
+        return copy.deepcopy(state)
+
+    async def save_tour(
+        self,
+        user_id: UUID,
+        *,
+        expected_status: TourStatus,
+        status: TourStatus,
+        step: TourStepKey | None,
+        project_id: UUID | None,
+        now: datetime,
+    ) -> bool:
+        state = self._store.onboarding.get(user_id)
+        if state is None or state.tour_status is not expected_status:
+            return False
+        state.tour_status = status
+        state.tour_step = step
+        state.tour_project_id = project_id
+        state.updated_at = now
+        return True
+
+    async def set_checklist_hidden(self, user_id: UUID, hidden: bool, now: datetime) -> None:
+        state = self._store.onboarding.get(user_id)
+        if state is not None:
+            state.checklist_hidden = hidden
+            state.updated_at = now
+
+    async def list_items(self, user_id: UUID) -> list[CompletedItem]:
+        items = [
+            item for (owner, _), item in self._store.onboarding_items.items() if owner == user_id
+        ]
+        return sorted(items, key=lambda item: (item.completed_at, item.item.value))
+
+    async def add_item(
+        self, user_id: UUID, item: ChecklistItem, source: ItemSource, at: datetime
+    ) -> bool:
+        key = (user_id, item)
+        if key in self._store.onboarding_items:
+            return False
+        self._store.onboarding_items[key] = CompletedItem(item=item, completed_at=at, source=source)
+        return True

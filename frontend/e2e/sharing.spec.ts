@@ -223,12 +223,16 @@ test('ссылка на просмотр из чужого аккаунта ос
   await other.goto(url)
   await expect(other.getByRole('region', { name: 'Вопросы' })).toBeVisible()
   await expect(other.getByText('Только просмотр').first()).toBeVisible()
-  // Доступа к проекту у чужого аккаунта нет: ни перехода, ни действий записи.
+  // Прав на правку у чужого аккаунта нет: ни перехода по «Открыть проект», ни действий записи.
   await expect(other.getByRole('link', { name: 'Открыть проект' })).toHaveCount(0)
   for (const name of ['Анализ', 'Построить схему', 'Добавить источник', 'Поделиться']) {
     await expect(other.getByRole('button', { name, exact: true })).toHaveCount(0)
   }
+  // Ссылка на чтение сохранила проект в профиле (поведение ADR 0003): он открывается, но только для чтения.
   await other.goto(`/projects/${id}`)
-  await expect(other.getByText('Проект не найден')).toBeVisible()
+  await expect(other.getByText('Только просмотр').first()).toBeVisible()
+  for (const name of ['Анализ', 'Построить схему', 'Добавить источник', 'Поделиться']) {
+    await expect(other.getByRole('button', { name, exact: true })).toHaveCount(0)
+  }
   await other.context().close()
 })

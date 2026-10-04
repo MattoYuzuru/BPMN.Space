@@ -180,6 +180,7 @@ class Run:
     report: dict[str, Any] | None = None  # внутреннее: итог проверки BPMN
     model: str | None = None  # внутреннее: фактически использованная модель
     latency_ms: int | None = None  # внутреннее: длительность выполнения прогона
+    actor_email: str | None = None  # кто запустил прогон; снимок для истории
 
 
 @dataclass(slots=True, kw_only=True)
@@ -240,3 +241,4 @@ class Version:
     trace: dict[str, Quote] = field(default_factory=dict[str, Quote])
     lanes: list[str] = field(default_factory=list[str])
     run_id: UUID | None = None
+    actor_email: str | None = None  # кто создал версию; для старых записей неизвестен

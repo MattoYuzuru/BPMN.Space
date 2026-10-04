@@ -68,11 +68,19 @@ class Settings(BaseSettings):
 
     # Внешние провайдеры выключены по умолчанию. Секреты задаются только в корневом .env.
     llm_provider: str = "mock"
+    llm_api_key: str | None = None
+    llm_base_url: str | None = None
+    llm_model: str | None = None
+    llm_timeout_sec: float = 120.0
+    llm_json_mode: bool = True
+    llm_max_retries: int = 3
+    llm_retry_base_sec: float = 1.0
+    llm_retry_max_sec: float = 30.0
+    # Старые имена оставлены для плавного перехода production .env с DeepSeek.
     deepseek_api_key: str | None = None
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-flash"
     deepseek_timeout_sec: float = 120.0
-    deepseek_thinking_enabled: bool = False
     # Повторы временных сбоев (HTTP 408/429/5xx, таймаут, обрыв сети): экспоненциальная пауза
     # с джиттером от `base` до `max` секунд, `Retry-After` провайдера учитывается.
     deepseek_max_retries: int = 3
@@ -84,6 +92,7 @@ class Settings(BaseSettings):
     @field_validator(
         "database_url",
         "session_cookie_secure",
+        "llm_api_key",
         "deepseek_api_key",
         "deepgram_api_key",
         mode="before",
@@ -94,6 +103,18 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    def llm_connection(self) -> tuple[str, str, str]:
+        """Эффективные URL, модель и ключ; generic-настройки имеют приоритет над legacy."""
+        provider = self.llm_provider.lower()
+        api_key = self.llm_api_key or (self.deepseek_api_key if provider == "deepseek" else None)
+        base_url = self.llm_base_url or (self.deepseek_base_url if provider == "deepseek" else None)
+        model = self.llm_model or (self.deepseek_model if provider == "deepseek" else None)
+        if not api_key or not base_url or not model:
+            raise ValueError(
+                f"LLM_PROVIDER={self.llm_provider} требует LLM_API_KEY, LLM_BASE_URL и LLM_MODEL"
+            )
+        return api_key, base_url, model
 
     @property
     def cookie_secure(self) -> bool:

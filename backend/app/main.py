@@ -22,6 +22,7 @@ from app.container import Container, build_container
 from app.infra.seed import build_seed
 from app.log_filters import install_log_filters
 from app.services.auth import optional_user
+from app.services.presence import PresenceRegistry
 
 
 def _openapi(app: FastAPI) -> dict[str, Any]:
@@ -67,6 +68,7 @@ def create_app(settings: Settings | None = None, *, container: Container | None 
     )
     app.state.container = container
     app.state.auth_enabled = settings.auth_enabled
+    app.state.presence = PresenceRegistry()
     if not settings.auth_enabled:
         app.dependency_overrides[optional_user] = lambda: None
     # Лимиты ставим раньше CORS: тогда 429 тоже получает CORS-заголовки.

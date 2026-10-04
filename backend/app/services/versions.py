@@ -27,6 +27,7 @@ async def add_version(
     lint: list[LintIssue],
     trace: Mapping[str, Quote],
     run_id: UUID | None = None,
+    actor_email: str | None = None,
 ) -> Version:
     """Новая версия: номер, дифф с прошлой, допущения по текущим вопросам, дорожки.
 
@@ -52,6 +53,7 @@ async def add_version(
             trace=trace,
             created_at=now,
             run_id=run_id,
+            actor_email=actor_email,
         )
         await tx.versions.add(version)
         await tx.projects.touch(project_id, now)
@@ -79,7 +81,9 @@ class VersionService:
     async def get(self, version_id: UUID) -> Version:
         return await get_version(self._repos, version_id)
 
-    async def save_manual(self, project_id: UUID, *, xml: str) -> Version:
+    async def save_manual(
+        self, project_id: UUID, *, xml: str, actor_email: str | None = None
+    ) -> Version:
         """Ручная правка из bpmn-js → версия `manual`.
 
         Mock: проверка корректности XML и корневого элемента BPMN, линтер — подмножество bpmnlint.
@@ -120,4 +124,5 @@ class VersionService:
                 origin=VersionOrigin.MANUAL,
                 lint=lint,
                 trace=trace,
+                actor_email=actor_email,
             )

@@ -34,11 +34,24 @@ export function SharePage({ token, search, onSearchChange }: SharePageProps) {
   const signedIn = Boolean(session.data?.user)
   const query = useQuery(sharedProjectQueryOptions(token))
   const state = sharePageState({ status: query.status, data: query.data, error: query.error })
+  const saveViewerAccess = useAcceptInvite(token)
   const detail =
     state.kind === 'viewer' || state.kind === 'invite' ? state.shared.detail : undefined
   // Проект уже доступен вошедшему (владелец или редактор) — принимать нечего, можно открыть.
   const access = useProjectAccess(detail?.id, signedIn)
   const hasAccess = access.data === 'owner' || access.data === 'editor'
+  const { isPending: savingViewer, isSuccess: viewerSaved, mutate: saveViewer } = saveViewerAccess
+
+  // A signed-in person who opens a viewer link gets a persistent read-only membership so the
+  // project also appears in their project list. The mutation is explicit HTTP POST, not a GET.
+  useEffect(() => {
+    if (state.kind !== 'viewer' || !signedIn || savingViewer || viewerSaved) {
+      return
+    }
+    saveViewer(undefined, {
+      onSuccess: () => toast.success('Общий проект добавлен в ваш профиль'),
+    })
+  }, [saveViewer, savingViewer, signedIn, state.kind, viewerSaved])
 
   useDocumentTitle(
     state.kind === 'invalid' || state.kind === 'expired'

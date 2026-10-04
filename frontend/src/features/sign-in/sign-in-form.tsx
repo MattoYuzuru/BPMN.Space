@@ -122,7 +122,7 @@ export function SignInForm({ mode, onModeChange, redirectTo }: SignInFormProps) 
           key={mode}
           label="Пароль"
           error={errors.password}
-          hint={mode === 'register' ? 'От 12 символов' : undefined}
+          hint={mode === 'register' ? 'От 8 символов' : undefined}
         >
           <Input
             ref={passwordRef}

@@ -43,7 +43,7 @@ test.describe('гость', () => {
 
     await page.getByRole('radio', { name: 'Регистрация' }).click()
     await fillAndSubmit(page, 'nobody@example.com', 'short')
-    await expect(page.getByText(/Пароль — от 12 символов/)).toBeVisible()
+    await expect(page.getByText(/Пароль — от 8 символов/)).toBeVisible()
   })
 
   test('пароль можно показать, адрес возврата чужого сайта игнорируется', async ({ page }) => {

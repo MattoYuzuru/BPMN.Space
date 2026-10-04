@@ -35,6 +35,12 @@ describe('элементы схемы', () => {
     expect(addedElementIds(xml(), next)).toEqual(['Task_B', 'Flow_2'])
   })
 
+  it('замечает изменение связи при сохранённом id потока', () => {
+    const before = diagramElements(xml())
+    const after = diagramElements(xml().replace('targetRef="Task_A"', 'targetRef="Task_B"'))
+    expect(before.get('Flow_1')?.signature).not.toBe(after.get('Flow_1')?.signature)
+  })
+
   it('подписывает типы по-русски', () => {
     expect(elementTypeLabel('exclusiveGateway')).toBe('Шлюз «или»')
     expect(elementTypeLabel('unknownThing')).toBe('Элемент')

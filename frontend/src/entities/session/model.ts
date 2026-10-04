@@ -4,7 +4,7 @@ export type Session = Schemas['SessionState']
 export type SessionUser = Schemas['UserRead']
 
 /** Минимальная длина пароля — как на сервере. */
-export const PASSWORD_MIN_LENGTH = 12
+export const PASSWORD_MIN_LENGTH = 8
 
 /** Нужно ли войти: аккаунты включены, а текущий посетитель — гость. */
 export function needsLogin(session: Pick<Session, 'auth_enabled' | 'user'>): boolean {

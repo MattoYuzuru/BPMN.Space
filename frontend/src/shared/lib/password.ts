@@ -14,7 +14,7 @@ export const PASSWORD_CLASSES = {
 const CLASS_LIST = Object.values(PASSWORD_CLASSES)
 const ALL = CLASS_LIST.join('')
 
-/** Длина по умолчанию: укладывается в правила сервера (12–128). */
+/** Длина по умолчанию: укладывается в правила сервера (8–128). */
 export const DEFAULT_PASSWORD_LENGTH = 20
 
 const UINT32_RANGE = 2 ** 32

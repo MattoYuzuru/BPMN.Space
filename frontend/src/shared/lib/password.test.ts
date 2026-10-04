@@ -9,7 +9,7 @@ const ALLOWED = new RegExp(
 )
 
 describe('generatePassword', () => {
-  it('по умолчанию даёт 20 символов, как требует сервер (12–128)', () => {
+  it('по умолчанию даёт 20 символов, как требует сервер (8–128)', () => {
     expect(DEFAULT_PASSWORD_LENGTH).toBe(20)
     expect(generatePassword()).toHaveLength(20)
   })

@@ -48,6 +48,7 @@ class OpenAICompatiblePipeline:
         max_retries: int = 3,
         retry_base_sec: float = 1.0,
         retry_max_sec: float = 30.0,
+        thinking: bool | None = None,
         complete: Callable[[str, str], str] | None = None,
         sleep: Callable[[float], None] = time.sleep,
         jitter: Callable[[], float] = random.random,
@@ -66,6 +67,9 @@ class OpenAICompatiblePipeline:
             raise ValueError("HTTP разрешён только для локального совместимого провайдера")
         self._timeout_sec = timeout_sec
         self._json_mode = json_mode
+        # Только для DeepSeek: без явного `thinking: disabled` модель тратит max_tokens на
+        # рассуждение и обрезает JSON. Другим провайдерам параметр не шлём (None).
+        self._thinking = thinking
         self._complete = complete
         self._max_retries = max(max_retries, 0)
         self._retry_base_sec = retry_base_sec
@@ -319,6 +323,11 @@ class OpenAICompatiblePipeline:
                 **(
                     {"response_format": {"type": "json_object"}}
                     if json_mode and self._json_mode
+                    else {}
+                ),
+                **(
+                    {"thinking": {"type": "enabled" if self._thinking else "disabled"}}
+                    if self._thinking is not None
                     else {}
                 ),
             }

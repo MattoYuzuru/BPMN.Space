@@ -20,13 +20,13 @@ export function LoginScreen({ redirectTo }: { redirectTo: string }) {
         <ThemeSwitch compact />
       </header>
       <main className="relative isolate grid flex-1 place-items-center px-6 pb-16">
-        <GridBackdrop pattern="grid" glow />
+        <GridBackdrop pattern="grid" glow interactive />
         <div className="flex w-full max-w-sm flex-col items-center gap-6">
           <div className="flex flex-col items-center gap-4 text-center">
             <BrandMark size="lg" />
             <h1 className="type-title text-fg">Архитектор</h1>
           </div>
-          <Card variant="elevated" padding="lg" className="w-full">
+          <Card variant="elevated" padding="lg" className="w-full" data-lens-block>
             <SignInForm mode={mode} onModeChange={setMode} redirectTo={redirectTo} />
           </Card>
         </div>

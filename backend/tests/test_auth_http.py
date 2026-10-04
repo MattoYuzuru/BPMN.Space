@@ -7,11 +7,11 @@
 
 import asyncio
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -20,12 +20,15 @@ from alembic.config import Config
 from httpx import ASGITransport, AsyncClient, Response
 from sqlalchemy import text, update
 from sqlalchemy.ext.asyncio import create_async_engine
+from sse_starlette import ServerSentEvent
+from starlette.requests import Request
 
+from app.api.v1.presence import project_presence
 from app.config import Settings
 from app.container import build_container
 from app.domain.models import Project, Source, SourceKind, SourceStatus
 from app.infra.database import Database
-from app.infra.db_models import ProjectShareLinkRow
+from app.infra.db_models import ProjectShareLinkRow, UserRow
 from app.infra.seed import DEMO_PROJECT_ID, SeedData, build_seed
 from app.main import create_app
 
@@ -167,6 +170,60 @@ async def _finished_project(owner: Account) -> dict[str, Any]:
         "version": detail["latest_version"]["id"],
         "xml": (await owner.get(f"/versions/{detail['latest_version']['id']}")).json()["xml"],
     }
+
+
+async def test_version_history_records_actual_author(stack: Stack) -> None:
+    owner = await stack.user("history-owner@example.com")
+    finished = await _finished_project(owner)
+    project_id = finished["project"]
+    generated = (await owner.get(f"/projects/{project_id}/versions")).json()[0]
+    assert generated["actor_email"] == owner.email
+
+    manual = await owner.put(f"/projects/{project_id}/diagram", json={"xml": finished["xml"]})
+    assert manual.status_code == 201, manual.text
+    assert manual.json()["actor_email"] == owner.email
+    versions = (await owner.get(f"/projects/{project_id}/versions")).json()
+    assert [version["actor_email"] for version in versions[:2]] == [owner.email, owner.email]
+
+
+async def test_presence_requires_project_access(stack: Stack) -> None:
+    guest = await stack.guest()
+    owner = await stack.user("presence-owner@example.com")
+    stranger = await stack.user("presence-stranger@example.com")
+    created = await owner.post("/projects", json={"title": "Общая доска"})
+    assert created.status_code == 201, created.text
+    path = f"/projects/{created.json()['id']}/presence/events"
+    assert (await guest.get(path)).status_code == 401
+    assert (await stranger.get(path)).status_code == 404
+
+
+async def test_presence_stream_emits_authorized_user_and_cleans_up(stack: Stack) -> None:
+    owner = await stack.user("presence-stream@example.com")
+    created = await owner.post("/projects", json={"title": "Общая доска"})
+    assert created.status_code == 201, created.text
+    project_id = UUID(created.json()["id"])
+
+    async def receive() -> dict[str, Any]:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    request = Request({"type": "http", "app": stack.app}, receive=receive)
+    user = UserRow(
+        id=UUID(owner.user_id),
+        email=owner.email,
+        hashed_password="unused",  # noqa: S106 - mock row, пароль не используется
+        is_active=True,
+        is_superuser=False,
+        is_verified=False,
+    )
+    response = await project_presence(project_id, request, stack.app.state.container, user)
+    stream = cast(AsyncGenerator[ServerSentEvent], response.body_iterator)
+    event = await anext(stream)
+    assert event.event == "presence"
+    assert isinstance(event.data, str)
+    assert owner.email in event.data
+    assert len(stack.app.state.presence._snapshot(project_id)) == 1
+    await stream.aclose()
+    assert stack.app.state.presence._snapshot(project_id) == []
 
 
 # ---------- сессия и CSRF ----------

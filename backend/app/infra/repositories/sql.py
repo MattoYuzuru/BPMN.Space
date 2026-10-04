@@ -139,6 +139,7 @@ def _run(row: RunRow) -> Run:
         report=row.report,
         model=row.model,
         latency_ms=row.latency_ms,
+        actor_email=row.actor_email,
     )
 
 
@@ -180,6 +181,7 @@ def _version(row: DiagramVersionRow) -> Version:
         trace=trace,
         lanes=list(row.lanes),
         run_id=row.run_id,
+        actor_email=row.actor_email,
     )
 
 
@@ -514,6 +516,7 @@ class SqlRunRepository:
             report=item.report,
             model=item.model,
             latency_ms=item.latency_ms,
+            actor_email=item.actor_email,
         )
 
     async def add(self, run: Run) -> None:
@@ -601,6 +604,7 @@ class SqlVersionRepository:
             trace={key: _quote_json(value) for key, value in item.trace.items()},
             lanes=item.lanes,
             run_id=item.run_id,
+            actor_email=item.actor_email,
         )
 
     async def add(self, version: Version) -> None:

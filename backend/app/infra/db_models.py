@@ -161,6 +161,7 @@ class RunRow(Base):
     report: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     model: Mapped[str | None] = mapped_column(String(128))
     latency_ms: Mapped[int | None] = mapped_column(Integer)
+    actor_email: Mapped[str | None] = mapped_column(String(320))
     version_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey(
@@ -276,6 +277,7 @@ class DiagramVersionRow(Base):
     number: Mapped[int] = mapped_column(Integer, nullable=False)
     origin: Mapped[str] = mapped_column(String(24), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    actor_email: Mapped[str | None] = mapped_column(String(320))
     bpmn_xml: Mapped[str] = mapped_column(Text, nullable=False)
     diff: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     report: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

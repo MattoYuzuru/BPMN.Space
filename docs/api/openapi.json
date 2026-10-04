@@ -2210,6 +2210,18 @@
       },
       "Version": {
         "properties": {
+          "actor_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Автор версии; null для старых записей",
+            "title": "Actor Email"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -2283,6 +2295,18 @@
       },
       "VersionDetail": {
         "properties": {
+          "actor_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Автор версии; null для старых записей",
+            "title": "Actor Email"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -4058,6 +4082,68 @@
         "summary": "Remove Project Member",
         "tags": [
           "sharing"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/presence/events": {
+      "get": {
+        "description": "Показывает только вошедших пользователей с доступом к проекту.",
+        "operationId": "project_presence",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Снимки присутствия в SSE-событиях `presence`"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Project Presence",
+        "tags": [
+          "presence"
         ]
       }
     },

@@ -123,6 +123,7 @@ def build_container(
                 retry_base_sec=retry_base,
                 retry_max_sec=retry_max,
                 thinking=thinking,
+                json_temperature=settings.llm_json_temperature,
             )
             assistant_model = pipeline
         case provider:

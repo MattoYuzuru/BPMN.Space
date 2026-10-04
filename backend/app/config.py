@@ -73,6 +73,9 @@ class Settings(BaseSettings):
     llm_model: str | None = None
     llm_timeout_sec: float = 120.0
     llm_json_mode: bool = True
+    # Температура для JSON-ответов (анализ, сборка). Дефолт провайдера (DeepSeek — 1.0)
+    # даёт редкие ответы не по схеме; 0.0 — рекомендация DeepSeek для структурированного вывода.
+    llm_json_temperature: float | None = 0.0
     llm_max_retries: int = 3
     llm_retry_base_sec: float = 1.0
     llm_retry_max_sec: float = 30.0

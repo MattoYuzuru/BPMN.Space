@@ -49,6 +49,7 @@ class OpenAICompatiblePipeline:
         retry_base_sec: float = 1.0,
         retry_max_sec: float = 30.0,
         thinking: bool | None = None,
+        json_temperature: float | None = 0.0,
         complete: Callable[[str, str], str] | None = None,
         sleep: Callable[[float], None] = time.sleep,
         jitter: Callable[[], float] = random.random,
@@ -70,6 +71,10 @@ class OpenAICompatiblePipeline:
         # Только для DeepSeek: без явного `thinking: disabled` модель тратит max_tokens на
         # рассуждение и обрезает JSON. Другим провайдерам параметр не шлём (None).
         self._thinking = thinking
+        # Дефолт DeepSeek — 1.0: при таком разбросе модель изредка нарушает JSON-схему
+        # и прогон падает. Для структурированного ответа DeepSeek советует 0.0;
+        # чат помощника оставляем на дефолте провайдера. None — параметр не шлём.
+        self._json_temperature = json_temperature
         self._complete = complete
         self._max_retries = max(max_retries, 0)
         self._retry_base_sec = retry_base_sec
@@ -323,6 +328,11 @@ class OpenAICompatiblePipeline:
                 **(
                     {"response_format": {"type": "json_object"}}
                     if json_mode and self._json_mode
+                    else {}
+                ),
+                **(
+                    {"temperature": self._json_temperature}
+                    if json_mode and self._json_temperature is not None
                     else {}
                 ),
                 **(

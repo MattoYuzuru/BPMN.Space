@@ -2,8 +2,50 @@ import { useState } from 'react'
 import type { AuthMode } from '@/entities/session'
 import { AccountMenuFor } from '@/features/account-menu/account-menu'
 import { SignInForm } from '@/features/sign-in/sign-in-form'
-import { Badge, BrandMark, Card, Tag } from '@/shared/ui'
+import { generatePassword } from '@/shared/lib/password'
+import { Badge, BrandMark, Card, Field, IconButton, Input, Tag } from '@/shared/ui'
 import { Section, Specimen } from './kit'
+
+/** Поле пароля регистрации: ключ создаёт пароль и показывает его (как в SignInForm). */
+function PasswordGeneratorDemo() {
+  const [value, setValue] = useState('')
+  const [visible, setVisible] = useState(false)
+  return (
+    <div className="mx-auto w-full max-w-sm">
+      <Field label="Пароль" hint="От 12 символов">
+        <Input
+          name="password"
+          type={visible ? 'text' : 'password'}
+          autoComplete="new-password"
+          leadingIcon="lock"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          trailing={
+            <>
+              <IconButton
+                icon="key"
+                size="sm"
+                label="Сгенерировать надёжный пароль"
+                onClick={() => {
+                  setValue(generatePassword())
+                  setVisible(true)
+                }}
+              />
+              <IconButton
+                icon={visible ? 'eye-off' : 'eye'}
+                size="sm"
+                label={visible ? 'Скрыть пароль' : 'Показать пароль'}
+                tooltip={false}
+                aria-pressed={visible}
+                onClick={() => setVisible((current) => !current)}
+              />
+            </>
+          }
+        />
+      </Field>
+    </div>
+  )
+}
 
 /** Аккаунт и доступ: карточка входа, меню аккаунта, маркеры режима «только просмотр». */
 export function AccountSection() {
@@ -22,6 +64,14 @@ export function AccountSection() {
             <SignInForm mode={mode} onModeChange={setMode} redirectTo="/styleguide" />
           </Card>
         </div>
+      </Specimen>
+      <Specimen title="Пароль при регистрации" note="IconButton icon=key + eye, generatePassword()">
+        <PasswordGeneratorDemo />
+        <p className="type-caption mt-3 text-fg-muted">
+          Только в режиме «Регистрация», порядок «ключ, глаз». Нажатие подставляет надёжный пароль
+          из 20 символов (без похожих l I 1 O 0 o), показывает его и копирует в буфер. На отправке
+          поле снова скрывается, чтобы менеджер паролей предложил сохранить.
+        </p>
       </Specimen>
       <Specimen title="Меню аккаунта">
         <AccountMenuFor

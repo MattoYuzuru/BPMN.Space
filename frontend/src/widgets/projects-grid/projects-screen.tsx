@@ -113,8 +113,8 @@ export function ProjectsScreen({
             <Button
               variant="primary"
               leadingIcon="plus"
-              onClick={() => showCreate('blank')}
               {...tourAnchor(TOUR_ANCHORS.projectsNew)}
+              onClick={() => showCreate('blank')}
             >
               Новый проект
             </Button>

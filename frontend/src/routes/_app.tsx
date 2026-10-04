@@ -1,6 +1,7 @@
 import { createFileRoute, Outlet } from '@tanstack/react-router'
 import { requireSession } from '@/entities/session'
 import { OnboardingLayer } from '@/widgets/onboarding-checklist/onboarding-layer'
+import { OnboardingRoot } from '@/widgets/onboarding-root/onboarding-root'
 
 /**
  * Закрытый раздел: всё, что внутри, видит только вошедший пользователь (или любой — на стенде без
@@ -12,10 +13,12 @@ export const Route = createFileRoute('/_app')({
   component: AppLayout,
 })
 
+/** Экран раздела, обучение поверх него (приветствие, тур) и чек-лист «Начало работы». */
 function AppLayout() {
   return (
     <>
       <Outlet />
+      <OnboardingRoot />
       <OnboardingLayer />
     </>
   )

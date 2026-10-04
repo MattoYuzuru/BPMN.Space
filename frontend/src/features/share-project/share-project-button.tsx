@@ -11,8 +11,8 @@ export function ShareProjectButton({ projectId }: { projectId: string }) {
       <Button
         size="sm"
         leadingIcon="share"
-        onClick={() => setOpen(true)}
         {...tourAnchor(TOUR_ANCHORS.shareOpen)}
+        onClick={() => setOpen(true)}
       >
         Поделиться
       </Button>

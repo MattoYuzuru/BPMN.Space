@@ -5,7 +5,9 @@ import {
   SOURCE_KIND,
   type Source,
   sourceMeta,
+  useAddSampleSource,
   useDeleteSource,
+  useSamples,
   useUpdateSource,
 } from '@/entities/source'
 import { useFileUploads } from '@/features/add-source/use-file-uploads'
@@ -18,6 +20,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   dragHasFiles,
@@ -59,7 +62,7 @@ export function SourcesPanel({ onCollapse }: { onCollapse: () => void }) {
           {sources.length}
         </span>
         <div className="ml-auto flex items-center gap-0.5">
-          {canEdit && <AddSourceMenu onPick={setDialog} onFiles={upload} />}
+          {canEdit && <AddSourceMenu projectId={project.id} onPick={setDialog} onFiles={upload} />}
           <IconButton
             icon="sidebar-left-collapse"
             label="Свернуть панель"
@@ -142,12 +145,17 @@ export function SourcesPanel({ onCollapse }: { onCollapse: () => void }) {
 }
 
 function AddSourceMenu({
+  projectId,
   onPick,
   onFiles,
 }: {
+  projectId: string
   onPick: (dialog: 'text' | 'voice') => void
   onFiles: (files: File[]) => void
 }) {
+  // Список материалов один на всех и не меняется: грузим заранее, чтобы меню открывалось целиком.
+  const samples = useSamples()
+  const addSample = useAddSampleSource(projectId)
   const pickFile = () => {
     const input = document.createElement('input')
     input.type = 'file'
@@ -179,6 +187,22 @@ function AddSourceMenu({
         <DropdownMenuItem icon="microphone" onSelect={() => onPick('voice')}>
           Голосовая заметка
         </DropdownMenuItem>
+        {samples.data && samples.data.length > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Примеры</DropdownMenuLabel>
+            {samples.data.map((sample) => (
+              <DropdownMenuItem
+                key={sample.id}
+                icon={sample.kind === 'voice' ? 'microphone' : 'file-description'}
+                disabled={addSample.isPending}
+                onSelect={() => addSample.mutate(sample.id)}
+              >
+                <span className="truncate">{sample.title}</span>
+              </DropdownMenuItem>
+            ))}
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )

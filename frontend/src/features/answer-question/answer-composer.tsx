@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from 'react'
 import { type Question, useQuestionAction } from '@/entities/question'
 import { VoiceDictation } from '@/features/voice-record/voice-dictation'
+import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import { Button, Textarea } from '@/shared/ui'
 
 export interface AnswerComposerProps {
@@ -9,6 +10,8 @@ export interface AnswerComposerProps {
   onDone?: () => void
   onCancel?: () => void
   autoFocus?: boolean
+  /** Ставить обучающий якорь на «Отправить ответ»; у композера в листе вопроса — нет. */
+  tourAnchored?: boolean
 }
 
 /**
@@ -21,6 +24,7 @@ export function AnswerComposer({
   onDone,
   onCancel,
   autoFocus = true,
+  tourAnchored = true,
 }: AnswerComposerProps) {
   const [text, setText] = useState('')
   const action = useQuestionAction(projectId)
@@ -79,6 +83,7 @@ export function AnswerComposer({
             variant="primary"
             leadingIcon="send"
             disabled={!text.trim()}
+            {...(tourAnchored ? tourAnchor(TOUR_ANCHORS.answerSubmit) : {})}
           >
             Отправить ответ
           </Button>

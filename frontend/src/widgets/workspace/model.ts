@@ -33,6 +33,20 @@ export function useWorkspace(): WorkspaceApi {
 
 export type WorkspaceDialog = 'text' | 'voice' | null
 export type WorkspaceSheet = 'report' | 'versions' | null
+export type WorkspacePanel = 'sources' | 'questions'
+export type QuestionsTab = 'open' | 'assumed' | 'resolved'
+
+/** Просьба показать вкладку панели «Вопросы»; `id` растёт, чтобы повторная просьба тоже срабатывала. */
+export interface QuestionsTabRequest {
+  tab: QuestionsTab
+  id: number
+}
+
+/** Просьба развернуть боковую панель; `id` растёт, чтобы повторная просьба тоже срабатывала. */
+export interface ExpandRequest {
+  panel: WorkspacePanel
+  id: number
+}
 
 interface WorkspaceUi {
   dialog: WorkspaceDialog
@@ -41,10 +55,24 @@ interface WorkspaceUi {
   questionSheet: string | null
   sourcesCollapsed: boolean
   questionsCollapsed: boolean
+  /** Просьба развернуть панель (обучение): раскладка исполняет её сама. */
+  expandRequest: ExpandRequest | null
+  /** Просьба выбрать вопрос и показать его на схеме (из чек-листа); исполняет `WorkspaceView`. */
+  focusRequest: { questionId: string; id: number } | null
+  /** Просьба показать вкладку панели «Вопросы» (обучение показывает «Открытые»). */
+  questionsTabRequest: QuestionsTabRequest | null
+  /** Подсказка-автодополнение для поля «Текст» диалога текстового источника. */
+  textSuggestion: string | null
   setDialog: (dialog: WorkspaceDialog) => void
   setSheet: (sheet: WorkspaceSheet) => void
   openQuestionSheet: (id: string | null) => void
-  setCollapsed: (panel: 'sources' | 'questions', collapsed: boolean) => void
+  setCollapsed: (panel: WorkspacePanel, collapsed: boolean) => void
+  /** Развернуть панель, если она свёрнута. */
+  expandPanel: (panel: WorkspacePanel) => void
+  focusQuestion: (questionId: string) => void
+  /** Показать вкладку панели «Вопросы». */
+  showQuestionsTab: (tab: QuestionsTab) => void
+  setTextSuggestion: (text: string | null) => void
   reset: () => void
 }
 
@@ -54,34 +82,30 @@ export const useWorkspaceUi = create<WorkspaceUi>((set) => ({
   questionSheet: null,
   sourcesCollapsed: false,
   questionsCollapsed: false,
+  expandRequest: null,
+  focusRequest: null,
+  questionsTabRequest: null,
+  textSuggestion: null,
   setDialog: (dialog) => set({ dialog }),
   setSheet: (sheet) => set({ sheet }),
   openQuestionSheet: (questionSheet) => set({ questionSheet }),
   setCollapsed: (panel, collapsed) =>
     set(panel === 'sources' ? { sourcesCollapsed: collapsed } : { questionsCollapsed: collapsed }),
-  reset: () => set({ dialog: null, sheet: null, questionSheet: null }),
+  expandPanel: (panel) =>
+    set((state) => ({ expandRequest: { panel, id: (state.expandRequest?.id ?? 0) + 1 } })),
+  focusQuestion: (questionId) =>
+    set((state) => ({ focusRequest: { questionId, id: (state.focusRequest?.id ?? 0) + 1 } })),
+  showQuestionsTab: (tab) =>
+    set((state) => ({
+      questionsTabRequest: { tab, id: (state.questionsTabRequest?.id ?? 0) + 1 },
+    })),
+  setTextSuggestion: (textSuggestion) => set({ textSuggestion }),
+  reset: () =>
+    set({
+      dialog: null,
+      sheet: null,
+      questionSheet: null,
+      expandRequest: null,
+      focusRequest: null,
+    }),
 }))
-
-/**
- * Управление рабочим местом снаружи его дерева (подсказки онбординга): раскладка и выбор вопроса
- * живут в панелях, а не в сторе. `WorkspaceView` регистрирует их, пока открыт.
- */
-export interface WorkspaceControls {
-  expandPanel: (panel: 'sources' | 'questions') => void
-  selectQuestion: WorkspaceApi['selectQuestion']
-}
-
-let controls: WorkspaceControls | null = null
-
-/** Зарегистрировать управление; возвращает функцию снятия (только своё). */
-export function registerWorkspaceControls(next: WorkspaceControls): () => void {
-  controls = next
-  return () => {
-    if (controls === next) controls = null
-  }
-}
-
-/** Управление открытым рабочим местом или `null`, если оно не на экране. */
-export function getWorkspaceControls(): WorkspaceControls | null {
-  return controls
-}

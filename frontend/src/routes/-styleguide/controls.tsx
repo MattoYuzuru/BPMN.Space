@@ -253,7 +253,7 @@ export function ChoiceSection() {
         <Specimen title="Switch" note="настройки без кнопки «Сохранить»">
           <div className="flex flex-col gap-3.5">
             <Switch label="Перепроверять после каждого источника" defaultChecked />
-            <Switch label="Анимация прохождения токена" />
+            <Switch label="Таймлайн процесса" />
             <Switch label="Экспорт в PNG" disabled />
           </div>
         </Specimen>

@@ -248,7 +248,7 @@ test('приветствие и весь тур от создания проек
     await expect(card).toBeVisible()
     await expect(card).toContainText('обычный редактор BPMN')
     await card.getByRole('button', { name: 'Далее' }).click()
-    await expect(card).toContainText('Симуляция токена')
+    await expect(card).toContainText('Таймлайн процесса')
     await card.getByRole('button', { name: 'Далее' }).click()
     await expect(card).toContainText('.bpmn, .svg или .png')
     await card.getByRole('button', { name: 'Далее' }).click()

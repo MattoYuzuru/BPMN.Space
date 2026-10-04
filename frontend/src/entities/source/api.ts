@@ -22,17 +22,35 @@ function useProjectCache(projectId: string) {
   return { client, key, patch, appendSource, invalidate }
 }
 
+/** Добавить текст или расшифровку голоса (без уведомлений — для составных сценариев). */
+export async function addTextSource(projectId: string, body: Schemas['SourceTextCreate']) {
+  return unwrap(
+    await api.POST('/api/v1/projects/{project_id}/sources/text', {
+      params: { path: { project_id: projectId } },
+      body,
+    }),
+  )
+}
+
+export interface FileUpload {
+  file: File
+  title?: string
+  onProgress?: (fraction: number) => void
+}
+
+/** Загрузить файл с ходом загрузки (без уведомлений — для составных сценариев). */
+export function uploadFileSource(projectId: string, { file, title, onProgress }: FileUpload) {
+  const form = new FormData()
+  form.append('file', file)
+  if (title) form.append('title', title)
+  return postForm<Source>(`/api/v1/projects/${projectId}/sources/file`, form, { onProgress })
+}
+
 /** Текст или проверенная расшифровка голоса. */
 export function useAddTextSource(projectId: string) {
   const cache = useProjectCache(projectId)
   return useMutation({
-    mutationFn: async (body: Schemas['SourceTextCreate']) =>
-      unwrap(
-        await api.POST('/api/v1/projects/{project_id}/sources/text', {
-          params: { path: { project_id: projectId } },
-          body,
-        }),
-      ),
+    mutationFn: (body: Schemas['SourceTextCreate']) => addTextSource(projectId, body),
     onSuccess: (source) => {
       cache.appendSource(source)
       toast.success('Источник добавлен', { description: source.title })
@@ -43,22 +61,11 @@ export function useAddTextSource(projectId: string) {
   })
 }
 
-export interface FileUpload {
-  file: File
-  title?: string
-  onProgress?: (fraction: number) => void
-}
-
 /** Файл с ходом загрузки; .docx/.pdf дальше разбираются в фоне (status=processing → опрос проекта). */
 export function useAddFileSource(projectId: string) {
   const cache = useProjectCache(projectId)
   return useMutation({
-    mutationFn: ({ file, title, onProgress }: FileUpload) => {
-      const form = new FormData()
-      form.append('file', file)
-      if (title) form.append('title', title)
-      return postForm<Source>(`/api/v1/projects/${projectId}/sources/file`, form, { onProgress })
-    },
+    mutationFn: (upload: FileUpload) => uploadFileSource(projectId, upload),
     onSuccess: (source) => {
       cache.appendSource(source)
       toast.success('Документ загружен', { description: source.title })

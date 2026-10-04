@@ -1,4 +1,4 @@
-export { useStartRun } from './api'
+export { startRun, useStartRun } from './api'
 export {
   formatSummary,
   initialRunView,

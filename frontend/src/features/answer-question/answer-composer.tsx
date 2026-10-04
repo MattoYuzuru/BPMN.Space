@@ -1,15 +1,7 @@
 import { type FormEvent, useState } from 'react'
 import { type Question, useQuestionAction } from '@/entities/question'
-import { VoiceCapture } from '@/features/voice-record/voice-capture'
-import {
-  Button,
-  IconButton,
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-  Textarea,
-  Tooltip,
-} from '@/shared/ui'
+import { VoiceDictation } from '@/features/voice-record/voice-dictation'
+import { Button, Textarea } from '@/shared/ui'
 
 export interface AnswerComposerProps {
   projectId: string
@@ -31,7 +23,6 @@ export function AnswerComposer({
   autoFocus = true,
 }: AnswerComposerProps) {
   const [text, setText] = useState('')
-  const [voiceOpen, setVoiceOpen] = useState(false)
   const action = useQuestionAction(projectId)
 
   const send = (value: string) => {
@@ -67,33 +58,13 @@ export function AnswerComposer({
             }
           }}
         />
-        <Popover open={voiceOpen} onOpenChange={setVoiceOpen}>
-          <Tooltip content="Ответить голосом">
-            <PopoverTrigger asChild>
-              <IconButton
-                icon="microphone"
-                label="Ответить голосом"
-                size="sm"
-                tooltip={false}
-                className="absolute top-1.5 right-1.5"
-              />
-            </PopoverTrigger>
-          </Tooltip>
-          <PopoverContent side="left" align="start" className="w-96">
-            {voiceOpen && (
-              <VoiceCapture
-                autoStart
-                compact
-                submitLabel="Отправить ответ"
-                submitIcon="send"
-                onSubmit={({ text: transcript }) => {
-                  setVoiceOpen(false)
-                  send(transcript)
-                }}
-              />
-            )}
-          </PopoverContent>
-        </Popover>
+        <VoiceDictation
+          label="Ответить голосом"
+          submitLabel="Отправить ответ"
+          submitIcon="send"
+          className="absolute top-1.5 right-1.5"
+          onText={send}
+        />
       </div>
       <div className="flex items-center justify-end gap-2">
         <div className="flex gap-1.5">

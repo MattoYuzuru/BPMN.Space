@@ -9,23 +9,22 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as NewRouteImport } from './routes/new'
+import { Route as AppRouteImport } from './routes/_app'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as StyleguideRouteImport } from './routes/styleguide'
-import { Route as WelcomeRouteImport } from './routes/welcome'
+import { Route as AppIndexRouteImport } from './routes/_app.index'
 import { Route as DevDiagramRouteImport } from './routes/dev.diagram'
-import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
-import { Route as ProjectsProjectIdRouteImport } from './routes/projects.$projectId'
-import { Route as StudioProjectIdRouteImport } from './routes/studio.$projectId'
+import { Route as AppProjectsIndexRouteImport } from './routes/_app.projects.index'
+import { Route as AppProjectsProjectIdRouteImport } from './routes/_app.projects.$projectId'
+import { Route as AppStudioProjectIdRouteImport } from './routes/_app.studio.$projectId'
 
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
   getParentRoute: () => rootRouteImport,
 } as any)
-const NewRoute = NewRouteImport.update({
-  id: '/new',
-  path: '/new',
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const StyleguideRoute = StyleguideRouteImport.update({
@@ -33,121 +32,113 @@ const StyleguideRoute = StyleguideRouteImport.update({
   path: '/styleguide',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WelcomeRoute = WelcomeRouteImport.update({
-  id: '/welcome',
-  path: '/welcome',
-  getParentRoute: () => rootRouteImport,
+const AppIndexRoute = AppIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppRoute,
 } as any)
 const DevDiagramRoute = DevDiagramRouteImport.update({
   id: '/dev/diagram',
   path: '/dev/diagram',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProjectsIndexRoute = ProjectsIndexRouteImport.update({
+const AppProjectsIndexRoute = AppProjectsIndexRouteImport.update({
   id: '/projects/',
   path: '/projects/',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AppRoute,
 } as any)
-const ProjectsProjectIdRoute = ProjectsProjectIdRouteImport.update({
+const AppProjectsProjectIdRoute = AppProjectsProjectIdRouteImport.update({
   id: '/projects/$projectId',
   path: '/projects/$projectId',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AppRoute,
 } as any)
-const StudioProjectIdRoute = StudioProjectIdRouteImport.update({
+const AppStudioProjectIdRoute = AppStudioProjectIdRouteImport.update({
   id: '/studio/$projectId',
   path: '/studio/$projectId',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AppRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/new': typeof NewRoute
+  '/': typeof AppIndexRoute
+  '/login': typeof LoginRoute
   '/styleguide': typeof StyleguideRoute
-  '/welcome': typeof WelcomeRoute
   '/dev/diagram': typeof DevDiagramRoute
-  '/projects/$projectId': typeof ProjectsProjectIdRoute
-  '/studio/$projectId': typeof StudioProjectIdRoute
-  '/projects/': typeof ProjectsIndexRoute
+  '/projects/$projectId': typeof AppProjectsProjectIdRoute
+  '/studio/$projectId': typeof AppStudioProjectIdRoute
+  '/projects/': typeof AppProjectsIndexRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/new': typeof NewRoute
+  '/login': typeof LoginRoute
   '/styleguide': typeof StyleguideRoute
-  '/welcome': typeof WelcomeRoute
   '/dev/diagram': typeof DevDiagramRoute
-  '/projects/$projectId': typeof ProjectsProjectIdRoute
-  '/studio/$projectId': typeof StudioProjectIdRoute
-  '/projects': typeof ProjectsIndexRoute
+  '/': typeof AppIndexRoute
+  '/projects/$projectId': typeof AppProjectsProjectIdRoute
+  '/studio/$projectId': typeof AppStudioProjectIdRoute
+  '/projects': typeof AppProjectsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/new': typeof NewRoute
+  '/_app': typeof AppRouteWithChildren
+  '/login': typeof LoginRoute
   '/styleguide': typeof StyleguideRoute
-  '/welcome': typeof WelcomeRoute
   '/dev/diagram': typeof DevDiagramRoute
-  '/projects/$projectId': typeof ProjectsProjectIdRoute
-  '/studio/$projectId': typeof StudioProjectIdRoute
-  '/projects/': typeof ProjectsIndexRoute
+  '/_app/': typeof AppIndexRoute
+  '/_app/projects/$projectId': typeof AppProjectsProjectIdRoute
+  '/_app/studio/$projectId': typeof AppStudioProjectIdRoute
+  '/_app/projects/': typeof AppProjectsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/new'
+    | '/login'
     | '/styleguide'
-    | '/welcome'
     | '/dev/diagram'
     | '/projects/$projectId'
     | '/studio/$projectId'
     | '/projects/'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
-    | '/new'
+    | '/login'
     | '/styleguide'
-    | '/welcome'
     | '/dev/diagram'
+    | '/'
     | '/projects/$projectId'
     | '/studio/$projectId'
     | '/projects'
   id:
     | '__root__'
-    | '/'
-    | '/new'
+    | '/_app'
+    | '/login'
     | '/styleguide'
-    | '/welcome'
     | '/dev/diagram'
-    | '/projects/$projectId'
-    | '/studio/$projectId'
-    | '/projects/'
+    | '/_app/'
+    | '/_app/projects/$projectId'
+    | '/_app/studio/$projectId'
+    | '/_app/projects/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  NewRoute: typeof NewRoute
+  AppRoute: typeof AppRouteWithChildren
+  LoginRoute: typeof LoginRoute
   StyleguideRoute: typeof StyleguideRoute
-  WelcomeRoute: typeof WelcomeRoute
   DevDiagramRoute: typeof DevDiagramRoute
-  ProjectsProjectIdRoute: typeof ProjectsProjectIdRoute
-  StudioProjectIdRoute: typeof StudioProjectIdRoute
-  ProjectsIndexRoute: typeof ProjectsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
+    '/_app': {
+      id: '/_app'
+      path: ''
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+      preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/new': {
-      id: '/new'
-      path: '/new'
-      fullPath: '/new'
-      preLoaderRoute: typeof NewRouteImport
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/styleguide': {
@@ -157,12 +148,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StyleguideRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/welcome': {
-      id: '/welcome'
-      path: '/welcome'
-      fullPath: '/welcome'
-      preLoaderRoute: typeof WelcomeRouteImport
-      parentRoute: typeof rootRouteImport
+    '/_app/': {
+      id: '/_app/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRoute
     }
     '/dev/diagram': {
       id: '/dev/diagram'
@@ -171,39 +162,51 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DevDiagramRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/projects/': {
-      id: '/projects/'
+    '/_app/projects/': {
+      id: '/_app/projects/'
       path: '/projects'
       fullPath: '/projects/'
-      preLoaderRoute: typeof ProjectsIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AppProjectsIndexRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/projects/$projectId': {
-      id: '/projects/$projectId'
+    '/_app/projects/$projectId': {
+      id: '/_app/projects/$projectId'
       path: '/projects/$projectId'
       fullPath: '/projects/$projectId'
-      preLoaderRoute: typeof ProjectsProjectIdRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AppProjectsProjectIdRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/studio/$projectId': {
-      id: '/studio/$projectId'
+    '/_app/studio/$projectId': {
+      id: '/_app/studio/$projectId'
       path: '/studio/$projectId'
       fullPath: '/studio/$projectId'
-      preLoaderRoute: typeof StudioProjectIdRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AppStudioProjectIdRouteImport
+      parentRoute: typeof AppRoute
     }
   }
 }
 
+interface AppRouteChildren {
+  AppIndexRoute: typeof AppIndexRoute
+  AppProjectsProjectIdRoute: typeof AppProjectsProjectIdRoute
+  AppStudioProjectIdRoute: typeof AppStudioProjectIdRoute
+  AppProjectsIndexRoute: typeof AppProjectsIndexRoute
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppIndexRoute: AppIndexRoute,
+  AppProjectsProjectIdRoute: AppProjectsProjectIdRoute,
+  AppStudioProjectIdRoute: AppStudioProjectIdRoute,
+  AppProjectsIndexRoute: AppProjectsIndexRoute,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
-  NewRoute: NewRoute,
+  AppRoute: AppRouteWithChildren,
+  LoginRoute: LoginRoute,
   StyleguideRoute: StyleguideRoute,
-  WelcomeRoute: WelcomeRoute,
   DevDiagramRoute: DevDiagramRoute,
-  ProjectsProjectIdRoute: ProjectsProjectIdRoute,
-  StudioProjectIdRoute: StudioProjectIdRoute,
-  ProjectsIndexRoute: ProjectsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

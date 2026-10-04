@@ -1,5 +1,7 @@
 export {
+  addTextSource,
   type FileUpload,
+  uploadFileSource,
   useAddFileSource,
   useAddTextSource,
   useDeleteSource,

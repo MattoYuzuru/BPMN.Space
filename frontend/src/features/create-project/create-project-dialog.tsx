@@ -2,7 +2,9 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { type FormEvent, useEffect, useState } from 'react'
 import { examplesQueryOptions } from '@/entities/example'
-import { useCreateProject, useCreateProjectFromExample } from '@/entities/project'
+import { useCreateProjectFromExample } from '@/entities/project'
+import { ACCEPTED_FILES } from '@/entities/source'
+import { VoiceDictation } from '@/features/voice-record/voice-dictation'
 import { errorMessage } from '@/shared/api/client'
 import {
   Button,
@@ -11,15 +13,18 @@ import {
   DialogContent,
   EmptyState,
   Field,
+  FileDrop,
   Input,
   RadioGroup,
   RadioGroupItem,
   SegmentedControl,
   Skeleton,
+  Tag,
   Textarea,
   toast,
 } from '@/shared/ui'
 import { type CreateMode, useCreateProjectDialog } from './model'
+import { useCreateProjectFlow } from './use-create-flow'
 
 const MODES = [
   { value: 'blank' as const, label: 'Пустой', icon: 'folder-plus' as const },
@@ -62,11 +67,18 @@ function useOpenProject() {
   }
 }
 
+/** Подпись результата для уведомления: «Описание не добавлено, схема не запущена». */
+function failureSummary(failures: string[]): string {
+  const text = failures.join(', ')
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
 function BlankForm() {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [files, setFiles] = useState<File[]>([])
   const [error, setError] = useState<string>()
-  const create = useCreateProject()
+  const create = useCreateProjectFlow()
   const openProject = useOpenProject()
 
   const submit = (event: FormEvent) => {
@@ -77,16 +89,33 @@ function BlankForm() {
       return
     }
     create.mutate(
-      { title: name, description: description.trim() || null },
+      { title: name, description, files },
       {
-        onSuccess: (project) => {
-          toast.success('Проект создан', { description: project.title })
-          openProject(project.id)
+        onSuccess: (result) => {
+          if (result.failures.length > 0) {
+            toast.error('Проект создан, но не всё получилось', {
+              description: failureSummary(result.failures),
+              duration: 8000,
+            })
+          } else {
+            toast.success('Проект создан', {
+              description: result.building ? 'Схема уже строится' : result.title,
+            })
+          }
+          openProject(result.projectId)
         },
         onError: (err) => setError(errorMessage(err)),
       },
     )
   }
+
+  const addFiles = (picked: File[]) =>
+    setFiles((current) => [
+      ...current,
+      ...picked.filter(
+        (file) => !current.some((item) => item.name === file.name && item.size === file.size),
+      ),
+    ])
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-4 animate-fade-in" noValidate>
@@ -102,14 +131,52 @@ function BlankForm() {
           }}
         />
       </Field>
-      <Field label="Описание" optional>
-        <Textarea
-          value={description}
-          minRows={2}
-          maxRows={6}
-          placeholder="Какой процесс описываем и для кого"
-          onChange={(event) => setDescription(event.target.value)}
-        />
+      <Field label="Описание процесса" optional>
+        <div className="relative">
+          <Textarea
+            value={description}
+            minRows={3}
+            maxRows={7}
+            placeholder="Кто, что и в каком порядке делает — как рассказали бы коллеге"
+            className="pr-10"
+            onChange={(event) => setDescription(event.target.value)}
+          />
+          <VoiceDictation
+            side="bottom"
+            submitLabel="Добавить в описание"
+            className="absolute top-1.5 right-1.5"
+            onText={(text) =>
+              setDescription((current) => [current.trim(), text].filter(Boolean).join('\n'))
+            }
+          />
+        </div>
+      </Field>
+      <Field label="Документы" optional>
+        <div className="flex flex-col gap-2">
+          <FileDrop
+            size="sm"
+            multiple
+            accept={ACCEPTED_FILES.join(',')}
+            onFiles={addFiles}
+            title="Перетащите документы"
+            hint=".txt, .md, .csv, .docx, .pdf"
+          />
+          {files.length > 0 && (
+            <ul className="flex flex-wrap gap-1.5" aria-label="Выбранные документы">
+              {files.map((file) => (
+                <li key={`${file.name}-${file.size}`} className="max-w-full">
+                  <Tag
+                    icon="file-text"
+                    removeLabel={`Убрать ${file.name}`}
+                    onRemove={() => setFiles((current) => current.filter((item) => item !== file))}
+                  >
+                    {file.name}
+                  </Tag>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </Field>
       <div className="-mx-5 -mb-5 mt-1 flex justify-end gap-2 border-t border-border px-5 py-3.5">
         <DialogClose asChild>

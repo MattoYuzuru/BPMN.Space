@@ -19,11 +19,11 @@ class ShareLinkCreate(ApiModel):
     role: ShareRole
     expires_in_days: int | None = Field(
         default=None,
-        ge=1,
+        ge=0,
         le=365,
         description=(
-            "Срок ссылки в днях. Для `editor`: по умолчанию 7, максимум 30. "
-            "Для `viewer`: по умолчанию 30, максимум 365. Бессрочных ссылок нет."
+            "Срок ссылки в днях: 7, 30, 365 (год) или 0 (без срока). Для совместимости "
+            "null/пропуск выбирает 30 дней. Одинаковые варианты доступны для viewer и editor."
         ),
     )
 
@@ -52,7 +52,7 @@ class SharedProject(ApiModel):
 
 class ShareAccepted(ApiModel):
     project_id: UUID
-    role: ShareRole = ShareRole.EDITOR
+    role: ShareRole
 
 
 class ProjectMemberRead(ApiModel):

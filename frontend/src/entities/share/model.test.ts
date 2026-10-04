@@ -21,16 +21,16 @@ const link = (patch: Partial<ShareLink> = {}): ShareLink => ({
   ...patch,
 })
 
-describe('сроки по ролям', () => {
-  it('приглашение редактора — до 30 дней, просмотр — до года', () => {
+describe('сроки доступа', () => {
+  it('просмотр и редактирование предлагают одинаковые варианты', () => {
     const editor = expiryOptions('editor').map((option) => Number(option.value))
     const viewer = expiryOptions('viewer').map((option) => Number(option.value))
-    expect(Math.max(...editor)).toBe(30)
-    expect(Math.max(...viewer)).toBe(365)
+    expect(editor).toEqual([7, 30, 365, 0])
+    expect(viewer).toEqual(editor)
   })
 
-  it('сроки по умолчанию совпадают с серверными и входят в список', () => {
-    expect(defaultExpiryDays('editor')).toBe(7)
+  it('по умолчанию — 30 дней для обеих ролей', () => {
+    expect(defaultExpiryDays('editor')).toBe(30)
     expect(defaultExpiryDays('viewer')).toBe(30)
     for (const role of ['viewer', 'editor'] as const) {
       expect(expiryOptions(role).map((option) => option.value)).toContain(
@@ -39,11 +39,11 @@ describe('сроки по ролям', () => {
     }
   })
 
-  it('при смене роли допустимый срок остаётся, недопустимый заменяется обычным', () => {
+  it('при смене роли сохраняется любой выбранный вариант срока', () => {
     expect(expiryForRole('editor', 7)).toBe(7)
-    expect(expiryForRole('editor', 365)).toBe(7)
-    expect(expiryForRole('viewer', 1)).toBe(30)
-    expect(expiryForRole('viewer', 90)).toBe(90)
+    expect(expiryForRole('editor', 365)).toBe(365)
+    expect(expiryForRole('viewer', 0)).toBe(0)
+    expect(expiryForRole('viewer', 90)).toBe(30)
   })
 })
 

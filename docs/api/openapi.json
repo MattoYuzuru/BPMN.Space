@@ -859,7 +859,7 @@
         "type": "string"
       },
       "ProjectScope": {
-        "description": "Какие проекты показывать в списке: все доступные, свои, где я редактор, демо-примеры.",
+        "description": "Какие проекты показывать: все доступные, свои, принятые общие, демо-примеры.",
         "enum": [
           "all",
           "own",
@@ -1560,12 +1560,12 @@
             "type": "string"
           },
           "role": {
-            "$ref": "#/components/schemas/ShareRole",
-            "default": "editor"
+            "$ref": "#/components/schemas/ShareRole"
           }
         },
         "required": [
-          "project_id"
+          "project_id",
+          "role"
         ],
         "title": "ShareAccepted",
         "type": "object"
@@ -1576,14 +1576,14 @@
             "anyOf": [
               {
                 "maximum": 365.0,
-                "minimum": 1.0,
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "Срок ссылки в днях. Для `editor`: по умолчанию 7, максимум 30. Для `viewer`: по умолчанию 30, максимум 365. Бессрочных ссылок нет.",
+            "description": "Срок ссылки в днях: 7, 30, 365 (год) или 0 (без срока). Для совместимости null/пропуск выбирает 30 дней. Одинаковые варианты доступны для viewer и editor.",
             "title": "Expires In Days"
           },
           "role": {
@@ -2135,7 +2135,7 @@
           },
           "password": {
             "maxLength": 128,
-            "minLength": 12,
+            "minLength": 8,
             "title": "Password",
             "type": "string"
           }
@@ -3262,14 +3262,14 @@
             }
           },
           {
-            "description": "Что показывать: `all` — всё доступное (по умолчанию), `own` — свои, `shared` — где вы редактор по приглашению, `examples` — демо-примеры. Без аккаунтов параметр не действует.",
+            "description": "Что показывать: `all` — всё доступное (по умолчанию), `own` — свои, `shared` — принятые по ссылке проекты, `examples` — демо-примеры. Без аккаунтов параметр не действует.",
             "in": "query",
             "name": "scope",
             "required": false,
             "schema": {
               "$ref": "#/components/schemas/ProjectScope",
               "default": "all",
-              "description": "Что показывать: `all` — всё доступное (по умолчанию), `own` — свои, `shared` — где вы редактор по приглашению, `examples` — демо-примеры. Без аккаунтов параметр не действует."
+              "description": "Что показывать: `all` — всё доступное (по умолчанию), `own` — свои, `shared` — принятые по ссылке проекты, `examples` — демо-примеры. Без аккаунтов параметр не действует."
             }
           }
         ],
@@ -4340,7 +4340,7 @@
         ]
       },
       "post": {
-        "description": "Создать ссылку на чтение либо приглашение редактора; сырой токен выдаётся один раз.\n\nСрок всегда ограничен: приглашение редактора — по умолчанию 7 дней (максимум 30), ссылка\nна чтение — 30 дней (максимум 365).",
+        "description": "Создать ссылку на чтение либо приглашение редактора; сырой токен выдаётся один раз.\n\nУ обеих ролей одинаковый срок: 7, 30, 365 дней или бессрочно (0); по умолчанию 30 дней.",
         "operationId": "create_share_link",
         "parameters": [
           {
@@ -5427,7 +5427,7 @@
     },
     "/api/v1/shares/{token}/accept": {
       "post": {
-        "operationId": "accept_editor_invite",
+        "operationId": "accept_share_link",
         "parameters": [
           {
             "in": "path",
@@ -5459,16 +5459,6 @@
               }
             },
             "description": "Требуется вход в аккаунт"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Недостаточно прав для операции"
           },
           "404": {
             "content": {
@@ -5506,7 +5496,7 @@
             "APIKeyCookie": []
           }
         ],
-        "summary": "Accept Editor Invite",
+        "summary": "Accept Share Link",
         "tags": [
           "sharing"
         ]

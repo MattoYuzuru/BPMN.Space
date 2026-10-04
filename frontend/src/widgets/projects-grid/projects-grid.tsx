@@ -75,7 +75,7 @@ export function ProjectsGrid({ query, scope, onResetQuery, onResetScope }: Proje
           title={scope === 'shared' ? 'Общих проектов пока нет' : 'Примеров нет'}
           description={
             scope === 'shared'
-              ? 'Здесь появятся проекты, куда вас пригласили редактировать.'
+              ? 'Здесь появятся проекты, доступ к которым вы приняли по ссылке.'
               : undefined
           }
           backdrop="dots"

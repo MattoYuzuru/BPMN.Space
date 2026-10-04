@@ -137,15 +137,20 @@ describe('страница по ссылке: запросы и ожидание
     expect(projectCalls(calls)).toEqual([])
   })
 
-  it('вошедший: единственный запрос к проектам — проверка своего доступа', async () => {
+  it('вошедший сохраняет просмотренный проект в профиле', async () => {
     const calls = stubApi({
       'GET /api/v1/auth/session': { body: signedSession },
       [`GET ${SHARE}`]: { body: shared('viewer') },
       'GET /api/v1/projects/p1': { body: { ...detail, access: 'viewer' } },
+      [`POST ${SHARE}/accept`]: { body: { project_id: 'p1', role: 'viewer' } },
     })
     mount()
     await screen.findByTestId('workspace')
-    await waitFor(() => expect(projectCalls(calls).length).toBeGreaterThan(0))
+    await waitFor(() =>
+      expect(calls.some((call) => call.method === 'POST' && call.path === `${SHARE}/accept`)).toBe(
+        true,
+      ),
+    )
     expect(projectCalls(calls).map((call) => `${call.method} ${call.path}`)).toEqual([
       'GET /api/v1/projects/p1',
     ])

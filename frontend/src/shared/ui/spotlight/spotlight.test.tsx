@@ -7,20 +7,20 @@ const target = { x: 100, y: 80, width: 120, height: 32 }
 
 describe('Spotlight', () => {
   it('вырезает отверстие вокруг элемента с отступом 6 px', () => {
-    const { container } = render(<Spotlight target={target} />)
-    const hole = container.querySelector('mask rect[fill="black"]')
+    render(<Spotlight target={target} />)
+    const hole = document.querySelector('mask rect[fill="black"]')
     expect(hole).toHaveAttribute('x', '94')
     expect(hole).toHaveAttribute('y', '74')
     expect(hole).toHaveAttribute('width', '132')
     expect(hole).toHaveAttribute('height', '44')
-    expect(container.querySelector('svg')).toHaveClass('pointer-events-none')
+    expect(document.querySelector('svg')).toHaveClass('pointer-events-none')
   })
 
   it('перехватывает клики четырьмя блоками вокруг выреза, сам вырез свободен', async () => {
     const onBlockedClick = vi.fn()
     const user = userEvent.setup()
-    const { container } = render(<Spotlight target={target} onBlockedClick={onBlockedClick} />)
-    const blockers = container.querySelectorAll<HTMLElement>('[data-tour-blocker]')
+    render(<Spotlight target={target} onBlockedClick={onBlockedClick} />)
+    const blockers = document.querySelectorAll<HTMLElement>('[data-tour-blocker]')
     expect(blockers).toHaveLength(4)
     const [top, bottom, left, right] = blockers
     expect(top).toHaveStyle({ height: '74px' })
@@ -32,34 +32,38 @@ describe('Spotlight', () => {
   })
 
   it('без цели блокирует весь экран и затемняет его без выреза', () => {
-    const { container } = render(<Spotlight target={null} />)
-    expect(container.querySelectorAll('[data-tour-blocker]')).toHaveLength(1)
-    expect(container.querySelector('mask rect[fill="black"]')).toHaveAttribute('width', '0')
+    render(<Spotlight target={null} />)
+    expect(document.querySelectorAll('[data-tour-blocker]')).toHaveLength(1)
+    expect(document.querySelector('mask rect[fill="black"]')).toHaveAttribute('width', '0')
   })
 
   it('block=false не ставит перехватчики, dim=false — только кольцо без затемнения', () => {
-    const { container, rerender } = render(<Spotlight target={target} block={false} />)
-    expect(container.querySelectorAll('[data-tour-blocker]')).toHaveLength(0)
+    const { rerender } = render(<Spotlight target={target} block={false} />)
+    expect(document.querySelectorAll('[data-tour-blocker]')).toHaveLength(0)
     rerender(<Spotlight target={target} dim={false} block={false} />)
-    expect(container.querySelector('svg')).toBeNull()
+    expect(document.querySelector('svg')).toHaveClass('invisible')
+    // вырез сохраняет координаты, поэтому после возврата затемнения экран не закрыт целиком
+    rerender(<Spotlight target={target} />)
+    expect(document.querySelector('svg')).not.toHaveClass('invisible')
+    expect(document.querySelector('mask rect[fill="black"]')).toHaveAttribute('width', '132')
   })
 
   it('blockAll держит вырез для вида, но перехватывает клики везде', () => {
-    const { container } = render(<Spotlight target={target} blockAll />)
-    expect(container.querySelectorAll('[data-tour-blocker]')).toHaveLength(1)
+    render(<Spotlight target={target} blockAll />)
+    expect(document.querySelectorAll('[data-tour-blocker]')).toHaveLength(1)
   })
 
   it('помечен data-tour-layer и сообщает прямоугольник выреза', () => {
     const onFrame = vi.fn()
-    const { container } = render(<Spotlight target={target} onFrame={onFrame} />)
-    expect(container.firstElementChild).toHaveAttribute('data-tour-layer')
+    render(<Spotlight target={target} onFrame={onFrame} />)
+    expect(document.querySelector('[data-tour-layer]')).toHaveAttribute('data-tour-layer')
     expect(onFrame).toHaveBeenLastCalledWith({ x: 94, y: 74, width: 132, height: 44 })
   })
 
   it('следует за элементом при смене прямоугольника (ресайз, прокрутка)', () => {
-    const { container, rerender } = render(<Spotlight target={target} />)
+    const { rerender } = render(<Spotlight target={target} />)
     rerender(<Spotlight target={{ ...target, y: 20, width: 200 }} />)
-    const hole = container.querySelector('mask rect[fill="black"]')
+    const hole = document.querySelector('mask rect[fill="black"]')
     expect(hole).toHaveAttribute('y', '14')
     expect(hole).toHaveAttribute('width', '212')
   })

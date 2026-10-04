@@ -152,8 +152,8 @@ describe('TourHost', () => {
     act(() => emitOnboardingSignal({ type: 'source.added', kind: 'text' }))
     expect(screen.getByRole('dialog', { name: 'Второй шаг' })).toBeInTheDocument()
     act(() => emitOnboardingSignal({ type: 'share.created' }))
-    await screen.findByRole('dialog', { name: 'Третий шаг' }).catch(() => undefined)
     expect(useTourStore.getState().stepKey).toBe('three')
+    expect(await screen.findByRole('dialog', { name: 'Третий шаг' })).toBeInTheDocument()
   })
 
   it('якорь не найден: карточка по центру, ожидание сигнала продолжается', async () => {
@@ -169,13 +169,17 @@ describe('TourHost', () => {
     const card = await screen.findByRole('dialog', { name: 'Третий шаг' })
     expect(card).toHaveTextContent('Сделайте действие.')
     expect(within(card).getByRole('button', { name: 'Пропустить шаг' })).toBeInTheDocument()
+    // шаг-действие без якоря не запирает экран: перехватчиков кликов нет
+    expect(document.querySelectorAll('[data-tour-blocker]')).toHaveLength(0)
+    // шаг-действие без якоря не запирает экран: перехватчиков кликов нет
+    expect(document.querySelectorAll('[data-tour-blocker]')).toHaveLength(0)
     // действие не пропускается молча: шаг идёт, пока не придёт сигнал
     expect(useTourStore.getState().stepKey).toBe('three')
     act(() => emitOnboardingSignal({ type: 'source.added', kind: 'voice' }))
     expect(useTourStore.getState().stepKey).toBe('four')
   })
 
-  it('вырез блокирует клики вокруг, allowOutside снимает блокировку', async () => {
+  it('вырез блокирует клики вокруг', async () => {
     renderUi(
       <>
         <Page />

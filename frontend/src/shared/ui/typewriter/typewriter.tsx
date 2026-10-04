@@ -10,6 +10,8 @@ export interface TypewriterProps {
   instant?: boolean
   /** Клик по тексту и любая клавиша (кроме Tab) допечатывают его. По умолчанию включено. */
   skippable?: boolean
+  /** Свой регион `aria-live` с полным текстом. false — объявлением занимается родитель (карточка). */
+  live?: boolean
   onDone?: () => void
   className?: string
 }
@@ -25,6 +27,7 @@ export function Typewriter({
   cps = 45,
   instant = false,
   skippable = true,
+  live = true,
   onDone,
   className,
 }: TypewriterProps) {
@@ -48,9 +51,11 @@ export function Typewriter({
       className={cn('block', !done && skippable && 'cursor-pointer', className)}
       onClick={skippable && !done ? finish : undefined}
     >
-      <span aria-live="polite" className="sr-only">
-        {text}
-      </span>
+      {live && (
+        <span aria-live="polite" className="sr-only">
+          {text}
+        </span>
+      )}
       <span aria-hidden="true">
         {typed.text}
         <span className="invisible">{text.slice(typed.text.length)}</span>

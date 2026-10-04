@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useTourStore } from './store'
 import type { TourHostProps } from './tour-host'
 
@@ -32,7 +32,21 @@ export function TourHost<Ctx>({
   ...props
 }: TourHostProps<Ctx> & { enabled?: boolean }) {
   const running = useTourStore((state) => state.status === 'active')
-  if (!enabled && !running) return null
+  // После конца тура хост живёт ещё чуть-чуть: затемнение гаснет плавно, а не обрывается.
+  const [lingering, setLingering] = useState(false)
+  const wasRunning = useRef(false)
+  useEffect(() => {
+    if (running) {
+      wasRunning.current = true
+      return
+    }
+    if (!wasRunning.current) return
+    wasRunning.current = false
+    setLingering(true)
+    const timer = window.setTimeout(() => setLingering(false), 400)
+    return () => window.clearTimeout(timer)
+  }, [running])
+  if (!enabled && !running && !lingering) return null
   const Host = LazyTourHost as unknown as (props: TourHostProps<Ctx>) => React.JSX.Element
   return (
     <Suspense fallback={null}>

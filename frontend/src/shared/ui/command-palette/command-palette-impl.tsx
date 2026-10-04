@@ -1,6 +1,7 @@
 import { Command } from 'cmdk'
 import { Dialog as DialogPrimitive, VisuallyHidden } from 'radix-ui'
 import { cn } from '@/shared/lib/cn'
+import { guardTourLayer } from '@/shared/lib/tour-anchors'
 import { overlayClass } from '../dialog/dialog'
 import { Icon } from '../icon'
 import { Kbd } from '../kbd/kbd'
@@ -21,6 +22,9 @@ export default function CommandPaletteImpl({
         <DialogPrimitive.Overlay className={overlayClass} />
         <DialogPrimitive.Content
           aria-describedby={undefined}
+          // Клик и Esc внутри слоя обучения не закрывают палитру.
+          onInteractOutside={guardTourLayer}
+          onEscapeKeyDown={guardTourLayer}
           className={cn(
             'motion-dialog fixed inset-x-0 top-[14vh] z-50 mx-auto w-[min(40rem,calc(100vw-2rem))]',
             'overflow-hidden rounded-lg border border-border bg-surface-raised text-fg shadow-lg outline-none',

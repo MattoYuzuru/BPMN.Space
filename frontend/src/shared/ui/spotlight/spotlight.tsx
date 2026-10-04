@@ -1,5 +1,6 @@
 import { animate, useReducedMotion } from 'motion/react'
 import { useEffect, useId, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import type { Rect } from '@/shared/hooks/use-element-rect'
 import { useTourLayerTracking } from '@/shared/hooks/use-tour-layer'
 import { cn } from '@/shared/lib/cn'
@@ -179,7 +180,7 @@ export function Spotlight({
   const box = target ? padded(target, pad) : null
   const blockers = block || blockAll ? blockerRects(blockAll ? null : box) : []
 
-  return (
+  const layer = (
     <div
       {...{ [TOUR_LAYER_ATTR]: '' }}
       className={cn(
@@ -188,8 +189,12 @@ export function Spotlight({
         className,
       )}
     >
-      {dim && (
-        <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-full">
+      {/* SVG не размонтируем: вырез хранит координаты, а при dim=false слой просто скрыт. */}
+      {
+        <svg
+          aria-hidden="true"
+          className={cn('pointer-events-none absolute inset-0 size-full', !dim && 'invisible')}
+        >
           <defs>
             <mask id={maskId}>
               <rect width="100%" height="100%" fill="white" />
@@ -198,7 +203,7 @@ export function Spotlight({
           </defs>
           <rect width="100%" height="100%" className="fill-scrim" mask={`url(#${maskId})`} />
         </svg>
-      )}
+      }
       <div
         ref={ringRef}
         aria-hidden="true"
@@ -218,6 +223,8 @@ export function Spotlight({
       ))}
     </div>
   )
+  // Слой окна — у корня документа: предки с isolate или transform не должны запирать z-индексы.
+  return position === 'fixed' ? createPortal(layer, document.body) : layer
 }
 
 /** Четыре блока вокруг выреза (сверху, снизу, слева, справа) или один на весь экран. */

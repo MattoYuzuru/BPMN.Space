@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from typing import Any
 from uuid import UUID
 
 from app.domain import questions as question_rules
@@ -16,10 +17,10 @@ from app.ingest.parsers import (
     detect_format,
     is_slow,
 )
-from app.services.common import Runtime, get_project, get_source, touch_project
+from app.services.common import Runtime, get_project, get_source, too_large, touch_project
 from app.services.errors import (
+    ConflictError,
     InvalidInputError,
-    PayloadTooLargeError,
     UnsupportedMediaError,
 )
 
@@ -127,8 +128,7 @@ class SourceService:
         if not data:
             raise InvalidInputError("Файл пустой")
         if len(data) > self._max_upload:
-            limit_mb = self._max_upload // (1024 * 1024)
-            raise PayloadTooLargeError(f"Файл больше {limit_mb} МБ")
+            raise too_large("Файл", self._max_upload)
 
         now = self._rt.clock()
         key = await self._storage.save(project_id=project_id, file_name=file_name, data=data)
@@ -148,33 +148,34 @@ class SourceService:
         )
         background = is_slow(fmt)
         if not background:
-            await self._parse_into(source, data)
+            for name, value in (await self._parse_changes(file_name=file_name, data=data)).items():
+                setattr(source, name, value)
         await self._repos.sources.add(source)
         await touch_project(self._repos, project_id, now)
         return source, background
 
-    async def _parse_into(self, source: Source, data: bytes) -> None:
+    async def _parse_changes(self, *, file_name: str, data: bytes) -> dict[str, Any]:
+        """Результат разбора как набор полей источника: `status`, `content`, `error`."""
         try:
-            text = await self._parser.parse(file_name=source.file_name or "", data=data)
+            text = await self._parser.parse(file_name=file_name, data=data)
         except DocumentParseError as error:
-            source.status = SourceStatus.FAILED
-            source.error = str(error)
-            return
+            return {"status": SourceStatus.FAILED, "error": str(error)}
         if len(text) > self._max_text:
-            source.status = SourceStatus.FAILED
-            source.error = (
-                f"После разбора файл превышает лимит {self._max_text} символов. "
-                "Разделите файл на части и загрузите их отдельно"
-            )
-            return
-        source.content = text
-        source.status = SourceStatus.READY
-        source.error = None
+            return {
+                "status": SourceStatus.FAILED,
+                "error": (
+                    f"После разбора файл превышает лимит {self._max_text} символов. "
+                    "Разделите файл на части и загрузите их отдельно"
+                ),
+            }
+        return {"status": SourceStatus.READY, "content": text, "error": None}
 
     async def process_file(self, source_id: UUID) -> None:
         """Фоновый разбор документа.
 
-        Разбор запускается asyncio-задачей; статус источника сохраняется в БД.
+        Разбор запускается asyncio-задачей. Результат пишется точечным UPDATE только по
+        полям разбора и только пока источник в `processing`: название и `active`, которые
+        пользователь поменял за время разбора, не затираются, а удалённый источник не оживает.
         """
         await asyncio.sleep(self._parse_delay)
         source = await self._repos.sources.get(source_id)
@@ -182,12 +183,11 @@ class SourceService:
             return
         try:
             data = await self._storage.load(source.file_key)
-            await self._parse_into(source, data)
+            changes = await self._parse_changes(file_name=source.file_name or "", data=data)
         except Exception:
             logger.exception("Не удалось разобрать источник %s", source_id)
-            source.status = SourceStatus.FAILED
-            source.error = "Не удалось разобрать файл"
-        await self._repos.sources.update(source)
+            changes = {"status": SourceStatus.FAILED, "error": "Не удалось разобрать файл"}
+        await self._repos.sources.patch(source_id, changes, only_status=SourceStatus.PROCESSING)
 
     async def update(
         self,
@@ -199,18 +199,25 @@ class SourceService:
         fields: set[str],
     ) -> Source:
         source = await get_source(self._repos, source_id)
+        changes: dict[str, Any] = {}
         if "title" in fields and title is not None:
-            source.title = self._clean_title(title) or source.title
+            changes["title"] = self._clean_title(title) or source.title
         if "content" in fields and content is not None:
             if source.status is SourceStatus.PROCESSING:
                 raise InvalidInputError("Файл ещё обрабатывается — текст можно поправить позже")
-            source.content = self._clean_content(content)
+            changes["content"] = self._clean_content(content)
             if source.status is SourceStatus.FAILED:
-                source.status = SourceStatus.READY  # аналитик вписал текст вручную
-                source.error = None
+                changes["status"] = SourceStatus.READY  # аналитик вписал текст вручную
+                changes["error"] = None
         if "active" in fields and active is not None:
-            source.active = active
-        await self._repos.sources.update(source)
+            changes["active"] = active
+        if changes:
+            # Правка текста не должна обгонять разбор: статус проверяется в самом UPDATE.
+            guard = source.status if "content" in changes else None
+            if not await self._repos.sources.patch(source_id, changes, only_status=guard):
+                await get_source(self._repos, source_id)  # удалён → 404
+                raise ConflictError("Источник только что изменился — обновите страницу и повторите")
+        source = await get_source(self._repos, source_id)
         now = self._rt.clock()
         if source.question_id and "content" in fields:
             question = await self._repos.questions.get(source.question_id)

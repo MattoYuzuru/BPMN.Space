@@ -15,6 +15,11 @@ from app.domain.models import RunStatus
 from app.infra.db_models import Base, ProjectRow, RunRow
 from app.infra.repositories.sql import SqlStore
 
+INTERRUPTED_PARSE_ERROR = (
+    "Разбор файла прервался из-за перезапуска сервера. "
+    "Загрузите файл ещё раз или вставьте текст вручную"
+)
+
 
 class Database:
     def __init__(
@@ -32,7 +37,7 @@ class Database:
         self._migrations_dir = migrations_dir or Path(__file__).resolve().parents[2] / "migrations"
 
     async def initialize(self) -> None:
-        """Применяет миграции, затем делает прерванные прогоны явными для пользователя."""
+        """Применяет миграции, затем делает прерванные прогоны и разборы файлов явными."""
         async with self.engine.begin() as connection:
             config = Config()
             config.set_main_option("script_location", str(self._migrations_dir))
@@ -52,6 +57,9 @@ class Database:
                     finished_at=datetime.now(UTC),
                 )
             )
+        # Фоновый разбор документа жил в памяти процесса и не пережил перезапуск: без этого
+        # источник остался бы в `processing` навсегда и не попадал бы в прогоны.
+        await self.store.repositories().sources.fail_processing(INTERRUPTED_PARSE_ERROR)
 
     async def seed(self, build_seed: Callable[[], Any]) -> None:
         """Идемпотентно добавляет демонстрационные проекты, не затирая пользовательские данные."""

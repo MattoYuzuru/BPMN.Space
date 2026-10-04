@@ -4,7 +4,7 @@ import asyncio
 import os
 from collections.abc import AsyncIterator
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
 from uuid import uuid4
@@ -13,7 +13,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import Table, inspect, select, text
+from sqlalchemy import Table, func, inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import Settings
@@ -27,6 +27,7 @@ from app.domain.models import (
     Source,
     SourceKind,
     SourceStatus,
+    VersionOrigin,
 )
 from app.fixtures import read_bpmn
 from app.fixtures.playbook import PLAYBOOK
@@ -55,8 +56,10 @@ from app.main import create_app
 from app.services.access import AccessService, ProjectRole
 from app.services.common import Runtime
 from app.services.errors import ConflictError, NotFoundError
+from app.services.projects import ProjectService
 from app.services.runs import RunService
 from app.services.sharing import SharingService
+from app.services.versions import VersionService, add_version
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
 
@@ -484,3 +487,317 @@ async def test_database_index_race_becomes_http_service_conflict(sql_store) -> N
     finished = await repos.runs.get(started.id)
     assert finished is not None
     assert finished.status is RunStatus.SUCCEEDED
+
+
+# ---------- единица работы и конкурентность ----------
+
+
+async def _make_project(repos, title: str = "Конкурентность") -> Project:
+    now = datetime.now(UTC)
+    project = Project(id=uuid4(), title=title, description=None, created_at=now, updated_at=now)
+    await repos.projects.add(project)
+    return project
+
+
+@pytest.mark.asyncio
+async def test_concurrent_versions_get_consecutive_numbers(sql_store) -> None:
+    store, _ = sql_store
+    repos = store.repositories()
+    project = await _make_project(repos)
+    xml = read_bpmn("tp861_v2")
+    service = VersionService(
+        repos, bpmn_tools=MockBpmnTools(), runtime=Runtime(), max_diagram_bytes=5 * 1024 * 1024
+    )
+
+    async def manual() -> int:
+        return (await service.save_manual(project.id, xml=xml)).number
+
+    async def generated() -> int:
+        version = await add_version(
+            repos,
+            Runtime(),
+            project_id=project.id,
+            xml=xml,
+            origin=VersionOrigin.GENERATED,
+            lint=[],
+            trace={},
+        )
+        return version.number
+
+    # Ручные сохранения двух редакторов и версии от прогонов приходят одновременно.
+    numbers = await asyncio.gather(*(manual() if i % 2 else generated() for i in range(10)))
+    assert sorted(numbers) == list(range(1, 11))
+    latest = await repos.versions.latest(project.id)
+    assert latest is not None
+    assert latest.number == 10
+
+
+@pytest.mark.asyncio
+async def test_manual_save_conflicts_with_active_run_in_postgres(sql_store) -> None:
+    store, _ = sql_store
+    repos = store.repositories()
+    project = await _make_project(repos)
+    await repos.runs.add(
+        Run(
+            id=uuid4(),
+            project_id=project.id,
+            mode=RunMode.BUILD,
+            status=RunStatus.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+    )
+    service = VersionService(
+        repos, bpmn_tools=MockBpmnTools(), runtime=Runtime(), max_diagram_bytes=5 * 1024 * 1024
+    )
+    with pytest.raises(ConflictError, match="идёт сборка"):
+        await service.save_manual(project.id, xml=read_bpmn("tp861_v2"))
+    assert await repos.versions.latest(project.id) is None
+
+
+@pytest.mark.asyncio
+async def test_reconciled_question_write_is_conditional_in_postgres(sql_store) -> None:
+    from app.domain.models import (  # noqa: PLC0415
+        Question,
+        QuestionKind,
+        QuestionStatus,
+        Severity,
+    )
+
+    store, _ = sql_store
+    repos = store.repositories()
+    project = await _make_project(repos)
+    now = datetime.now(UTC)
+    question = Question(
+        id=uuid4(),
+        project_id=project.id,
+        code="Q-1",
+        kind=QuestionKind.MISSING_ACTOR,
+        severity=Severity.MAJOR,
+        status=QuestionStatus.OPEN,
+        text="Кто принимает заявку?",
+        assumption="",
+        created_at=now,
+        updated_at=now,
+    )
+    await repos.questions.add(question)
+    stale = await repos.questions.get(question.id)
+    assert stale is not None
+
+    question.status = QuestionStatus.ANSWERED  # аналитик ответил между чтением и записью
+    await repos.questions.update(question)
+    stale.status = QuestionStatus.RESOLVED
+    assert not await repos.questions.apply_reconciled(stale, expected_status=QuestionStatus.OPEN)
+    kept = await repos.questions.get(question.id)
+    assert kept is not None
+    assert kept.status is QuestionStatus.ANSWERED
+
+    assert await repos.questions.apply_reconciled(stale, expected_status=QuestionStatus.ANSWERED)
+    updated = await repos.questions.get(question.id)
+    assert updated is not None
+    assert updated.status is QuestionStatus.RESOLVED
+
+
+@pytest.mark.asyncio
+async def test_atomic_block_rolls_back_every_repository(sql_store) -> None:
+    store, _ = sql_store
+    repos = store.repositories()
+    project = await _make_project(repos)
+    source = Source(
+        id=uuid4(),
+        project_id=project.id,
+        kind=SourceKind.TEXT,
+        title="Текст",
+        content="Текст",
+        status=SourceStatus.READY,
+        active=True,
+        created_at=datetime.now(UTC),
+    )
+
+    async def failing_unit() -> None:
+        async with repos.atomic() as tx:
+            await tx.sources.add(source)
+            await tx.projects.delete(project.id)
+            raise RuntimeError("сбой")
+
+    with pytest.raises(RuntimeError, match="сбой"):
+        await failing_unit()
+    assert await repos.projects.get(project.id) is not None
+    assert await repos.sources.get(source.id) is None
+
+    async with repos.atomic() as tx:
+        await tx.sources.add(source)
+        async with tx.atomic() as nested:  # вложенный atomic — та же транзакция
+            assert nested is tx
+    assert await repos.sources.get(source.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_project_delete_is_atomic_and_cascades(sql_store, tmp_path) -> None:
+    store, sessions = sql_store
+    repos = store.repositories()
+    seeded = build_seed()
+    project = seeded.projects[0]
+    await repos.projects.add(project)
+    for source in (s for s in seeded.sources if s.project_id == project.id):
+        await repos.sources.add(source)
+    runs = [r for r in seeded.runs if r.project_id == project.id]
+    for run in runs:
+        await repos.runs.add(replace(run, version_id=None))
+    for question in (q for q in seeded.questions if q.project_id == project.id):
+        await repos.questions.add(question)
+    for version in (v for v in seeded.versions if v.project_id == project.id):
+        await repos.versions.add(version)
+    await repos.llm_calls.add(
+        LlmCall(id=uuid4(), run_id=runs[0].id, stage="analyze", request={}, response={})
+    )
+    service = ProjectService(
+        repos, examples=[], runtime=Runtime(), storage=LocalFileStorage(tmp_path)
+    )
+
+    await service.delete(project.id)
+
+    async with sessions() as session:
+        for table in (SourceRow, QuestionRow, RunRow, DiagramVersionRow, LlmCallRow):
+            count = await session.scalar(select(func.count()).select_from(table))
+            assert count == 0, table
+    assert await repos.projects.get(project.id) is None
+    with pytest.raises(NotFoundError):
+        await service.delete(project.id)
+
+
+@pytest.mark.asyncio
+async def test_project_delete_refuses_active_run_without_partial_delete(
+    sql_store, tmp_path
+) -> None:
+    store, _ = sql_store
+    repos = store.repositories()
+    project = await _make_project(repos)
+    await repos.runs.add(
+        Run(
+            id=uuid4(),
+            project_id=project.id,
+            mode=RunMode.ANALYZE,
+            status=RunStatus.QUEUED,
+            started_at=datetime.now(UTC),
+        )
+    )
+    service = ProjectService(
+        repos, examples=[], runtime=Runtime(), storage=LocalFileStorage(tmp_path)
+    )
+    with pytest.raises(ConflictError):
+        await service.delete(project.id)
+    assert await repos.projects.get(project.id) is not None
+    assert await repos.runs.active_for_project(project.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_source_patch_is_targeted_and_conditional(sql_store) -> None:
+    store, _ = sql_store
+    repos = store.repositories()
+    project = await _make_project(repos)
+    source = Source(
+        id=uuid4(),
+        project_id=project.id,
+        kind=SourceKind.FILE,
+        title="Файл",
+        content="",
+        status=SourceStatus.PROCESSING,
+        active=True,
+        created_at=datetime.now(UTC),
+        file_name="a.pdf",
+    )
+    await repos.sources.add(source)
+    # Пользователь переименовал и выключил источник, пока шёл разбор.
+    assert await repos.sources.patch(source.id, {"title": "Новое", "active": False})
+    # Разбор записывает только свои поля и только пока источник в processing.
+    assert await repos.sources.patch(
+        source.id,
+        {"status": SourceStatus.READY, "content": "Текст", "error": None},
+        only_status=SourceStatus.PROCESSING,
+    )
+    stored = await repos.sources.get(source.id)
+    assert stored is not None
+    assert (stored.title, stored.active, stored.status) == ("Новое", False, SourceStatus.READY)
+    assert stored.file_name == "a.pdf"
+    assert not await repos.sources.patch(
+        source.id, {"status": SourceStatus.FAILED}, only_status=SourceStatus.PROCESSING
+    )
+    assert not await repos.sources.patch(uuid4(), {"active": True})
+    with pytest.raises(ValueError, match="нельзя менять"):
+        await repos.sources.patch(source.id, {"project_id": uuid4()})
+    with pytest.raises(ValueError, match="Не указаны"):
+        await repos.sources.patch(source.id, {})
+
+
+@pytest.mark.asyncio
+async def test_fail_processing_and_project_touch_update(sql_store) -> None:
+    store, _ = sql_store
+    repos = store.repositories()
+    project = await _make_project(repos)
+    for status in (SourceStatus.PROCESSING, SourceStatus.READY):
+        await repos.sources.add(
+            Source(
+                id=uuid4(),
+                project_id=project.id,
+                kind=SourceKind.FILE,
+                title=status.value,
+                content="",
+                status=status,
+                active=True,
+                created_at=datetime.now(UTC),
+            )
+        )
+    assert await repos.sources.fail_processing("Прервано") == 1
+    sources = {s.title: s for s in await repos.sources.list_by_project(project.id)}
+    assert sources["processing"].status is SourceStatus.FAILED
+    assert sources["processing"].error == "Прервано"
+    assert sources["ready"].status is SourceStatus.READY
+
+    later = project.updated_at + timedelta(hours=1)
+    await repos.projects.touch(project.id, later)
+    await repos.projects.touch(project.id, project.updated_at)  # назад время не идёт
+    renamed = replace(project, title="Другое имя", updated_at=project.updated_at)
+    await repos.projects.update(renamed)  # `update` не трогает updated_at
+    stored = await repos.projects.get(project.id)
+    assert stored is not None
+    assert stored.title == "Другое имя"
+    assert stored.updated_at == later
+
+
+@pytest.mark.asyncio
+async def test_run_warnings_and_llm_tokens_round_trip(sql_store) -> None:
+    store, sessions = sql_store
+    repos = store.repositories()
+    project = await _make_project(repos)
+    run = Run(
+        id=uuid4(),
+        project_id=project.id,
+        mode=RunMode.ANALYZE,
+        status=RunStatus.SUCCEEDED,
+        started_at=datetime.now(UTC),
+        warnings=["Источник обрезан"],
+    )
+    await repos.runs.add(run)
+    await repos.llm_calls.add(
+        LlmCall(
+            id=uuid4(),
+            run_id=run.id,
+            stage="analyze",
+            request={"context": {"sources": []}},
+            response={},
+            tokens_in=120,
+            tokens_out=30,
+        )
+    )
+    stored = await repos.runs.get(run.id)
+    assert stored is not None
+    assert stored.warnings == ["Источник обрезан"]
+    run.warnings = []
+    await repos.runs.update(run)
+    again = await repos.runs.get(run.id)
+    assert again is not None
+    assert again.warnings == []
+    async with sessions() as session:
+        call = await session.scalar(select(LlmCallRow).where(LlmCallRow.run_id == run.id))
+    assert call is not None
+    assert (call.tokens_in, call.tokens_out) == (120, 30)

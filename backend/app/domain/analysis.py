@@ -40,6 +40,8 @@ class RunContext:
     current_xml: str | None = None
     current_is_manual: bool = False
     generated_versions: int = 0
+    # Что не поместилось в бюджет контекста и было обрезано или пропущено (показываем в прогоне).
+    warnings: list[str] = field(default_factory=list[str])
 
 
 @dataclass(slots=True, kw_only=True)

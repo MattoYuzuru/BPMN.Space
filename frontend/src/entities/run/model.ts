@@ -61,6 +61,8 @@ export interface RunView {
   /** Вопросы, которые прогон изменил или создал. */
   questions: TouchedQuestion[]
   versionId: string | null
+  /** Предупреждения прогона: например, часть источников не поместилась в контекст модели. */
+  warnings: string[]
   error: string | null
   /** Последний обработанный номер события: при переподключении история приходит заново. */
   lastEventId: number
@@ -83,6 +85,7 @@ export function initialRunView(run: Run, now: number): RunView {
     summary: run.summary ?? null,
     questions: [],
     versionId: run.version_id ?? null,
+    warnings: run.warnings ?? [],
     error: run.error ?? null,
     lastEventId: 0,
     startedAt: Date.parse(run.started_at) || now,
@@ -137,6 +140,7 @@ export function reduceRun(view: RunView, event: RunEvent, now: number): RunView 
         progress: failed ? view.progress : 1,
         summary: run.summary ?? view.summary,
         versionId: run.version_id ?? view.versionId,
+        warnings: run.warnings?.length ? run.warnings : view.warnings,
         error: failed ? (run.error ?? view.error ?? 'Прогон не завершён') : null,
         stageFinishedAt: failed ? view.stageFinishedAt : finishStage(view, now),
         finishedAt: now,

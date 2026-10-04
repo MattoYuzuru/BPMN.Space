@@ -2,9 +2,10 @@
 
 Mock: ждёт `mock_transcription_delay_sec` и возвращает правдоподобную расшифровку на тему
 энергетики (выбор детерминирован по содержимому файла); длительность оценивается по размеру.
-TODO(real): #6 адаптер Yandex SpeechKit: `ffmpeg` перепаковывает webm/opus в OGG_OPUS mono;
-запись ≤ 30 с и ≤ 1 МБ — STT v1 синхронно, длиннее — v3 `recognizeFileAsync` + опрос
-`getRecognition`. Ключ и провайдер — `STT_PROVIDER`, `STT_API_KEY` в config.py.
+Боевой адаптер — Deepgram (`deepgram.py`, `STT_PROVIDER=deepgram`): один синхронный запрос.
+TODO(real): #6 RFC §5.2 предполагает Yandex SpeechKit: `ffmpeg` перепаковывает webm/opus в
+OGG_OPUS mono; запись ≤ 30 с и ≤ 1 МБ — STT v1 синхронно, длиннее — v3 `recognizeFileAsync` +
+опрос `getRecognition`. У Deepgram-адаптера нет ffmpeg и асинхронной обработки длинных записей.
 """
 
 import asyncio

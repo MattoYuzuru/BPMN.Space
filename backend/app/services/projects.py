@@ -1,5 +1,6 @@
 """Сценарии проектов: список с курсором и поиском, карточка, создание (в т. ч. из примера)."""
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID
@@ -28,6 +29,8 @@ from app.infra.repositories.base import Repositories
 from app.infra.storage import FileStorage
 from app.services.common import Runtime, get_project
 from app.services.errors import ConflictError, InvalidInputError, NotFoundError
+
+logger = logging.getLogger(__name__)
 
 MAX_PAGE = 100
 MAX_TITLE = 200
@@ -253,21 +256,24 @@ class ProjectService:
             project.title = _clean_title(title or "")
         if "description" in fields:
             project.description = _clean_description(description)
-        project.updated_at = self._rt.clock()
+        now = self._rt.clock()
         await self._repos.projects.update(project)
+        await self._repos.projects.touch(project_id, now)
+        project.updated_at = max(project.updated_at, now)
         return await self._view(project)
 
     async def delete(self, project_id: UUID) -> None:
-        repos = self._repos
-        await get_project(repos, project_id)
-        if await repos.runs.active_for_project(project_id):
-            raise ConflictError("Нельзя удалить проект, пока идёт прогон")
-        sources = await repos.sources.list_by_project(project_id)
-        await repos.sources.delete_by_project(project_id)
-        await repos.questions.delete_by_project(project_id)
-        await repos.runs.delete_by_project(project_id)
-        await repos.versions.delete_by_project(project_id)
-        await repos.projects.delete(project_id)
+        """Удаляет проект одной транзакцией; файлы источников — после её фиксации."""
+        async with self._repos.atomic() as repos:
+            if await repos.projects.lock(project_id) is None:
+                raise NotFoundError("Проект не найден")
+            if await repos.runs.active_for_project(project_id):
+                raise ConflictError("Нельзя удалить проект, пока идёт прогон")
+            sources = await repos.sources.list_by_project(project_id)
+            await repos.projects.delete(project_id)
         for source in sources:
             if source.file_key:
-                await self._storage.delete(source.file_key)
+                try:
+                    await self._storage.delete(source.file_key)
+                except OSError:
+                    logger.warning("Не удалён файл %s удалённого проекта", source.file_key)

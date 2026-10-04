@@ -80,8 +80,7 @@ def build_container(
     access = AccessService(repos.access, runtime=runtime)
     spawner = AsyncioTaskSpawner()
     assistant_model: AssistantModel | None = None
-    # TODO(real): #6 HTTP-клиент bpmn-tools и python-docx; PDF уже разбирается через pypdf.
-    # TODO(real): #5 пайплайн на Pydantic AI вместо записанных ответов.
+    # TODO(real): #6 HTTP-клиент к bpmn-tools (раскладка и bpmnlint) вместо MockBpmnTools.
     bpmn_tools = MockBpmnTools()
     match settings.llm_provider.lower():
         case "mock":
@@ -95,6 +94,9 @@ def build_container(
                 model=settings.deepseek_model,
                 timeout_sec=settings.deepseek_timeout_sec,
                 thinking_enabled=settings.deepseek_thinking_enabled,
+                max_retries=settings.deepseek_max_retries,
+                retry_base_sec=settings.deepseek_retry_base_sec,
+                retry_max_sec=settings.deepseek_retry_max_sec,
             )
             assistant_model = pipeline
         case provider:
@@ -113,7 +115,8 @@ def build_container(
             raise ValueError(f"Неизвестный STT_PROVIDER: {provider}")
 
     async def mock_pace(stage: RunStage) -> None:
-        # TODO(real): #5 убрать: настоящие этапы занимают время сами.
+        # TODO(real): #5 задержки имитируют работу модели и действуют при любом LLM_PROVIDER,
+        # в том числе с DeepSeek; убрать, когда mock перестанет быть основным демо-режимом.
         delay = settings.mock_delay(settings.mock_stage_delays.get(stage.value, 0.0))
         if delay:
             await asyncio.sleep(delay)
@@ -128,7 +131,10 @@ def build_container(
         sources=SourceService(
             repos,
             parser=LocalDocumentParser(
-                max_text_chars=min(settings.max_text_chars, MAX_SOURCE_TEXT_CHARS)
+                max_text_chars=min(settings.max_text_chars, MAX_SOURCE_TEXT_CHARS),
+                max_pdf_chars=settings.max_text_chars,
+                max_pdf_pages=settings.max_pdf_pages,
+                timeout_sec=settings.parse_timeout_sec,
             ),
             storage=storage,
             runtime=runtime,
@@ -146,6 +152,8 @@ def build_container(
             runtime=runtime,
             max_concurrent=settings.max_concurrent_runs,
             pace=mock_pace,
+            context_budget_chars=settings.llm_context_budget_chars,
+            deadline_sec=settings.run_deadline_sec,
         ),
         versions=VersionService(
             repos,

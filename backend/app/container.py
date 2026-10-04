@@ -128,7 +128,10 @@ def build_container(
         sources=SourceService(
             repos,
             parser=LocalDocumentParser(
-                max_text_chars=min(settings.max_text_chars, MAX_SOURCE_TEXT_CHARS)
+                max_text_chars=min(settings.max_text_chars, MAX_SOURCE_TEXT_CHARS),
+                max_pdf_chars=settings.max_text_chars,
+                max_pdf_pages=settings.max_pdf_pages,
+                timeout_sec=settings.parse_timeout_sec,
             ),
             storage=storage,
             runtime=runtime,

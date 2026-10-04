@@ -5,7 +5,6 @@ from uuid import UUID
 
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.domain.access import ProjectMember, ProjectRole, ResourceKind, ShareLink
 from app.infra.db_models import (
@@ -18,8 +17,7 @@ from app.infra.db_models import (
     SourceRow,
     UserRow,
 )
-
-type SessionFactory = async_sessionmaker[AsyncSession]
+from app.infra.repositories.session import SessionFactory
 
 users = UserRow.__table__  # `email` и `id` у FastAPI Users объявлены без Mapped-типов
 

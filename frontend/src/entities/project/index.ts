@@ -1,4 +1,5 @@
 export {
+  createProject,
   hasProcessingSources,
   PROJECTS_PAGE_SIZE,
   type Project,
@@ -13,4 +14,13 @@ export {
   useDeleteProject,
   useRenameProject,
 } from './api'
-export { isRunning, PROJECT_STATUS, type ProjectStatus, projectStatusView } from './model'
+export {
+  isReadOnly,
+  isRunning,
+  PROJECT_STATUS,
+  type ProjectAccess,
+  type ProjectCapabilities,
+  type ProjectStatus,
+  projectCapabilities,
+  projectStatusView,
+} from './model'

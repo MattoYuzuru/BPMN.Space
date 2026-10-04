@@ -564,6 +564,15 @@ async def test_manual_save_rejects_malicious_xml(stack: Stack) -> None:
         assert response.status_code == 422, (name, response.text)
         assert response.json()["detail"], name
 
+    # Допустимое содержимое не режем: `bpmn:script` внутри scriptTask — часть стандарта.
+    script_task = (
+        '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+        '<bpmn:process id="p"><bpmn:scriptTask id="t"><bpmn:script>x = 1</bpmn:script>'
+        "</bpmn:scriptTask></bpmn:process></bpmn:definitions>"
+    )
+    allowed = await owner.put(path, json={"xml": script_task})
+    assert allowed.status_code == 201, allowed.text
+
     # Не навредили: версий не прибавилось, а корректный XML (в т.ч. bpmn-js) сохраняется.
     versions = (await owner.get(f"/projects/{ids['project']}/versions")).json()
     ok = await owner.put(path, json={"xml": ids["xml"]})

@@ -14,7 +14,7 @@ const optional = (value: unknown) => (typeof value === 'string' && value ? value
  * редактора bpmn-js — к моменту показа схема уже готова к отрисовке. При наведении на ссылку
  * проекта (preload: intent) всё это начинается заранее.
  */
-export const Route = createFileRoute('/projects/$projectId')({
+export const Route = createFileRoute('/_app/projects/$projectId')({
   validateSearch: (search: Record<string, unknown>): WorkspaceSearch => ({
     question: optional(search.question),
     version: optional(search.version),

@@ -59,4 +59,6 @@ ssh deploy@<IP_VM> 'cd /home/deploy/arkhitektor/current && docker compose --env-
 ssh deploy@<IP_VM> 'cd /home/deploy/arkhitektor/current && docker compose --env-file /home/deploy/arkhitektor/shared/.env -p arkhitektor -f compose.yaml -f compose.prod.yaml logs --tail=100'
 ```
 
-Порты 80 и 22 открыты, TLS-домен пока не настроен — HTTP подходит только для временного демо/тестирования. Не используйте production-ключи с публичным адресом без ограничений доступа; перед открытым демо добавьте домен, HTTPS и защиту от неавторизованных запросов.
+Порты 80 и 22 открыты, TLS-домен пока не настроен — HTTP подходит только для временного демо/тестирования.
+
+Вход в аккаунт в production требует HTTPS: cookie сессии получает флаг `Secure`, и по обычному HTTP браузер её не примет. На стенде без HTTPS задайте `SESSION_COOKIE_SECURE=false` в серверном окружении; после подключения HTTPS уберите эту строку. Не используйте production-ключи с публичным адресом без ограничений доступа; перед открытым демо добавьте домен, HTTPS и защиту от неавторизованных запросов.

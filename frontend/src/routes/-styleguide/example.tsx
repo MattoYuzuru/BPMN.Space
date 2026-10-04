@@ -27,7 +27,7 @@ export function ExampleSection() {
   return (
     <Section
       id="example"
-      eyebrow="18 Сборка"
+      eyebrow="19 Сборка"
       title="Пример экрана"
       lead="Рабочее место аналитика из готовых компонентов: ResizablePanelGroup, ScrollArea, Card, AssumptionFrame, EmptyState на сетке. Тяните разделители."
     >

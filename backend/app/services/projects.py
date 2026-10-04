@@ -141,7 +141,15 @@ class ProjectService:
             lanes=list(versions[0].lanes) if versions else [],
         )
 
-    async def list(self, *, cursor: str | None, limit: int, query: str | None) -> ProjectPage:
+    async def list(
+        self,
+        *,
+        cursor: str | None,
+        limit: int,
+        query: str | None,
+        owner_id: UUID | None = None,
+        scope_to_user: bool = False,
+    ) -> ProjectPage:
         """Курсорная страница. TODO(real): #6 счётчики — одним агрегирующим SQL-запросом."""
         limit = min(max(limit, 1), MAX_PAGE)
         try:
@@ -149,14 +157,22 @@ class ProjectService:
         except InvalidCursorError as error:
             raise InvalidInputError(str(error)) from error
         query = query.strip() if query else None
-        projects = await self._repos.projects.list_page(query=query, after=after, limit=limit + 1)
+        projects = await self._repos.projects.list_page(
+            query=query,
+            after=after,
+            limit=limit + 1,
+            owner_id=owner_id,
+            scope_to_user=scope_to_user,
+        )
         has_more = len(projects) > limit
         projects = projects[:limit]
         last = projects[-1] if projects else None
         return ProjectPage(
             items=[await self._view(p) for p in projects],
             next_cursor=Cursor(last.updated_at, last.id).encode() if has_more and last else None,
-            total=await self._repos.projects.count(query=query),
+            total=await self._repos.projects.count(
+                query=query, owner_id=owner_id, scope_to_user=scope_to_user
+            ),
         )
 
     async def get(self, project_id: UUID) -> ProjectView:
@@ -188,7 +204,9 @@ class ProjectService:
             summary=project_summary(questions, latest_run_id=finished[-1].id if finished else None),
         )
 
-    async def create(self, *, title: str, description: str | None) -> ProjectView:
+    async def create(
+        self, *, title: str, description: str | None, owner_id: UUID | None = None
+    ) -> ProjectView:
         now = self._rt.clock()
         project = Project(
             id=self._rt.new_id(),
@@ -197,14 +215,18 @@ class ProjectService:
             created_at=now,
             updated_at=now,
         )
-        await self._repos.projects.add(project)
+        await self._repos.projects.add(project, owner_id=owner_id)
         return await self._view(project, sources=[], questions=[], versions=[], active_known=True)
 
-    async def create_from_example(self, example_id: str) -> ProjectView:
+    async def create_from_example(
+        self, example_id: str, *, owner_id: UUID | None = None
+    ) -> ProjectView:
         example = self._examples.get(example_id)
         if example is None:
             raise NotFoundError("Пример не найден")
-        view = await self.create(title=example.title, description=example.description)
+        view = await self.create(
+            title=example.title, description=example.description, owner_id=owner_id
+        )
         content = read_text(example.text)
         source = Source(
             id=self._rt.new_id(),

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     upload_dir: str = "/data/uploads"
     api_prefix: str = "/api/v1"
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:8080"]
+    auth_enabled: bool = True
 
     # --- Прогоны (RFC §5.1) ---
     max_concurrent_runs: int = 2

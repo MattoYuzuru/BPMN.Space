@@ -15,6 +15,7 @@ dependencies = [
   "asyncpg",
   "alembic",
   "pypdf>=6.19.0",
+  "fastapi-users[sqlalchemy]>=15.0.5,<16",
 ]
 
 [dependency-groups]

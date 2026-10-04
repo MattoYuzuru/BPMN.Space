@@ -12,7 +12,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from app.domain.models import RunStatus
-from app.infra.db_models import Base, RunRow
+from app.infra.db_models import Base, ProjectRow, RunRow
 from app.infra.repositories.sql import SqlStore
 
 
@@ -51,6 +51,12 @@ class Database:
         repos = self.store.repositories()
         for project in data.projects:
             if await repos.projects.get(project.id) is not None:
+                async with self.sessions.begin() as session:
+                    await session.execute(
+                        update(ProjectRow)
+                        .where(ProjectRow.id == project.id, ProjectRow.owner_id.is_(None))
+                        .values(public_read_only=True)
+                    )
                 continue
             await repos.projects.add(project)
             for source in data.sources:

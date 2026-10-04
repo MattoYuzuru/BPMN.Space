@@ -7,14 +7,17 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from alembic import command
 from alembic.config import Config
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import Table, inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.config import Settings
+from app.container import build_container
 from app.domain.models import (
     LlmCall,
     Project,
@@ -30,12 +33,17 @@ from app.fixtures.playbook import PLAYBOOK
 from app.infra.bpmn_tools import MockBpmnTools
 from app.infra.database import Database
 from app.infra.db_models import (
+    AccessTokenRow,
     Base,
     DiagramVersionRow,
     LlmCallRow,
+    ProjectMemberRow,
+    ProjectRow,
+    ProjectShareLinkRow,
     QuestionRow,
     RunRow,
     SourceRow,
+    UserRow,
 )
 from app.infra.events import InMemoryRunEventBus
 from app.infra.repositories.base import ActiveRunConflictError
@@ -44,9 +52,17 @@ from app.infra.seed import DEMO_PROJECT_ID, build_seed
 from app.infra.storage import LocalFileStorage
 from app.infra.tasks import AsyncioTaskSpawner
 from app.llm.mock import MockPipeline
+from app.main import create_app
+from app.services.access import ProjectRole, get_project_role, get_share_link
 from app.services.common import Runtime
 from app.services.errors import ConflictError
 from app.services.runs import RunService
+from app.services.sharing import (
+    accept_editor_invite,
+    create_share_link,
+    remove_member,
+    revoke_share_link,
+)
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
 
@@ -131,10 +147,226 @@ async def test_postgres_migration_installs_one_to_one_constraints(sql_store) -> 
 
 
 @pytest.mark.asyncio
-async def test_database_seed_persists_linked_runs_and_versions(sql_store) -> None:
-    store, _ = sql_store
+async def test_auth_register_login_me_logout_and_hashed_session(sql_store) -> None:
+    store, sessions = sql_store
     database = Database(os.environ["TEST_DATABASE_URL"])
     database.store = store
+    database.sessions = sessions
+    settings = Settings(auth_enabled=True, database_url=None, seed_demo_data=False)
+    container = replace(build_container(settings), database=database)
+    app = create_app(settings, container=container)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        csrf_response = await client.get("/api/v1/auth/csrf")
+        csrf = csrf_response.json()["csrf_token"]
+        headers = {"x-csrf-token": csrf}
+        registration = await client.post(
+            "/api/v1/auth/register",
+            json={"email": "analyst@example.com", "password": "test-password-long-enough"},
+            headers=headers,
+        )
+        assert registration.status_code == 201, registration.text
+        assert registration.json()["email"] == "analyst@example.com"
+        assert "is_superuser" not in registration.json()
+
+        login = await client.post(
+            "/api/v1/auth/session/login",
+            data={"username": "analyst@example.com", "password": "test-password-long-enough"},
+            headers=headers,
+        )
+        assert login.status_code == 204, login.text
+        session_cookie = client.cookies.get("arkhitektor_session")
+        assert session_cookie
+
+        async with sessions() as session:
+            saved_session = await session.scalar(select(AccessTokenRow))
+            user = await session.scalar(select(UserRow))
+        assert saved_session is not None
+        assert saved_session.token != session_cookie
+        assert len(saved_session.token) == 43
+        assert user is not None
+        assert user.hashed_password.startswith("$argon2")
+
+        profile = await client.get("/api/v1/auth/me")
+        assert profile.status_code == 200
+        assert profile.json() == {"id": str(user.id), "email": "analyst@example.com"}
+
+        logout = await client.post("/api/v1/auth/session/logout", headers=headers)
+        assert logout.status_code == 204
+        profile = await client.get("/api/v1/auth/me")
+        assert profile.status_code == 401
+    await database.dispose()
+
+
+@pytest.mark.asyncio
+async def test_editor_share_acceptance_is_account_scoped_and_revocable(sql_store) -> None:
+    store, sessions = sql_store
+    database = Database(os.environ["TEST_DATABASE_URL"])
+    database.store = store
+    database.sessions = sessions
+    now = datetime.now(UTC)
+    owner = UserRow(
+        id=uuid4(),
+        email="owner@example.com",
+        hashed_password=uuid4().hex,
+        is_active=True,
+        is_superuser=False,
+        is_verified=False,
+    )
+    editor = UserRow(
+        id=uuid4(),
+        email="editor@example.com",
+        hashed_password=uuid4().hex,
+        is_active=True,
+        is_superuser=False,
+        is_verified=False,
+    )
+    async with sessions.begin() as session:
+        session.add_all([owner, editor])
+    project = Project(
+        id=uuid4(), title="Shared project", description=None, created_at=now, updated_at=now
+    )
+    await store.repositories().projects.add(project, owner_id=owner.id)
+
+    invitation = "unused-test-invitation-value"
+    link_id = await create_share_link(
+        database,
+        project_id=project.id,
+        raw_token=invitation,
+        role="editor",
+        created_by=owner.id,
+        created_at=now,
+        expires_at=None,
+    )
+    link, expired = await get_share_link(database, invitation)
+    assert link is not None
+    assert not expired
+    assert link.id == link_id
+    assert link.token_hash != invitation
+    assert await get_project_role(database, project.id, editor.id) is None
+
+    await accept_editor_invite(database, project.id, editor.id, now)
+    assert await get_project_role(database, project.id, editor.id) == ProjectRole.EDITOR
+    async with sessions() as session:
+        membership = await session.get(ProjectMemberRow, (project.id, editor.id))
+        stored_link = await session.get(ProjectShareLinkRow, link_id)
+    assert membership is not None
+    assert membership.role == "editor"
+    assert stored_link is not None
+    assert stored_link.token_hash != invitation
+
+    assert await remove_member(database, project.id, editor.id)
+    assert await get_project_role(database, project.id, editor.id) is None
+    assert await revoke_share_link(database, project.id, link_id, datetime.now(UTC))
+    link, expired = await get_share_link(database, invitation)
+    assert link is None
+    assert not expired
+    await database.dispose()
+
+
+@pytest.mark.asyncio
+async def test_viewer_link_is_anonymous_and_editor_link_requires_acceptance(sql_store) -> None:
+    store, sessions = sql_store
+    database = Database(os.environ["TEST_DATABASE_URL"])
+    database.store = store
+    database.sessions = sessions
+    settings = Settings(auth_enabled=True, database_url=None, seed_demo_data=False)
+    now = datetime.now(UTC)
+    owner_id = uuid4()
+    async with sessions.begin() as session:
+        session.add(
+            UserRow(
+                id=owner_id,
+                email="link-owner@example.com",
+                hashed_password=uuid4().hex,
+                is_active=True,
+                is_superuser=False,
+                is_verified=False,
+            )
+        )
+    container = replace(build_container(settings), database=database)
+    project_view = await container.projects.create(
+        title="Согласование договора", description=None, owner_id=owner_id
+    )
+    project_id = project_view.project.id
+    async with sessions.begin() as session:
+        session.add(
+            ProjectRow(
+                id=project_id,
+                title="Согласование договора",
+                description=None,
+                created_at=now,
+                updated_at=now,
+                owner_id=owner_id,
+                public_read_only=False,
+            )
+        )
+
+    viewer_link = "viewer-link-test-token"
+    editor_link = "editor-link-test-token"
+    await create_share_link(
+        database,
+        project_id=project_id,
+        raw_token=viewer_link,
+        role="viewer",
+        created_by=owner_id,
+        created_at=now,
+        expires_at=None,
+    )
+    await create_share_link(
+        database,
+        project_id=project_id,
+        raw_token=editor_link,
+        role="editor",
+        created_by=owner_id,
+        created_at=now,
+        expires_at=None,
+    )
+    app = create_app(settings, container=container)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        viewer = await client.get(f"/api/v1/shares/{viewer_link}")
+        assert viewer.status_code == 200, viewer.text
+        assert viewer.json()["role"] == "viewer"
+        assert viewer.json()["detail"]["id"] == str(project_id)
+
+        editor = await client.get(f"/api/v1/shares/{editor_link}")
+        assert editor.status_code == 401
+
+        csrf = (await client.get("/api/v1/auth/csrf")).json()["csrf_token"]
+        registration = await client.post(
+            "/api/v1/auth/register",
+            json={"email": "link-editor@example.com", "password": "test-password-long-enough"},
+            headers={"x-csrf-token": csrf},
+        )
+        assert registration.status_code == 201, registration.text
+        editor_id = registration.json()["id"]
+        login = await client.post(
+            "/api/v1/auth/session/login",
+            data={"username": "link-editor@example.com", "password": "test-password-long-enough"},
+            headers={"x-csrf-token": csrf},
+        )
+        assert login.status_code == 204, login.text
+
+        editor = await client.get(f"/api/v1/shares/{editor_link}")
+        assert editor.status_code == 200
+        accept = await client.post(
+            f"/api/v1/shares/{editor_link}/accept", headers={"x-csrf-token": csrf}
+        )
+        assert accept.status_code == 200
+        assert accept.json() == {"project_id": str(project_id), "role": "editor"}
+        project = await client.get(f"/api/v1/projects/{project_id}")
+        assert project.status_code == 200
+        assert await get_project_role(database, project_id, UUID(editor_id)) == ProjectRole.EDITOR
+    await database.dispose()
+
+
+@pytest.mark.asyncio
+async def test_database_seed_persists_linked_runs_and_versions(sql_store) -> None:
+    store, sessions = sql_store
+    database = Database(os.environ["TEST_DATABASE_URL"])
+    database.store = store
+    database.sessions = sessions
     try:
         await database.seed(build_seed)
         await database.seed(build_seed)

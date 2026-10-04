@@ -37,6 +37,7 @@ from app.domain.runs import ACTIVE_STATUSES
 from app.infra.db_models import (
     DiagramVersionRow,
     LlmCallRow,
+    ProjectMemberRow,
     ProjectRow,
     QuestionRow,
     RunRow,
@@ -178,7 +179,7 @@ class SqlProjectRepository:
     def __init__(self, sessions: SessionFactory) -> None:
         self.sessions = sessions
 
-    async def add(self, project: Project) -> None:
+    async def add(self, project: Project, *, owner_id: UUID | None = None) -> None:
         async with self.sessions.begin() as session:
             session.add(
                 ProjectRow(
@@ -187,6 +188,8 @@ class SqlProjectRepository:
                     description=project.description,
                     created_at=project.created_at,
                     updated_at=project.updated_at,
+                    owner_id=owner_id,
+                    public_read_only=owner_id is None,
                 )
             )
 
@@ -197,15 +200,11 @@ class SqlProjectRepository:
 
     async def update(self, project: Project) -> None:
         async with self.sessions.begin() as session:
-            await session.merge(
-                ProjectRow(
-                    id=project.id,
-                    title=project.title,
-                    description=project.description,
-                    created_at=project.created_at,
-                    updated_at=project.updated_at,
-                )
-            )
+            row = await session.get(ProjectRow, project.id)
+            if row is not None:
+                row.title = project.title
+                row.description = project.description
+                row.updated_at = project.updated_at
 
     async def delete(self, project_id: UUID) -> None:
         async with self.sessions.begin() as session:
@@ -221,10 +220,29 @@ class SqlProjectRepository:
         return [title.contains(normalized)]
 
     async def list_page(
-        self, *, query: str | None, after: PageKey | None, limit: int
+        self,
+        *,
+        query: str | None,
+        after: PageKey | None,
+        limit: int,
+        owner_id: UUID | None = None,
+        scope_to_user: bool = False,
     ) -> list[Project]:
         async with self.sessions() as session:
             statement = select(ProjectRow).where(*self._filters(query))
+            if scope_to_user:
+                membership = select(ProjectMemberRow.project_id).where(
+                    ProjectMemberRow.project_id == ProjectRow.id,
+                    ProjectMemberRow.user_id == owner_id,
+                )
+                access_filter = ProjectRow.public_read_only.is_(True)
+                if owner_id is not None:
+                    access_filter = or_(
+                        access_filter,
+                        ProjectRow.owner_id == owner_id,
+                        membership.exists(),
+                    )
+                statement = statement.where(access_filter)
             if after:
                 statement = statement.where(
                     or_(
@@ -241,14 +259,25 @@ class SqlProjectRepository:
             ).all()
             return [_project(row) for row in rows]
 
-    async def count(self, *, query: str | None) -> int:
+    async def count(
+        self, *, query: str | None, owner_id: UUID | None = None, scope_to_user: bool = False
+    ) -> int:
         async with self.sessions() as session:
-            return int(
-                await session.scalar(
-                    select(func.count()).select_from(ProjectRow).where(*self._filters(query))
+            statement = select(func.count()).select_from(ProjectRow).where(*self._filters(query))
+            if scope_to_user:
+                membership = select(ProjectMemberRow.project_id).where(
+                    ProjectMemberRow.project_id == ProjectRow.id,
+                    ProjectMemberRow.user_id == owner_id,
                 )
-                or 0
-            )
+                access_filter = ProjectRow.public_read_only.is_(True)
+                if owner_id is not None:
+                    access_filter = or_(
+                        access_filter,
+                        ProjectRow.owner_id == owner_id,
+                        membership.exists(),
+                    )
+                statement = statement.where(access_filter)
+            return int(await session.scalar(statement) or 0)
 
 
 class SqlSourceRepository:

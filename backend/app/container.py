@@ -37,6 +37,16 @@ from app.services.sources import SourceService
 from app.services.versions import VersionService
 
 
+def _mock_pace(settings: Settings):
+    async def pace(stage: RunStage) -> None:
+        # TODO(real): #5 убрать задержки, когда mock перестанет быть основным демо-режимом.
+        delay = settings.mock_delay(settings.mock_stage_delays.get(stage.value, 0.0))
+        if delay:
+            await asyncio.sleep(delay)
+
+    return pace
+
+
 @dataclass(frozen=True, slots=True)
 class Container:
     settings: Settings
@@ -127,13 +137,6 @@ def build_container(
         case provider:
             raise ValueError(f"Неизвестный STT_PROVIDER: {provider}")
 
-    async def mock_pace(stage: RunStage) -> None:
-        # TODO(real): #5 задержки имитируют работу модели и действуют при любом LLM_PROVIDER,
-        # в том числе с DeepSeek; убрать, когда mock перестанет быть основным демо-режимом.
-        delay = settings.mock_delay(settings.mock_stage_delays.get(stage.value, 0.0))
-        if delay:
-            await asyncio.sleep(delay)
-
     onboarding = OnboardingService(
         repos,
         runtime=runtime,
@@ -171,7 +174,7 @@ def build_container(
             spawner=spawner,
             runtime=runtime,
             max_concurrent=settings.max_concurrent_runs,
-            pace=mock_pace,
+            pace=_mock_pace(settings),
             context_budget_chars=settings.llm_context_budget_chars,
             deadline_sec=settings.run_deadline_sec,
             progress=onboarding,

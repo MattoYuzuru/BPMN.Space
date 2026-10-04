@@ -15,5 +15,15 @@ from app.api.v1 import (
 )
 
 api_router = APIRouter()
-for module in (projects, sources, questions, runs, versions, assistant, sharing, onboarding, presence):
+for module in (
+    projects,
+    sources,
+    questions,
+    runs,
+    versions,
+    assistant,
+    sharing,
+    onboarding,
+    presence,
+):
     api_router.include_router(module.router)

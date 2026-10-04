@@ -487,7 +487,8 @@ async def test_migration_0008_applies_and_rolls_back() -> None:
             tables, run_columns = await connection.run_sync(shape)
             assert {"user_onboarding", "user_onboarding_items"} <= tables
             assert "created_by" in run_columns
-            await connection.run_sync(downgrade, "-1")
+            # После объединения веток миграций откатываемся к их общей базе.
+            await connection.run_sync(downgrade, "0007_run_warnings")
             tables, run_columns = await connection.run_sync(shape)
             assert not {"user_onboarding", "user_onboarding_items"} & tables
             assert "created_by" not in run_columns

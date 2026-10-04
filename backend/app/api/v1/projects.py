@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, Request, Response, status
 
-from app.api.access import ensure_project_access, require_account
+from app.api.access import ProjectRole, ensure_project_access, project_roles, require_account
 from app.api.auth import OptionalUserDep
 from app.api.deps import ContainerDep
 from app.api.schemas.common import errors
@@ -39,8 +39,11 @@ async def list_projects(  # noqa: PLR0917 - FastAPI binds each query parameter i
         owner_id=user.id if user else None,
         scope_to_user=request.app.state.auth_enabled,
     )
+    roles = await project_roles(request, container, [view.project.id for view in page.items], user)
     return ProjectPage(
-        items=[Project.of(view) for view in page.items],
+        items=[
+            Project.of(view, roles.get(view.project.id, ProjectRole.VIEWER)) for view in page.items
+        ],
         next_cursor=page.next_cursor,
         total=page.total,
     )
@@ -57,7 +60,7 @@ async def create_project(
     view = await container.projects.create(
         title=body.title, description=body.description, owner_id=owner_id
     )
-    return Project.of(view)
+    return Project.of(view, ProjectRole.OWNER)
 
 
 @router.post(
@@ -72,7 +75,8 @@ async def create_project_from_example(
     """Проект с текстом примера в качестве первого источника."""
     owner_id = require_account(request, user)
     return Project.of(
-        await container.projects.create_from_example(body.example_id, owner_id=owner_id)
+        await container.projects.create_from_example(body.example_id, owner_id=owner_id),
+        ProjectRole.OWNER,
     )
 
 
@@ -84,8 +88,8 @@ async def get_project(
     user: OptionalUserDep,
 ) -> ProjectDetail:
     """Проект целиком: источники, вопросы, последняя версия (без XML), активный прогон."""
-    await ensure_project_access(request, container, project_id, user, write=False)
-    return ProjectDetail.of_detail(await container.projects.detail(project_id))
+    role = await ensure_project_access(request, container, project_id, user, write=False)
+    return ProjectDetail.of_detail(await container.projects.detail(project_id), role)
 
 
 @router.patch("/projects/{project_id}", responses=errors(404, 422))
@@ -96,11 +100,11 @@ async def update_project(
     container: ContainerDep,
     user: OptionalUserDep,
 ) -> Project:
-    await ensure_project_access(request, container, project_id, user, write=True)
+    role = await ensure_project_access(request, container, project_id, user, write=True)
     view = await container.projects.update(
         project_id, title=body.title, description=body.description, fields=body.model_fields_set
     )
-    return Project.of(view)
+    return Project.of(view, role)
 
 
 @router.delete(

@@ -75,6 +75,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Session State */
+        get: operations["get_session_state"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/session/login": {
         parameters: {
             query?: never;
@@ -813,6 +830,8 @@ export interface components {
         };
         /** Project */
         Project: {
+            /** @description Роль текущего пользователя: owner и editor меняют проект, viewer только читает */
+            access: components["schemas"]["ProjectRole"];
             counts: components["schemas"]["ProjectCounts"];
             /**
              * Created At
@@ -863,6 +882,8 @@ export interface components {
         };
         /** ProjectDetail */
         ProjectDetail: {
+            /** @description Роль текущего пользователя: owner и editor меняют проект, viewer только читает */
+            access: components["schemas"]["ProjectRole"];
             active_run: components["schemas"]["Run"] | null;
             counts: components["schemas"]["ProjectCounts"];
             /**
@@ -937,6 +958,11 @@ export interface components {
              */
             total: number;
         };
+        /**
+         * ProjectRole
+         * @enum {string}
+         */
+        ProjectRole: "owner" | "editor" | "viewer";
         /**
          * ProjectStatus
          * @enum {string}
@@ -1198,6 +1224,19 @@ export interface components {
              * @enum {string}
              */
             event: "version";
+        };
+        /**
+         * SessionState
+         * @description Состояние входа для клиента: всегда 200, чтобы не путать «гость» с ошибкой сети.
+         */
+        SessionState: {
+            /**
+             * Auth Enabled
+             * @description false — стенд без аккаунтов, вход не нужен
+             */
+            auth_enabled: boolean;
+            /** @description Текущий пользователь; null — гость */
+            user: components["schemas"]["UserRead"] | null;
         };
         /**
          * Severity
@@ -1696,6 +1735,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_session_state: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionState"];
                 };
             };
         };

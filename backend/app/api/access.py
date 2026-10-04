@@ -7,7 +7,7 @@ from fastapi import HTTPException, Request, status
 from app.api.auth import UserRow
 from app.container import Container
 from app.infra.db_models import ProjectShareLinkRow
-from app.services.access import ProjectRole, get_project_role
+from app.services.access import ProjectRole, get_project_role, get_project_roles
 from app.services.access import get_resource_project_id as resolve_project_id
 from app.services.access import get_share_link as resolve_share_link
 
@@ -39,6 +39,15 @@ async def ensure_project_access(
     if write and role is ProjectRole.VIEWER:
         raise HTTPException(status_code=403, detail="Для изменения проекта нужны права редактора")
     return role
+
+
+async def project_roles(
+    request: Request, container: Container, project_ids: list[UUID], user: UserRow | None
+) -> dict[UUID, ProjectRole]:
+    """Роль для каждой карточки списка; без auth стенд однопользовательский — всё своё."""
+    if not request.app.state.auth_enabled or container.database is None:
+        return dict.fromkeys(project_ids, ProjectRole.OWNER)
+    return await get_project_roles(container.database, project_ids, user.id if user else None)
 
 
 async def ensure_resource_access(

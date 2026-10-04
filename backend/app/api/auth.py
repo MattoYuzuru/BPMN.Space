@@ -11,14 +11,14 @@ from hashlib import sha256
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin
 from fastapi_users.authentication import AuthenticationBackend, CookieTransport
 from fastapi_users.authentication.strategy.db import AccessTokenDatabase, DatabaseStrategy
 from fastapi_users.schemas import BaseUser, BaseUserCreate
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 from fastapi_users_db_sqlalchemy.access_token import SQLAlchemyAccessTokenDatabase
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -167,9 +167,16 @@ async def get_me(user: RequiredUserDep) -> UserRow:
     return user
 
 
-def verify_csrf(request: Request) -> None:
-    """Cookie auth is only accepted for unsafe requests with a matching CSRF header."""
-    cookie = request.cookies.get(CSRF_COOKIE)
-    header = request.headers.get("x-csrf-token")
-    if not cookie or not header or not secrets.compare_digest(cookie, header):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF-токен отсутствует")
+class SessionState(BaseModel):
+    """Состояние входа для клиента: всегда 200, чтобы не путать «гость» с ошибкой сети."""
+
+    auth_enabled: bool = Field(description="false — стенд без аккаунтов, вход не нужен")
+    user: UserRead | None = Field(description="Текущий пользователь; null — гость")
+
+
+@router.get("/auth/session", response_model=SessionState, tags=["auth"])
+async def get_session_state(request: Request, user: OptionalUserDep) -> SessionState:
+    return SessionState(
+        auth_enabled=request.app.state.auth_enabled,
+        user=UserRead.model_validate(user, from_attributes=True) if user else None,
+    )

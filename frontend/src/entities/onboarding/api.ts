@@ -94,10 +94,16 @@ const reporting = new Set<string>()
  */
 export function useReportOnboardingEvent() {
   const client = useQueryClient()
+  const userId = useCurrentUser()?.id
   const key = useOnboardingKey()
   return useMutation({
     mutationFn: async (item: ChecklistItemKey): Promise<'sent' | 'skipped'> => {
-      const state = client.getQueryData<OnboardingState>(key)
+      if (!userId) return 'skipped'
+      // Состояние могло ещё не загрузиться (событие раньше первого запроса): дожидаемся его,
+      // иначе отметка молча потерялась бы. Не загрузилось — не знаем, нужна ли она, не шлём.
+      const state = await client
+        .ensureQueryData(onboardingQueryOptions(userId))
+        .catch(() => undefined)
       const flight = `${key.join('/')}:${item}`
       if (!state?.enabled || isItemDone(state, item) || reporting.has(flight)) return 'skipped'
       reporting.add(flight)

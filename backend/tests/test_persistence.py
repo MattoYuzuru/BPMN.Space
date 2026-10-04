@@ -403,7 +403,7 @@ async def test_run_service_persists_pipeline_calls_and_final_artifacts(sql_store
         runtime=Runtime(),
         max_concurrent=1,
     )
-    started = await service.start(project.id, mode=RunMode.BUILD)
+    started = await service.start(project.id, mode=RunMode.BUILD, created_by=None)
     await spawner.wait_idle()
 
     saved = await repos.runs.get(started.id)
@@ -477,10 +477,10 @@ async def test_database_index_race_becomes_http_service_conflict(sql_store) -> N
         max_concurrent=1,
     )
 
-    started = await first_service.start(project.id, mode=RunMode.ANALYZE)
+    started = await first_service.start(project.id, mode=RunMode.ANALYZE, created_by=None)
     await asyncio.sleep(0)
     with pytest.raises(ConflictError, match="уже идёт"):
-        await second_service.start(project.id, mode=RunMode.BUILD)
+        await second_service.start(project.id, mode=RunMode.BUILD, created_by=None)
 
     release_first_run.set()
     await first_spawner.wait_idle()

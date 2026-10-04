@@ -22,6 +22,7 @@ from app.domain.models import (
     QuestionStatus,
     Run,
     Source,
+    SourceKind,
     SourceStatus,
     Version,
 )
@@ -29,6 +30,7 @@ from app.domain.onboarding import (
     ChecklistItem,
     CompletedItem,
     ItemSource,
+    ProjectFacts,
     TourStatus,
     TourStepKey,
     UserOnboarding,
@@ -328,6 +330,44 @@ class InMemoryLlmCallRepository:
 class InMemoryOnboardingRepository:
     def __init__(self, store: InMemoryStore) -> None:
         self._store = store
+
+    async def get(self, user_id: UUID) -> UserOnboarding | None:
+        state = self._store.onboarding.get(user_id)
+        return copy.deepcopy(state) if state else None
+
+    async def project_facts(self, user_id: UUID, *, limit: int) -> list[ProjectFacts]:
+        store = self._store
+        own = [
+            p
+            for p in store.projects.values()
+            if store.project_owners.get(p.id) == user_id  # редакторов без аккаунтов (PG) нет
+        ]
+        own.sort(key=lambda p: (p.updated_at, p.id), reverse=True)
+        return [self._facts(project.id, project.updated_at) for project in own[:limit]]
+
+    def _facts(self, project_id: UUID, updated_at: datetime) -> ProjectFacts:
+        store = self._store
+        sources = [s for s in store.sources.values() if s.project_id == project_id]
+        material = [s for s in sources if s.active and s.kind is not SourceKind.ANSWER]
+        opened = [
+            q
+            for q in store.questions.values()
+            if q.project_id == project_id and q.status is QuestionStatus.OPEN
+        ]
+        first_open = min(opened, key=lambda q: (q.created_at, len(q.code), q.code), default=None)
+        versions = [v.created_at for v in store.versions.values() if v.project_id == project_id]
+        latest = max(versions, default=None)
+        return ProjectFacts(
+            project_id=project_id,
+            updated_at=updated_at,
+            owned=True,
+            has_sources=any(s.status is not SourceStatus.FAILED for s in material),
+            has_ready_sources=any(s.status is SourceStatus.READY for s in material),
+            has_diagram=latest is not None,
+            open_question_id=first_open.id if first_open else None,
+            answered_after_diagram=latest is not None
+            and any(s.kind is SourceKind.ANSWER and s.created_at > latest for s in sources),
+        )
 
     async def get_or_create(self, user_id: UUID, now: datetime) -> UserOnboarding:
         state = self._store.onboarding.get(user_id)

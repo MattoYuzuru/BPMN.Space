@@ -59,7 +59,8 @@ async def test_no_more_than_two_runs_at_once(service_container: Container) -> No
     service_container.runs._pace = pace
     projects = [await _new_project(service_container) for _ in range(3)]
     runs: list[Run] = [
-        await service_container.runs.start(p, mode=RunMode.ANALYZE) for p in projects
+        await service_container.runs.start(p, mode=RunMode.ANALYZE, created_by=None)
+        for p in projects
     ]
     await asyncio.sleep(0.05)
     states = [(await service_container.runs.get(r.id)).status for r in runs]
@@ -77,7 +78,7 @@ async def test_cancelled_run_is_failed(service_container: Container) -> None:
         await asyncio.sleep(3600)
 
     service_container.runs._pace = forever
-    run = await service_container.runs.start(DEMO_PROJECT_ID, mode=RunMode.BUILD)
+    run = await service_container.runs.start(DEMO_PROJECT_ID, mode=RunMode.BUILD, created_by=None)
     await asyncio.sleep(0.01)
     await service_container.spawner.shutdown()
     final = await service_container.runs.get(run.id)
@@ -90,7 +91,7 @@ async def test_unexpected_error_marks_run_failed(service_container: Container) -
         raise RuntimeError("сбой")
 
     service_container.runs._pace = boom
-    run = await service_container.runs.start(DEMO_PROJECT_ID, mode=RunMode.ANALYZE)
+    run = await service_container.runs.start(DEMO_PROJECT_ID, mode=RunMode.ANALYZE, created_by=None)
     await service_container.spawner.wait_idle()
     kinds = [e.kind async for e in await service_container.runs.events(run.id)]
     assert kinds[-2:] == [RunEventKind.ERROR, RunEventKind.DONE]

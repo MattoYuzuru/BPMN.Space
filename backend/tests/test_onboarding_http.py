@@ -7,17 +7,19 @@
 import asyncio
 import os
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import inspect, text
+from sqlalchemy import event, inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.domain.onboarding import ChecklistItem, ItemSource, TourStatus, TourStepKey
 from app.fixtures.samples import TOUR_SAMPLE_ID, tour_text_suggestion
+from app.infra.repositories.onboarding_sql import _state as state_from_row
 from app.infra.seed import DEMO_PROJECT_ID
 from tests.test_auth_http import (  # noqa: F401
     MIGRATIONS_DIR,
@@ -497,3 +499,50 @@ async def test_migration_0008_applies_and_rolls_back() -> None:
         async with admin.begin() as connection:
             await connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
         await admin.dispose()
+
+
+async def test_target_uses_one_facts_query_for_many_projects(stack: Stack) -> None:
+    user = await stack.user("onb-facts@example.com")
+    for index in range(3):
+        pid = (await user.post("/projects", json={"title": f"П{index}"})).json()["id"]
+        await user.post(f"/projects/{pid}/sources/text", json={"content": "Принять заявку."})
+    statements: list[str] = []
+
+    def record(_conn: Any, _cursor: Any, statement: str, *_: Any) -> None:
+        statements.append(statement)
+
+    engine = stack.database.engine.sync_engine
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        response = await user.get("/me/onboarding/items/diagram_built/target")
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+    assert response.status_code == 200
+    assert response.json()["hint"] == "do_item"
+    facts = [s for s in statements if "diagram_versions" in s]
+    assert len(facts) == 1  # факты по всем проектам — одним запросом
+    assert not any("sources.content" in s for s in statements)  # тексты не грузим
+
+
+async def test_unknown_tour_step_and_status_do_not_break_reads(stack: Stack) -> None:
+    user = await stack.user("onb-future@example.com")
+    await user.patch("/me/onboarding/tour", json={"status": "active", "step": "run.wait"})
+    async with stack.database.sessions.begin() as session:
+        await session.execute(
+            text("UPDATE user_onboarding SET tour_step = 'future.step' WHERE user_id = :id"),
+            {"id": user.user_id},
+        )
+    state = await _state(user)
+    assert state["tour"]["status"] == "active"
+    assert state["tour"]["step"] is None  # неизвестный шаг не отдаём, но и не падаем
+
+    row = SimpleNamespace(
+        user_id=UUID(user.user_id),
+        tour_status="paused",
+        tour_step=None,
+        tour_project_id=None,
+        checklist_hidden=False,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    assert state_from_row(row).tour_status is TourStatus.DISMISSED  # type: ignore[arg-type]

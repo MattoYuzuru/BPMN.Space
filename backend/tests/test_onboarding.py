@@ -321,7 +321,7 @@ async def test_run_without_author_marks_nothing(box: Container) -> None:
         kind=SourceKind.TEXT,
         duration_sec=None,
     )
-    await box.runs.start(view.project.id, mode=RunMode.BUILD)
+    await box.runs.start(view.project.id, mode=RunMode.BUILD, created_by=None)
     await box.spawner.wait_idle()
     assert await box.repos.onboarding.list_items(USER) == []  # type: ignore[union-attr]
 
@@ -639,3 +639,25 @@ def test_main_actions_work_when_onboarding_is_off(api: TestClient) -> None:
     add_text(api, project_id, MARKER_TEXT)
     run, _ = _run(api, project_id)
     assert run["status"] == "succeeded"
+
+
+async def test_answer_given_during_the_run_does_not_count_as_rebuild(box: Container) -> None:
+    view = await box.projects.create(title="Тур", description=None, owner_id=USER)
+    project_id = view.project.id
+    source, _ = await box.samples.add(project_id, TOUR_SAMPLE_ID)
+    await box.sources.process_file(source.id)
+    await box.runs.start(project_id, mode=RunMode.BUILD, created_by=USER)
+    await box.spawner.wait_idle()
+    question = (await box.questions.list(project_id, status=QuestionStatus.OPEN))[0]
+    await box.questions.answer(question.id, text="Акт готовит инженер.")
+    run = await box.runs.start(project_id, mode=RunMode.BUILD, created_by=USER)
+    await box.spawner.wait_idle()
+    finished = await box.runs.get(run.id)
+    assert await box.runs._rebuilt_with_answers(finished) is True
+    answer = next(
+        s
+        for s in await box.repos.sources.list_by_project(project_id)
+        if s.kind is SourceKind.ANSWER
+    )
+    finished.started_at = answer.created_at - timedelta(seconds=1)  # ответ пришёл уже после старта
+    assert await box.runs._rebuilt_with_answers(finished) is False

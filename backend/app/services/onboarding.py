@@ -6,12 +6,10 @@
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from uuid import UUID
 
-from app.domain.access import ProjectScope
-from app.domain.models import Project, QuestionStatus, SourceKind, SourceStatus
 from app.domain.onboarding import (
     CLIENT_REPORTABLE,
     FIRST_STEP,
@@ -34,8 +32,8 @@ from app.services.errors import ConflictError, InvalidInputError, NotFoundError
 
 logger = logging.getLogger(__name__)
 
-# Сколько последних проектов каждого вида (свои, где я редактор) смотрим при выборе места.
-_CANDIDATES_PER_SCOPE = 30
+# Сколько последних проектов (свои и где я редактор) смотрим при выборе места.
+_CANDIDATES = 30
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -107,7 +105,15 @@ class OnboardingService:
             current, status=target, step=new_step, project_id=new_project, now=now
         )
         self._log_transition(current, target, new_step, now)
-        return await self.state(user_id)
+        return await self._view(
+            replace(
+                current,
+                tour_status=target,
+                tour_step=new_step,
+                tour_project_id=new_project,
+                updated_at=now,
+            )
+        )
 
     async def restart(self, user_id: UUID) -> OnboardingView:
         """Начать тур заново: `active`, первый шаг, без учебного проекта."""
@@ -118,7 +124,15 @@ class OnboardingService:
             current, status=TourStatus.ACTIVE, step=FIRST_STEP, project_id=None, now=now
         )
         logger.info("onboarding.tour_started user_id=%s restart=true", user_id)
-        return await self.state(user_id)
+        return await self._view(
+            replace(
+                current,
+                tour_status=TourStatus.ACTIVE,
+                tour_step=FIRST_STEP,
+                tour_project_id=None,
+                updated_at=now,
+            )
+        )
 
     async def _save_tour(
         self,
@@ -177,9 +191,10 @@ class OnboardingService:
                 pass
 
     async def set_checklist_hidden(self, user_id: UUID, *, hidden: bool) -> OnboardingView:
-        await self._store.get_or_create(user_id, self._rt.clock())
-        await self._store.set_checklist_hidden(user_id, hidden, self._rt.clock())
-        return await self.state(user_id)
+        now = self._rt.clock()
+        current = await self._store.get_or_create(user_id, now)
+        await self._store.set_checklist_hidden(user_id, hidden, now)
+        return await self._view(replace(current, checklist_hidden=hidden, updated_at=now))
 
     async def report_event(self, user_id: UUID, item: ChecklistItem) -> None:
         """Отметка от клиента. Принимаются только пункты из белого списка; повтор — не ошибка."""
@@ -222,49 +237,14 @@ class OnboardingService:
 
     async def _in_tour(self, user_id: UUID) -> bool:
         try:
-            state = await self._store.get_or_create(user_id, self._rt.clock())
+            state = await self._store.get(user_id)
         except Exception:  # поле журнала не стоит отказа учёта
             return False
-        return state.tour_status is TourStatus.ACTIVE
+        return state is not None and state.tour_status is TourStatus.ACTIVE
 
     async def target(self, user_id: UUID, item: ChecklistItem) -> Target:
         """Куда вести по пункту: по проектам, которые пользователь может редактировать."""
         return resolve_target(item, await self._facts(user_id))
 
     async def _facts(self, user_id: UUID) -> list[ProjectFacts]:
-        candidates: dict[UUID, tuple[Project, bool]] = {}
-        for scope, owned in ((ProjectScope.OWN, True), (ProjectScope.SHARED, False)):
-            page = await self._repos.projects.list_page(
-                query=None,
-                after=None,
-                limit=_CANDIDATES_PER_SCOPE,
-                owner_id=user_id,
-                scope_to_user=True,
-                scope=scope,
-            )
-            for project in page:
-                candidates.setdefault(project.id, (project, owned))
-        return [
-            await self._project_facts(project, owned=owned)
-            for project, owned in candidates.values()
-        ]
-
-    async def _project_facts(self, project: Project, *, owned: bool) -> ProjectFacts:
-        repos = self._repos
-        everything = await repos.sources.list_by_project(project.id)
-        sources = [s for s in everything if s.active and s.kind is not SourceKind.ANSWER]
-        answers = [s for s in everything if s.kind is SourceKind.ANSWER]
-        questions = await repos.questions.list_by_project(project.id, status=QuestionStatus.OPEN)
-        latest = await repos.versions.latest(project.id)
-        first_open = min(questions, key=lambda q: (q.created_at, len(q.code), q.code), default=None)
-        return ProjectFacts(
-            project_id=project.id,
-            updated_at=project.updated_at,
-            owned=owned,
-            has_sources=any(s.status is not SourceStatus.FAILED for s in sources),
-            has_ready_sources=any(s.status is SourceStatus.READY for s in sources),
-            has_diagram=latest is not None,
-            open_question_id=first_open.id if first_open else None,
-            answered_after_diagram=latest is not None
-            and any(a.created_at > latest.created_at for a in answers),
-        )
+        return await self._store.project_facts(user_id, limit=_CANDIDATES)

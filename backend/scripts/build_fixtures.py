@@ -582,7 +582,10 @@ def check_lint(paths: list[Path], workdir: Path) -> None:
 
 
 def write_docx(text: str, target: Path) -> None:
-    """Минимальный настоящий .docx (OOXML) без сторонних библиотек: абзац на строку."""
+    """Минимальный настоящий .docx (OOXML) без сторонних библиотек: абзац на строку.
+
+    Без сжатия: результат zlib зависит от версии библиотеки, а файл коммитится и сверяется тестом.
+    """
     paragraphs = "".join(
         f'<w:p><w:r><w:t xml:space="preserve">{escape(line)}</w:t></w:r></w:p>'
         for line in text.splitlines()
@@ -610,14 +613,14 @@ def write_docx(text: str, target: Path) -> None:
         "</Relationships>"
     )
     target.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_STORED) as archive:
         for name, body in (
             ("[Content_Types].xml", content_types),
             ("_rels/.rels", rels),
             ("word/document.xml", document),
         ):
             info = zipfile.ZipInfo(name, date_time=(2026, 9, 29, 12, 0, 0))
-            archive.writestr(info, body, compress_type=zipfile.ZIP_DEFLATED)
+            archive.writestr(info, body, compress_type=zipfile.ZIP_STORED)
 
 
 def sample_files() -> dict[str, bytes]:

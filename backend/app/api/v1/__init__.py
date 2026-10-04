@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.api.v1 import (
     assistant,
     onboarding,
+    presence,
     projects,
     questions,
     runs,
@@ -14,5 +15,15 @@ from app.api.v1 import (
 )
 
 api_router = APIRouter()
-for module in (projects, sources, questions, runs, versions, assistant, sharing, onboarding):
+for module in (
+    projects,
+    sources,
+    questions,
+    runs,
+    versions,
+    assistant,
+    sharing,
+    onboarding,
+    presence,
+):
     api_router.include_router(module.router)

@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:bioc="http://bpmn.io/schema/bpmn/biocolor/1.0"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  id="Definitions_ExpenseReview" targetNamespace="http://arkhitektor.local/research">
+  <bpmn:collaboration id="Collaboration_ExpenseReview">
+    <bpmn:participant id="Participant_ExpenseReview" name="Согласование заявки на расходы" processRef="Process_ExpenseReview" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_ExpenseReview" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_ExpenseReview">
+      <bpmn:lane id="Lane_Applicant" name="Заявитель">
+        <bpmn:flowNodeRef>StartEvent_Submit</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Submit</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Complete</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Assume</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Merge</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Done</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Reviewer" name="Финансовый специалист">
+        <bpmn:flowNodeRef>Task_Approve</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_RequestClarification</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="StartEvent_Submit" name="Заявка подготовлена">
+      <bpmn:outgoing>Flow_Start_Submit</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="Task_Submit" name="Передать заявку и подтверждающие документы">
+      <bpmn:incoming>Flow_Start_Submit</bpmn:incoming>
+      <bpmn:outgoing>Flow_Submit_Check</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_Complete" name="Документы приложены?" gatewayDirection="Diverging">
+      <bpmn:incoming>Flow_Submit_Check</bpmn:incoming>
+      <bpmn:outgoing>Flow_Check_Approve</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Check_Request</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="Task_Approve" name="Проверить комплект документов">
+      <bpmn:incoming>Flow_Check_Approve</bpmn:incoming>
+      <bpmn:outgoing>Flow_Approve_Merge</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_RequestClarification" name="Запросить недостающие документы">
+      <bpmn:incoming>Flow_Check_Request</bpmn:incoming>
+      <bpmn:outgoing>Flow_Request_Assume</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_Assume" name="Допущение: заявитель приложит документы">
+      <bpmn:incoming>Flow_Request_Assume</bpmn:incoming>
+      <bpmn:outgoing>Flow_Assume_Merge</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_Merge" name="Комплект собран" gatewayDirection="Converging">
+      <bpmn:incoming>Flow_Approve_Merge</bpmn:incoming>
+      <bpmn:incoming>Flow_Assume_Merge</bpmn:incoming>
+      <bpmn:outgoing>Flow_Merge_End</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="EndEvent_Done" name="Проверка завершена">
+      <bpmn:incoming>Flow_Merge_End</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_Start_Submit" sourceRef="StartEvent_Submit" targetRef="Task_Submit" />
+    <bpmn:sequenceFlow id="Flow_Submit_Check" sourceRef="Task_Submit" targetRef="Gateway_Complete" />
+    <bpmn:sequenceFlow id="Flow_Check_Approve" name="Да" sourceRef="Gateway_Complete" targetRef="Task_Approve">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">Комплект полон</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Check_Request" name="Нет" sourceRef="Gateway_Complete" targetRef="Task_RequestClarification">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">Не хватает документов</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Request_Assume" sourceRef="Task_RequestClarification" targetRef="Task_Assume" />
+    <bpmn:sequenceFlow id="Flow_Approve_Merge" sourceRef="Task_Approve" targetRef="Gateway_Merge" />
+    <bpmn:sequenceFlow id="Flow_Assume_Merge" sourceRef="Task_Assume" targetRef="Gateway_Merge" />
+    <bpmn:sequenceFlow id="Flow_Merge_End" sourceRef="Gateway_Merge" targetRef="EndEvent_Done" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_ExpenseReview">
+    <bpmndi:BPMNPlane id="Plane_ExpenseReview" bpmnElement="Collaboration_ExpenseReview">
+      <bpmndi:BPMNShape id="Participant_ExpenseReview_di" bpmnElement="Participant_ExpenseReview" isHorizontal="true">
+        <dc:Bounds x="80" y="60" width="1330" height="360" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Applicant_di" bpmnElement="Lane_Applicant" isHorizontal="true">
+        <dc:Bounds x="110" y="60" width="1300" height="180" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Reviewer_di" bpmnElement="Lane_Reviewer" isHorizontal="true">
+        <dc:Bounds x="110" y="240" width="1300" height="180" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StartEvent_Submit_di" bpmnElement="StartEvent_Submit">
+        <dc:Bounds x="160" y="132" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Submit_di" bpmnElement="Task_Submit">
+        <dc:Bounds x="260" y="110" width="150" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Complete_di" bpmnElement="Gateway_Complete" isMarkerVisible="true" bioc:fill="#f0f6fe" bioc:stroke="#0a6ce5">
+        <dc:Bounds x="480" y="122" width="56" height="56" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Approve_di" bpmnElement="Task_Approve">
+        <dc:Bounds x="720" y="248" width="170" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_RequestClarification_di" bpmnElement="Task_RequestClarification">
+        <dc:Bounds x="650" y="335" width="200" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Assume_di" bpmnElement="Task_Assume" bioc:fill="#fff9ec" bioc:stroke="#d3751a">
+        <dc:Bounds x="880" y="155" width="190" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Merge_di" bpmnElement="Gateway_Merge" isMarkerVisible="true" bioc:fill="#f0f6fe" bioc:stroke="#0a6ce5">
+        <dc:Bounds x="1160" y="122" width="56" height="56" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Done_di" bpmnElement="EndEvent_Done">
+        <dc:Bounds x="1320" y="132" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_Start_Submit_di" bpmnElement="Flow_Start_Submit">
+        <di:waypoint x="196" y="150" /><di:waypoint x="260" y="150" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Submit_Check_di" bpmnElement="Flow_Submit_Check">
+        <di:waypoint x="410" y="150" /><di:waypoint x="480" y="150" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Check_Approve_di" bpmnElement="Flow_Check_Approve">
+        <di:waypoint x="536" y="140" /><di:waypoint x="590" y="140" /><di:waypoint x="590" y="283" /><di:waypoint x="720" y="283" />
+        <bpmndi:BPMNLabel><dc:Bounds x="547" y="205" width="35" height="20" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Check_Request_di" bpmnElement="Flow_Check_Request">
+        <di:waypoint x="536" y="160" /><di:waypoint x="620" y="160" /><di:waypoint x="620" y="370" /><di:waypoint x="650" y="370" />
+        <bpmndi:BPMNLabel><dc:Bounds x="625" y="240" width="35" height="20" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Request_Assume_di" bpmnElement="Flow_Request_Assume">
+        <di:waypoint x="850" y="370" /><di:waypoint x="865" y="370" /><di:waypoint x="865" y="190" /><di:waypoint x="880" y="190" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Approve_Merge_di" bpmnElement="Flow_Approve_Merge">
+        <di:waypoint x="890" y="283" /><di:waypoint x="1120" y="283" /><di:waypoint x="1120" y="150" /><di:waypoint x="1160" y="150" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Assume_Merge_di" bpmnElement="Flow_Assume_Merge">
+        <di:waypoint x="1070" y="190" /><di:waypoint x="1160" y="150" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Merge_End_di" bpmnElement="Flow_Merge_End">
+        <di:waypoint x="1216" y="150" /><di:waypoint x="1320" y="150" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

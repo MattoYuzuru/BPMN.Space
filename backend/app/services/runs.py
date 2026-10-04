@@ -134,7 +134,14 @@ class RunService:
         # Этот lock ускоряет конфликт внутри процесса; уникальный индекс защищает между процессами.
         self._start_lock = asyncio.Lock()
 
-    async def start(self, project_id: UUID, *, mode: RunMode, created_by: UUID | None) -> Run:
+    async def start(
+        self,
+        project_id: UUID,
+        *,
+        mode: RunMode,
+        created_by: UUID | None,
+        actor_email: str | None = None,
+    ) -> Run:
         async with self._start_lock, self._repos.atomic() as repos:
             # Блокировка проекта общая с ручным сохранением схемы и удалением проекта.
             if await repos.projects.lock(project_id) is None:
@@ -158,6 +165,7 @@ class RunService:
                 started_at=now,
                 created_by=created_by,
                 model=getattr(self._pipeline, "model_name", type(self._pipeline).__name__),
+                actor_email=actor_email,
             )
             try:
                 await repos.runs.add(run)
@@ -393,6 +401,7 @@ class RunService:
             lint=await self._tools.lint(xml),
             trace=state.draft.trace,
             run_id=run.id,
+            actor_email=run.actor_email,
         )
         run.version_id = version.id
         run.report = _json_data(version.report)

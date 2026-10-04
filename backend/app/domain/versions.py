@@ -46,6 +46,7 @@ def build_version(
     trace: Mapping[str, Quote],
     created_at: datetime,
     run_id: UUID | None = None,
+    actor_email: str | None = None,
 ) -> Version:
     document = parse_bpmn(xml)
     previous = parse_bpmn(previous_xml) if previous_xml is not None else None
@@ -66,4 +67,5 @@ def build_version(
         trace={element_id: quote for element_id, quote in trace.items() if element_id in present},
         lanes=[lane.name for lane in document.lanes if lane.name],
         run_id=run_id,
+        actor_email=actor_email,
     )

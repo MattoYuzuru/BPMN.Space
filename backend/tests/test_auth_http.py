@@ -7,11 +7,11 @@
 
 import asyncio
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -20,12 +20,15 @@ from alembic.config import Config
 from httpx import ASGITransport, AsyncClient, Response
 from sqlalchemy import text, update
 from sqlalchemy.ext.asyncio import create_async_engine
+from sse_starlette import ServerSentEvent
+from starlette.requests import Request
 
+from app.api.v1.presence import project_presence
 from app.config import Settings
 from app.container import build_container
 from app.domain.models import Project, Source, SourceKind, SourceStatus
 from app.infra.database import Database
-from app.infra.db_models import ProjectShareLinkRow
+from app.infra.db_models import ProjectShareLinkRow, UserRow
 from app.infra.seed import DEMO_PROJECT_ID, SeedData, build_seed
 from app.main import create_app
 
@@ -169,6 +172,60 @@ async def _finished_project(owner: Account) -> dict[str, Any]:
     }
 
 
+async def test_version_history_records_actual_author(stack: Stack) -> None:
+    owner = await stack.user("history-owner@example.com")
+    finished = await _finished_project(owner)
+    project_id = finished["project"]
+    generated = (await owner.get(f"/projects/{project_id}/versions")).json()[0]
+    assert generated["actor_email"] == owner.email
+
+    manual = await owner.put(f"/projects/{project_id}/diagram", json={"xml": finished["xml"]})
+    assert manual.status_code == 201, manual.text
+    assert manual.json()["actor_email"] == owner.email
+    versions = (await owner.get(f"/projects/{project_id}/versions")).json()
+    assert [version["actor_email"] for version in versions[:2]] == [owner.email, owner.email]
+
+
+async def test_presence_requires_project_access(stack: Stack) -> None:
+    guest = await stack.guest()
+    owner = await stack.user("presence-owner@example.com")
+    stranger = await stack.user("presence-stranger@example.com")
+    created = await owner.post("/projects", json={"title": "Общая доска"})
+    assert created.status_code == 201, created.text
+    path = f"/projects/{created.json()['id']}/presence/events"
+    assert (await guest.get(path)).status_code == 401
+    assert (await stranger.get(path)).status_code == 404
+
+
+async def test_presence_stream_emits_authorized_user_and_cleans_up(stack: Stack) -> None:
+    owner = await stack.user("presence-stream@example.com")
+    created = await owner.post("/projects", json={"title": "Общая доска"})
+    assert created.status_code == 201, created.text
+    project_id = UUID(created.json()["id"])
+
+    async def receive() -> dict[str, Any]:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    request = Request({"type": "http", "app": stack.app}, receive=receive)
+    user = UserRow(
+        id=UUID(owner.user_id),
+        email=owner.email,
+        hashed_password="unused",  # noqa: S106 - mock row, пароль не используется
+        is_active=True,
+        is_superuser=False,
+        is_verified=False,
+    )
+    response = await project_presence(project_id, request, stack.app.state.container, user)
+    stream = cast(AsyncGenerator[ServerSentEvent], response.body_iterator)
+    event = await anext(stream)
+    assert event.event == "presence"
+    assert isinstance(event.data, str)
+    assert owner.email in event.data
+    assert len(stack.app.state.presence._snapshot(project_id)) == 1
+    await stream.aclose()
+    assert stack.app.state.presence._snapshot(project_id) == []
+
+
 # ---------- сессия и CSRF ----------
 
 
@@ -194,6 +251,11 @@ async def test_register_login_logout_and_session_state(stack: Stack) -> None:
     short = await guest.post("/auth/register", json={"email": "a@example.com", "password": "short"})
     assert short.status_code == 422
     assert "password" in short.json()["detail"]
+
+    eight = await guest.post(
+        "/auth/register", json={"email": "eight@example.com", "password": "12345678"}
+    )
+    assert eight.status_code == 201
 
     account = await stack.user("analyst@example.com")
     duplicate = await guest.post(
@@ -377,7 +439,7 @@ async def test_projects_created_without_public_flag_stay_private(stack: Stack) -
 
 
 async def test_projects_scope_filters_list_and_total(stack: Stack) -> None:
-    """`scope`: all — всё доступное, own — свои, shared — где я редактор, examples — демо."""
+    """`scope`: all — всё доступное, own — свои, shared — принятые проекты, examples — демо."""
     owner = await stack.user("scope-owner@example.com")
     editor = await stack.user("scope-editor@example.com")
     own_id = (await owner.post("/projects", json={"title": "Мой процесс"})).json()["id"]
@@ -446,6 +508,12 @@ async def test_editor_can_edit_but_not_delete_or_share(stack: Stack) -> None:
     assert detail.json()["access"] == "editor"
     assert (await editor.get("/projects")).json()["items"][0]["access"] == "editor"
 
+    # Принятие более слабой viewer-ссылки не снимает уже выданные права редактора.
+    viewer_link = await owner.post(f"/projects/{pid}/share-links", json={"role": "viewer"})
+    viewer_token = viewer_link.json()["url_path"].removeprefix("/share/")
+    assert (await editor.post(f"/shares/{viewer_token}/accept")).json()["role"] == "viewer"
+    assert (await editor.get(f"/projects/{pid}")).json()["access"] == "editor"
+
     renamed = await editor.patch(f"/projects/{pid}", json={"title": "Новое название"})
     assert renamed.status_code == 200
     assert renamed.json()["title"] == "Новое название"
@@ -473,7 +541,7 @@ async def test_editor_can_edit_but_not_delete_or_share(stack: Stack) -> None:
     assert (await owner.get(f"/projects/{pid}")).status_code == 404
 
 
-async def test_viewer_link_is_read_only_and_does_not_open_the_project(stack: Stack) -> None:
+async def test_viewer_link_can_be_saved_to_profile_but_stays_read_only(stack: Stack) -> None:
     owner = await stack.user("author@example.com")
     other = await stack.user("someone@example.com")
     guest = await stack.guest()
@@ -497,8 +565,16 @@ async def test_viewer_link_is_read_only_and_does_not_open_the_project(stack: Sta
     # Токен — не пропуск к обычным маршрутам проекта.
     assert (await guest.get(f"/projects/{pid}")).status_code == 401
     assert (await other.get(f"/projects/{pid}")).status_code == 404
-    assert (await other.post(f"/shares/{token}/accept")).status_code == 403
-    assert (await other.get(f"/projects/{pid}")).status_code == 404
+    accepted = await other.post(f"/shares/{token}/accept")
+    assert accepted.status_code == 200
+    assert accepted.json() == {"project_id": pid, "role": "viewer"}
+    detail = await other.get(f"/projects/{pid}")
+    assert detail.status_code == 200
+    assert detail.json()["access"] == "viewer"
+    listed = await other.get("/projects", params={"scope": "shared"})
+    assert [project["id"] for project in listed.json()["items"]] == [pid]
+    assert (await other.patch(f"/projects/{pid}", json={"title": "Изменение"})).status_code == 403
+    assert (await owner.get(f"/projects/{pid}/members")).json()[0]["role"] == "viewer"
 
     # Редакторская ссылка гостю данных не открывает.
     invite = await owner.post(f"/projects/{pid}/share-links", json={"role": "editor"})
@@ -529,19 +605,22 @@ async def test_expired_link_returns_410_and_expiry_limits(stack: Stack) -> None:
 
     viewer = (await days({"role": "viewer"})).json()
     editor = (await days({"role": "editor"})).json()
-    for created, expected in ((viewer, 30), (editor, 7)):
+    for created, expected in ((viewer, 30), (editor, 30)):
         lifetime = datetime.fromisoformat(created["expires_at"]) - datetime.fromisoformat(
             created["created_at"]
         )
         assert lifetime == timedelta(days=expected)
 
-    assert (await days({"role": "editor", "expires_in_days": 30})).status_code == 201
-    too_long = await days({"role": "editor", "expires_in_days": 31})
+    assert (await days({"role": "editor", "expires_in_days": 7})).status_code == 201
+    assert (await days({"role": "editor", "expires_in_days": 365})).status_code == 201
+    too_long = await days({"role": "editor", "expires_in_days": 366})
     assert too_long.status_code == 422
-    assert "30" in too_long.json()["detail"]
+    assert "expires_in_days" in too_long.json()["detail"]
     assert (await days({"role": "viewer", "expires_in_days": 365})).status_code == 201
     assert (await days({"role": "viewer", "expires_in_days": 366})).status_code == 422
-    assert (await days({"role": "viewer", "expires_in_days": 0})).status_code == 422
+    forever = await days({"role": "viewer", "expires_in_days": 0})
+    assert forever.status_code == 201
+    assert forever.json()["expires_at"] is None
 
     token = viewer["url_path"].removeprefix("/share/")
     assert (await guest.get(f"/shares/{token}")).status_code == 200

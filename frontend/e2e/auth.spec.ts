@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { expect, type Page, test } from '@playwright/test'
-import { DEMO_PROJECT_ID } from './support'
+import { DEMO_PROJECT_ID, skipWelcome } from './support'
 
 /** Экран входа и права доступа. Первые сценарии идут как гость — без сохранённого входа. */
 test.describe('гость', () => {
@@ -27,6 +27,7 @@ test.describe('гость', () => {
     await fillAndSubmit(page, `e2e-${randomUUID()}@example.com`, `pw-${randomUUID()}`)
 
     await expect(page).toHaveURL(new RegExp(`/projects/${DEMO_PROJECT_ID}$`))
+    await skipWelcome(page)
     await expect(page.getByRole('region', { name: 'Вопросы' })).toBeVisible()
   })
 
@@ -92,6 +93,7 @@ test.describe('гость', () => {
     await page.getByRole('radio', { name: 'Регистрация' }).click()
     await fillAndSubmit(page, email, `pw-${randomUUID()}`)
     await expect(page.getByRole('heading', { name: 'Проекты' })).toBeVisible()
+    await skipWelcome(page)
 
     await page.getByRole('button', { name: 'Аккаунт' }).click()
     await expect(page.getByRole('menu')).toContainText(email)

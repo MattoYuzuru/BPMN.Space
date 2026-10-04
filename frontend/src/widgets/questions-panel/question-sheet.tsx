@@ -158,7 +158,12 @@ function QuestionDetail({ question }: { question: Question }) {
 
         {canEdit && question.status === 'open' && (
           <Section title="Ответ" icon="message-question">
-            <AnswerComposer projectId={project.id} question={question} autoFocus={false} />
+            <AnswerComposer
+              projectId={project.id}
+              question={question}
+              autoFocus={false}
+              tourAnchored={false}
+            />
           </Section>
         )}
 

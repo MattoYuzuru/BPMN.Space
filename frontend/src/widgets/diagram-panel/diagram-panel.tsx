@@ -5,6 +5,7 @@ import { useRunView } from '@/entities/run'
 import { addedElementIds, diagramElements, useSaveDiagram } from '@/entities/version'
 import { useDebouncedCallback } from '@/shared/hooks/use-debounced'
 import { floatingPanel } from '@/shared/lib/motion'
+import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import { Skeleton, toast } from '@/shared/ui'
 import { type DiagramEditorHandle, LazyDiagramEditor } from '@/widgets/diagram-editor'
 import { RunProgress } from '@/widgets/run-progress/run-progress'
@@ -126,7 +127,7 @@ export function DiagramPanel() {
         onPropertiesToggle={() => setPropertiesOpen((open) => !open)}
       />
       <div className="relative flex min-h-0 flex-1">
-        <div className="relative min-w-0 flex-1">
+        <div className="relative min-w-0 flex-1" {...tourAnchor(TOUR_ANCHORS.diagramCanvas)}>
           {versionId && version.isPending ? (
             <CanvasSkeleton />
           ) : (

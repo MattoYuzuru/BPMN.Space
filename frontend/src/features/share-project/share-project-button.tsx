@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import { Button } from '@/shared/ui'
 import { ShareDialog } from './share-dialog'
 
@@ -7,7 +8,12 @@ export function ShareProjectButton({ projectId }: { projectId: string }) {
   const [open, setOpen] = useState(false)
   return (
     <>
-      <Button size="sm" leadingIcon="share" onClick={() => setOpen(true)}>
+      <Button
+        size="sm"
+        leadingIcon="share"
+        {...tourAnchor(TOUR_ANCHORS.shareOpen)}
+        onClick={() => setOpen(true)}
+      >
         Поделиться
       </Button>
       <ShareDialog projectId={projectId} open={open} onOpenChange={setOpen} />

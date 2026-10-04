@@ -1,8 +1,17 @@
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useRef, useState } from 'react'
 import { useAddTextSource } from '@/entities/source'
 import { VoiceCapture } from '@/features/voice-record/voice-capture'
 import { formatDate, formatTime } from '@/shared/lib/format'
-import { Button, Dialog, DialogClose, DialogContent, Field, Input, Textarea } from '@/shared/ui'
+import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
+import {
+  Button,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  Field,
+  Input,
+  SuggestedTextarea,
+} from '@/shared/ui'
 
 interface DialogProps {
   projectId: string
@@ -10,12 +19,24 @@ interface DialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-/** Текстовый источник: регламент, заметка, выдержка из письма. */
-export function AddTextDialog({ projectId, open, onOpenChange }: DialogProps) {
+/** Название источника, которое подставляется вместе с принятой подсказкой. */
+export const SUGGESTED_TEXT_TITLE = 'Описание процесса'
+
+/**
+ * Текстовый источник: регламент, заметка, выдержка из письма. Если передана `suggestion`, пустое
+ * поле «Текст» предлагает её как автодополнение (обучение даёт подсказку, остальные — нет).
+ */
+export function AddTextDialog({
+  projectId,
+  open,
+  onOpenChange,
+  suggestion,
+}: DialogProps & { suggestion?: string | null }) {
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [error, setError] = useState<string>()
   const add = useAddTextSource(projectId)
+  const contentRef = useRef<HTMLTextAreaElement>(null)
 
   const reset = () => {
     setTitle('')
@@ -42,7 +63,17 @@ export function AddTextDialog({ projectId, open, onOpenChange }: DialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent title="Текстовый источник" size="lg" aria-describedby={undefined}>
+      <DialogContent
+        title="Текстовый источник"
+        size="lg"
+        aria-describedby={undefined}
+        // С подсказкой человек сразу принимает её (Tab) или пишет сам: фокус на поле «Текст».
+        onOpenAutoFocus={(event) => {
+          if (!suggestion) return
+          event.preventDefault()
+          contentRef.current?.focus()
+        }}
+      >
         <form onSubmit={submit} className="flex flex-col gap-4" noValidate>
           <Field label="Название" optional>
             <Input
@@ -52,23 +83,33 @@ export function AddTextDialog({ projectId, open, onOpenChange }: DialogProps) {
             />
           </Field>
           <Field label="Текст" error={error}>
-            <Textarea
+            <SuggestedTextarea
+              ref={contentRef}
               autoFocus
               value={content}
               minRows={8}
               maxRows={18}
               placeholder="Вставьте описание процесса: кто, что и в каком порядке делает"
-              onChange={(event) => {
-                setContent(event.target.value)
+              suggestion={suggestion}
+              onInsert={() => setTitle((current) => current || SUGGESTED_TEXT_TITLE)}
+              onValueChange={(next) => {
+                setContent(next)
                 if (error) setError(undefined)
               }}
+              {...tourAnchor(TOUR_ANCHORS.sourceTextContent)}
             />
           </Field>
           <div className="-mx-5 -mb-5 mt-1 flex justify-end gap-2 border-t border-border px-5 py-3.5">
             <DialogClose asChild>
               <Button variant="ghost">Отмена</Button>
             </DialogClose>
-            <Button type="submit" variant="primary" leadingIcon="plus" loading={add.isPending}>
+            <Button
+              type="submit"
+              variant="primary"
+              leadingIcon="plus"
+              loading={add.isPending}
+              {...tourAnchor(TOUR_ANCHORS.sourceTextSubmit)}
+            >
               Добавить источник
             </Button>
           </div>

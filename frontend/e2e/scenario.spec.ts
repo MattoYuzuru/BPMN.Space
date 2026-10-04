@@ -72,7 +72,7 @@ test('полный сценарий: вопросы, голос, докумен�
 
   await test.step('голосовая заметка как источник', async () => {
     await page.getByRole('button', { name: 'Добавить источник' }).click()
-    await page.getByRole('menuitem', { name: 'Голосовая заметка' }).click()
+    await page.getByRole('menuitem', { name: 'Голосовая заметка', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Голосовая заметка' })
     await expect(dialog.getByText('Идёт запись')).toBeVisible()
     await expect(dialog.getByRole('meter', { name: 'Уровень сигнала микрофона' })).toBeVisible()

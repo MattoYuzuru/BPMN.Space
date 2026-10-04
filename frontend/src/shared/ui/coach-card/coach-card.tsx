@@ -1,4 +1,4 @@
-import { Popover as PopoverPrimitive } from 'radix-ui'
+import * as PopperPrimitive from '@radix-ui/react-popper'
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -37,6 +37,8 @@ export interface CoachCardProps {
   /** Виртуальный якорь: объект с `getBoundingClientRect()`. Карточка едет за ним каждый кадр. */
   anchorRef?: RefObject<{ getBoundingClientRect(): DOMRect } | null>
   side?: 'top' | 'right' | 'bottom' | 'left'
+  /** Выравнивание карточки вдоль стороны: у края опоры или по её центру. */
+  align?: 'start' | 'center' | 'end'
   /** Куда выводить карточку. Для якоря внутри модального окна — узел самого окна. */
   portalContainer?: HTMLElement | null
   /** Подпись над заголовком: «Источники · Шаг 2 из 11». */
@@ -92,6 +94,7 @@ export function CoachCard({
   placement = 'anchor',
   anchorRef,
   side = 'bottom',
+  align = 'center',
   portalContainer,
   eyebrow,
   title,
@@ -146,8 +149,7 @@ export function CoachCard({
 
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === 'Escape') {
-      // Слой Radix уже обработал Esc и пометил событие — второй раз не обрабатываем.
-      if (event.defaultPrevented) return
+      // Esc внутри карточки всегда её: окно под ней уже не закроется (`guardTourLayer`).
       event.preventDefault()
       event.stopPropagation()
       handleEscape()
@@ -168,9 +170,10 @@ export function CoachCard({
     }
   }
 
-  // Без слоя Radix (по центру) Esc ловим на документе — там нет DismissableLayer, который бы его забрал.
+  // Esc вне карточки: если его уже забрало окно или меню (оно закрылось), второй раз не трогаем.
+  // Карточка — не слой Radix, поэтому окно под ней остаётся верхним слоем и закрывается по Esc.
   useEffect(() => {
-    if (placement !== 'center') return
+    if (placement === 'inline') return
     const onDocKey = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
       event.preventDefault()
@@ -325,32 +328,29 @@ export function CoachCard({
     return createPortal(centered, portalContainer ?? document.body)
   }
 
+  // Привязанная карточка — части Popper без слоя Radix (DismissableLayer): он забирал бы Esc и клики
+  // у окна, в которое карточка выведена.
   return (
-    <PopoverPrimitive.Root open>
-      {anchorRef && <PopoverPrimitive.Anchor virtualRef={anchorRef} />}
-      <PopoverPrimitive.Portal container={portalContainer ?? undefined}>
-        <PopoverPrimitive.Content
+    <PopperPrimitive.Root>
+      {anchorRef && <PopperPrimitive.Anchor virtualRef={anchorRef} />}
+      {createPortal(
+        <PopperPrimitive.Content
           {...{ [TOUR_LAYER_ATTR]: '' }}
+          role="dialog"
           aria-modal="false"
           aria-labelledby={headingId}
           side={side}
-          align="center"
+          align={align}
           sideOffset={14}
           collisionPadding={16}
           updatePositionStrategy="always"
-          onOpenAutoFocus={(event) => event.preventDefault()}
-          onCloseAutoFocus={(event) => event.preventDefault()}
-          onInteractOutside={(event) => event.preventDefault()}
-          onEscapeKeyDown={(event) => {
-            event.preventDefault()
-            handleEscape()
-          }}
           onKeyDown={onKeyDown}
           className={cn(frame, 'motion-pop')}
         >
           {content}
-        </PopoverPrimitive.Content>
-      </PopoverPrimitive.Portal>
-    </PopoverPrimitive.Root>
+        </PopperPrimitive.Content>,
+        portalContainer ?? document.body,
+      )}
+    </PopperPrimitive.Root>
   )
 }

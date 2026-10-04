@@ -52,7 +52,17 @@ function deferredFetch() {
   })
   vi.stubGlobal(
     'fetch',
-    vi.fn(() => pending),
+    vi.fn((input: RequestInfo | URL) => {
+      if (String(input).includes('/auth/csrf')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ csrf_token: 'csrf-test-token' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        )
+      }
+      return pending
+    }),
   )
   return (status: number, body: unknown) =>
     release(

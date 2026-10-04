@@ -1,5 +1,6 @@
 """Точка входа FastAPI."""
 
+import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -7,8 +8,11 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse
 from pydantic.json_schema import models_json_schema
 
+from app.api.auth import CSRF_COOKIE, optional_user
+from app.api.auth import router as auth_router
 from app.api.errors import install_error_handlers
 from app.api.v1 import api_router
 from app.api.v1.runs import OPENAPI_EXTRA_MODELS
@@ -58,14 +62,33 @@ def create_app(settings: Settings | None = None, *, container: Container | None 
         generate_unique_id_function=lambda route: route.name,
     )
     app.state.container = container
+    app.state.auth_enabled = settings.auth_enabled
+    if not settings.auth_enabled:
+        app.dependency_overrides[optional_user] = lambda: None
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_methods=["*"],
         allow_headers=["*"],
+        allow_credentials=True,
     )
+
+    @app.middleware("http")
+    async def csrf_protection(request, call_next):
+        unsafe = request.method not in {"GET", "HEAD", "OPTIONS", "TRACE"}
+        is_api = request.url.path.startswith(settings.api_prefix + "/")
+        if settings.auth_enabled and unsafe and is_api:
+            cookie = request.cookies.get(CSRF_COOKIE)
+            header = request.headers.get("x-csrf-token")
+            if not cookie or not header or not secrets.compare_digest(cookie, header):
+                return JSONResponse(
+                    status_code=403, content={"detail": "CSRF-токен отсутствует или не совпадает"}
+                )
+        return await call_next(request)
+
     install_error_handlers(app)
     app.include_router(api_router, prefix=settings.api_prefix)
+    app.include_router(auth_router, prefix=settings.api_prefix)
 
     @app.get("/health", tags=["service"])
     async def health() -> dict[str, str]:

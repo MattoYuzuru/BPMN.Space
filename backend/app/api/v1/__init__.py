@@ -2,8 +2,8 @@
 
 from fastapi import APIRouter
 
-from app.api.v1 import assistant, projects, questions, runs, sources, versions
+from app.api.v1 import assistant, projects, questions, runs, sharing, sources, versions
 
 api_router = APIRouter()
-for module in (projects, sources, questions, runs, versions, assistant):
+for module in (projects, sources, questions, runs, versions, assistant, sharing):
     api_router.include_router(module.router)

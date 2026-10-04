@@ -8,6 +8,10 @@ import type { components, paths } from './schema.gen'
 
 export type Schemas = components['schemas']
 
+const API_PREFIX = '/api/v1/'
+const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+let csrfTokenPromise: Promise<string> | undefined
+
 /** Ошибка API: HTTP-статус и сообщение бэкенда для пользователя. */
 export class ApiError extends Error {
   readonly status: number
@@ -34,13 +38,58 @@ function detailOf(body: unknown): string | undefined {
   return undefined
 }
 
-/**
- * Адрес — от текущего origin: openapi-fetch строит Request с абсолютным URL (в тестах на Node
- * относительный не разбирается). fetch берётся в момент запроса — так его можно подменить в тестах.
- */
+/** Cookie-сессия: перед изменяющим запросом получить CSRF-токен с того же origin. */
+export async function getCsrfToken(force = false): Promise<string> {
+  if (force) csrfTokenPromise = undefined
+  csrfTokenPromise ??= (async () => {
+    const response = await globalThis.fetch(`${API_PREFIX}auth/csrf`, {
+      credentials: 'same-origin',
+    })
+    if (!response.ok)
+      throw new ApiError(response.status, 'Не удалось подготовить защищённый запрос')
+    const payload = (await response.json()) as { csrf_token?: unknown }
+    if (typeof payload.csrf_token !== 'string' || !payload.csrf_token) {
+      throw new ApiError(response.status, 'Сервер не вернул CSRF-токен')
+    }
+    return payload.csrf_token
+  })().catch((error: unknown) => {
+    csrfTokenPromise = undefined
+    throw error
+  })
+  return csrfTokenPromise
+}
+
+function withCsrf(request: Request, token: string): Request {
+  const headers = new Headers(request.headers)
+  headers.set('X-CSRF-Token', token)
+  return new Request(request.clone(), { headers, credentials: 'same-origin' })
+}
+
+async function fetchWithCsrf(request: Request): Promise<Response> {
+  const isApi = new URL(request.url).pathname.startsWith(API_PREFIX)
+  const unsafe = UNSAFE_METHODS.has(request.method.toUpperCase())
+  if (!isApi || !unsafe) return globalThis.fetch(request)
+
+  const template = request.clone()
+  const token = await getCsrfToken()
+  const response = await globalThis.fetch(withCsrf(template.clone(), token))
+  if (response.status !== 403) return response
+
+  const body = (await response
+    .clone()
+    .json()
+    .catch(() => null)) as { detail?: unknown } | null
+  if (typeof body?.detail !== 'string' || !body.detail.toLowerCase().includes('csrf')) {
+    return response
+  }
+  const renewedToken = await getCsrfToken(true)
+  return globalThis.fetch(withCsrf(template.clone(), renewedToken))
+}
+
+/** Адрес от текущего origin; fetch берётся в момент запроса, чтобы его можно было подменить в тестах. */
 export const api = createClient<paths>({
   baseUrl: globalThis.location?.origin ?? '',
-  fetch: (request) => globalThis.fetch(request),
+  fetch: fetchWithCsrf,
 })
 
 /**
@@ -68,26 +117,33 @@ export interface UploadOptions {
  * Ответ — JSON; при ошибке — ApiError с `detail` бэкенда.
  */
 export function postForm<T>(url: string, form: FormData, options: UploadOptions = {}): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-    xhr.open('POST', url)
-    xhr.responseType = 'json'
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) options.onProgress?.(event.loaded / event.total)
-    }
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        options.onProgress?.(1)
-        resolve(xhr.response as T)
-      } else {
-        reject(new ApiError(xhr.status, detailOf(xhr.response) ?? `Ошибка сервера (${xhr.status})`))
-      }
-    }
-    xhr.onerror = () => reject(new TypeError('network'))
-    xhr.onabort = () => reject(new DOMException('Загрузка отменена', 'AbortError'))
-    options.signal?.addEventListener('abort', () => xhr.abort(), { once: true })
-    xhr.send(form)
-  })
+  return getCsrfToken().then(
+    (csrfToken) =>
+      new Promise<T>((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open('POST', url)
+        xhr.withCredentials = true
+        xhr.setRequestHeader('X-CSRF-Token', csrfToken)
+        xhr.responseType = 'json'
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) options.onProgress?.(event.loaded / event.total)
+        }
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            options.onProgress?.(1)
+            resolve(xhr.response as T)
+          } else {
+            reject(
+              new ApiError(xhr.status, detailOf(xhr.response) ?? `Ошибка сервера (${xhr.status})`),
+            )
+          }
+        }
+        xhr.onerror = () => reject(new TypeError('network'))
+        xhr.onabort = () => reject(new DOMException('Загрузка отменена', 'AbortError'))
+        options.signal?.addEventListener('abort', () => xhr.abort(), { once: true })
+        xhr.send(form)
+      }),
+  )
 }
 
 /** Адрес SSE-потока событий прогона. */

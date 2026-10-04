@@ -2,8 +2,10 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 
+from app.api.access import ensure_project_access, require_account
+from app.api.auth import OptionalUserDep
 from app.api.deps import ContainerDep
 from app.api.schemas.assistant import AssistantRequest, AssistantResponse, LocalAssistantRequest
 from app.api.schemas.common import errors
@@ -18,8 +20,13 @@ router = APIRouter(tags=["assistant"])
     responses=errors(404, 422, 502, 503),
 )
 async def ask_assistant(
-    project_id: UUID, body: AssistantRequest, container: ContainerDep
+    project_id: UUID,
+    body: AssistantRequest,
+    request: Request,
+    container: ContainerDep,
+    user: OptionalUserDep,
 ) -> AssistantResponse:
+    await ensure_project_access(request, container, project_id, user, write=False)
     message = body.message.strip()
     if not message:
         raise HTTPException(status_code=422, detail="Введите вопрос помощнику")
@@ -46,8 +53,12 @@ async def ask_assistant(
     responses=errors(422, 502, 503),
 )
 async def ask_about_local_draft(
-    body: LocalAssistantRequest, container: ContainerDep
+    body: LocalAssistantRequest,
+    request: Request,
+    container: ContainerDep,
+    user: OptionalUserDep,
 ) -> AssistantResponse:
+    require_account(request, user)
     message = body.message.strip()
     if not message:
         raise HTTPException(status_code=422, detail="Введите вопрос помощнику")

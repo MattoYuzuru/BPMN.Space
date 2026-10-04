@@ -34,6 +34,7 @@ def settings() -> Settings:
         mock_delay_scale=0,
         database_url=None,
         app_env="test",
+        auth_enabled=False,
         llm_provider="mock",
         stt_provider="mock",
         deepseek_api_key=None,

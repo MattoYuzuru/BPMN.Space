@@ -36,17 +36,27 @@ interface Player {
   password: string
 }
 
-/** Изменяющий запрос от имени пользователя: сервер ждёт CSRF-токен из `/auth/csrf`. */
+/**
+ * Изменяющий запрос от имени пользователя: сервер ждёт CSRF-токен из `/auth/csrf`. Страница в том
+ * же контексте тоже берёт токен и меняет cookie, поэтому при отказе (403) берём свежий и повторяем.
+ */
 async function send(
   request: APIRequestContext,
   method: 'post' | 'patch',
   url: string,
   data?: unknown,
 ) {
-  const { csrf_token: csrf } = await (await request.get('/api/v1/auth/csrf')).json()
-  const response = await request[method](url, { data, headers: { 'X-CSRF-Token': csrf } })
+  let response = await request[method](url, { data, headers: await csrfHeaders(request) })
+  for (let attempt = 0; attempt < 3 && response.status() === 403; attempt += 1) {
+    response = await request[method](url, { data, headers: await csrfHeaders(request) })
+  }
   expect(response.ok(), `${method} ${url}: ${response.status()}`).toBeTruthy()
   return response.status() === 204 ? null : response.json()
+}
+
+async function csrfHeaders(request: APIRequestContext) {
+  const { csrf_token: csrf } = await (await request.get('/api/v1/auth/csrf')).json()
+  return { 'X-CSRF-Token': csrf as string }
 }
 
 /** Новый пользователь, уже вошедший (через API): тур ему ещё не предлагали. */

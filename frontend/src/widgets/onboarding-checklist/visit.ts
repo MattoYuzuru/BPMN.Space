@@ -6,22 +6,12 @@ import {
   fetchItemTarget,
   useOnboardingUi,
 } from '@/entities/onboarding'
-import { hideHint, showHint } from '@/features/onboarding/hint'
+import { showHint } from '@/features/onboarding/hint'
 import { errorMessage } from '@/shared/api/client'
 import { toast } from '@/shared/ui'
 import { getWorkspaceControls, type WorkspaceControls } from '@/widgets/workspace/model'
+import { setActiveHintItem } from './active-hint'
 import { type ItemVisit, planItemVisit } from './target'
-
-/** Пункт, на который сейчас указывает подсказка: когда он выполнен, подсказка закрывается сама. */
-let hintItem: ChecklistItemKey | null = null
-
-/** Закрыть подсказку, если она про один из только что выполненных пунктов. */
-export function dismissHintFor(done: readonly ChecklistItemKey[]): void {
-  if (hintItem && done.includes(hintItem)) {
-    hintItem = null
-    hideHint()
-  }
-}
 
 const WORKSPACE_WAIT_MS = 3000
 const WORKSPACE_POLL_MS = 100
@@ -52,7 +42,7 @@ type Navigate = (visit: ItemVisit['destination']) => Promise<unknown>
 
 /** Показать подсказку-указатель по плану (переход уже выполнен). */
 export function presentVisit(item: ChecklistItemKey, visit: ItemVisit): void {
-  hintItem = item
+  setActiveHintItem(item)
   showHint({ anchor: visit.anchor, text: visit.text, prepare: prepareVisit(visit) })
 }
 

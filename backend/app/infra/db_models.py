@@ -169,6 +169,9 @@ class RunRow(Base):
         ),
     )
     error: Mapped[str | None] = mapped_column(Text)
+    warnings: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
 
 
 class QuestionRow(Base):

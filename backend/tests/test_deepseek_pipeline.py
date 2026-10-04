@@ -11,6 +11,8 @@ from app.domain.models import SourceKind
 from app.llm.base import PipelineError
 from app.llm.deepseek import DeepSeekPipeline, _verified_quote
 
+_NO_SLEEP = lambda _seconds: None  # noqa: E731 — тесты не ждут настоящих пауз
+
 
 def test_request_uses_current_model_and_server_side_bearer_auth() -> None:
     payload = {"choices": [{"message": {"content": '{"steps": []}'}}]}
@@ -43,16 +45,17 @@ def test_request_can_enable_thinking_explicitly() -> None:
 
 
 def test_request_reports_timeout_separately() -> None:
-    pipeline = DeepSeekPipeline(api_key="test-only", timeout_sec=17)
+    pipeline = DeepSeekPipeline(api_key="test-only", timeout_sec=17, sleep=_NO_SLEEP)
     with (
-        patch("app.llm.deepseek.urlopen", side_effect=TimeoutError),
+        patch("app.llm.deepseek.urlopen", side_effect=TimeoutError) as urlopen,
         pytest.raises(RuntimeError, match="не ответила за 17 секунд"),
     ):
         pipeline._request_json("system", "prompt")
+    assert urlopen.call_count == 4  # первая попытка и три повтора
 
 
 def test_request_reports_network_error_separately() -> None:
-    pipeline = DeepSeekPipeline(api_key="test-only")
+    pipeline = DeepSeekPipeline(api_key="test-only", max_retries=1, sleep=_NO_SLEEP)
     with (
         patch("app.llm.deepseek.urlopen", side_effect=URLError("offline")) as urlopen,
         pytest.raises(RuntimeError, match="связаться с сервисом модели"),
@@ -62,7 +65,7 @@ def test_request_reports_network_error_separately() -> None:
 
 
 def test_request_retries_transient_tls_error_once() -> None:
-    pipeline = DeepSeekPipeline(api_key="test-only")
+    pipeline = DeepSeekPipeline(api_key="test-only", sleep=_NO_SLEEP)
     response = MagicMock()
     response.__enter__.return_value.read.return_value = json.dumps(
         {"choices": [{"message": {"content": '{"steps": []}'}}]}

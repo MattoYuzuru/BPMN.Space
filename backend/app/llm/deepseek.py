@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import random
 import re
 import time
 from collections.abc import Callable
@@ -12,7 +13,6 @@ from urllib.request import Request, urlopen
 from uuid import UUID
 
 from app.domain.analysis import (
-    MAX_SOURCE_TEXT_CHARS,
     AnalysisResult,
     ContextSource,
     DiagramDraft,
@@ -23,11 +23,12 @@ from app.domain.analysis import (
 from app.domain.bpmn.linear import LinearStep, build_linear_diagram
 from app.domain.models import QuestionKind, QuestionStatus, Severity
 from app.domain.questions import normalize
-from app.llm.base import PipelineError
+from app.llm.base import DEADLINE_MESSAGE, PipelineError, record_usage, remaining_sec
 
 _MAX_DIAGRAM_STEPS = 12
-_NETWORK_RETRIES = 1
-_NETWORK_RETRY_DELAY_SEC = 0.5
+# Временные отказы провайдера: перегрузка, лимит частоты, сбой шлюза.
+_RETRYABLE_HTTP = frozenset({408, 429, 500, 502, 503, 504})
+_MAX_RETRY_AFTER_SEC = 60.0
 logger = logging.getLogger(__name__)
 
 
@@ -42,7 +43,12 @@ class DeepSeekPipeline:
         base_url: str = "https://api.deepseek.com",
         timeout_sec: float = 120,
         thinking_enabled: bool = False,
+        max_retries: int = 3,
+        retry_base_sec: float = 1.0,
+        retry_max_sec: float = 30.0,
         complete: Callable[[str, str], str] | None = None,
+        sleep: Callable[[float], None] = time.sleep,
+        jitter: Callable[[], float] = random.random,
     ) -> None:
         self._api_key = api_key
         self._model = model
@@ -59,6 +65,11 @@ class DeepSeekPipeline:
         self._timeout_sec = timeout_sec
         self._thinking_enabled = thinking_enabled
         self._complete = complete
+        self._max_retries = max(max_retries, 0)
+        self._retry_base_sec = retry_base_sec
+        self._retry_max_sec = retry_max_sec
+        self._sleep = sleep
+        self._jitter = jitter
 
     @property
     def model_name(self) -> str:
@@ -246,11 +257,48 @@ class DeepSeekPipeline:
         return self._request(system, prompt, json_mode=False)
 
     async def _complete_async(self, system: str, prompt: str, *, json_mode: bool) -> str:
+        remaining = remaining_sec()
+        if remaining is not None and remaining <= 0:
+            raise PipelineError(DEADLINE_MESSAGE)
         complete = self._complete
         if complete is not None:
             return await asyncio.to_thread(complete, system, prompt)
         request = self._request_json if json_mode else self._request_text
         return await asyncio.to_thread(request, system, prompt)
+
+    def _retry_delay(self, attempt: int, retry_after: float | None) -> float:
+        """Экспоненциальная пауза с джиттером; `Retry-After` провайдера — нижняя граница."""
+        ceiling = min(self._retry_base_sec * 2**attempt, self._retry_max_sec)
+        delay = ceiling / 2 + self._jitter() * ceiling / 2
+        if retry_after is not None:
+            delay = max(delay, min(retry_after, _MAX_RETRY_AFTER_SEC))
+        return delay
+
+    def _wait_before_retry(self, attempt: int, retry_after: float | None, reason: str) -> bool:
+        """Спит перед повтором; `False` — повторять нельзя (попытки или время прогона вышли)."""
+        if attempt >= self._max_retries:
+            return False
+        delay = self._retry_delay(attempt, retry_after)
+        remaining = remaining_sec()
+        if remaining is not None and delay >= remaining:
+            return False
+        logger.warning(
+            "Сбой запроса к модели (%s), повтор %d/%d через %.1f с",
+            reason,
+            attempt + 1,
+            self._max_retries,
+            delay,
+        )
+        self._sleep(delay)
+        return True
+
+    def _timeout_for_attempt(self) -> float:
+        remaining = remaining_sec()
+        if remaining is None:
+            return self._timeout_sec
+        if remaining <= 0:
+            raise RuntimeError(DEADLINE_MESSAGE)
+        return min(self._timeout_sec, remaining)
 
     def _request(self, system: str, prompt: str, *, json_mode: bool) -> str:
         body = json.dumps(
@@ -277,44 +325,15 @@ class DeepSeekPipeline:
             },
             method="POST",
         )
-        response_body = b""
-        for attempt in range(_NETWORK_RETRIES + 1):
-            try:
-                with urlopen(request, timeout=self._timeout_sec) as response:  # noqa: S310
-                    response_body = response.read()
-                break
-            except HTTPError as error:
-                raise RuntimeError(f"Сервис модели вернул HTTP {error.code}") from None
-            except TimeoutError:
-                # Таймаут чтения мог произойти уже после обработки запроса провайдером.
-                # Не отправляем его повторно, чтобы не создавать лишний платный запрос.
-                raise RuntimeError(
-                    f"Модель не ответила за {self._timeout_sec:g} секунд. Повторите попытку."
-                ) from None
-            except URLError as error:
-                reason = error.reason
-                reason_detail = str(reason).replace("\n", " ")[:200]
-                logger.warning(
-                    "Сбой соединения с сервисом модели (попытка %d/%d, %s: %s)",
-                    attempt + 1,
-                    _NETWORK_RETRIES + 1,
-                    type(reason).__name__,
-                    reason_detail,
-                )
-                if attempt < _NETWORK_RETRIES:
-                    time.sleep(_NETWORK_RETRY_DELAY_SEC)
-                    continue
-                if isinstance(reason, TimeoutError):
-                    raise RuntimeError(
-                        f"Модель не ответила за {self._timeout_sec:g} секунд. Повторите попытку."
-                    ) from None
-                raise RuntimeError(
-                    "Не удалось связаться с сервисом модели. Проверьте сеть и повторите."
-                ) from None
-
+        response_body = self._send_with_retries(request)
         try:
             payload = json.loads(response_body)
             choice = payload["choices"][0]
+            usage = payload.get("usage") or {}
+            record_usage(
+                tokens_in=_token_count(usage.get("prompt_tokens")),
+                tokens_out=_token_count(usage.get("completion_tokens")),
+            )
             if choice.get("finish_reason") == "length":
                 raise RuntimeError("Ответ модели обрезан по лимиту длины. Повторите анализ.")
             content = choice["message"]["content"]
@@ -323,8 +342,52 @@ class DeepSeekPipeline:
             return content
         except json.JSONDecodeError:
             raise RuntimeError("Сервис модели вернул ответ в некорректном формате") from None
-        except (KeyError, IndexError, TypeError, ValueError):
+        except (KeyError, IndexError, TypeError, ValueError, AttributeError):
             raise RuntimeError("Сервис модели вернул ответ неизвестной структуры") from None
+
+    def _send_with_retries(self, request: Request) -> bytes:
+        """POST с ограниченными повторами временных сбоев: 408/429/5xx, таймаут, обрыв сети."""
+        timeout_message = f"Модель не ответила за {self._timeout_sec:g} секунд. Повторите попытку."
+        for attempt in range(self._max_retries + 1):
+            timeout = self._timeout_for_attempt()
+            try:
+                with urlopen(request, timeout=timeout) as response:  # noqa: S310
+                    return response.read()
+            except HTTPError as error:
+                if error.code in _RETRYABLE_HTTP and self._wait_before_retry(
+                    attempt, _retry_after(error), f"HTTP {error.code}"
+                ):
+                    continue
+                raise RuntimeError(f"Сервис модели вернул HTTP {error.code}") from None
+            except TimeoutError:
+                if self._wait_before_retry(attempt, None, "таймаут"):
+                    continue
+                raise RuntimeError(timeout_message) from None
+            except URLError as error:
+                reason = error.reason
+                detail = f"{type(reason).__name__}: {str(reason).replace(chr(10), ' ')[:200]}"
+                if self._wait_before_retry(attempt, None, detail):
+                    continue
+                if isinstance(reason, TimeoutError):
+                    raise RuntimeError(timeout_message) from None
+                raise RuntimeError(
+                    "Не удалось связаться с сервисом модели. Проверьте сеть и повторите."
+                ) from None
+        raise RuntimeError("Не удалось связаться с сервисом модели")  # pragma: no cover
+
+
+def _retry_after(error: HTTPError) -> float | None:
+    """`Retry-After` в секундах (форму с датой не разбираем: достаточно обычной паузы)."""
+    value = error.headers.get("Retry-After") if error.headers else None
+    try:
+        seconds = float(value) if value is not None else None
+    except ValueError:
+        return None
+    return seconds if seconds is not None and seconds >= 0 else None
+
+
+def _token_count(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
 
 def _source_payload(sources: list[ContextSource]) -> list[dict[str, str]]:
@@ -333,7 +396,7 @@ def _source_payload(sources: list[ContextSource]) -> list[dict[str, str]]:
         {
             "id": str(source.id),
             "title": source.title[:200],
-            "text": source.content[:MAX_SOURCE_TEXT_CHARS],
+            "text": source.content,
         }
         for source in sources
     ]

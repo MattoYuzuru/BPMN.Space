@@ -55,6 +55,13 @@ class Run(ApiModel):
     summary: RunSummary | None = None
     version_id: UUID | None = Field(default=None, description="Версия, собранная прогоном")
     error: str | None = Field(default=None, description="Причина для `status=failed`")
+    warnings: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Предупреждения прогона, не мешающие результату: например, часть материалов "
+            "не поместилась в контекст модели и была обрезана или пропущена"
+        ),
+    )
 
     @classmethod
     def of(cls, run: models.Run) -> "Run":
@@ -71,6 +78,7 @@ class Run(ApiModel):
             summary=RunSummary.model_validate(run.summary) if run.summary else None,
             version_id=run.version_id,
             error=run.error,
+            warnings=list(run.warnings),
         )
 
 

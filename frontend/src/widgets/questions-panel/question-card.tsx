@@ -153,11 +153,11 @@ export function QuestionCard({ question, settling = false, fresh = false }: Ques
                   size="sm"
                   variant="secondary"
                   leadingIcon="message-question"
-                  {...tourAnchor(TOUR_ANCHORS.questionAnswer)}
                   onClick={() => {
                     setAnswering(true)
                     selectQuestion(question.id)
                   }}
+                  {...tourAnchor(TOUR_ANCHORS.questionAnswer)}
                 >
                   Ответить
                 </Button>
@@ -165,8 +165,8 @@ export function QuestionCard({ question, settling = false, fresh = false }: Ques
                   size="sm"
                   variant="ghost"
                   leadingIcon="eye-off"
-                  {...tourAnchor(TOUR_ANCHORS.questionIgnore)}
                   onClick={() => action.mutate({ question, action: { type: 'ignore' } })}
+                  {...tourAnchor(TOUR_ANCHORS.questionIgnore)}
                 >
                   Игнорировать
                 </Button>

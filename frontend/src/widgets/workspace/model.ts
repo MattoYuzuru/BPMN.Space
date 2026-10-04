@@ -57,6 +57,8 @@ interface WorkspaceUi {
   questionsCollapsed: boolean
   /** Просьба развернуть панель (обучение): раскладка исполняет её сама. */
   expandRequest: ExpandRequest | null
+  /** Просьба выбрать вопрос и показать его на схеме (из чек-листа); исполняет `WorkspaceView`. */
+  focusRequest: { questionId: string; id: number } | null
   /** Просьба показать вкладку панели «Вопросы» (обучение показывает «Открытые»). */
   questionsTabRequest: QuestionsTabRequest | null
   /** Подсказка-автодополнение для поля «Текст» диалога текстового источника. */
@@ -67,6 +69,7 @@ interface WorkspaceUi {
   setCollapsed: (panel: WorkspacePanel, collapsed: boolean) => void
   /** Развернуть панель, если она свёрнута. */
   expandPanel: (panel: WorkspacePanel) => void
+  focusQuestion: (questionId: string) => void
   /** Показать вкладку панели «Вопросы». */
   showQuestionsTab: (tab: QuestionsTab) => void
   setTextSuggestion: (text: string | null) => void
@@ -80,6 +83,7 @@ export const useWorkspaceUi = create<WorkspaceUi>((set) => ({
   sourcesCollapsed: false,
   questionsCollapsed: false,
   expandRequest: null,
+  focusRequest: null,
   questionsTabRequest: null,
   textSuggestion: null,
   setDialog: (dialog) => set({ dialog }),
@@ -89,10 +93,19 @@ export const useWorkspaceUi = create<WorkspaceUi>((set) => ({
     set(panel === 'sources' ? { sourcesCollapsed: collapsed } : { questionsCollapsed: collapsed }),
   expandPanel: (panel) =>
     set((state) => ({ expandRequest: { panel, id: (state.expandRequest?.id ?? 0) + 1 } })),
+  focusQuestion: (questionId) =>
+    set((state) => ({ focusRequest: { questionId, id: (state.focusRequest?.id ?? 0) + 1 } })),
   showQuestionsTab: (tab) =>
     set((state) => ({
       questionsTabRequest: { tab, id: (state.questionsTabRequest?.id ?? 0) + 1 },
     })),
   setTextSuggestion: (textSuggestion) => set({ textSuggestion }),
-  reset: () => set({ dialog: null, sheet: null, questionSheet: null, expandRequest: null }),
+  reset: () =>
+    set({
+      dialog: null,
+      sheet: null,
+      questionSheet: null,
+      expandRequest: null,
+      focusRequest: null,
+    }),
 }))

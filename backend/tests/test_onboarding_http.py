@@ -375,6 +375,9 @@ async def test_target_counts_editable_shared_projects_but_not_viewer_links(stack
     read_only = await owner.post(f"/projects/{pid}/share-links", json={"role": "viewer"})
     token = read_only.json()["url_path"].removeprefix("/share/")
     await viewer.get(f"/shares/{token}")
+    # Принятая ссылка на просмотр сохраняет зрителя в проекте (ADR 0003), но целью не становится.
+    assert (await viewer.post(f"/shares/{token}/accept")).status_code == 200
+    assert (await viewer.get(f"/projects/{pid}")).json()["access"] == "viewer"
 
     for_editor = (await editor.get("/me/onboarding/items/text_source_added/target")).json()
     assert for_editor["project_id"] == pid  # по приглашению редактора проект доступен на правку

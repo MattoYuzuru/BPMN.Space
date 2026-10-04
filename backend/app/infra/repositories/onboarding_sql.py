@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy import CursorResult, and_, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 
+from app.domain.access import ProjectRole
 from app.domain.onboarding import (
     ChecklistItem,
     CompletedItem,
@@ -117,8 +118,11 @@ class SqlOnboardingRepository:
             SourceRow.kind == "answer",
             SourceRow.created_at > last_version,
         )
+        # В `project_members` лежат и зрители (ссылки на чтение): цель — только где можно править.
         editor = exists().where(
-            ProjectMemberRow.project_id == project.id, ProjectMemberRow.user_id == user_id
+            ProjectMemberRow.project_id == project.id,
+            ProjectMemberRow.user_id == user_id,
+            ProjectMemberRow.role == ProjectRole.EDITOR.value,
         )
         statement = (
             select(

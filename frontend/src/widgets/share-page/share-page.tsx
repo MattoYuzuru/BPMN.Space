@@ -151,7 +151,7 @@ function InviteScreen({
     <div className="flex min-h-dvh flex-col bg-bg">
       <header className="flex h-14 shrink-0 items-center justify-end gap-2 px-4 wide:px-5">
         <ThemeSwitch compact />
-        <AccountMenu afterLogout={() => window.location.reload()} />
+        <AccountMenu afterLogout={() => window.location.reload()} withChecklist={false} />
       </header>
       <main className="relative isolate grid flex-1 place-items-center px-6 pb-16">
         <GridBackdrop pattern="grid" glow />

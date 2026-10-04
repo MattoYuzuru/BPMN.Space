@@ -156,6 +156,14 @@ export function WorkspaceView({
     ],
   )
 
+  // Просьба показать вопрос на схеме (из чек-листа): выбор и фокус делает сам экран.
+  const focusRequest = ui.focusRequest
+  const { selectQuestion } = api
+  // biome-ignore lint/correctness/useExhaustiveDependencies: только новая просьба
+  useEffect(() => {
+    if (focusRequest) selectQuestion(focusRequest.questionId, { focus: true })
+  }, [focusRequest])
+
   return (
     <WorkspaceContext.Provider value={api}>
       {commands && <WorkspaceCommands />}

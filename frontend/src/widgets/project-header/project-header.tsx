@@ -165,9 +165,9 @@ function HeaderActions({ running }: { running: boolean }) {
             leadingIcon="diagram"
             size="sm"
             disabled={noSources || running}
-            {...tourAnchor(TOUR_ANCHORS.runBuild)}
             loading={start.isPending && start.variables === 'build'}
             onClick={() => start.mutate('build')}
+            {...tourAnchor(TOUR_ANCHORS.runBuild)}
           >
             Построить схему
           </Button>

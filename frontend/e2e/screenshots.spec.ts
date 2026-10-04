@@ -162,7 +162,7 @@ test('10 запись голоса', async ({ page, request }) => {
   await open(page, `/projects/${projectId}`)
   await hideToasts(page)
   await page.getByRole('button', { name: 'Добавить источник' }).click()
-  await page.getByRole('menuitem', { name: 'Голосовая заметка' }).click()
+  await page.getByRole('menuitem', { name: 'Голосовая заметка', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Голосовая заметка' })
   await expect(dialog.getByText('Идёт запись')).toBeVisible()
   await page.waitForTimeout(3200)

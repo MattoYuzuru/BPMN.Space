@@ -1,4 +1,5 @@
-import { screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { renderUi } from '@/test/render'
 import { Button } from '../button/button'
 import { ConfirmDialog } from './confirm-dialog'
@@ -36,6 +37,48 @@ describe('Dialog', () => {
     )
     await user.click(screen.getByRole('button', { name: 'Закрыть' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+})
+
+// Radix подписывается на «клик снаружи» после первого такта.
+const settle = () => new Promise<void>((resolve) => window.setTimeout(resolve, 20))
+
+describe('Dialog и слой обучения', () => {
+  function Harness({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
+    return (
+      <>
+        <Dialog defaultOpen onOpenChange={onOpenChange}>
+          <DialogContent title="Окно">
+            <p>Тело</p>
+          </DialogContent>
+        </Dialog>
+        <div data-tour-layer="">
+          <Button>Далее</Button>
+        </div>
+        <Button>Снаружи</Button>
+      </>
+    )
+  }
+
+  it('клик и Esc внутри слоя обучения не закрывают окно', async () => {
+    const onOpenChange = vi.fn()
+    renderUi(<Harness onOpenChange={onOpenChange} />)
+    await settle()
+    const user = userEvent.setup({ pointerEventsCheck: 0 })
+    const next = screen.getByRole('button', { name: 'Далее', hidden: true })
+    await user.click(next)
+    fireEvent.keyDown(next, { key: 'Escape' })
+    expect(onOpenChange).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog', { name: 'Окно' })).toBeInTheDocument()
+  })
+
+  it('обычный клик снаружи по-прежнему закрывает окно', async () => {
+    const onOpenChange = vi.fn()
+    renderUi(<Harness onOpenChange={onOpenChange} />)
+    await settle()
+    const user = userEvent.setup({ pointerEventsCheck: 0 })
+    await user.click(screen.getByRole('button', { name: 'Снаружи', hidden: true }))
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
   })
 })
 

@@ -1,6 +1,7 @@
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import type { ComponentProps, ReactNode } from 'react'
 import { cn } from '@/shared/lib/cn'
+import { guardTourLayer } from '@/shared/lib/tour-anchors'
 import { overlayClass } from '../dialog/dialog'
 import { IconButton } from '../icon-button/icon-button'
 
@@ -33,6 +34,8 @@ export function SheetContent({
   size = 'md',
   className,
   children,
+  onInteractOutside,
+  onEscapeKeyDown,
   ...props
 }: SheetContentProps) {
   return (
@@ -47,6 +50,15 @@ export function SheetContent({
           className,
         )}
         {...props}
+        // Клик и Esc внутри слоя обучения не закрывают панель.
+        onInteractOutside={(event) => {
+          guardTourLayer(event)
+          onInteractOutside?.(event)
+        }}
+        onEscapeKeyDown={(event) => {
+          guardTourLayer(event)
+          onEscapeKeyDown?.(event)
+        }}
       >
         <div className="flex flex-col gap-1 border-b border-border px-5 pt-4 pb-3.5 pr-12">
           <DialogPrimitive.Title className="type-heading text-fg">{title}</DialogPrimitive.Title>

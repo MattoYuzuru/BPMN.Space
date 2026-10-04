@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import date, datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Protocol
 from uuid import UUID
 
 from app.domain.analysis import AnalysisResult, DiagramDraft, RunContext
@@ -30,6 +30,7 @@ from app.domain.models import (
     SourceStatus,
     VersionOrigin,
 )
+from app.domain.onboarding import ChecklistItem
 from app.domain.questions import reconcile
 from app.domain.runs import (
     ACTIVE_STATUSES,
@@ -60,6 +61,17 @@ from app.services.versions import add_version
 logger = logging.getLogger(__name__)
 
 type Pace = Callable[[RunStage], Awaitable[None]]
+
+
+class ProgressRecorder(Protocol):
+    """Порт учёта первых действий пользователя (чек-лист онбординга).
+
+    Реализация — `OnboardingService`, подключается в `container.py`: прогон завершается в фоне,
+    где текущего пользователя уже нет, поэтому отмечает того, кто его запустил (`created_by`).
+    Реализация не должна бросать исключения: учёт не ломает прогон.
+    """
+
+    async def record(self, user_id: UUID | None, item: ChecklistItem) -> bool: ...
 
 
 async def no_pace(stage: RunStage) -> None:  # noqa: ARG001 — сигнатура Pace
@@ -106,6 +118,7 @@ class RunService:
         pace: Pace = no_pace,
         context_budget_chars: int = 120_000,
         deadline_sec: float = 600.0,
+        progress: ProgressRecorder | None = None,
     ) -> None:
         self._repos = repos
         self._pipeline = pipeline
@@ -116,11 +129,14 @@ class RunService:
         self._pace = pace
         self._context_budget = context_budget_chars
         self._deadline_sec = deadline_sec
+        self._progress = progress
         self._limit = asyncio.Semaphore(max(max_concurrent, 1))
         # Этот lock ускоряет конфликт внутри процесса; уникальный индекс защищает между процессами.
         self._start_lock = asyncio.Lock()
 
-    async def start(self, project_id: UUID, *, mode: RunMode) -> Run:
+    async def start(
+        self, project_id: UUID, *, mode: RunMode, created_by: UUID | None = None
+    ) -> Run:
         async with self._start_lock, self._repos.atomic() as repos:
             # Блокировка проекта общая с ручным сохранением схемы и удалением проекта.
             if await repos.projects.lock(project_id) is None:
@@ -142,6 +158,7 @@ class RunService:
                 mode=mode,
                 status=RunStatus.QUEUED,
                 started_at=now,
+                created_by=created_by,
                 model=getattr(self._pipeline, "model_name", type(self._pipeline).__name__),
             )
             try:
@@ -220,6 +237,7 @@ class RunService:
         except Exception:
             logger.exception("Прогон %s упал", run.id)
             await self._fail(run, _INTERNAL_ERROR, execution_started=execution_started)
+        await self._record_progress(run)  # только для успешно завершённого прогона
 
     async def _run_stages(self, run: Run, execution_started: float) -> None:
         run.status = RunStatus.RUNNING
@@ -235,6 +253,36 @@ class RunService:
         run.latency_ms = max(0, round((time.perf_counter() - execution_started) * 1000))
         await self._repos.runs.update(run)
         await self._repos.projects.touch(run.project_id, run.finished_at)
+
+    async def _record_progress(self, run: Run) -> None:
+        """Успешная сборка отмечает пункты чек-листа тому, кто запустил прогон. Не бросает."""
+        if (
+            self._progress is None
+            or run.created_by is None
+            or run.mode is not RunMode.BUILD
+            or run.status is not RunStatus.SUCCEEDED
+        ):
+            return
+        try:
+            await self._progress.record(run.created_by, ChecklistItem.DIAGRAM_BUILT)
+            if await self._rebuilt_with_answers(run):
+                await self._progress.record(run.created_by, ChecklistItem.DIAGRAM_REBUILT)
+        except Exception:
+            logger.exception("Прогон %s: не удалось отметить прогресс", run.id)
+
+    async def _rebuilt_with_answers(self, run: Run) -> bool:
+        """Схема уже была, и после неё появился ответ на вопрос — это перестроение."""
+        versions = await self._repos.versions.list_by_project(run.project_id)  # новые — первыми
+        created = next((v for v in versions if v.id == run.version_id), None)
+        if created is None:
+            return False
+        previous = next((v for v in versions if v.number < created.number), None)
+        if previous is None:
+            return False
+        sources = await self._repos.sources.list_by_project(run.project_id)
+        return any(
+            s.kind is SourceKind.ANSWER and s.created_at > previous.created_at for s in sources
+        )
 
     async def _enter(self, run: Run, stage: RunStage) -> None:
         run.stage = stage

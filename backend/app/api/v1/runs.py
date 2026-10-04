@@ -49,7 +49,9 @@ async def start_run(
     """Запустить прогон в фоне. Прогресс — `GET /runs/{id}/events` (SSE).
     Если по проекту уже идёт прогон или нет источников — 409."""
     await ensure_project_access(request, container, project_id, user, write=True)
-    return Run.of(await container.runs.start(project_id, mode=body.mode))
+    return Run.of(
+        await container.runs.start(project_id, mode=body.mode, created_by=user.id if user else None)
+    )
 
 
 @router.get("/runs/{run_id}", responses=errors(401, 404, 422))

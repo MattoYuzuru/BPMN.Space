@@ -154,6 +154,83 @@
         "title": "Body_transcribe",
         "type": "object"
       },
+      "ChecklistEntry": {
+        "properties": {
+          "completed_at": {
+            "format": "date-time",
+            "title": "Completed At",
+            "type": "string"
+          },
+          "key": {
+            "$ref": "#/components/schemas/ChecklistItem"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ItemSource"
+          }
+        },
+        "required": [
+          "key",
+          "completed_at",
+          "source"
+        ],
+        "title": "ChecklistEntry",
+        "type": "object"
+      },
+      "ChecklistItem": {
+        "description": "12 пунктов чек-листа в порядке показа (группы: источники, анализ, схема, команда).",
+        "enum": [
+          "project_created",
+          "text_source_added",
+          "document_uploaded",
+          "voice_added",
+          "diagram_built",
+          "question_answered",
+          "assumption_accepted",
+          "diagram_rebuilt",
+          "diagram_edited",
+          "simulation_run",
+          "diagram_exported",
+          "project_shared"
+        ],
+        "title": "ChecklistItem",
+        "type": "string"
+      },
+      "ChecklistState": {
+        "properties": {
+          "hidden": {
+            "description": "Плашка и чек-лист скрыты пользователем",
+            "title": "Hidden",
+            "type": "boolean"
+          },
+          "items": {
+            "description": "Отмеченные пункты по времени отметки",
+            "items": {
+              "$ref": "#/components/schemas/ChecklistEntry"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "hidden",
+          "items"
+        ],
+        "title": "ChecklistState",
+        "type": "object"
+      },
+      "ChecklistUpdate": {
+        "properties": {
+          "hidden": {
+            "title": "Hidden",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hidden"
+        ],
+        "title": "ChecklistUpdate",
+        "type": "object"
+      },
       "DiagramSave": {
         "properties": {
           "xml": {
@@ -273,6 +350,15 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "ItemSource": {
+        "description": "Кто отметил пункт: сервер при действии или клиент (то, чего сервер не видит).",
+        "enum": [
+          "server",
+          "client"
+        ],
+        "title": "ItemSource",
+        "type": "string"
+      },
       "LintIssue": {
         "properties": {
           "element_id": {
@@ -355,6 +441,107 @@
           "project_title"
         ],
         "title": "LocalAssistantRequest",
+        "type": "object"
+      },
+      "OnboardingEvent": {
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/ChecklistItem",
+            "description": "Только `simulation_run` и `diagram_exported`"
+          }
+        },
+        "required": [
+          "item"
+        ],
+        "title": "OnboardingEvent",
+        "type": "object"
+      },
+      "OnboardingState": {
+        "description": "Всегда `200`: без аккаунтов, без входа и при `ONBOARDING_ENABLED=false` — `enabled=false`\nи пустые остальные поля.",
+        "properties": {
+          "checklist": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChecklistState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "tour": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TourState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tour_text_suggestion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Текст-подсказка для шага тура «Опишите процесс»",
+            "title": "Tour Text Suggestion"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "OnboardingState",
+        "type": "object"
+      },
+      "OnboardingTarget": {
+        "description": "Куда вести по пункту. Якорь и тексты подсказок выбирает фронтенд по `item` и `hint`.",
+        "properties": {
+          "hint": {
+            "$ref": "#/components/schemas/TargetHint"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "question_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Самый ранний открытый вопрос (для пунктов про вопросы)",
+            "title": "Question Id"
+          },
+          "route": {
+            "$ref": "#/components/schemas/TargetRoute"
+          }
+        },
+        "required": [
+          "route",
+          "hint"
+        ],
+        "title": "OnboardingTarget",
         "type": "object"
       },
       "Project": {
@@ -1265,6 +1452,70 @@
         "title": "RunVersionEvent",
         "type": "object"
       },
+      "Sample": {
+        "properties": {
+          "format": {
+            "description": "docx, md, txt или voice",
+            "title": "Format",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SampleKind"
+          },
+          "size_bytes": {
+            "description": "Размер файла или текста расшифровки",
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "title": {
+            "description": "Для документа — имя файла с расширением",
+            "title": "Title",
+            "type": "string"
+          },
+          "tour": {
+            "description": "Документ, на котором строится тур",
+            "title": "Tour",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "kind",
+          "format",
+          "size_bytes",
+          "tour"
+        ],
+        "title": "Sample",
+        "type": "object"
+      },
+      "SampleAdd": {
+        "properties": {
+          "sample_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Sample Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sample_id"
+        ],
+        "title": "SampleAdd",
+        "type": "object"
+      },
+      "SampleKind": {
+        "enum": [
+          "document",
+          "voice"
+        ],
+        "title": "SampleKind",
+        "type": "string"
+      },
       "SessionState": {
         "description": "Состояние входа для клиента: всегда 200, чтобы не путать «гость» с ошибкой сети.",
         "properties": {
@@ -1715,6 +1966,138 @@
           "progress"
         ],
         "title": "StageEventData",
+        "type": "object"
+      },
+      "TargetHint": {
+        "description": "Что показать пользователю: сделать пункт здесь или сначала подготовить предыдущий шаг.",
+        "enum": [
+          "do_item",
+          "need_project",
+          "need_source",
+          "need_diagram",
+          "need_questions"
+        ],
+        "title": "TargetHint",
+        "type": "string"
+      },
+      "TargetRoute": {
+        "enum": [
+          "projects",
+          "workspace"
+        ],
+        "title": "TargetRoute",
+        "type": "string"
+      },
+      "TourState": {
+        "properties": {
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Учебный проект пользователя",
+            "title": "Project Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TourStatus"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TourStepKey"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ключ текущего шага; null вне тура"
+          },
+          "updated_at": {
+            "description": "Последнее изменение (смена шага — для длительности)",
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "step",
+          "project_id",
+          "updated_at"
+        ],
+        "title": "TourState",
+        "type": "object"
+      },
+      "TourStatus": {
+        "enum": [
+          "pending",
+          "active",
+          "completed",
+          "dismissed"
+        ],
+        "title": "TourStatus",
+        "type": "string"
+      },
+      "TourStepKey": {
+        "description": "11 шагов тура. Бэкенд знает только ключи; последовательность определяет фронтенд.",
+        "enum": [
+          "project.create",
+          "sources.sample",
+          "sources.text",
+          "sources.voice",
+          "run.start",
+          "run.wait",
+          "question.answer",
+          "question.ignore",
+          "diagram.tour",
+          "share.create",
+          "finish"
+        ],
+        "title": "TourStepKey",
+        "type": "string"
+      },
+      "TourUpdate": {
+        "description": "Смена шага или статуса тура. Не переданные поля не меняются;\n`project_id: null` снимает учебный проект.",
+        "properties": {
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TourStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "step": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TourStepKey"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "TourUpdate",
         "type": "object"
       },
       "Transcription": {
@@ -2476,6 +2859,351 @@
         "tags": [
           "projects",
           "examples"
+        ]
+      }
+    },
+    "/api/v1/me/onboarding": {
+      "get": {
+        "description": "Состояние обучения и чек-листа «Начало работы». Строка пользователя создаётся при\nпервом запросе. Всегда `200`: без сессии или при выключенном онбординге — `enabled=false`.",
+        "operationId": "get_onboarding",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Onboarding",
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
+    "/api/v1/me/onboarding/checklist": {
+      "patch": {
+        "description": "Скрыть или вернуть плашку и чек-лист «Начало работы».",
+        "operationId": "update_checklist",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChecklistUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Update Checklist",
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
+    "/api/v1/me/onboarding/events": {
+      "post": {
+        "description": "Клиент сообщает о действии, которого не видит сервер (`simulation_run`,\n`diagram_exported`). Другие ключи — 422; повтор безопасен.",
+        "operationId": "report_event",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnboardingEvent"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Report Event",
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
+    "/api/v1/me/onboarding/items/{item}/target": {
+      "get": {
+        "description": "Куда вести по невыполненному пункту чек-листа: проекты, которые пользователь может\nредактировать (свои и по ссылке на редактирование); демо только для чтения не считаются.",
+        "operationId": "item_target",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ChecklistItem"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingTarget"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Item Target",
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
+    "/api/v1/me/onboarding/tour": {
+      "patch": {
+        "description": "Сменить шаг или статус тура. Недопустимый переход — 409; чужой или несуществующий\n`project_id` — 404; неизвестный ключ шага — 422.",
+        "operationId": "update_tour",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TourUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Конфликт состояния"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Update Tour",
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
+    "/api/v1/me/onboarding/tour/restart": {
+      "post": {
+        "description": "Начать тур заново: `active`, шаг `project.create`, без учебного проекта.",
+        "operationId": "restart_tour",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Restart Tour",
+        "tags": [
+          "onboarding"
         ]
       }
     },
@@ -3899,6 +4627,105 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/sources/sample": {
+      "post": {
+        "description": "Добавить учебный материал из `GET /samples` как обычный источник: документ проходит тот\nже разбор, что и `sources/file`, голосовая заметка сразу готова (`kind=voice`).",
+        "operationId": "create_sample_source",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SampleAdd"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Source"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Слишком много запросов; повторите через `Retry-After` секунд"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Create Sample Source",
+        "tags": [
+          "sources"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/sources/text": {
       "post": {
         "description": "Текст или голосовая заметка (`kind=voice`) после проверки расшифровки аналитиком.",
@@ -4490,6 +5317,33 @@
         "summary": "Run Events",
         "tags": [
           "runs"
+        ]
+      }
+    },
+    "/api/v1/samples": {
+      "get": {
+        "description": "Учебные материалы для «Примеров» в меню источника; доступ — как у `/examples`.",
+        "operationId": "list_samples",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Sample"
+                  },
+                  "title": "Response List Samples",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Samples",
+        "tags": [
+          "onboarding",
+          "samples"
         ]
       }
     },

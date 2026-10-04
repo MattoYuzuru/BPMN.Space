@@ -50,6 +50,7 @@ from app.infra.db_models import (
 )
 from app.infra.repositories.access_sql import SqlAccessRepository
 from app.infra.repositories.base import ActiveRunConflictError, PageKey, Repositories
+from app.infra.repositories.onboarding_sql import SqlOnboardingRepository
 from app.infra.repositories.session import BoundSessions, SessionFactory
 
 
@@ -132,6 +133,7 @@ def _run(row: RunRow) -> Run:
         version_id=row.version_id,
         error=row.error,
         warnings=list(row.warnings or []),
+        created_by=row.created_by,
         analysis=row.analysis,
         ir=row.ir,
         report=row.report,
@@ -220,6 +222,14 @@ class SqlProjectRepository:
                 update(ProjectRow)
                 .where(ProjectRow.id == project_id, ProjectRow.updated_at < at)
                 .values(updated_at=at)
+            )
+
+    async def owner_of(self, project_id: UUID) -> UUID | None:
+        async with self.sessions() as session:
+            return await session.scalar(
+                select(ProjectRow.owner_id).where(
+                    ProjectRow.id == project_id, ProjectRow.public_read_only.is_(False)
+                )
             )
 
     async def lock(self, project_id: UUID) -> Project | None:
@@ -498,6 +508,7 @@ class SqlRunRepository:
             version_id=item.version_id,
             error=item.error,
             warnings=item.warnings,
+            created_by=item.created_by,
             analysis=item.analysis,
             ir=item.ir,
             report=item.report,
@@ -670,5 +681,6 @@ class SqlStore:
             versions=SqlVersionRepository(sessions),
             llm_calls=SqlLlmCallRepository(sessions),
             access=SqlAccessRepository(sessions),
+            onboarding=SqlOnboardingRepository(sessions),
             transaction=transaction,
         )

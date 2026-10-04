@@ -9,6 +9,7 @@ from app.domain.models import RunStage
 from app.fixtures import read_bpmn
 from app.fixtures.examples import EXAMPLES
 from app.fixtures.playbook import PLAYBOOK
+from app.fixtures.samples import SAMPLES
 from app.infra.bpmn_tools import MockBpmnTools
 from app.infra.database import Database
 from app.infra.events import InMemoryRunEventBus
@@ -26,9 +27,11 @@ from app.services.access import AccessService
 from app.services.assistant import AssistantModel, AssistantService
 from app.services.catalog import ExampleService, TranscriptionService
 from app.services.common import Runtime
+from app.services.onboarding import OnboardingService
 from app.services.projects import ProjectService
 from app.services.questions import QuestionService
 from app.services.runs import RunService
+from app.services.samples import SampleService
 from app.services.sharing import SharingService
 from app.services.sources import SourceService
 from app.services.versions import VersionService
@@ -51,6 +54,8 @@ class Container:
     assistant: AssistantService | None
     access: AccessService
     sharing: SharingService
+    onboarding: OnboardingService
+    samples: SampleService
 
 
 def build_container(
@@ -121,6 +126,26 @@ def build_container(
         if delay:
             await asyncio.sleep(delay)
 
+    onboarding = OnboardingService(
+        repos,
+        runtime=runtime,
+        enabled=settings.auth_enabled and settings.onboarding_enabled,
+    )
+    sources = SourceService(
+        repos,
+        parser=LocalDocumentParser(
+            max_text_chars=min(settings.max_text_chars, MAX_SOURCE_TEXT_CHARS),
+            max_pdf_chars=settings.max_text_chars,
+            max_pdf_pages=settings.max_pdf_pages,
+            timeout_sec=settings.parse_timeout_sec,
+        ),
+        storage=storage,
+        runtime=runtime,
+        max_text_chars=settings.max_text_chars,
+        max_upload_bytes=settings.max_upload_bytes,
+        parse_delay_sec=settings.mock_delay(settings.mock_parse_delay_sec),
+    )
+
     return Container(
         settings=settings,
         repos=repos,
@@ -128,20 +153,7 @@ def build_container(
         storage=storage,
         spawner=spawner,
         projects=ProjectService(repos, examples=EXAMPLES, runtime=runtime, storage=storage),
-        sources=SourceService(
-            repos,
-            parser=LocalDocumentParser(
-                max_text_chars=min(settings.max_text_chars, MAX_SOURCE_TEXT_CHARS),
-                max_pdf_chars=settings.max_text_chars,
-                max_pdf_pages=settings.max_pdf_pages,
-                timeout_sec=settings.parse_timeout_sec,
-            ),
-            storage=storage,
-            runtime=runtime,
-            max_text_chars=settings.max_text_chars,
-            max_upload_bytes=settings.max_upload_bytes,
-            parse_delay_sec=settings.mock_delay(settings.mock_parse_delay_sec),
-        ),
+        sources=sources,
         questions=QuestionService(repos, runtime=runtime),
         runs=RunService(
             repos,
@@ -154,6 +166,7 @@ def build_container(
             pace=mock_pace,
             context_budget_chars=settings.llm_context_budget_chars,
             deadline_sec=settings.run_deadline_sec,
+            progress=onboarding,
         ),
         versions=VersionService(
             repos,
@@ -168,4 +181,6 @@ def build_container(
         ),
         access=access,
         sharing=SharingService(access, runtime=runtime),
+        onboarding=onboarding,
+        samples=SampleService(sources, samples=SAMPLES),
     )

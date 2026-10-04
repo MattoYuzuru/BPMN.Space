@@ -52,11 +52,14 @@ export async function exportDiagram(options: {
   editor: DiagramEditorHandle | null
   /** Откуда скачать .bpmn; по умолчанию — адрес версии проекта аккаунта. */
   xmlUrl?: string
+  /** Файл отдан браузеру (без ошибок): например, отметить пункт чек-листа. */
+  onSaved?: () => void
 }) {
   const fileName = exportFileName(options.title, options.versionNumber, options.format)
   try {
     if (options.format === 'bpmn') {
       save(options.xmlUrl ?? versionXmlUrl(options.versionId), fileName)
+      options.onSaved?.()
       return
     }
     if (!options.editor) throw new Error('Редактор схемы ещё не загрузился')
@@ -66,6 +69,7 @@ export async function exportDiagram(options: {
     } else {
       saveBlob(await options.editor.exportPng(2), fileName)
     }
+    options.onSaved?.()
   } catch (error) {
     toast.error('Не удалось скачать схему', {
       description: error instanceof Error && error.message ? error.message : errorMessage(error),

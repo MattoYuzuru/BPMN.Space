@@ -6,6 +6,7 @@ import { useRunView, useStartRun } from '@/entities/run'
 import { VERSION_ORIGIN, versionLabel } from '@/entities/version'
 import { ShareProjectButton } from '@/features/share-project/share-project-button'
 import { formatRelative } from '@/shared/lib/format'
+import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import {
   Badge,
   Button,
@@ -165,6 +166,7 @@ function HeaderActions({ running }: { running: boolean }) {
             disabled={noSources || running}
             loading={start.isPending && start.variables === 'build'}
             onClick={() => start.mutate('build')}
+            {...tourAnchor(TOUR_ANCHORS.runBuild)}
           >
             Построить схему
           </Button>

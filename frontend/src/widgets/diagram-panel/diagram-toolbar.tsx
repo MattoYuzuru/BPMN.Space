@@ -1,7 +1,9 @@
 import { useState } from 'react'
+import { useReportOnboardingEvent } from '@/entities/onboarding'
 import { VERSION_ORIGIN, type VersionDetail, versionLabel } from '@/entities/version'
 import { cn } from '@/shared/lib/cn'
 import { formatRelative } from '@/shared/lib/format'
+import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import {
   Badge,
   Button,
@@ -53,6 +55,7 @@ export function DiagramToolbar({
   const setSheet = useWorkspaceUi((state) => state.setSheet)
   const [minimap, setMinimap] = useState(false)
   const [simulation, setSimulation] = useState(false)
+  const report = useReportOnboardingEvent()
   const origin = version ? VERSION_ORIGIN[version.origin] : null
   const issues = version?.report.lint.length ?? 0
   const assumptions = version?.report.assumptions.length ?? 0
@@ -183,7 +186,12 @@ export function DiagramToolbar({
           aria-pressed={simulation}
           disabled={!ready}
           className={toggleClass(simulation)}
-          onClick={() => setSimulation(editorRef.current?.toggleSimulation() ?? false)}
+          onClick={() => {
+            const active = editorRef.current?.toggleSimulation() ?? false
+            setSimulation(active)
+            if (active) report.mutate('simulation_run')
+          }}
+          {...tourAnchor(TOUR_ANCHORS.diagramSimulation)}
         />
         <IconButton
           icon="adjustments"

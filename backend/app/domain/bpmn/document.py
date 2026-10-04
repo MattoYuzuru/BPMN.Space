@@ -180,9 +180,9 @@ def ensure_safe_xml(xml: str) -> None:
     """Проверка XML от пользователя перед сохранением: только BPMN-пространства имён.
 
     Запрещены DTD и сущности (XXE, «бомба миллиарда смехов»), сетевые и внешние ссылки,
-    инструкции обработки, любые элементы и атрибуты вне разрешённых пространств имён
-    и элемент `script` (в BPMN-схему такой XML всё равно не нужен: это защита от XSS,
-    если файл кто-то откроет как документ). Нарушение — `BpmnFormatError`.
+    инструкции обработки, любые элементы и атрибуты вне разрешённых пространств имён.
+    Так отсекаются `<script>` из XHTML/SVG (XSS, если файл откроют как документ), а штатный
+    `bpmn:script` у `scriptTask` остаётся: браузер его не исполняет. Нарушение — `BpmnFormatError`.
     """
     parser = DefusedXMLParser(
         target=_NoProcessingInstructions(),
@@ -205,8 +205,6 @@ def ensure_safe_xml(xml: str) -> None:
             raise BpmnFormatError(
                 f"Элемент «{element.tag}» вне пространств имён BPMN 2.0 — сохранение запрещено"
             )
-        if element.tag.rpartition("}")[2].lower() == "script":
-            raise BpmnFormatError("Элемент script запрещён")
         for attribute in element.attrib:
             attribute_namespace = _namespace(attribute)
             if attribute_namespace is not None and attribute_namespace not in ALLOWED_NAMESPACES:

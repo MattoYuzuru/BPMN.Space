@@ -14,6 +14,7 @@ import io
 import json
 import time
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from enum import StrEnum
 from functools import partial
 from typing import Protocol
@@ -25,6 +26,13 @@ from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
 from app.domain.analysis import MAX_SOURCE_TEXT_CHARS
+
+# Разбор документов идёт в собственном маленьком пуле, а не в общем пуле потоков по умолчанию
+# (его делят хранилище, DeepSeek и Deepgram): зависший разбор не должен занять потоки остальных.
+# По таймауту поток разбора не прерывается (Python так не умеет) — он «брошен» и доработает сам,
+# занимая слот этого пула; ожидающая задача из очереди при таймауте отменяется.
+_PARSE_WORKERS = 2
+_parse_executor = ThreadPoolExecutor(max_workers=_PARSE_WORKERS, thread_name_prefix="doc-parse")
 
 _WORD_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 _MAX_DOCX_XML_BYTES = 20 * 1024 * 1024
@@ -227,6 +235,7 @@ class LocalDocumentParser:
                     deadline=deadline,
                 )
         try:
-            return await asyncio.wait_for(asyncio.to_thread(work), timeout=self._timeout_sec)
+            future = asyncio.get_running_loop().run_in_executor(_parse_executor, work)
+            return await asyncio.wait_for(future, timeout=self._timeout_sec)
         except TimeoutError:
             raise DocumentParseError(_TIMEOUT_MESSAGE) from None

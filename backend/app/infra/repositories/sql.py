@@ -422,6 +422,24 @@ class SqlQuestionRepository:
         async with self.sessions.begin() as session:
             await session.merge(self._row(question))
 
+    async def apply_reconciled(
+        self, question: Question, *, expected_status: QuestionStatus
+    ) -> bool:
+        statement = (
+            update(QuestionRow)
+            .where(QuestionRow.id == question.id, QuestionRow.status == expected_status.value)
+            .values(
+                status=question.status.value,
+                evidence=_quote_json(question.evidence),
+                answer_source_id=question.answer.source_id if question.answer else None,
+                answer_text=question.answer.text if question.answer else None,
+                updated_at=question.updated_at,
+            )
+        )
+        async with self.sessions.begin() as session:
+            result = cast(CursorResult[Any], await session.execute(statement))
+        return result.rowcount > 0
+
     async def list_by_project(
         self, project_id: UUID, *, status: QuestionStatus | None = None
     ) -> list[Question]:

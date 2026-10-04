@@ -28,7 +28,9 @@ from app.llm.base import DEADLINE_MESSAGE, PipelineError, record_usage, remainin
 _MAX_DIAGRAM_STEPS = 12
 # Временные отказы провайдера: перегрузка, лимит частоты, сбой шлюза.
 _RETRYABLE_HTTP = frozenset({408, 429, 500, 502, 503, 504})
-_MAX_RETRY_AFTER_SEC = 60.0
+_MAX_RETRY_AFTER_SEC = 30.0
+# Таймаут чтения: запрос уже ушёл и, вероятно, оплачен — повторяем не более одного раза.
+_MAX_READ_TIMEOUT_RETRIES = 1
 logger = logging.getLogger(__name__)
 
 
@@ -274,9 +276,11 @@ class DeepSeekPipeline:
             delay = max(delay, min(retry_after, _MAX_RETRY_AFTER_SEC))
         return delay
 
-    def _wait_before_retry(self, attempt: int, retry_after: float | None, reason: str) -> bool:
+    def _wait_before_retry(
+        self, attempt: int, retry_after: float | None, reason: str, *, limit: int | None = None
+    ) -> bool:
         """Спит перед повтором; `False` — повторять нельзя (попытки или время прогона вышли)."""
-        if attempt >= self._max_retries:
+        if attempt >= (self._max_retries if limit is None else min(limit, self._max_retries)):
             return False
         delay = self._retry_delay(attempt, retry_after)
         remaining = remaining_sec()
@@ -348,6 +352,7 @@ class DeepSeekPipeline:
     def _send_with_retries(self, request: Request) -> bytes:
         """POST с ограниченными повторами временных сбоев: 408/429/5xx, таймаут, обрыв сети."""
         timeout_message = f"Модель не ответила за {self._timeout_sec:g} секунд. Повторите попытку."
+        timeout_attempt = 0
         for attempt in range(self._max_retries + 1):
             timeout = self._timeout_for_attempt()
             try:
@@ -360,16 +365,26 @@ class DeepSeekPipeline:
                     continue
                 raise RuntimeError(f"Сервис модели вернул HTTP {error.code}") from None
             except TimeoutError:
-                if self._wait_before_retry(attempt, None, "таймаут"):
+                # Таймаут чтения: запрос уже отправлен, повтор оплачивается дважды.
+                if self._wait_before_retry(
+                    timeout_attempt, None, "таймаут", limit=_MAX_READ_TIMEOUT_RETRIES
+                ):
+                    timeout_attempt += 1
                     continue
                 raise RuntimeError(timeout_message) from None
             except URLError as error:
                 reason = error.reason
                 detail = f"{type(reason).__name__}: {str(reason).replace(chr(10), ' ')[:200]}"
+                if isinstance(reason, TimeoutError):
+                    # Таймаут, обёрнутый в URLError, — тоже ожидание ответа.
+                    if self._wait_before_retry(
+                        timeout_attempt, None, detail, limit=_MAX_READ_TIMEOUT_RETRIES
+                    ):
+                        timeout_attempt += 1
+                        continue
+                    raise RuntimeError(timeout_message) from None
                 if self._wait_before_retry(attempt, None, detail):
                     continue
-                if isinstance(reason, TimeoutError):
-                    raise RuntimeError(timeout_message) from None
                 raise RuntimeError(
                     "Не удалось связаться с сервисом модели. Проверьте сеть и повторите."
                 ) from None

@@ -8,6 +8,7 @@
 
 import asyncio
 import logging
+import sys
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import asdict, dataclass, field, is_dataclass
@@ -170,15 +171,30 @@ class RunService:
 
     async def _execute(self, run_id: UUID) -> None:
         async with self._limit:
-            run = await self._repos.runs.get(run_id)
-            if run is None:
-                return
+            run: Run | None = None
             try:
-                await self._drive(run)
+                run = await self._repos.runs.get(run_id)
+                if run is not None:
+                    await self._drive(run)
             finally:
-                # Что бы ни случилось, подписчики SSE получают `done`: иначе поток висел бы вечно.
-                # Если `done` уже опубликован, повтор игнорируется шиной.
-                await self._events.publish(run.id, RunEventKind.DONE, run)
+                # Что бы ни случилось (в том числе сбой чтения прогона из БД), подписчики SSE
+                # получают `done`: иначе поток висел бы вечно. Повтор `done` шина игнорирует.
+                # Если прогона нет в БД без ошибки чтения, закрывать нечего.
+                if run is not None or sys.exc_info()[0] is not None:
+                    await self._events.publish(
+                        run_id, RunEventKind.DONE, run or self._lost_run(run_id)
+                    )
+
+    def _lost_run(self, run_id: UUID) -> Run:
+        """Заглушка для финального `done`, когда прогон не удалось прочитать из БД."""
+        return Run(
+            id=run_id,
+            project_id=UUID(int=0),
+            mode=RunMode.ANALYZE,
+            status=RunStatus.FAILED,
+            started_at=self._rt.clock(),
+            error=_INTERNAL_ERROR,
+        )
 
     async def _drive(self, run: Run) -> None:
         execution_started = time.perf_counter()
@@ -288,6 +304,8 @@ class RunService:
     async def _reconcile(self, run: Run, state: _RunState) -> None:
         context = self._require(state)
         questions = await self._repos.questions.list_by_project(run.project_id)
+        # `reconcile` меняет вопросы на месте — статусы до сверки нужны для условной записи.
+        before = {q.id: q.status for q in questions}
         outcome = reconcile(
             questions,
             state.analysis,
@@ -300,7 +318,16 @@ class RunService:
         for reason in outcome.rejected:
             logger.info("Прогон %s: отклонено обновление вопроса — %s", run.id, reason)
         for question in outcome.changed:
-            await self._repos.questions.update(question)
+            # Условная запись: ответ аналитика, пришедший после чтения вопросов, не затирается.
+            if not await self._repos.questions.apply_reconciled(
+                question, expected_status=before[question.id]
+            ):
+                logger.info(
+                    "Прогон %s: вопрос %s изменён параллельно, сверка пропущена",
+                    run.id,
+                    question.code,
+                )
+                continue
             await self._events.publish(run.id, RunEventKind.QUESTION, question)
         for question in outcome.created:
             await self._repos.questions.add(question)

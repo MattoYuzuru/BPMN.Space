@@ -51,7 +51,7 @@ def test_request_reports_timeout_separately() -> None:
         pytest.raises(RuntimeError, match="не ответила за 17 секунд"),
     ):
         pipeline._request_json("system", "prompt")
-    assert urlopen.call_count == 4  # первая попытка и три повтора
+    assert urlopen.call_count == 2  # таймаут чтения: запрос ушёл, повтор не более одного раза
 
 
 def test_request_reports_network_error_separately() -> None:
@@ -277,3 +277,23 @@ async def test_chat_uses_injected_model_and_returns_answer() -> None:
     assert "недоверенные данные" in seen[0][0]
     assert "Оператор проверяет заявление." in seen[0][1]
     assert "С чего начинается процесс?" in seen[0][1]
+
+
+def test_connection_errors_before_send_keep_full_retries() -> None:
+    pipeline = DeepSeekPipeline(api_key="test-only", max_retries=3, sleep=_NO_SLEEP)
+    with (
+        patch("app.llm.deepseek.urlopen", side_effect=URLError("refused")) as urlopen,
+        pytest.raises(RuntimeError, match="связаться с сервисом модели"),
+    ):
+        pipeline._request_json("system", "prompt")
+    assert urlopen.call_count == 4
+
+
+def test_urlerror_timeout_is_retried_at_most_once() -> None:
+    pipeline = DeepSeekPipeline(api_key="test-only", max_retries=3, sleep=_NO_SLEEP)
+    with (
+        patch("app.llm.deepseek.urlopen", side_effect=URLError(TimeoutError("read"))) as urlopen,
+        pytest.raises(RuntimeError, match="не ответила"),
+    ):
+        pipeline._request_json("system", "prompt")
+    assert urlopen.call_count == 2

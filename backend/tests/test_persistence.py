@@ -549,9 +549,52 @@ async def test_manual_save_conflicts_with_active_run_in_postgres(sql_store) -> N
     service = VersionService(
         repos, bpmn_tools=MockBpmnTools(), runtime=Runtime(), max_diagram_bytes=5 * 1024 * 1024
     )
-    with pytest.raises(ConflictError, match="идёт прогон"):
+    with pytest.raises(ConflictError, match="идёт сборка"):
         await service.save_manual(project.id, xml=read_bpmn("tp861_v2"))
     assert await repos.versions.latest(project.id) is None
+
+
+@pytest.mark.asyncio
+async def test_reconciled_question_write_is_conditional_in_postgres(sql_store) -> None:
+    from app.domain.models import (  # noqa: PLC0415
+        Question,
+        QuestionKind,
+        QuestionStatus,
+        Severity,
+    )
+
+    store, _ = sql_store
+    repos = store.repositories()
+    project = await _make_project(repos)
+    now = datetime.now(UTC)
+    question = Question(
+        id=uuid4(),
+        project_id=project.id,
+        code="Q-1",
+        kind=QuestionKind.MISSING_ACTOR,
+        severity=Severity.MAJOR,
+        status=QuestionStatus.OPEN,
+        text="Кто принимает заявку?",
+        assumption="",
+        created_at=now,
+        updated_at=now,
+    )
+    await repos.questions.add(question)
+    stale = await repos.questions.get(question.id)
+    assert stale is not None
+
+    question.status = QuestionStatus.ANSWERED  # аналитик ответил между чтением и записью
+    await repos.questions.update(question)
+    stale.status = QuestionStatus.RESOLVED
+    assert not await repos.questions.apply_reconciled(stale, expected_status=QuestionStatus.OPEN)
+    kept = await repos.questions.get(question.id)
+    assert kept is not None
+    assert kept.status is QuestionStatus.ANSWERED
+
+    assert await repos.questions.apply_reconciled(stale, expected_status=QuestionStatus.ANSWERED)
+    updated = await repos.questions.get(question.id)
+    assert updated is not None
+    assert updated.status is QuestionStatus.RESOLVED
 
 
 @pytest.mark.asyncio

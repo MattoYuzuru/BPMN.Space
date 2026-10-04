@@ -18,6 +18,7 @@ import {
   TokensSection,
   TypographySection,
 } from './foundations'
+import { OnboardingSection } from './onboarding'
 import { OverlaysSection } from './overlays'
 import { SharingSection } from './sharing'
 
@@ -54,6 +55,7 @@ const NAV = [
     items: [
       ['account', 'Аккаунт и доступ'],
       ['sharing', 'Общий доступ'],
+      ['onboarding', 'Обучение'],
       ['example', 'Пример экрана'],
     ],
   },
@@ -200,6 +202,7 @@ export function StyleguidePage() {
           <LayoutSection />
           <AccountSection />
           <SharingSection />
+          <OnboardingSection />
           <ExampleSection />
         </div>
       </main>

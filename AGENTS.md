@@ -14,6 +14,7 @@
 |---|---|
 | `backend/` | FastAPI, Python 3.13, uv. Слои `api → services → (llm, ingest, infra) → domain` (проверяет import-linter). PostgreSQL/Alembic описаны в `docs/backend/persistence.md`; оставшиеся заглушки — `docs/backend/mock.md` |
 | `frontend/src/entities/{session,share}`, маршруты `/login`, `/share/$token` | аккаунты и общий доступ: правила — `docs/backend/auth-and-sharing.md`, UI-паттерны — стайлгайд §16 |
+| `frontend/src/features/onboarding`, `shared/lib/{tour-anchors,onboarding-signals}.ts` | обучение: движок тура и подсказки-указатели, якоря `data-tour`, сигналы приложения — `docs/frontend/onboarding.md`, паттерн — стайлгайд §10 |
 | `backend/app/{domain,services,api/v1}/onboarding.py`, `fixtures/samples*` | онбординг: тур, чек-лист «Начало работы», учебные материалы «Примеры»; правила — `docs/backend/onboarding.md` |
 | `backend/migrations/` | Alembic-миграции PostgreSQL; правила и сохраняемые сущности — `docs/backend/persistence.md` |
 | `backend/app/fixtures/` | демо-данные mock-а: тексты, BPMN-схемы, записанные ответы модели (`make fixtures` пересобирает схемы) |

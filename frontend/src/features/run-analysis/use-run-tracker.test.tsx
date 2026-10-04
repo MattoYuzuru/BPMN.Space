@@ -89,17 +89,14 @@ afterEach(() => {
 })
 
 describe('useRunTracker: сигналы обучения', () => {
-  it('старт: run.started и статус «идёт» для идущего прогона', () => {
+  it('подключение к идущему прогону не считается стартом: только статус', () => {
     setup(run())
-    expect(signals).toEqual([
-      { type: 'run.started', id: 'r-1' },
-      { type: 'run.status', status: 'running' },
-    ])
+    expect(signals).toEqual([{ type: 'run.status', status: 'running', projectId: 'p-1' }])
   })
 
   it('прогон в очереди: queued, затем running по первому этапу', () => {
     setup(run({ status: 'queued' }))
-    expect(signals.at(-1)).toEqual({ type: 'run.status', status: 'queued' })
+    expect(signals.at(-1)).toEqual({ type: 'run.status', status: 'queued', projectId: 'p-1' })
     act(() =>
       stream.handlers?.onEvent({
         type: 'stage',
@@ -107,7 +104,7 @@ describe('useRunTracker: сигналы обучения', () => {
         data: { stage: 'extracting', progress: 0.2, label: 'Ищу' },
       } as RunEvent),
     )
-    expect(signals.at(-1)).toEqual({ type: 'run.status', status: 'running' })
+    expect(signals.at(-1)).toEqual({ type: 'run.status', status: 'running', projectId: 'p-1' })
   })
 
   it('окончание: run.finished с числом открытых вопросов и признаком схемы', async () => {
@@ -118,7 +115,13 @@ describe('useRunTracker: сигналы обучения', () => {
       await vi.advanceTimersByTimeAsync(10)
     })
     expect(signals).toEqual([
-      { type: 'run.finished', status: 'succeeded', openQuestions: 2, hasDiagram: true },
+      {
+        type: 'run.finished',
+        status: 'succeeded',
+        openQuestions: 2,
+        hasDiagram: true,
+        projectId: 'p-1',
+      },
     ])
   })
 
@@ -130,7 +133,13 @@ describe('useRunTracker: сигналы обучения', () => {
       await vi.advanceTimersByTimeAsync(10)
     })
     expect(signals).toEqual([
-      { type: 'run.finished', status: 'failed', openQuestions: 0, hasDiagram: false },
+      {
+        type: 'run.finished',
+        status: 'failed',
+        openQuestions: 0,
+        hasDiagram: false,
+        projectId: 'p-1',
+      },
     ])
   })
 
@@ -163,7 +172,13 @@ describe('useRunTracker: сигналы обучения', () => {
       await vi.advanceTimersByTimeAsync(RUN_POLL_MS + 20)
     })
     expect(signals).toEqual([
-      { type: 'run.finished', status: 'succeeded', openQuestions: 2, hasDiagram: true },
+      {
+        type: 'run.finished',
+        status: 'succeeded',
+        openQuestions: 2,
+        hasDiagram: true,
+        projectId: 'p-1',
+      },
     ])
     // Опрос остановился.
     const before = calls.length

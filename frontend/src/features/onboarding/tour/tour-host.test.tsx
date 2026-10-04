@@ -321,6 +321,31 @@ describe('TourHost внутри модального окна', () => {
     expect(useTourStore.getState().stepKey).toBe('after')
   })
 
+  it('Esc вне карточки закрывает окно (карточка не слой Radix) и подтверждение не открывает', async () => {
+    const onOpenChange = vi.fn()
+    const { user } = renderUi(
+      <>
+        <Dialog open onOpenChange={onOpenChange}>
+          <DialogContent title="Новый проект">
+            <Button data-tour="dialog.button">Создать проект</Button>
+          </DialogContent>
+        </Dialog>
+        <TourHost
+          steps={dialogSteps}
+          context={null}
+          persistence={makePersistence()}
+          restore={false}
+        />
+      </>,
+    )
+    act(() => startTour('in-dialog'))
+    await screen.findByRole('dialog', { name: 'Шаг в окне' })
+    screen.getByRole('button', { name: 'Создать проект' }).focus()
+    await user.keyboard('{Escape}')
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    expect(screen.queryByRole('heading', { name: 'Завершить обучение?' })).toBeNull()
+  })
+
   it('Esc с фокусом в карточке открывает подтверждение, а диалог остаётся открытым', async () => {
     const onOpenChange = vi.fn()
     const { user } = renderUi(

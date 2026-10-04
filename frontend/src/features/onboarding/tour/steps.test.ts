@@ -20,7 +20,7 @@ function makeCtx(patch: Partial<Record<string, unknown>> = {}): TourContext {
     setTextSuggestion: vi.fn(),
     interceptCreate: vi.fn(),
     closeDialogs: vi.fn(),
-    closeTopDialog: vi.fn(),
+    closeShareDialog: vi.fn(),
     openChecklist: vi.fn(),
   }
   return {
@@ -147,11 +147,18 @@ describe('сценарий тура', () => {
       expect(anchorOf('question.ignore', makeCtx())).toEqual({
         selector: '[data-question-id="q2"] [data-tour="question.ignore"]',
       })
-      // Ответили на q1 — он больше не открыт; шаг 8 всё равно не берёт отвеченный.
+      // Шаг 7 подсвечивал q2 (его пропустили): в шаге 8 берём другой открытый.
       expect(
         anchorOf('question.ignore', makeCtx({ openQuestionIds: ['q1', 'q2'], pickedId: 'q2' })),
       ).toEqual({ selector: '[data-question-id="q1"] [data-tour="question.ignore"]' })
-      expect(anchorOf('question.answer', makeCtx({ pickedId: null }))).toBeUndefined()
+      // До закрепления вопроса подсвечиваем первый открытый; открытых нет — по центру.
+      expect(anchorOf('question.answer', makeCtx({ pickedId: null }))).toEqual({
+        selector:
+          '[data-question-id="q1"] [data-tour="answer.submit"], [data-question-id="q1"] [data-tour="question.answer"]',
+      })
+      expect(
+        anchorOf('question.answer', makeCtx({ pickedId: null, openQuestionIds: [] })),
+      ).toBeUndefined()
     })
 
     it('шаг 9: холст, затем симуляция, затем скачивание', () => {
@@ -193,7 +200,7 @@ describe('сценарий тура', () => {
     it('шаг 5: прогон уже идёт — шаг засчитан по данным', () => {
       expect(step('run.start').doneWhen?.(makeCtx({ runActive: true }))).toBe(true)
       expect(step('run.start').doneWhen?.(makeCtx())).toBe(false)
-      expect(signal({ type: 'run.started', id: 'r' }, 'run.start')).toBe(true)
+      expect(signal({ type: 'run.started', id: 'r', projectId: 'p1' }, 'run.start')).toBe(true)
     })
 
     it('шаг 10: ссылка создана и окно закрыто', () => {
@@ -239,7 +246,7 @@ describe('сценарий тура', () => {
         'Читаем источники…',
       )
       expect(viewOf('run.wait', makeCtx({ queued: true }), { elapsedMs: 4000 }).text).toBe(
-        'Модель занята другими запросами, вы следующий.',
+        'Модель занята другими запросами — прогон начнётся, как только она освободится.',
       )
     })
 
@@ -432,6 +439,36 @@ describe('сценарий тура', () => {
     })
   })
 
+  it('шаг 5: пропуск ведёт к шагу 10 (в ожидание несуществующего прогона не пускает)', () => {
+    const skip = step('run.start').actions?.[0]
+    expect(skip?.label).toBe('Пропустить главу')
+    const tour = api()
+    skip?.run(tour)
+    expect(tour.goto).toHaveBeenCalledWith('share.create')
+  })
+
+  it('шаги 7–8: карточка стоит у всей карточки вопроса, подсвечена кнопка внутри неё', () => {
+    const ctx = makeCtx()
+    const answer = step('question.answer').cardAnchor
+    const ignore = step('question.ignore').cardAnchor
+    expect(typeof answer === 'function' && answer(ctx)).toEqual({
+      selector: '[data-question-id="q1"]',
+    })
+    expect(typeof ignore === 'function' && ignore(ctx)).toEqual({
+      selector: '[data-question-id="q2"]',
+    })
+    expect(viewOf('question.answer', ctx).cardAnchor).toEqual({
+      selector: '[data-question-id="q1"]',
+    })
+    expect(viewOf('question.answer', ctx).align).toBe('start')
+  })
+
+  it('шаги 2–4: карточка справа от кнопки, по её верхнему краю', () => {
+    for (const key of ['sources.sample', 'sources.text', 'sources.voice']) {
+      expect(step(key)).toMatchObject({ side: 'right', align: 'start' })
+    }
+  })
+
   it('финал: «Открыть чек-лист» завершает тур и открывает панель, «Готово» только завершает', () => {
     const ctx = makeCtx()
     const view = viewOf('finish', ctx)
@@ -446,12 +483,12 @@ describe('сценарий тура', () => {
     expect(ctx.ui.openChecklist).toHaveBeenCalledTimes(1)
   })
 
-  it('шаг 10: «Дальше» закрывает окно со ссылкой', () => {
+  it('шаг 10: «Далее» закрывает окно со ссылкой', () => {
     const ctx = makeCtx({ shareCreated: true })
     const view = viewOf('share.create', ctx)
     const tour = api()
     view.actions?.[0]?.run(tour)
-    expect(ctx.ui.closeTopDialog).toHaveBeenCalled()
+    expect(ctx.ui.closeShareDialog).toHaveBeenCalled()
     expect(tour.next).toHaveBeenCalled()
   })
 
@@ -492,15 +529,51 @@ describe('сессия тура', () => {
 
   it('прогон: старт сбрасывает прежний итог, окончание записывает новый', async () => {
     startTour('run.wait')
-    await emit({ type: 'run.status', status: 'queued' })
+    useTourSession.getState().setServerProjectId('p1')
+    await emit({ type: 'run.status', status: 'queued', projectId: 'p1' })
     expect(useTourSession.getState().runStatus).toBe('queued')
-    await emit({ type: 'run.finished', status: 'failed', openQuestions: 0, hasDiagram: false })
+    await emit({
+      type: 'run.finished',
+      status: 'failed',
+      openQuestions: 0,
+      hasDiagram: false,
+      projectId: 'p1',
+    })
     expect(useTourSession.getState()).toMatchObject({
       runStatus: null,
       runResult: { status: 'failed', openQuestions: 0, hasDiagram: false },
     })
-    await emit({ type: 'run.started', id: 'r2' })
-    expect(useTourSession.getState()).toMatchObject({ runSeen: true, runResult: null })
+    useTourSession.getState().setRetryPending(true)
+    await emit({ type: 'run.started', id: 'r2', projectId: 'p1' })
+    expect(useTourSession.getState()).toMatchObject({ runResult: null, retryPending: false })
+  })
+
+  it('прогон другого проекта (тур на паузе) итог учебного не затирает', async () => {
+    startTour('run.wait')
+    useTourSession.getState().setServerProjectId('p1')
+    useTourSession
+      .getState()
+      .setRunResult({ status: 'succeeded', openQuestions: 2, hasDiagram: true })
+    await emit({ type: 'run.started', id: 'r9', projectId: 'other' })
+    await emit({
+      type: 'run.finished',
+      status: 'failed',
+      openQuestions: 0,
+      hasDiagram: false,
+      projectId: 'other',
+    })
+    expect(useTourSession.getState().runResult).toEqual({
+      status: 'succeeded',
+      openQuestions: 2,
+      hasDiagram: true,
+    })
+  })
+
+  it('сброс не забывает учебный проект с сервера', () => {
+    useTourSession.getState().setServerProjectId('p1')
+    useTourSession.getState().setPickedId('q1')
+    resetTourSession()
+    expect(useTourSession.getState()).toMatchObject({ serverProjectId: 'p1', pickedId: null })
   })
 
   it('ответ и ссылка запоминаются на своих шагах', async () => {

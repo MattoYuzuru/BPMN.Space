@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { Button, Dialog, DialogContent } from '@/shared/ui'
 import { WELCOME } from './tour/copy'
 
@@ -16,6 +17,7 @@ export interface WelcomeDialogProps {
  * затемнению не закрывает — выбор делается кнопкой; `Esc` равен «Я уже знаком».
  */
 export function WelcomeDialog({ open, onStart, onSkip, pending = false }: WelcomeDialogProps) {
+  const startRef = useRef<HTMLButtonElement>(null)
   return (
     <Dialog open={open} onOpenChange={(next) => !next && !pending && onSkip()}>
       <DialogContent
@@ -23,13 +25,18 @@ export function WelcomeDialog({ open, onStart, onSkip, pending = false }: Welcom
         description={WELCOME.text}
         size="sm"
         hideClose
+        // Enter принимает приглашение, а не отказывается от него: фокус на главной кнопке.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          startRef.current?.focus()
+        }}
         onInteractOutside={(event) => event.preventDefault()}
         footer={
           <>
             <Button variant="secondary" disabled={pending} onClick={onSkip}>
               {WELCOME.skip}
             </Button>
-            <Button variant="primary" loading={pending} onClick={onStart}>
+            <Button ref={startRef} variant="primary" loading={pending} onClick={onStart}>
               {WELCOME.start}
             </Button>
           </>

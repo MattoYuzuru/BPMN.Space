@@ -39,17 +39,17 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
     let finished = false
     let poller: ReturnType<typeof setInterval> | undefined
     let running = activeRun.status === 'running'
-    emitOnboardingSignal({ type: 'run.started', id: runId })
     emitOnboardingSignal({
       type: 'run.status',
       status: activeRun.status === 'queued' ? 'queued' : 'running',
+      projectId,
     })
 
     const handle = (event: RunEvent) => {
       apply(projectId, event)
       if (event.type === 'stage' && !running) {
         running = true
-        emitOnboardingSignal({ type: 'run.status', status: 'running' })
+        emitOnboardingSignal({ type: 'run.status', status: 'running', projectId })
       }
       switch (event.type) {
         case 'question':
@@ -93,6 +93,7 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
           openQuestions:
             project?.questions.filter((question) => question.status === 'open').length ?? 0,
           hasDiagram: Boolean(project?.latest_version),
+          projectId,
         })
       })
       if (run.status !== 'succeeded') return

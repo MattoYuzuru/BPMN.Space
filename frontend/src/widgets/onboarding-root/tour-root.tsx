@@ -18,6 +18,7 @@ import { createTourPersistence } from '@/features/onboarding/tour/create-persist
 import { resetTourSession, useTourSession } from '@/features/onboarding/tour/session'
 import { tourSteps } from '@/features/onboarding/tour/steps'
 import { useAnchorPresence } from '@/features/onboarding/tour/use-anchor-presence'
+import { useShareDialogControl } from '@/features/share-project/model'
 import { ApiError } from '@/shared/api/client'
 import { toast } from '@/shared/ui'
 import { useWorkspaceUi } from '@/widgets/workspace/model'
@@ -53,11 +54,7 @@ const ui: TourUi = {
         : null,
     ),
   closeDialogs: () => useWorkspaceUi.getState().setDialog(null),
-  closeTopDialog: () => {
-    const open = [...document.querySelectorAll<HTMLElement>('[role="dialog"][data-state="open"]')]
-    const top = open.filter((node) => !node.closest('[data-tour-layer]')).at(-1)
-    top?.querySelector<HTMLElement>('button[aria-label="Закрыть"]')?.click()
-  },
+  closeShareDialog: () => useShareDialogControl.getState().requestClose(),
   openChecklist: () => useOnboardingUi.getState().openChecklist(),
 }
 
@@ -79,6 +76,9 @@ export default function TourRoot({ state }: { state: OnboardingState }) {
   const projectId = session.projectId ?? serverProjectId
   const serverProjectRef = useRef(serverProjectId)
   serverProjectRef.current = serverProjectId
+  // Сессия знает учебный проект с сервера: сигналы прогонов других проектов она не пропускает.
+  const { setServerProjectId } = session
+  useEffect(() => setServerProjectId(serverProjectId), [serverProjectId, setServerProjectId])
 
   const project = useQuery({
     ...projectQueryOptions(projectId ?? ''),
@@ -105,17 +105,30 @@ export default function TourRoot({ state }: { state: OnboardingState }) {
   const questions = data ? sortQuestions(data.questions) : []
   const openQuestionIds = questions.filter((q) => q.status === 'open').map((q) => q.id)
 
-  // После перезагрузки на шагах после прогона итог прогона берём из данных проекта.
-  const { runSeen, runResult, setRunResult } = session
+  // Итог прогона по данным проекта: после перезагрузки, а также когда прогон закончился, пока никто
+  // не слушал (тур на паузе, поток потерян, трекер размонтирован). Пока «Повторить» не стартовал,
+  // данные прежнего прогона итогом нового не считаются. Уже отвеченные и проигнорированные вопросы
+  // считаются тоже: шаг 8 после перезагрузки не должен исчезнуть из-за ответа в шаге 7.
+  const { retryPending, runResult, setRunResult, setPickedId, pickedId } = session
+  const askedCount = questions.filter(
+    (q) => q.status === 'open' || q.status === 'answered' || q.status === 'ignored',
+  ).length
   useEffect(() => {
     if (!tourActive || !stepKey || !AFTER_RUN.has(stepKey)) return
-    if (!data || data.active_run || runSeen || runResult) return
+    if (!data || data.active_run || retryPending || runResult) return
     setRunResult({
       status: data.latest_version ? 'succeeded' : 'failed',
-      openQuestions: openQuestionIds.length,
+      openQuestions: askedCount,
       hasDiagram: Boolean(data.latest_version),
     })
-  }, [tourActive, stepKey, data, runSeen, runResult, setRunResult, openQuestionIds.length])
+  }, [tourActive, stepKey, data, retryPending, runResult, setRunResult, askedCount])
+
+  // Вопрос шага 7 закрепляется при входе: оптимистичный ответ не уводит прожектор на соседа.
+  const firstOpen = openQuestionIds[0]
+  useEffect(() => {
+    if (tourActive && stepKey === 'question.answer' && !pickedId && firstOpen)
+      setPickedId(firstOpen)
+  }, [tourActive, stepKey, pickedId, firstOpen, setPickedId])
 
   const persistence = useMemo(
     () => createTourPersistence({ client, userId, update: update.mutateAsync }),
@@ -145,7 +158,8 @@ export default function TourRoot({ state }: { state: OnboardingState }) {
     },
     openQuestionIds,
     get pickedId() {
-      return useTourSession.getState().answeredId ?? openQuestionIds[0] ?? null
+      const current = useTourSession.getState()
+      return current.pickedId ?? current.answeredId
     },
     get shareCreated() {
       return useTourSession.getState().shareCreated
@@ -159,8 +173,17 @@ export default function TourRoot({ state }: { state: OnboardingState }) {
         await restart.mutateAsync()
       },
       retryRun: () => {
-        useTourSession.getState().setRunResult(null)
-        startRun.mutate('build')
+        const session = useTourSession.getState()
+        const previous = session.runResult
+        session.setRunResult(null)
+        session.setRetryPending(true)
+        // Не запустился (409, 429): возвращаем прежний итог, иначе шаг ждал бы вечно.
+        startRun.mutate('build', {
+          onError: () => {
+            useTourSession.getState().setRunResult(previous)
+            useTourSession.getState().setRetryPending(false)
+          },
+        })
       },
     },
   }

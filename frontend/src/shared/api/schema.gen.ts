@@ -970,6 +970,12 @@ export interface components {
          */
         ProjectRole: "owner" | "editor" | "viewer";
         /**
+         * ProjectScope
+         * @description Какие проекты показывать в списке: все доступные, свои, где я редактор, демо-примеры.
+         * @enum {string}
+         */
+        ProjectScope: "all" | "own" | "shared" | "examples";
+        /**
          * ProjectStatus
          * @enum {string}
          */
@@ -1897,6 +1903,8 @@ export interface operations {
                 limit?: number;
                 /** @description Поиск по названию */
                 q?: string | null;
+                /** @description Что показывать: `all` — всё доступное (по умолчанию), `own` — свои, `shared` — где вы редактор по приглашению, `examples` — демо-примеры. Без аккаунтов параметр не действует. */
+                scope?: components["schemas"]["ProjectScope"];
             };
             header?: never;
             path?: never;

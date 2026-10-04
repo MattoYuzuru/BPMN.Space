@@ -1,10 +1,12 @@
 import {
   type ChecklistItemKey,
   useChecklistView,
+  useOnboarding,
   useOnboardingUi,
   useRestartTour,
   useSetChecklistHidden,
 } from '@/entities/onboarding'
+import { resetTourSession } from '@/features/onboarding/tour/session'
 import { startTour, useTourStore } from '@/features/onboarding/tour/store'
 import { Button, Sheet, SheetContent } from '@/shared/ui'
 import { ChecklistBody } from './checklist-panel'
@@ -48,6 +50,7 @@ export default function ChecklistSheet() {
   const open = useOnboardingUi((state) => state.checklistOpen)
   const close = useOnboardingUi((state) => state.closeChecklist)
   const view = useChecklistView()
+  const state = useOnboarding().data
   const restart = useRestartTour()
   const setHidden = useSetChecklistHidden()
   const { visit, pending } = useVisitItem()
@@ -56,11 +59,15 @@ export default function ChecklistSheet() {
 
   const onTour = () => {
     if (locked) {
-      // Тур уже идёт: панель закрываем; если он на паузе (ушли с экрана шага) — возвращаем.
+      // Тур идёт на сервере: панель закрываем. Локально он мог не запуститься (другая вкладка,
+      // перезагрузка) — тогда продолжаем с сохранённого шага; на паузе (ушли с экрана) — возвращаем.
       close()
-      if (useTourStore.getState().paused) useTourStore.getState().setPaused(false)
+      const tour = useTourStore.getState()
+      if (tour.status !== 'active') startTour(state?.tour?.step ?? TOUR_FIRST_STEP)
+      else if (tour.paused) tour.setPaused(false)
       return
     }
+    resetTourSession()
     restart.mutate(undefined, {
       onSuccess: () => {
         close()

@@ -1,6 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
-import { onboardingKeys } from '@/entities/onboarding'
 import { type ProjectDetail, projectKeys } from '@/entities/project'
 import { upsertQuestion } from '@/entities/question'
 import {
@@ -82,8 +81,6 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
       clearInterval(poller)
       const refetched = client.invalidateQueries({ queryKey: projectKeys.detail(projectId) })
       void client.invalidateQueries({ queryKey: projectKeys.lists() })
-      // Сервер мог отметить `diagram_built` / `diagram_rebuilt` — перечитываем чек-лист.
-      void client.invalidateQueries({ queryKey: onboardingKeys.all })
       // Сигнал об окончании — после свежего проекта: по нему обучение считает открытые вопросы.
       void Promise.race([
         refetched,

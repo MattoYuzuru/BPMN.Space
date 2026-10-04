@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { transcribeAudio } from '@/features/voice-transcription'
+import { api, errorMessage, postForm, unwrap } from '@/shared/api/client'
 import { Button, Card, FileInput, Icon, Input, Textarea } from '@/shared/ui'
 import './home.css'
 
@@ -21,16 +22,6 @@ const exampleText =
   'Заявитель подаёт заявку на технологическое присоединение. Сетевая организация проверяет комплектность документов. Если документов не хватает, она просит заявителя дополнить заявку. После проверки организация направляет договор и технические условия. Заявитель и сетевая организация выполняют свои мероприятия. Затем специалисты осматривают объект, подписывают акт и подключают объект к электросети.'
 
 type VoiceState = 'idle' | 'recording' | 'transcribing'
-
-async function request<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  if (!response.ok) throw new Error(`API ${response.status}`)
-  return response.json() as Promise<T>
-}
 
 function NewProjectPage() {
   const search = Route.useSearch()
@@ -145,29 +136,40 @@ function NewProjectPage() {
     try {
       const project =
         search.example === 'tp861'
-          ? await request<{ id: string }>('/projects/from-example', { example_id: 'tp861' })
-          : await request<{ id: string }>('/projects', {
-              title: projectTitle,
-              description: source.trim().slice(0, 500) || null,
-            })
+          ? unwrap(
+              await api.POST('/api/v1/projects/from-example', {
+                body: { example_id: 'tp861' },
+              }),
+            )
+          : unwrap(
+              await api.POST('/api/v1/projects', {
+                body: {
+                  title: projectTitle,
+                  description: source.trim().slice(0, 500) || null,
+                },
+              }),
+            )
       projectId = project.id
       if (source.trim() && search.example !== 'tp861') {
-        await request(`/projects/${projectId}/sources/text`, {
-          content: source.trim(),
-          title: 'Описание процесса',
-        })
+        unwrap(
+          await api.POST('/api/v1/projects/{project_id}/sources/text', {
+            params: { path: { project_id: projectId } },
+            body: { content: source.trim(), kind: 'text', title: 'Описание процесса' },
+          }),
+        )
       }
       if (file) {
         const form = new FormData()
         form.append('file', file)
         form.append('title', file.name)
-        const upload = await fetch(`/api/v1/projects/${projectId}/sources/file`, {
-          method: 'POST',
-          body: form,
-        })
-        if (!upload.ok) throw new Error(`Не удалось загрузить документ (${upload.status})`)
+        await postForm(`/api/v1/projects/${projectId}/sources/file`, form)
       }
-      const run = await request<{ id: string }>(`/projects/${projectId}/runs`, { mode: 'build' })
+      const run = unwrap(
+        await api.POST('/api/v1/projects/{project_id}/runs', {
+          params: { path: { project_id: projectId } },
+          body: { mode: 'build' },
+        }),
+      )
       sessionStorage.setItem(`arkhitektor:run:${projectId}`, run.id)
     } catch (error) {
       if (projectId) {
@@ -175,7 +177,7 @@ function NewProjectPage() {
         window.location.assign(`/projects/${projectId}`)
         return
       }
-      setNotice(error instanceof Error ? error.message : 'Не удалось создать проект на сервере.')
+      setNotice(errorMessage(error, 'Не удалось создать проект на сервере.'))
       setWorking(false)
       return
     }

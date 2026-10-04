@@ -15,13 +15,19 @@ class ActiveRunConflictError(Exception):
 
 
 class ProjectRepository(Protocol):
-    async def add(self, project: Project) -> None: ...
+    async def add(self, project: Project, *, owner_id: UUID | None = None) -> None: ...
     async def get(self, project_id: UUID) -> Project | None: ...
     async def update(self, project: Project) -> None: ...
     async def delete(self, project_id: UUID) -> None: ...
 
     async def list_page(
-        self, *, query: str | None, after: PageKey | None, limit: int
+        self,
+        *,
+        query: str | None,
+        after: PageKey | None,
+        limit: int,
+        owner_id: UUID | None = None,
+        scope_to_user: bool = False,
     ) -> list[Project]:
         """Проекты по убыванию (`updated_at`, `id`), строго после ключа `after`.
 
@@ -29,7 +35,9 @@ class ProjectRepository(Protocol):
         """
         ...
 
-    async def count(self, *, query: str | None) -> int: ...
+    async def count(
+        self, *, query: str | None, owner_id: UUID | None = None, scope_to_user: bool = False
+    ) -> int: ...
 
 
 class SourceRepository(Protocol):

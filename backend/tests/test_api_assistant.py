@@ -34,6 +34,7 @@ def test_assistant_requires_non_empty_message(client) -> None:
 def test_configured_assistant_sends_server_project_context_to_deepseek() -> None:
     settings = Settings(
         mock_delay_scale=0,
+        auth_enabled=False,
         llm_provider="deepseek",
         deepseek_api_key="test-only",
     )
@@ -69,6 +70,7 @@ def test_configured_assistant_sends_server_project_context_to_deepseek() -> None
 def test_local_draft_chat_sends_its_source_without_persisting_it() -> None:
     settings = Settings(
         mock_delay_scale=0,
+        auth_enabled=False,
         llm_provider="deepseek",
         deepseek_api_key="test-only",
     )

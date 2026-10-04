@@ -24,6 +24,8 @@ class InMemoryStore:
     runs: dict[UUID, Run] = field(default_factory=dict[UUID, Run])
     versions: dict[UUID, Version] = field(default_factory=dict[UUID, Version])
     llm_calls: dict[UUID, LlmCall] = field(default_factory=dict[UUID, LlmCall])
+    project_owners: dict[UUID, UUID] = field(default_factory=dict[UUID, UUID])
+    public_projects: set[UUID] = field(default_factory=set[UUID])
 
     def load(
         self,
@@ -36,6 +38,7 @@ class InMemoryStore:
     ) -> None:
         """Синхронная загрузка сида при старте приложения."""
         self.projects.update({p.id: copy.deepcopy(p) for p in projects})
+        self.public_projects.update(p.id for p in projects)
         self.sources.update({s.id: copy.deepcopy(s) for s in sources})
         self.questions.update({q.id: copy.deepcopy(q) for q in questions})
         self.runs.update({r.id: copy.deepcopy(r) for r in runs})
@@ -58,10 +61,15 @@ def _sort_key(project: Project) -> PageKey:
 
 class InMemoryProjectRepository:
     def __init__(self, store: InMemoryStore) -> None:
+        self._store = store
         self._items = store.projects
 
-    async def add(self, project: Project) -> None:
+    async def add(self, project: Project, *, owner_id: UUID | None = None) -> None:
         self._items[project.id] = copy.deepcopy(project)
+        if owner_id is None:
+            self._store.public_projects.add(project.id)
+        else:
+            self._store.project_owners[project.id] = owner_id
 
     async def get(self, project_id: UUID) -> Project | None:
         item = self._items.get(project_id)
@@ -72,21 +80,46 @@ class InMemoryProjectRepository:
 
     async def delete(self, project_id: UUID) -> None:
         self._items.pop(project_id, None)
+        self._store.project_owners.pop(project_id, None)
+        self._store.public_projects.discard(project_id)
 
     def _matching(self, query: str | None) -> list[Project]:
         needle = normalize(query or "")
         return [p for p in self._items.values() if needle in normalize(p.title)]
 
     async def list_page(
-        self, *, query: str | None, after: PageKey | None, limit: int
+        self,
+        *,
+        query: str | None,
+        after: PageKey | None,
+        limit: int,
+        owner_id: UUID | None = None,
+        scope_to_user: bool = False,
     ) -> list[Project]:
         items = sorted(self._matching(query), key=_sort_key, reverse=True)
+        if scope_to_user:
+            items = [
+                project
+                for project in items
+                if project.id in self._store.public_projects
+                or (owner_id is not None and self._store.project_owners.get(project.id) == owner_id)
+            ]
         if after is not None:
             items = [p for p in items if _sort_key(p) < after]
         return [copy.deepcopy(p) for p in items[:limit]]
 
-    async def count(self, *, query: str | None) -> int:
-        return len(self._matching(query))
+    async def count(
+        self, *, query: str | None, owner_id: UUID | None = None, scope_to_user: bool = False
+    ) -> int:
+        items = self._matching(query)
+        if scope_to_user:
+            items = [
+                project
+                for project in items
+                if project.id in self._store.public_projects
+                or (owner_id is not None and self._store.project_owners.get(project.id) == owner_id)
+            ]
+        return len(items)
 
 
 class InMemorySourceRepository:

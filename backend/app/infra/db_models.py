@@ -1,11 +1,14 @@
 """Реляционная схема хранения (RFC §5.7)."""
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTableUUID
+from fastapi_users_db_sqlalchemy.access_token import SQLAlchemyBaseAccessTokenTableUUID
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -18,11 +21,34 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
 
 
 class Base(DeclarativeBase):
     pass
+
+
+class UserRow(SQLAlchemyBaseUserTableUUID, Base):
+    """Учётная запись; пароли хеширует FastAPI Users с Argon2."""
+
+    __tablename__ = "users"
+
+
+class AccessTokenRow(SQLAlchemyBaseAccessTokenTableUUID, Base):
+    """Отзываемая серверная сессия пользователя."""
+
+    __tablename__ = "access_tokens"
+
+    if TYPE_CHECKING:
+        token: str
+        user_id: UUID
+    else:
+
+        @declared_attr
+        def user_id(cls) -> Mapped[UUID]:  # noqa: N805 - SQLAlchemy declared_attr uses cls
+            return mapped_column(
+                Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+            )
 
 
 class ProjectRow(Base):
@@ -35,6 +61,54 @@ class ProjectRow(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, index=True
     )
+    owner_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL", name="fk_projects_owner_id_users"),
+        index=True,
+    )
+    public_read_only: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+
+
+class ProjectMemberRow(Base):
+    __tablename__ = "project_members"
+    __table_args__ = (CheckConstraint("role = 'editor'", name="ck_project_members_role"),)
+    project_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="editor")
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ProjectShareLinkRow(Base):
+    __tablename__ = "project_share_links"
+    __table_args__ = (
+        CheckConstraint("role IN ('viewer', 'editor')", name="ck_project_share_links_role"),
+        CheckConstraint(
+            "expires_at IS NULL OR expires_at > created_at",
+            name="ck_project_share_links_expiry",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    project_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_by: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class SourceRow(Base):

@@ -41,15 +41,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   ),
 })
 
-/** Корень: экран маршрута и глобальные слои — палитра команд и создание проекта (кроме входа). */
+/** Корень: экран маршрута и глобальные слои — палитра команд и создание проекта (кроме входа и страницы по ссылке). */
 function RootLayout() {
   const onLogin = useMatch({ from: '/login', shouldThrow: false })
+  const onShare = useMatch({ from: '/share/$token', shouldThrow: false })
+  const standalone = Boolean(onLogin || onShare)
   const createRequested = useCreateProjectDialog((state) => state.open || state.loaded)
   return (
     <>
       <Outlet />
-      {!onLogin && <CommandCenter />}
-      {!onLogin && createRequested && (
+      {!standalone && <CommandCenter />}
+      {!standalone && createRequested && (
         <Suspense fallback={null}>
           <CreateProjectDialog />
         </Suspense>

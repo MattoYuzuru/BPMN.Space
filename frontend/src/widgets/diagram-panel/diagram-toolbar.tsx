@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { VERSION_ORIGIN, type VersionDetail } from '@/entities/version'
+import { VERSION_ORIGIN, type VersionDetail, versionLabel } from '@/entities/version'
 import { cn } from '@/shared/lib/cn'
 import { formatRelative } from '@/shared/lib/format'
 import {
@@ -49,7 +49,7 @@ export function DiagramToolbar({
   propertiesOpen,
   onPropertiesToggle,
 }: DiagramToolbarProps) {
-  const { editorRef, viewVersion } = useWorkspace()
+  const { editorRef, viewVersion, versions } = useWorkspace()
   const setSheet = useWorkspaceUi((state) => state.setSheet)
   const [minimap, setMinimap] = useState(false)
   const [simulation, setSimulation] = useState(false)
@@ -60,7 +60,16 @@ export function DiagramToolbar({
   return (
     <div className="@container flex h-11 shrink-0 items-center gap-2 border-b border-border bg-surface px-2.5">
       <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
-        {version && origin && (
+        {version && origin && !versions.history && (
+          <span className="flex items-center gap-1.5 px-2 type-ui text-fg-muted">
+            <Icon name={origin.icon} size={16} />
+            {versionLabel(version)}
+            <span className="hidden font-normal text-fg-subtle @3xl:inline" data-numeric>
+              {formatRelative(new Date(version.created_at))}
+            </span>
+          </span>
+        )}
+        {version && origin && versions.history && (
           <Tooltip content="История версий" side="bottom">
             <Button
               variant="ghost"

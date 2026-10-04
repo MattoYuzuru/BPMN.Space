@@ -17,10 +17,14 @@ export {
 export {
   isReadOnly,
   isRunning,
+  PROJECT_SCOPES,
   PROJECT_STATUS,
   type ProjectAccess,
   type ProjectCapabilities,
+  type ProjectScope,
   type ProjectStatus,
   projectCapabilities,
   projectStatusView,
+  scopeFromSearch,
+  scopeToSearch,
 } from './model'

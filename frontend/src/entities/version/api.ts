@@ -1,6 +1,12 @@
-import { queryOptions, useMutation, useQueryClient } from '@tanstack/react-query'
+import {
+  type QueryKey,
+  queryOptions,
+  type UseQueryOptions,
+  useMutation,
+  useQueryClient,
+} from '@tanstack/react-query'
 import { type ProjectDetail, projectKeys } from '@/entities/project'
-import { api, errorMessage, unwrap } from '@/shared/api/client'
+import { api, errorMessage, unwrap, versionXmlUrl } from '@/shared/api/client'
 import { toast } from '@/shared/ui'
 import { type Version, type VersionDetail, versionLabel } from './model'
 
@@ -12,7 +18,7 @@ export const versionKeys = {
 }
 
 export function versionsQueryOptions(projectId: string) {
-  return queryOptions({
+  return queryOptions<Version[], Error, Version[], QueryKey>({
     queryKey: versionKeys.list(projectId),
     queryFn: async ({ signal }) =>
       unwrap(
@@ -25,7 +31,7 @@ export function versionsQueryOptions(projectId: string) {
 }
 
 export function versionDetailOptions(versionId: string) {
-  return queryOptions({
+  return queryOptions<VersionDetail, Error, VersionDetail, QueryKey>({
     queryKey: versionKeys.detail(versionId),
     queryFn: async ({ signal }) =>
       unwrap(
@@ -79,4 +85,27 @@ export function useSaveDiagram(projectId: string) {
     onSettled: () => client.invalidateQueries({ queryKey: versionKeys.list(projectId) }),
   })
   return mutation
+}
+
+/**
+ * Откуда рабочее место берёт версии схемы. У проекта аккаунта это обычные запросы по id версии;
+ * у публичной ссылки — свои (`entities/share`), потому что по ней открыта только последняя
+ * версия и только через путь ссылки. Виджеты не знают, какой источник им достался.
+ */
+export interface VersionSource {
+  /** Версия с XML. */
+  detail: (versionId: string) => UseQueryOptions<VersionDetail, Error, VersionDetail, QueryKey>
+  /** Список версий проекта (новые первыми). */
+  list: (projectId: string) => UseQueryOptions<Version[], Error, Version[], QueryKey>
+  /** Адрес скачивания файла .bpmn. */
+  xmlUrl: (versionId: string) => string
+  /** Есть ли история: выбор старых версий и их просмотр. */
+  history: boolean
+}
+
+export const projectVersionSource: VersionSource = {
+  detail: versionDetailOptions,
+  list: versionsQueryOptions,
+  xmlUrl: versionXmlUrl,
+  history: true,
 }

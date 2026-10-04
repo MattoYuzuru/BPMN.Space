@@ -19,6 +19,7 @@ import {
   TypographySection,
 } from './foundations'
 import { OverlaysSection } from './overlays'
+import { SharingSection } from './sharing'
 
 const NAV = [
   {
@@ -52,6 +53,7 @@ const NAV = [
     group: 'Сборка',
     items: [
       ['account', 'Аккаунт и доступ'],
+      ['sharing', 'Общий доступ'],
       ['example', 'Пример экрана'],
     ],
   },
@@ -197,6 +199,7 @@ export function StyleguidePage() {
           <FeedbackSection />
           <LayoutSection />
           <AccountSection />
+          <SharingSection />
           <ExampleSection />
         </div>
       </main>

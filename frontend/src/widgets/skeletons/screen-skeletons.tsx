@@ -106,3 +106,21 @@ export function WorkspaceSkeleton() {
     </div>
   )
 }
+
+/** Заглушка страницы по ссылке: знак и карточка по центру, как у приглашения. */
+export function ShareSkeleton() {
+  return (
+    <div className="flex min-h-dvh flex-col bg-bg" aria-busy="true">
+      <div className="flex h-14 shrink-0 items-center justify-end px-4 wide:px-5">
+        <Skeleton className="h-6 w-24" />
+      </div>
+      <main className="grid flex-1 place-items-center px-6 pb-16">
+        <div className="flex w-full max-w-sm flex-col items-center gap-6">
+          <BrandMark size="lg" />
+          <Skeleton className="h-6 w-56" />
+          <Skeleton className="h-40 w-full rounded-lg" />
+        </div>
+      </main>
+    </div>
+  )
+}

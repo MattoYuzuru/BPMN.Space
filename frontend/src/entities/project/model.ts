@@ -52,3 +52,24 @@ export function projectCapabilities(access: ProjectAccess): ProjectCapabilities 
 export function isReadOnly(access: ProjectAccess): boolean {
   return !projectCapabilities(access).canEdit
 }
+
+export type ProjectScope = Schemas['ProjectScope']
+
+/** Области списка проектов: подпись для переключателя и пустого состояния. */
+export const PROJECT_SCOPES: { value: ProjectScope; label: string }[] = [
+  { value: 'all', label: 'Все' },
+  { value: 'own', label: 'Мои' },
+  { value: 'shared', label: 'Общие' },
+  { value: 'examples', label: 'Примеры' },
+]
+
+/** Область из адреса: незнакомое значение и «все» — это область по умолчанию. */
+export function scopeFromSearch(value: unknown): ProjectScope {
+  const known = PROJECT_SCOPES.find((scope) => scope.value === value)
+  return known ? known.value : 'all'
+}
+
+/** Область для адреса: по умолчанию («все») параметр не пишем. */
+export function scopeToSearch(scope: ProjectScope): Exclude<ProjectScope, 'all'> | undefined {
+  return scope === 'all' ? undefined : scope
+}

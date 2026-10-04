@@ -1,11 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import {
-  hasDiff,
-  VERSION_ORIGIN,
-  type Version,
-  versionLabel,
-  versionsQueryOptions,
-} from '@/entities/version'
+import { hasDiff, VERSION_ORIGIN, type Version, versionLabel } from '@/entities/version'
 import { cn } from '@/shared/lib/cn'
 import { formatDate, formatTime } from '@/shared/lib/format'
 import { Badge, Button, Icon, Sheet, SheetContent, Skeleton } from '@/shared/ui'
@@ -13,10 +7,10 @@ import { useWorkspace, useWorkspaceUi } from '@/widgets/workspace/model'
 
 /** История версий схемы: таймлайн с происхождением, датой и диффом; старые — только просмотр. */
 export function VersionsSheet() {
-  const { project, viewedVersionId, viewVersion } = useWorkspace()
+  const { project, viewedVersionId, viewVersion, versions: source } = useWorkspace()
   const sheet = useWorkspaceUi((state) => state.sheet)
   const setSheet = useWorkspaceUi((state) => state.setSheet)
-  const versions = useQuery({ ...versionsQueryOptions(project.id), enabled: sheet === 'versions' })
+  const versions = useQuery({ ...source.list(project.id), enabled: sheet === 'versions' })
   const currentId = viewedVersionId ?? project.latest_version?.id
 
   return (

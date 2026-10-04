@@ -14,6 +14,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as StyleguideRouteImport } from './routes/styleguide'
 import { Route as AppIndexRouteImport } from './routes/_app.index'
 import { Route as DevDiagramRouteImport } from './routes/dev.diagram'
+import { Route as ShareTokenRouteImport } from './routes/share.$token'
 import { Route as AppProjectsIndexRouteImport } from './routes/_app.projects.index'
 import { Route as AppProjectsProjectIdRouteImport } from './routes/_app.projects.$projectId'
 import { Route as AppStudioProjectIdRouteImport } from './routes/_app.studio.$projectId'
@@ -42,6 +43,11 @@ const DevDiagramRoute = DevDiagramRouteImport.update({
   path: '/dev/diagram',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ShareTokenRoute = ShareTokenRouteImport.update({
+  id: '/share/$token',
+  path: '/share/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppProjectsIndexRoute = AppProjectsIndexRouteImport.update({
   id: '/projects/',
   path: '/projects/',
@@ -63,6 +69,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/styleguide': typeof StyleguideRoute
   '/dev/diagram': typeof DevDiagramRoute
+  '/share/$token': typeof ShareTokenRoute
   '/projects/$projectId': typeof AppProjectsProjectIdRoute
   '/studio/$projectId': typeof AppStudioProjectIdRoute
   '/projects/': typeof AppProjectsIndexRoute
@@ -71,6 +78,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/styleguide': typeof StyleguideRoute
   '/dev/diagram': typeof DevDiagramRoute
+  '/share/$token': typeof ShareTokenRoute
   '/': typeof AppIndexRoute
   '/projects/$projectId': typeof AppProjectsProjectIdRoute
   '/studio/$projectId': typeof AppStudioProjectIdRoute
@@ -82,6 +90,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/styleguide': typeof StyleguideRoute
   '/dev/diagram': typeof DevDiagramRoute
+  '/share/$token': typeof ShareTokenRoute
   '/_app/': typeof AppIndexRoute
   '/_app/projects/$projectId': typeof AppProjectsProjectIdRoute
   '/_app/studio/$projectId': typeof AppStudioProjectIdRoute
@@ -94,6 +103,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/styleguide'
     | '/dev/diagram'
+    | '/share/$token'
     | '/projects/$projectId'
     | '/studio/$projectId'
     | '/projects/'
@@ -102,6 +112,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/styleguide'
     | '/dev/diagram'
+    | '/share/$token'
     | '/'
     | '/projects/$projectId'
     | '/studio/$projectId'
@@ -112,6 +123,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/styleguide'
     | '/dev/diagram'
+    | '/share/$token'
     | '/_app/'
     | '/_app/projects/$projectId'
     | '/_app/studio/$projectId'
@@ -123,6 +135,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   StyleguideRoute: typeof StyleguideRoute
   DevDiagramRoute: typeof DevDiagramRoute
+  ShareTokenRoute: typeof ShareTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -160,6 +173,13 @@ declare module '@tanstack/react-router' {
       path: '/dev/diagram'
       fullPath: '/dev/diagram'
       preLoaderRoute: typeof DevDiagramRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/share/$token': {
+      id: '/share/$token'
+      path: '/share/$token'
+      fullPath: '/share/$token'
+      preLoaderRoute: typeof ShareTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/projects/': {
@@ -207,6 +227,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   StyleguideRoute: StyleguideRoute,
   DevDiagramRoute: DevDiagramRoute,
+  ShareTokenRoute: ShareTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -14,6 +14,8 @@ describe('sanitizeRedirect', () => {
     ['/projects/abc', '/projects/abc'],
     ['/projects/abc?question=q1&mark=2', '/projects/abc?question=q1&mark=2'],
     ['/?q=схема', '/?q=схема'],
+    ['/share/Ab3-_xYz9', '/share/Ab3-_xYz9'],
+    ['/share/Ab3-_xYz9?question=q1', '/share/Ab3-_xYz9?question=q1'],
   ])('пропускает путь этого же сайта %s', (input, expected) => {
     expect(sanitizeRedirect(input)).toBe(expected)
   })

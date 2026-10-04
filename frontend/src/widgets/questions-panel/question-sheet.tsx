@@ -7,7 +7,7 @@ import {
   SEVERITY,
   useQuestionAction,
 } from '@/entities/question'
-import { diagramElements, elementTypeLabel, versionDetailOptions } from '@/entities/version'
+import { diagramElements, elementTypeLabel } from '@/entities/version'
 import { AnswerComposer } from '@/features/answer-question/answer-composer'
 import { formatDate, formatTime } from '@/shared/lib/format'
 import {
@@ -36,11 +36,11 @@ export function QuestionSheet() {
 }
 
 function QuestionDetail({ question }: { question: Question }) {
-  const { project, canEdit, selectQuestion, focusElements } = useWorkspace()
+  const { project, canEdit, selectQuestion, focusElements, versions } = useWorkspace()
   const close = useWorkspaceUi((state) => state.openQuestionSheet)
   const action = useQuestionAction(project.id)
   const latest = project.latest_version
-  const xml = useQuery({ ...versionDetailOptions(latest?.id ?? ''), enabled: Boolean(latest) })
+  const xml = useQuery({ ...versions.detail(latest?.id ?? ''), enabled: Boolean(latest) })
   const elements = xml.data ? diagramElements(xml.data.xml) : null
   const kind = QUESTION_KIND[question.kind]
   const severity = SEVERITY[question.severity]

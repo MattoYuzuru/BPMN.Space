@@ -1,5 +1,7 @@
 export {
+  projectVersionSource,
   useSaveDiagram,
+  type VersionSource,
   versionDetailOptions,
   versionKeys,
   versionsQueryOptions,

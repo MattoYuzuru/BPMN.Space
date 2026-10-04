@@ -2,13 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { AnimatePresence, m } from 'motion/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRunView } from '@/entities/run'
-import {
-  addedElementIds,
-  diagramElements,
-  useSaveDiagram,
-  versionDetailOptions,
-  versionsQueryOptions,
-} from '@/entities/version'
+import { addedElementIds, diagramElements, useSaveDiagram } from '@/entities/version'
 import { useDebouncedCallback } from '@/shared/hooks/use-debounced'
 import { floatingPanel } from '@/shared/lib/motion'
 import { Skeleton, toast } from '@/shared/ui'
@@ -24,11 +18,12 @@ const SAVE_DEBOUNCE_MS = 1500
 
 /** Центральная панель: схема в bpmn-js, тулбар, ход прогона и карточка элемента. */
 export function DiagramPanel() {
-  const { project, canEdit, editorRef, viewedVersionId, selectedQuestionId } = useWorkspace()
+  const { project, canEdit, editorRef, viewedVersionId, selectedQuestionId, versions } =
+    useWorkspace()
   const latest = project.latest_version
   const versionId = viewedVersionId ?? latest?.id
-  const version = useQuery({ ...versionDetailOptions(versionId ?? ''), enabled: !!versionId })
-  const versions = useQuery({ ...versionsQueryOptions(project.id), enabled: !!latest })
+  const version = useQuery({ ...versions.detail(versionId ?? ''), enabled: !!versionId })
+  const versionList = useQuery({ ...versions.list(project.id), enabled: !!latest })
   const run = useRunView(project.id)
   const isLatest = !viewedVersionId || viewedVersionId === latest?.id
   // Анализ схему не меняет — править можно; сборка заменит схему, поэтому на её время только просмотр.
@@ -53,9 +48,9 @@ export function DiagramPanel() {
   const elements = useMemo(() => diagramElements(xml), [xml])
 
   // Предыдущая версия нужна только для маркера «добавлено».
-  const previous = versions.data?.find((item) => item.number === (version.data?.number ?? 0) - 1)
+  const previous = versionList.data?.find((item) => item.number === (version.data?.number ?? 0) - 1)
   const previousXml = useQuery({
-    ...versionDetailOptions(previous?.id ?? ''),
+    ...versions.detail(previous?.id ?? ''),
     enabled: markers.added && !!previous && (version.data?.diff.added ?? 0) > 0,
   })
 

@@ -1,9 +1,10 @@
 import { useQueryErrorResetBoundary } from '@tanstack/react-query'
 import { type ErrorComponentProps, Link, useRouter } from '@tanstack/react-router'
 import { useEffect } from 'react'
-import { ApiError } from '@/shared/api/client'
+import { ApiError, errorMessage } from '@/shared/api/client'
 import { BrandMark, Button, EmptyState, GridBackdrop } from '@/shared/ui'
 import { AppHeader } from '@/widgets/app-header/app-header'
+import { PublicHeader } from '@/widgets/app-header/public-header'
 
 /** 404: адрес не найден. Спокойный экран на сетке, путь назад — к проектам. */
 export function NotFoundScreen() {
@@ -82,5 +83,74 @@ export function RouteErrorScreen({ error, reset }: ErrorComponentProps) {
         />
       </main>
     </div>
+  )
+}
+
+const SHARE_STATES = {
+  invalid: {
+    icon: 'link',
+    title: 'Ссылка недействительна',
+    description: 'Её отозвали, или адрес скопирован не полностью.',
+  },
+  expired: {
+    icon: 'clock',
+    title: 'Срок действия ссылки истёк',
+    description: 'Попросите владельца проекта создать новую.',
+  },
+  failed: {
+    icon: 'alert-circle',
+    title: 'Не удалось открыть ссылку',
+    description: '',
+  },
+} as const
+
+/**
+ * Публичная ссылка не открылась: недействительна (отозвана или неверный адрес), срок истёк или
+ * сбой связи. Каркас как у экрана ошибки маршрута; «Повторить» только там, где повтор поможет.
+ */
+export function ShareStateScreen(props: ShareStateProps) {
+  return (
+    <div className="flex min-h-dvh flex-col bg-bg">
+      <PublicHeader />
+      <main className="relative flex flex-1">
+        <ShareStateBody className="flex-1" {...props} />
+      </main>
+    </div>
+  )
+}
+
+interface ShareStateProps {
+  kind: keyof typeof SHARE_STATES
+  error?: unknown
+  onRetry?: () => void
+}
+
+/** Содержимое экрана недоступной ссылки без шапки — его же показывает витрина стайлгайда. */
+export function ShareStateBody({
+  kind,
+  error,
+  onRetry,
+  className,
+}: ShareStateProps & { className?: string }) {
+  const state = SHARE_STATES[kind]
+  return (
+    <EmptyState
+      className={className}
+      icon={state.icon}
+      title={state.title}
+      description={kind === 'failed' ? errorMessage(error) : state.description}
+      action={
+        <>
+          {kind === 'failed' && onRetry && (
+            <Button variant="primary" onClick={onRetry}>
+              Повторить
+            </Button>
+          )}
+          <Button asChild variant={kind === 'failed' ? 'secondary' : 'primary'}>
+            <Link to="/">К проектам</Link>
+          </Button>
+        </>
+      }
+    />
   )
 }

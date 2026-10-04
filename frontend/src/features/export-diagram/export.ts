@@ -50,11 +50,13 @@ export async function exportDiagram(options: {
   versionNumber: number
   title: string
   editor: DiagramEditorHandle | null
+  /** Откуда скачать .bpmn; по умолчанию — адрес версии проекта аккаунта. */
+  xmlUrl?: string
 }) {
   const fileName = exportFileName(options.title, options.versionNumber, options.format)
   try {
     if (options.format === 'bpmn') {
-      save(versionXmlUrl(options.versionId), fileName)
+      save(options.xmlUrl ?? versionXmlUrl(options.versionId), fileName)
       return
     }
     if (!options.editor) throw new Error('Редактор схемы ещё не загрузился')

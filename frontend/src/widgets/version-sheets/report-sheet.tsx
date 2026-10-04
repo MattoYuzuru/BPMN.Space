@@ -1,11 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
-import {
-  diagramElements,
-  type VersionDetail,
-  versionDetailOptions,
-  versionLabel,
-} from '@/entities/version'
+import { diagramElements, type VersionDetail, versionLabel } from '@/entities/version'
 import { EXPORT_FORMATS, exportDiagram } from '@/features/export-diagram/export'
 import { cn } from '@/shared/lib/cn'
 import {
@@ -22,12 +17,12 @@ import { useWorkspace, useWorkspaceUi } from '@/widgets/workspace/model'
 
 /** Отчёт проверки версии: XSD, замечания линтера, допущения, изменения и скачивание. */
 export function ReportSheet() {
-  const { project, viewedVersionId } = useWorkspace()
+  const { project, viewedVersionId, versions } = useWorkspace()
   const sheet = useWorkspaceUi((state) => state.sheet)
   const setSheet = useWorkspaceUi((state) => state.setSheet)
   const versionId = viewedVersionId ?? project.latest_version?.id
   const version = useQuery({
-    ...versionDetailOptions(versionId ?? ''),
+    ...versions.detail(versionId ?? ''),
     enabled: sheet === 'report' && !!versionId,
   })
   return (
@@ -52,7 +47,7 @@ export function ReportSheet() {
 }
 
 function Report({ version }: { version: VersionDetail }) {
-  const { project, editorRef, selectQuestion, focusElements } = useWorkspace()
+  const { project, editorRef, selectQuestion, focusElements, versions } = useWorkspace()
   const setSheet = useWorkspaceUi((state) => state.setSheet)
   const elements = diagramElements(version.xml)
   const nameOf = (id?: string | null) => (id ? elements.get(id)?.name || id : undefined)
@@ -193,6 +188,7 @@ function Report({ version }: { version: VersionDetail }) {
                   versionNumber: version.number,
                   title: project.title,
                   editor: editorRef.current,
+                  xmlUrl: versions.xmlUrl(version.id),
                 })
               }
             >

@@ -48,6 +48,7 @@ export function ProjectCard({ project }: { project: Project }) {
                 {status.label}
               </Badge>
               {isReadOnly(project.access) && <Tag icon="lock">Пример</Tag>}
+              {project.access === 'editor' && <Tag icon="users">Общий</Tag>}
             </div>
             <div className="flex flex-col gap-1">
               <h2 className="line-clamp-2 type-subheading text-md text-fg">{project.title}</h2>

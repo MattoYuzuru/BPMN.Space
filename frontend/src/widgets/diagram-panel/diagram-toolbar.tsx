@@ -182,7 +182,7 @@ export function DiagramToolbar({
         <IconButton
           icon={simulation ? 'player-stop' : 'player-play'}
           size="sm"
-          label={simulation ? 'Остановить симуляцию' : 'Симуляция токена'}
+          label={simulation ? 'Остановить таймлайн' : 'Таймлайн процесса'}
           aria-pressed={simulation}
           disabled={!ready}
           className={toggleClass(simulation)}

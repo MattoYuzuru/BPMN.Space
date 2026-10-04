@@ -39,7 +39,7 @@ const META: Record<ChecklistItemKey, Omit<ChecklistItemMeta, 'key'>> = {
   assumption_accepted: { title: 'Принять допущение', group: 'analysis' },
   diagram_rebuilt: { title: 'Перестроить с учётом ответов', group: 'analysis' },
   diagram_edited: { title: 'Изменить схему вручную', group: 'diagram' },
-  simulation_run: { title: 'Запустить симуляцию токена', group: 'diagram' },
+  simulation_run: { title: 'Запустить таймлайн процесса', group: 'diagram' },
   diagram_exported: { title: 'Скачать схему', group: 'diagram' },
   project_shared: { title: 'Поделиться проектом', group: 'team' },
 }

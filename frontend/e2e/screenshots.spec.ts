@@ -133,10 +133,10 @@ test('14 палитра команд', async ({ page }) => {
   await shoot(page, '14-command-palette')
 })
 
-test('15 симуляция токена', async ({ page }) => {
+test('15 таймлайн процесса', async ({ page }) => {
   await openDemo(page)
   await hideToasts(page)
-  await page.getByRole('button', { name: 'Симуляция токена' }).click()
+  await page.getByRole('button', { name: 'Таймлайн процесса' }).click()
   const trigger = page.locator(
     '.djs-overlays[data-container-id="StartEvent_Need"] .bts-context-pad',
   )

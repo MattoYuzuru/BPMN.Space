@@ -53,7 +53,7 @@ const events = (calls: ReturnType<typeof stubApi>) =>
 
 afterEach(() => vi.unstubAllGlobals())
 
-describe('симуляция токена и чек-лист', () => {
+describe('таймлайн процесса и чек-лист', () => {
   it('включение сообщает simulation_run один раз, выключение — ничего не шлёт', async () => {
     let active = false
     const calls = mount(() => {
@@ -61,12 +61,12 @@ describe('симуляция токена и чек-лист', () => {
       return active
     })
     const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: 'Симуляция токена' }))
+    await user.click(screen.getByRole('button', { name: 'Таймлайн процесса' }))
     await waitFor(() => expect(events(calls)).toHaveLength(1))
     expect(events(calls)[0]?.body).toEqual({ item: 'simulation_run' })
 
-    await user.click(screen.getByRole('button', { name: 'Остановить симуляцию' }))
-    await user.click(screen.getByRole('button', { name: 'Симуляция токена' }))
+    await user.click(screen.getByRole('button', { name: 'Остановить таймлайн' }))
+    await user.click(screen.getByRole('button', { name: 'Таймлайн процесса' }))
     await new Promise((resolve) => setTimeout(resolve, 30))
     expect(events(calls)).toHaveLength(1)
   })

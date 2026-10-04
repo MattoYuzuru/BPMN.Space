@@ -9,32 +9,16 @@ import {
 import { showHint } from '@/features/onboarding/hint'
 import { errorMessage } from '@/shared/api/client'
 import { toast } from '@/shared/ui'
-import { getWorkspaceControls, type WorkspaceControls } from '@/widgets/workspace/model'
+import { useWorkspaceUi } from '@/widgets/workspace/model'
 import { setActiveHintItem } from './active-hint'
 import { type ItemVisit, planItemVisit } from './target'
 
-const WORKSPACE_WAIT_MS = 3000
-const WORKSPACE_POLL_MS = 100
-
-/** Рабочее место регистрирует управление после монтирования: дожидаемся его недолго. */
-function whenWorkspaceReady(run: (controls: WorkspaceControls) => void): void {
-  const startedAt = Date.now()
-  const attempt = () => {
-    const controls = getWorkspaceControls()
-    if (controls) return run(controls)
-    if (Date.now() - startedAt < WORKSPACE_WAIT_MS) window.setTimeout(attempt, WORKSPACE_POLL_MS)
-  }
-  attempt()
-}
-
-/** Подготовка экрана перед подсказкой: развернуть панель, выбрать вопрос и показать его на схеме. */
+/** Подготовка экрана перед подсказкой: развернуть панель, показать вопрос на схеме (`?question=` выбирает его сам). */
 export function prepareVisit(visit: ItemVisit): () => void {
   return () => {
-    if (!visit.expand && !visit.focusQuestionId) return
-    whenWorkspaceReady((controls) => {
-      if (visit.expand) controls.expandPanel(visit.expand)
-      if (visit.focusQuestionId) controls.selectQuestion(visit.focusQuestionId, { focus: true })
-    })
+    const ui = useWorkspaceUi.getState()
+    if (visit.expand) ui.expandPanel(visit.expand)
+    if (visit.focusQuestionId) ui.focusQuestion(visit.focusQuestionId)
   }
 }
 

@@ -177,7 +177,8 @@ test('меню, панель, плашка и перезапуск обучен�
     const state = await (await api.get('/api/v1/me/onboarding')).json()
     expect(state.tour.status).toBe('active')
     expect(state.tour.step).toBe('project.create')
-    // пока тур идёт, плашки нет
+    // тур действительно пошёл: карточка первого шага на экране, плашки нет
+    await expect(page.getByRole('dialog', { name: 'Создайте проект' })).toBeVisible()
     await expect(pill(page)).toHaveCount(0)
   })
 })
@@ -235,6 +236,21 @@ test('плашка не перекрывает экран проектов на 
  * Пункты, которые отмечает сама работа, идут одним пользователем подряд: регистрация ограничена
  * по IP, а пункты друг другу не мешают (у каждого свой проект и своё действие).
  */
+test('финал тура: «Открыть чек-лист» открывает панель', async ({ browser, baseURL }) => {
+  const { page, api } = await newcomer(browser, baseURL)
+  const { csrf_token: csrf } = await (await api.get('/api/v1/auth/csrf')).json()
+  const headers = { 'X-CSRF-Token': csrf }
+  expect((await api.post('/api/v1/me/onboarding/tour/restart', { headers })).ok()).toBe(true)
+  const stepped = await api.patch('/api/v1/me/onboarding/tour', {
+    data: { step: 'finish' },
+    headers,
+  })
+  expect(stepped.ok()).toBe(true)
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Открыть чек-лист' }).click()
+  await expect(page.getByRole('dialog', { name: 'Начало работы' })).toBeVisible()
+})
+
 test.describe('переход к пункту и уведомления', () => {
   test.describe.configure({ mode: 'serial' })
   let user: Newcomer

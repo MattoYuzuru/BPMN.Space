@@ -1,8 +1,8 @@
-import { act, renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
 import { useOnboardingUi } from '@/entities/onboarding'
 import { TOUR_ANCHORS } from '@/shared/lib/tour-anchors'
 import { stubApi } from '@/test/api-stub'
-import { registerWorkspaceControls } from '@/widgets/workspace/model'
+import { useWorkspaceUi } from '@/widgets/workspace/model'
 import { useVisitItem } from './visit'
 
 const navigate = vi.fn(async () => {})
@@ -40,8 +40,6 @@ describe('переход к пункту чек-листа', () => {
         body: { route: 'workspace', project_id: 'p1', question_id: 'q1', hint: 'do_item' },
       },
     })
-    const controls = { expandPanel: vi.fn(), selectQuestion: vi.fn() }
-    const unregister = registerWorkspaceControls(controls)
     try {
       act(() => useOnboardingUi.getState().openChecklist())
       const { result } = renderHook(() => useVisitItem())
@@ -71,12 +69,10 @@ describe('переход к пункту чек-листа', () => {
 
       // prepare: раскрыть панель вопросов и выбрать вопрос с показом на схеме
       request.prepare()
-      await waitFor(() =>
-        expect(controls.selectQuestion).toHaveBeenCalledWith('q1', { focus: true }),
-      )
-      expect(controls.expandPanel).toHaveBeenCalledWith('questions')
+      expect(useWorkspaceUi.getState().expandRequest?.panel).toBe('questions')
+      expect(useWorkspaceUi.getState().focusRequest?.questionId).toBe('q1')
     } finally {
-      unregister()
+      useWorkspaceUi.getState().reset()
     }
   })
 

@@ -179,6 +179,7 @@ describe('OnboardingWatcher', () => {
         status: 'succeeded',
         openQuestions: 2,
         hasDiagram: true,
+        projectId: 'p1',
       }),
     )
     expect(spy).toHaveBeenCalledWith({ queryKey: onboardingKeys.all })

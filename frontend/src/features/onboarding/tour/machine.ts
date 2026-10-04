@@ -5,6 +5,7 @@ import type {
   SignalMemory,
   StepAction,
   StepViewContext,
+  TourAlign,
   TourApi,
   TourEndReason,
   TourSide,
@@ -22,6 +23,9 @@ export interface ResolvedView {
   /** Ссылка на якорь; null — по центру экрана без выреза. */
   anchor: AnchorRef | null
   side: TourSide
+  align: TourAlign
+  /** Опора карточки; null — карточка стоит у якоря (выреза). */
+  cardAnchor: AnchorRef | null
   allowOutside: boolean
 }
 
@@ -47,6 +51,15 @@ export function resolveView<Ctx>(step: TourStep<Ctx>, view: StepViewContext<Ctx>
     actions: dynamic.actions ?? step.actions,
     anchor,
     side: page.side ?? dynamic.side ?? step.side ?? 'bottom',
+    align: page.align ?? dynamic.align ?? step.align ?? 'center',
+    cardAnchor:
+      page.cardAnchor !== undefined
+        ? page.cardAnchor
+        : dynamic.cardAnchor !== undefined
+          ? dynamic.cardAnchor
+          : ((typeof step.cardAnchor === 'function'
+              ? step.cardAnchor(view.ctx)
+              : step.cardAnchor) ?? null),
     allowOutside: page.allowOutside ?? dynamic.allowOutside ?? step.allowOutside ?? false,
   }
 }

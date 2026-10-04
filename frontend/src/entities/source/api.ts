@@ -1,6 +1,7 @@
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type ProjectDetail, projectKeys } from '@/entities/project'
 import { api, errorMessage, postForm, type Schemas, unwrap } from '@/shared/api/client'
+import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
 import { toast } from '@/shared/ui'
 import type { Sample, Source } from './model'
 
@@ -53,6 +54,7 @@ export function useAddTextSource(projectId: string) {
     mutationFn: (body: Schemas['SourceTextCreate']) => addTextSource(projectId, body),
     onSuccess: (source) => {
       cache.appendSource(source)
+      emitOnboardingSignal({ type: 'source.added', kind: source.kind })
       toast.success('Источник добавлен', { description: source.title })
     },
     onError: (error) =>
@@ -68,6 +70,7 @@ export function useAddFileSource(projectId: string) {
     mutationFn: (upload: FileUpload) => uploadFileSource(projectId, upload),
     onSuccess: (source) => {
       cache.appendSource(source)
+      emitOnboardingSignal({ type: 'source.added', kind: source.kind })
       toast.success('Документ загружен', { description: source.title })
     },
     onError: (error, { file }) =>
@@ -111,6 +114,7 @@ export function useAddSampleSource(projectId: string) {
     mutationFn: (sampleId: string) => addSampleSource(projectId, sampleId),
     onSuccess: (source) => {
       cache.appendSource(source)
+      emitOnboardingSignal({ type: 'source.added', kind: source.kind })
       toast.success('Источник добавлен', { description: source.title })
     },
     onError: (error) =>

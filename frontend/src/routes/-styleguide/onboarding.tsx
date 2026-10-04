@@ -2,6 +2,7 @@ import { type RefObject, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { HintHost, showHint } from '@/features/onboarding/hint'
 import { startTour, TourHost, useTourStore } from '@/features/onboarding/tour'
+import { WelcomeDialog } from '@/features/onboarding/welcome-dialog'
 import { useTypewriter } from '@/shared/hooks/use-typewriter'
 import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
 import { tourAnchor } from '@/shared/lib/tour-anchors'
@@ -18,6 +19,7 @@ import {
   type Rect,
   SegmentedControl,
   Spotlight,
+  SuggestedTextarea,
   Typewriter,
 } from '@/shared/ui'
 import { createDemoPersistence, DEMO_ANCHORS, DEMO_DIALOG, demoSteps } from './demo-tour'
@@ -286,6 +288,81 @@ function TypewriterDemo() {
   )
 }
 
+const SUGGESTION_DEMO =
+  'Заявитель подаёт заявку на подключение гаража к электросети через личный кабинет. Специалист проверяет заявку и документы. Если чего-то не хватает, заявителю отправляют уведомление, и он дополняет заявку.'
+
+/** Подсказка-автодополнение вживую: «Вставить» или Tab печатают текст в поле, свой ввод её убирает. */
+function SuggestionDemo() {
+  const [run, setRun] = useState(0)
+  const [value, setValue] = useState('')
+  const [title, setTitle] = useState('')
+  return (
+    <div className="flex flex-col gap-4">
+      <Caption>Пустое поле: приглушённое начало подсказки, «Вставить» и «Напишу сам»</Caption>
+      <Field label="Название" optional>
+        <Input
+          value={title}
+          placeholder="Регламент, заметка со встречи, письмо"
+          onChange={(event) => setTitle(event.target.value)}
+        />
+      </Field>
+      <Field label="Текст">
+        <SuggestedTextarea
+          key={run}
+          value={value}
+          minRows={5}
+          maxRows={9}
+          placeholder="Вставьте описание процесса: кто, что и в каком порядке делает"
+          suggestion={SUGGESTION_DEMO}
+          onInsert={() => setTitle((current) => current || 'Описание процесса')}
+          onValueChange={setValue}
+        />
+      </Field>
+      <div>
+        <Button
+          size="sm"
+          leadingIcon="history"
+          onClick={() => {
+            setValue('')
+            setTitle('')
+            setRun((n) => n + 1)
+          }}
+        >
+          Показать заново
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/** Приветствие: окно открывается кнопкой, выбор виден рядом. */
+function WelcomeDemo() {
+  const [open, setOpen] = useState(false)
+  const [choice, setChoice] = useState<string | null>(null)
+  return (
+    <div className="flex flex-col items-start gap-3">
+      <Caption>
+        Без крестика; Esc равен «Я уже знаком», клик по затемнению окно не закрывает
+      </Caption>
+      <Button leadingIcon="sparkles" onClick={() => setOpen(true)}>
+        Показать приветствие
+      </Button>
+      <Badge tone={choice ? 'accent' : 'neutral'}>{choice ?? 'Выбор ещё не сделан'}</Badge>
+      <WelcomeDialog
+        open={open}
+        onStart={() => {
+          setChoice('Пройти обучение')
+          setOpen(false)
+        }}
+        onSkip={() => {
+          setChoice('Я уже знаком')
+          setOpen(false)
+        }}
+      />
+    </div>
+  )
+}
+
 function BeaconDemo() {
   const [run, setRun] = useState(0)
   const stage = useRef<HTMLDivElement>(null)
@@ -456,6 +533,20 @@ export function OnboardingSection() {
       >
         <CoachCardStates />
       </Specimen>
+      <SpecimenGrid>
+        <Specimen
+          title="Приветствие"
+          note="WelcomeDialog: «Пройти обучение» или «Я уже знаком», Esc — отказ"
+        >
+          <WelcomeDemo />
+        </Specimen>
+        <Specimen
+          title="Подсказка-автодополнение"
+          note="SuggestedTextarea: «Вставить» и Tab печатают текст в поле (~120 символов в секунду)"
+        >
+          <SuggestionDemo />
+        </Specimen>
+      </SpecimenGrid>
       <SpecimenGrid>
         <Specimen title="Beacon и подсказка-указатель" note="без затемнения, одна подсказка за раз">
           <BeaconDemo />

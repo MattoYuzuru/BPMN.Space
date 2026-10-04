@@ -100,6 +100,12 @@ export {
 export { Skeleton, SkeletonText } from './skeleton/skeleton'
 export { type Rect, Spotlight, type SpotlightProps } from './spotlight/spotlight'
 export { type StepItem, Stepper, type StepperProps, type StepStatus } from './stepper/stepper'
+export {
+  SUGGESTION_PREVIEW_CHARS,
+  SuggestedTextarea,
+  type SuggestedTextareaProps,
+  suggestionPreview,
+} from './suggested-textarea/suggested-textarea'
 export { Switch, type SwitchProps } from './switch/switch'
 export { Tabs, TabsContent, TabsList, TabsTrigger, type TabsTriggerProps } from './tabs/tabs'
 export { Tag, type TagProps } from './tag/tag'

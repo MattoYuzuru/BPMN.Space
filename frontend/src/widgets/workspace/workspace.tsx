@@ -31,13 +31,7 @@ import { SourceSheet } from '@/widgets/sources-panel/source-sheet'
 import { SourcesPanel } from '@/widgets/sources-panel/sources-panel'
 import { ReportSheet } from '@/widgets/version-sheets/report-sheet'
 import { VersionsSheet } from '@/widgets/version-sheets/versions-sheet'
-import {
-  registerWorkspaceControls,
-  useWorkspace,
-  useWorkspaceUi,
-  type WorkspaceApi,
-  WorkspaceContext,
-} from './model'
+import { useWorkspace, useWorkspaceUi, type WorkspaceApi, WorkspaceContext } from './model'
 
 export interface WorkspaceSearch {
   question?: string
@@ -114,6 +108,20 @@ export function WorkspaceView({
   useDocumentTitle(project.title)
   useEffect(() => () => useWorkspaceUi.getState().reset(), [])
 
+  // Просьба развернуть панель (например, из обучения): панель может быть свёрнута или ещё не готова.
+  const expandRequest = ui.expandRequest
+  useEffect(() => {
+    if (!expandRequest) return
+    const expand = () => {
+      const panel = expandRequest.panel === 'sources' ? sourcesRef.current : questionsRef.current
+      if (panel?.isCollapsed()) panel.expand()
+    }
+    expand()
+    // Раскладка могла ещё не примениться (экран только открыт): повторяем, когда она готова.
+    const timer = window.setTimeout(expand, 400)
+    return () => window.clearTimeout(timer)
+  }, [expandRequest, sourcesRef, questionsRef])
+
   const api = useMemo<WorkspaceApi>(
     () => ({
       project,
@@ -148,15 +156,13 @@ export function WorkspaceView({
     ],
   )
 
+  // Просьба показать вопрос на схеме (из чек-листа): выбор и фокус делает сам экран.
+  const focusRequest = ui.focusRequest
   const { selectQuestion } = api
-  useEffect(
-    () =>
-      registerWorkspaceControls({
-        expandPanel: (panel) => (panel === 'sources' ? sourcesRef : questionsRef).current?.expand(),
-        selectQuestion,
-      }),
-    [selectQuestion, sourcesRef, questionsRef],
-  )
+  // biome-ignore lint/correctness/useExhaustiveDependencies: только новая просьба
+  useEffect(() => {
+    if (focusRequest) selectQuestion(focusRequest.questionId, { focus: true })
+  }, [focusRequest])
 
   return (
     <WorkspaceContext.Provider value={api}>
@@ -230,6 +236,7 @@ export function WorkspaceView({
         <>
           <AddTextDialog
             projectId={project.id}
+            suggestion={ui.textSuggestion}
             open={ui.dialog === 'text'}
             onOpenChange={(open) => ui.setDialog(open ? 'text' : null)}
           />

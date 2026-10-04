@@ -1,17 +1,17 @@
 import { create } from 'zustand'
 
-/**
- * Нейтральное состояние интерфейса онбординга. Через него меню аккаунта, плашка прогресса,
- * уведомления и сценарий тура просят открыть панель «Начало работы», не импортируя друг друга.
- */
-interface OnboardingUiState {
-  /** Открыта ли боковая панель «Начало работы». */
+interface OnboardingUi {
+  /** Боковая панель чек-листа «Начало работы» открыта. */
   checklistOpen: boolean
   openChecklist: () => void
   closeChecklist: () => void
 }
 
-export const useOnboardingUi = create<OnboardingUiState>((set) => ({
+/**
+ * Нейтральная точка открытия панели чек-листа: тур (финал «Открыть чек-лист»), меню аккаунта и
+ * плашка не знают друг о друге, а панель подписывается на `checklistOpen`.
+ */
+export const useOnboardingUi = create<OnboardingUi>((set) => ({
   checklistOpen: false,
   openChecklist: () => set({ checklistOpen: true }),
   closeChecklist: () => set({ checklistOpen: false }),

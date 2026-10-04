@@ -84,3 +84,16 @@ export async function dragElement(page: Page, elementId: string, dx: number, dy:
   await page.mouse.move(x + dx, y + dy, { steps: 10 })
   await page.mouse.up()
 }
+
+/**
+ * Только что зарегистрированному пользователю тур предлагают приветствием поверх экрана; сценарии,
+ * которые проверяют не обучение, отказываются от него («Я уже знаком»). Если онбординг на стенде
+ * выключен или тур уже решён — ничего не делает. Вызывать на экране внутри закрытого раздела.
+ */
+export async function skipWelcome(page: Page) {
+  const state = await (await page.request.get('/api/v1/me/onboarding')).json()
+  if (!state.enabled || state.tour?.status !== 'pending') return
+  const welcome = page.getByRole('dialog', { name: 'Добро пожаловать в Архитектор' })
+  await welcome.getByRole('button', { name: 'Я уже знаком' }).click()
+  await expect(welcome).toBeHidden()
+}

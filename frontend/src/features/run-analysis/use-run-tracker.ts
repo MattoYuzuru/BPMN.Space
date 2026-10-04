@@ -1,9 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { onboardingKeys } from '@/entities/onboarding'
-import { projectKeys } from '@/entities/project'
+import { type ProjectDetail, projectKeys } from '@/entities/project'
 import { upsertQuestion } from '@/entities/question'
 import {
+  fetchRun,
   formatSummary,
   openRunStream,
   RUN_MODE_LABEL,
@@ -13,7 +14,13 @@ import {
 } from '@/entities/run'
 import { needsLogin, sessionQueryOptions } from '@/entities/session'
 import { type Version, versionKeys, versionLabel } from '@/entities/version'
+import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
 import { toast } from '@/shared/ui'
+
+/** Как часто спрашиваем сервер о прогоне, когда поток событий потерян. */
+export const RUN_POLL_MS = 5000
+/** Сколько ждём свежий проект перед сигналом об окончании прогона. */
+const FINISH_REFETCH_MS = 4000
 
 /**
  * Связывает прогон проекта с данными экрана. Пока у проекта есть active_run, держит SSE-поток:
@@ -30,9 +37,21 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
   useEffect(() => {
     if (!activeRun || !runId) return
     track(activeRun)
+    let finished = false
+    let poller: ReturnType<typeof setInterval> | undefined
+    let running = activeRun.status === 'running'
+    emitOnboardingSignal({
+      type: 'run.status',
+      status: activeRun.status === 'queued' ? 'queued' : 'running',
+      projectId,
+    })
 
     const handle = (event: RunEvent) => {
       apply(projectId, event)
+      if (event.type === 'stage' && !running) {
+        running = true
+        emitOnboardingSignal({ type: 'run.status', status: 'running', projectId })
+      }
       switch (event.type) {
         case 'question':
           upsertQuestion(client, projectId, event.data.question)
@@ -58,10 +77,28 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
     }
 
     const finish = (run: Run) => {
-      void client.invalidateQueries({ queryKey: projectKeys.detail(projectId) })
+      if (finished) return
+      finished = true
+      clearInterval(poller)
+      const refetched = client.invalidateQueries({ queryKey: projectKeys.detail(projectId) })
       void client.invalidateQueries({ queryKey: projectKeys.lists() })
       // Сервер мог отметить `diagram_built` / `diagram_rebuilt` — перечитываем чек-лист.
       void client.invalidateQueries({ queryKey: onboardingKeys.all })
+      // Сигнал об окончании — после свежего проекта: по нему обучение считает открытые вопросы.
+      void Promise.race([
+        refetched,
+        new Promise((resolve) => setTimeout(resolve, FINISH_REFETCH_MS)),
+      ]).then(() => {
+        const project = client.getQueryData<ProjectDetail>(projectKeys.detail(projectId))
+        emitOnboardingSignal({
+          type: 'run.finished',
+          status: run.status,
+          openQuestions:
+            project?.questions.filter((question) => question.status === 'open').length ?? 0,
+          hasDiagram: Boolean(project?.latest_version),
+          projectId,
+        })
+      })
       if (run.status !== 'succeeded') return
       const labels = RUN_MODE_LABEL[run.mode]
       const version = client
@@ -78,7 +115,7 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
     // Сессия закончилась: любой защищённый запрос получит 401, а его общая обработка уведёт на вход.
     const expire = () => void client.invalidateQueries({ queryKey: projectKeys.detail(projectId) })
 
-    return openRunStream(
+    const closeStream = openRunStream(
       runId,
       {
         onEvent: handle,
@@ -88,6 +125,17 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
           toast.warning('Связь с прогоном потеряна', {
             description: 'Результат появится, когда прогон завершится.',
           })
+          // Поток не восстановить: сами спрашиваем сервер, пока прогон не дойдёт до конца.
+          poller = setInterval(() => {
+            void fetchRun(runId)
+              .then((run) => {
+                if (finished || (run.status !== 'succeeded' && run.status !== 'failed')) return
+                const last = useRunStore.getState().views[projectId]?.lastEventId ?? 0
+                apply(projectId, { type: 'done', id: last + 1, data: { run } })
+                finish(run)
+              })
+              .catch(() => undefined)
+          }, RUN_POLL_MS)
         },
       },
       {
@@ -95,5 +143,9 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
           !needsLogin(await client.fetchQuery({ ...sessionQueryOptions, staleTime: 0 })),
       },
     )
+    return () => {
+      closeStream()
+      clearInterval(poller)
+    }
   }, [runId, projectId])
 }

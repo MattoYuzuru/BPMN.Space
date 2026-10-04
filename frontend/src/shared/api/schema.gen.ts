@@ -458,8 +458,7 @@ export interface paths {
          * Create Share Link
          * @description Создать ссылку на чтение либо приглашение редактора; сырой токен выдаётся один раз.
          *
-         *     Срок всегда ограничен: приглашение редактора — по умолчанию 7 дней (максимум 30), ссылка
-         *     на чтение — 30 дней (максимум 365).
+         *     У обеих ролей одинаковый срок: 7, 30, 365 дней или бессрочно (0); по умолчанию 30 дней.
          */
         post: operations["create_share_link"];
         delete?: never;
@@ -715,8 +714,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Accept Editor Invite */
-        post: operations["accept_editor_invite"];
+        /** Accept Share Link */
+        post: operations["accept_share_link"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1214,7 +1213,7 @@ export interface components {
         ProjectRole: "owner" | "editor" | "viewer";
         /**
          * ProjectScope
-         * @description Какие проекты показывать в списке: все доступные, свои, где я редактор, демо-примеры.
+         * @description Какие проекты показывать: все доступные, свои, принятые общие, демо-примеры.
          * @enum {string}
          */
         ProjectScope: "all" | "own" | "shared" | "examples";
@@ -1546,14 +1545,13 @@ export interface components {
              * Format: uuid
              */
             project_id: string;
-            /** @default editor */
             role: components["schemas"]["ShareRole"];
         };
         /** ShareLinkCreate */
         ShareLinkCreate: {
             /**
              * Expires In Days
-             * @description Срок ссылки в днях. Для `editor`: по умолчанию 7, максимум 30. Для `viewer`: по умолчанию 30, максимум 365. Бессрочных ссылок нет.
+             * @description Срок ссылки в днях: 7, 30, 365 (год) или 0 (без срока). Для совместимости null/пропуск выбирает 30 дней. Одинаковые варианты доступны для viewer и editor.
              */
             expires_in_days?: number | null;
             role: components["schemas"]["ShareRole"];
@@ -2504,7 +2502,7 @@ export interface operations {
                 limit?: number;
                 /** @description Поиск по названию */
                 q?: string | null;
-                /** @description Что показывать: `all` — всё доступное (по умолчанию), `own` — свои, `shared` — где вы редактор по приглашению, `examples` — демо-примеры. Без аккаунтов параметр не действует. */
+                /** @description Что показывать: `all` — всё доступное (по умолчанию), `own` — свои, `shared` — принятые по ссылке проекты, `examples` — демо-примеры. Без аккаунтов параметр не действует. */
                 scope?: components["schemas"]["ProjectScope"];
             };
             header?: never;
@@ -4058,7 +4056,7 @@ export interface operations {
             };
         };
     };
-    accept_editor_invite: {
+    accept_share_link: {
         parameters: {
             query?: never;
             header?: never;
@@ -4080,15 +4078,6 @@ export interface operations {
             };
             /** @description Требуется вход в аккаунт */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Недостаточно прав для операции */
-            403: {
                 headers: {
                     [name: string]: unknown;
                 };

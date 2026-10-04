@@ -31,19 +31,24 @@ def test_assistant_requires_non_empty_message(client) -> None:
     assert response.json()["detail"] == "Введите вопрос помощнику"
 
 
-def test_configured_assistant_sends_server_project_context_to_deepseek() -> None:
+def test_configured_assistant_uses_openai_compatible_provider_configuration() -> None:
     settings = Settings(
         mock_delay_scale=0,
         auth_enabled=False,
-        llm_provider="deepseek",
-        deepseek_api_key="test-only",
+        llm_provider="openai_compatible",
+        llm_api_key="test-only",
+        llm_base_url="https://llm.example.test/v1",
+        llm_model="approved-model",
     )
     app = create_app(settings, container=build_container(settings))
     response_body = {
         "choices": [{"message": {"content": "Процесс начинается с проверки заявления."}}]
     }
 
-    with TestClient(app) as configured_client, patch("app.llm.deepseek.urlopen") as urlopen:
+    with (
+        TestClient(app) as configured_client,
+        patch("app.llm.openai_compatible.urlopen") as urlopen,
+    ):
         urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(
             response_body
         ).encode()
@@ -60,7 +65,9 @@ def test_configured_assistant_sends_server_project_context_to_deepseek() -> None
     assert response.json() == {"answer": "Процесс начинается с проверки заявления."}
     request = urlopen.call_args.args[0]
     assert request.get_header("Authorization") == "Bearer test-only"
+    assert request.full_url == "https://llm.example.test/v1/chat/completions"
     provider_body = json.loads(request.data)
+    assert provider_body["model"] == "approved-model"
     context = provider_body["messages"][1]["content"]
     assert "С чего начинается процесс?" in context
     assert "<definitions/>" in context
@@ -77,7 +84,10 @@ def test_local_draft_chat_sends_its_source_without_persisting_it() -> None:
     app = create_app(settings, container=build_container(settings))
     response_body = {"choices": [{"message": {"content": "Шаги следуют по порядку."}}]}
 
-    with TestClient(app) as configured_client, patch("app.llm.deepseek.urlopen") as urlopen:
+    with (
+        TestClient(app) as configured_client,
+        patch("app.llm.openai_compatible.urlopen") as urlopen,
+    ):
         urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(
             response_body
         ).encode()

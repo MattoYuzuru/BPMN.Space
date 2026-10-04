@@ -258,7 +258,7 @@ class SqlProjectRepository:
     def _visible_to(user_id: UUID | None, scope: ProjectScope = ProjectScope.ALL) -> Any:
         """Что видит пользователь: демо — все, свои и «совместные» — только участники.
 
-        `scope` сужает выдачу: свои проекты, проекты, где пользователь редактор, или демо.
+        `scope` сужает выдачу: свои проекты, проекты, где пользователь принял доступ, или демо.
         """
         public = ProjectRow.public_read_only.is_(True)
         if scope is ProjectScope.EXAMPLES or user_id is None:

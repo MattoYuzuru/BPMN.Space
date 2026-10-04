@@ -134,7 +134,7 @@ export function ShareLinkRow({ link, onRevoke }: { link: ShareLink; onRevoke: ()
     <Row
       leading={<Tag icon={SHARE_ROLE[link.role].icon}>{SHARE_ROLE[link.role].label}</Tag>}
       leadingClassName="w-36"
-      title={link.expires_at ? `До ${date(link.expires_at)}` : 'Без срока'}
+      title={link.expires_at ? `До ${date(link.expires_at)}` : 'Бессрочно'}
       meta={`Создана ${date(link.created_at)}`}
       action={
         <ConfirmDialog
@@ -150,14 +150,18 @@ export function ShareLinkRow({ link, onRevoke }: { link: ShareLink; onRevoke: ()
   )
 }
 
-/** Строка участника-редактора: почта, роль и удаление с подтверждением. */
+/** Строка участника: почта, уровень доступа и удаление с подтверждением. */
 export function MemberRow({ member, onRemove }: { member: ProjectMember; onRemove: () => void }) {
   return (
     <Row
       leading={<Avatar name={emailInitialsName(member.email)} size="lg" />}
       title={member.email}
       meta={`С ${date(member.added_at)}`}
-      trailing={<Tag icon={SHARE_ROLE[member.role].icon}>Редактор</Tag>}
+      trailing={
+        <Tag icon={SHARE_ROLE[member.role].icon}>
+          {member.role === 'editor' ? 'Редактор' : 'Наблюдатель'}
+        </Tag>
+      }
       action={
         <ConfirmDialog
           trigger={<IconButton icon="trash" size="sm" tone="danger" label="Убрать участника" />}

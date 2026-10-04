@@ -73,7 +73,9 @@ class ProjectRow(Base):
 
 class ProjectMemberRow(Base):
     __tablename__ = "project_members"
-    __table_args__ = (CheckConstraint("role = 'editor'", name="ck_project_members_role"),)
+    __table_args__ = (
+        CheckConstraint("role IN ('viewer', 'editor')", name="ck_project_members_role"),
+    )
     project_id: Mapped[UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
     )

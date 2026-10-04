@@ -56,6 +56,37 @@ test.describe('гость', () => {
     await expect(page).toHaveURL(/\/login$/)
   })
 
+  test('регистрация по прямой ссылке: ключ создаёт пароль, с ним аккаунт создаётся', async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+    await page.goto('/login?mode=register')
+    await expect(page.getByRole('radio', { name: 'Регистрация' })).toBeChecked()
+    const password = page.getByLabel('Пароль', { exact: true })
+    await expect(password).toHaveAttribute('autocomplete', 'new-password')
+
+    await page.getByRole('button', { name: 'Сгенерировать надёжный пароль' }).click()
+    await expect(password).toHaveAttribute('type', 'text')
+    await expect(password).toHaveValue(/^\S{20}$/)
+    const generated = await password.inputValue()
+    expect(await page.evaluate('navigator.clipboard.readText()')).toBe(generated)
+
+    // Переключение режима меняет адрес без новой записи в истории.
+    const entries = await page.evaluate('history.length')
+    await page.getByRole('radio', { name: 'Вход' }).click()
+    await expect(page).toHaveURL(/\/login$/)
+    await expect(page.getByRole('button', { name: 'Сгенерировать надёжный пароль' })).toHaveCount(0)
+    await page.getByRole('radio', { name: 'Регистрация' }).click()
+    await expect(page).toHaveURL(/\/login\?mode=register$/)
+    expect(await page.evaluate('history.length')).toBe(entries)
+
+    await page.getByRole('button', { name: 'Сгенерировать надёжный пароль' }).click()
+    await page.getByRole('textbox', { name: 'Почта' }).fill(`e2e-${randomUUID()}@example.com`)
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('heading', { name: 'Проекты' })).toBeVisible()
+  })
+
   test('меню аккаунта: почта и выход', async ({ page }) => {
     const email = `e2e-${randomUUID()}@example.com`
     await page.goto('/login')

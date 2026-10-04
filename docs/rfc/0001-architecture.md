@@ -474,16 +474,16 @@ erDiagram
 
 `LLM_CALL` — бесплатная наблюдаемость (лог вызовов модели) вместо Langfuse. Если понадобится UI, поднимем Arize Phoenix одним контейнером.
 
-Для аккаунтов и общего доступа добавлены `USERS`, `ACCESS_TOKENS`, `PROJECT_MEMBERS` и `PROJECT_SHARE_LINKS`. `PROJECTS.owner_id` задаёт владельца; демонстрационные проекты могут быть доступны только для чтения. В сессии и ссылках проекта хранится только SHA-256 хеш случайного токена, исходный токен ссылки возвращается владельцу один раз. Подробности — в [решении по авторизации и доступу](../adr/0001-auth-and-project-sharing.md).
+Для аккаунтов и общего доступа добавлены `USERS`, `ACCESS_TOKENS`, `PROJECT_MEMBERS` и `PROJECT_SHARE_LINKS`. `PROJECTS.owner_id` задаёт владельца; `public_read_only` включён только у демо-проектов из сида (читать их может любой вошедший, менять — никто). В сессии и ссылках проекта хранится только SHA-256 хеш случайного токена, исходный токен ссылки возвращается владельцу один раз. Подробности — в [решении по авторизации и доступу](../adr/0001-auth-and-project-sharing.md).
 
 ### 5.8. API
 
-Контракт v1 реализован в mock-бэкенде (#2, `docs/backend/mock.md`); точные схемы — `docs/api/openapi.json`. Поля — `snake_case`, id — UUID, даты — ISO 8601, ошибки — `{"detail": "…"}` на русском.
+Контракт v1 реализован в mock-бэкенде (#2, `docs/backend/mock.md`); точные схемы — `docs/api/openapi.json`. При `AUTH_ENABLED=true` все маршруты, кроме `/auth/*`, `GET /examples`, `/health` и `/shares/{token}`, требуют входа (`401`). Частые запросы получают `429` с `Retry-After`. Поля — `snake_case`, id — UUID, даты — ISO 8601, ошибки — `{"detail": "…"}` на русском.
 
 | Метод | Путь | Что делает |
 |---|---|---|
 | POST | `/api/v1/auth/register` · `/auth/session/login` · `/auth/session/logout` | регистрация по email и паролю · вход и выход через cookie-сессию |
-| GET | `/api/v1/auth/csrf` · `/auth/me` | получить CSRF-токен · профиль текущего пользователя |
+| GET | `/api/v1/auth/csrf` · `/auth/me` · `/auth/session` | получить CSRF-токен · профиль (`401` для гостя) · состояние входа `{auth_enabled, user}` (всегда `200`) |
 | GET | `/api/v1/projects?cursor=&limit=20&q=` | список проектов: курсорная пагинация, поиск по названию → `{items, next_cursor, total}` |
 | POST | `/api/v1/projects` · `/projects/from-example` | создать проект · создать из примера (текст примера — первый источник) |
 | GET / PATCH / DELETE | `/api/v1/projects/{id}` | проект целиком: источники, вопросы, последняя версия без XML, активный прогон, сводка вопросов · правка · удаление (`409`, если идёт прогон) |
@@ -500,8 +500,8 @@ erDiagram
 | GET | `/api/v1/versions/{id}/xml` | скачать `.bpmn` (SVG/PNG экспортирует bpmn-js на фронтенде) |
 | PUT | `/api/v1/projects/{id}/diagram` | сохранить ручную правку из bpmn-js → новая версия `manual` |
 | GET / DELETE | `/api/v1/projects/{id}/members` · `/members/{user_id}` | владелец просматривает список редакторов и отзывает доступ |
-| POST / GET / DELETE | `/api/v1/projects/{id}/share-links` · `/share-links/{link_id}` | создать, перечислить и отозвать ссылку `viewer` или `editor`; срок — до 365 дней |
-| GET | `/api/v1/shares/{token}` · `/shares/{token}/versions/{version_id}/xml` | открыть проект и схему по ссылке; ссылка `editor` требует входа |
+| POST / GET / DELETE | `/api/v1/projects/{id}/share-links` · `/share-links/{link_id}` | создать, перечислить и отозвать ссылку `viewer` или `editor` (только владелец); срок обязателен: `editor` — 7 дней по умолчанию, до 30; `viewer` — 30 по умолчанию, до 365 |
+| GET | `/api/v1/shares/{token}` · `/shares/{token}/versions/{version_id}/xml` | открыть проект и схему по ссылке (XML — вложением); ссылка `viewer` работает без входа, `editor` требует входа |
 | POST | `/api/v1/shares/{token}/accept` | принять приглашение редактора после входа в аккаунт |
 | GET | `/api/v1/examples` · `/health` | демо-примеры · healthcheck |
 

@@ -40,6 +40,18 @@ def test_cookie_secure_follows_env_unless_overridden(
     assert ("Secure" in _csrf_cookie(app_env=env, session_cookie_secure=secure_setting)) is expected
 
 
+@pytest.mark.parametrize(("env", "expected"), [("production", True), ("dev", False)])
+def test_empty_session_cookie_secure_falls_back_to_app_env(
+    monkeypatch: pytest.MonkeyPatch, env: str, expected: bool
+) -> None:
+    # compose передаёт `SESSION_COOKIE_SECURE=` пустым, когда переменная не задана.
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "")
+    monkeypatch.setenv("APP_ENV", env)
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.session_cookie_secure is None
+    assert settings.cookie_secure is expected
+
+
 @pytest.mark.parametrize("secure", [True, False])
 def test_session_cookie_uses_the_same_secure_flag(secure: bool) -> None:
     _, backend = build_fastapi_users(cookie_secure=secure)

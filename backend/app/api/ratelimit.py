@@ -4,13 +4,13 @@
 инфраструктуры. Лимиты щедрые и задаются в `config.py`: цель — остановить скрипты и подбор
 пароля, а не ограничить обычную работу. При перезапуске счётчики обнуляются.
 
-Три корзины: весь API на IP, вход и регистрация на IP, «дорогие» вызовы на аккаунт
+Три корзины: весь API на IP, вход и регистрация на IP, «дорогие» вызовы на аккаунт и на IP
 (прогоны, помощник, расшифровка, загрузка файла — за ними платные провайдеры).
 """
 
 import math
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
@@ -32,7 +32,7 @@ class SlidingWindowLimiter:
     limit: int
     window: float = WINDOW_SEC
     clock: Callable[[], float] = time.monotonic
-    _hits: dict[str, deque[float]] = field(default_factory=dict[str, deque[float]])
+    _hits: OrderedDict[str, deque[float]] = field(default_factory=OrderedDict[str, deque[float]])
 
     def check(self, key: str) -> float | None:
         """Записать событие. None — можно; иначе секунды до освобождения слота."""
@@ -43,6 +43,8 @@ class SlidingWindowLimiter:
             if len(self._hits) >= _MAX_KEYS:
                 self._evict(horizon)
             hits = self._hits[key] = deque()
+        else:
+            self._hits.move_to_end(key)  # порядок словаря = давность последнего обращения
         while hits and hits[0] <= horizon:
             hits.popleft()
         if len(hits) >= self.limit:
@@ -51,8 +53,14 @@ class SlidingWindowLimiter:
         return None
 
     def _evict(self, horizon: float) -> None:
-        for key in [k for k, hits in self._hits.items() if not hits or hits[-1] <= horizon]:
-            del self._hits[key]
+        """Освободить место для нового ключа за O(1) в среднем: ключи упорядочены по давности,
+        поэтому устаревшие лежат в начале. Если все активны, вытесняется самый давний."""
+        self._hits.popitem(last=False)  # минимум один слот освобождаем всегда
+        while self._hits:
+            hits = next(iter(self._hits.values()))
+            if hits and hits[-1] > horizon:
+                return
+            self._hits.popitem(last=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +69,7 @@ class RateLimits:
     api: SlidingWindowLimiter
     auth: SlidingWindowLimiter
     expensive: SlidingWindowLimiter
+    expensive_ip: SlidingWindowLimiter
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "RateLimits":
@@ -69,6 +78,7 @@ class RateLimits:
             api=SlidingWindowLimiter(settings.rate_limit_api_per_min),
             auth=SlidingWindowLimiter(settings.rate_limit_auth_per_min),
             expensive=SlidingWindowLimiter(settings.rate_limit_expensive_per_min),
+            expensive_ip=SlidingWindowLimiter(settings.rate_limit_expensive_ip_per_min),
         )
 
 
@@ -116,11 +126,15 @@ def install_rate_limits(app: FastAPI, settings: Settings) -> None:
 
 
 async def limit_expensive(request: Request, user: OptionalUserDep) -> None:
-    """Зависимость «дорогих» маршрутов: лимит на аккаунт (без auth — на IP)."""
+    """Зависимость «дорогих» маршрутов: лимит на аккаунт (без auth — на IP) и общий на IP."""
     limits: RateLimits = request.app.state.rate_limits
     if not limits.enabled:
         return
-    retry = limits.expensive.check(f"user:{user.id}" if user else f"ip:{client_ip(request)}")
+    ip = client_ip(request)
+    # Лимит на IP обязателен и для вошедших: иначе его обходят регистрацией новых аккаунтов.
+    retry = limits.expensive_ip.check(ip)
+    if retry is None:
+        retry = limits.expensive.check(f"user:{user.id}" if user else f"ip:{ip}")
     if retry is not None:
         seconds = max(math.ceil(retry), 1)
         raise HTTPException(

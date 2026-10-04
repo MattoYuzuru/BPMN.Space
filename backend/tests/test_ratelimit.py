@@ -55,6 +55,29 @@ def test_limiter_evicts_idle_keys_when_full(monkeypatch) -> None:
     assert set(limiter._hits) == {"d"}
 
 
+def test_limiter_evicts_oldest_active_key_when_all_are_busy(monkeypatch) -> None:
+    monkeypatch.setattr("app.api.ratelimit._MAX_KEYS", 3)
+    clock = FakeClock()
+    limiter = SlidingWindowLimiter(1, window=60, clock=clock)
+    for key in "abc":
+        assert limiter.check(key) is None
+        clock.now += 1
+    assert limiter.check("d") is None  # все активны: вытеснен самый давний, размер ограничен
+    assert list(limiter._hits) == ["b", "c", "d"]
+
+
+def test_limiter_eviction_does_not_scan_all_keys(monkeypatch) -> None:
+    monkeypatch.setattr("app.api.ratelimit._MAX_KEYS", 1000)
+    clock = FakeClock()
+    limiter = SlidingWindowLimiter(1, window=60, clock=clock)
+    for index in range(5000):
+        limiter.check(f"k{index}")
+        clock.now += 0.001
+    assert len(limiter._hits) <= 1000
+    assert "k4999" in limiter._hits
+    assert "k0" not in limiter._hits
+
+
 def test_api_limit_per_ip_returns_429_with_retry_after() -> None:
     with _client(rate_limit_api_per_min=3) as client:
         statuses = [client.get(f"{API}/examples").status_code for _ in range(4)]
@@ -96,6 +119,18 @@ def test_expensive_calls_are_limited_per_user() -> None:
         response = client.post(f"{API}/transcriptions", files=audio)
         assert response.status_code == 429
         assert "retry-after" in response.headers
+
+
+def test_expensive_calls_are_limited_per_ip_across_accounts() -> None:
+    # Лимит на аккаунт щедрый, на IP — тугой: новые аккаунты с того же адреса его не обходят.
+    with _client(rate_limit_expensive_per_min=100, rate_limit_expensive_ip_per_min=2) as client:
+        audio = {"file": ("a.webm", b"1234", "audio/webm")}
+        codes = [client.post(f"{API}/transcriptions", files=audio).status_code for _ in range(3)]
+        assert codes == [200, 200, 429]
+        other_ip = client.post(
+            f"{API}/transcriptions", files=audio, headers={"x-forwarded-for": "7.7.7.7"}
+        )
+        assert other_ip.status_code == 200
 
 
 def test_limits_can_be_disabled() -> None:

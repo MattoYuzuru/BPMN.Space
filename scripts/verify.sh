@@ -36,6 +36,7 @@ step lint make lint
 step design-lint make design-lint
 step typecheck make typecheck
 step tests make test
+step test-postgres make test-postgres
 step contract make contract-check
 step build make build
 step secrets make secrets

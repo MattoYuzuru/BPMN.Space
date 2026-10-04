@@ -32,7 +32,7 @@
 - Демонстрационные проекты доступны вошедшим пользователям только для чтения; гости видят только ссылки `viewer`.
 - Пароли, исходные токены сессий и исходные токены share-ссылок не сохраняются в открытом виде.
 - Все изменяющие API-запросы при включённой auth требуют CSRF cookie/header.
-- Для production необходимо включить HTTPS, задать `APP_ENV=production`, сохранить PostgreSQL volumes и выполнить миграцию `0005_auth_and_sharing`.
+- Для production необходимо включить HTTPS, задать `APP_ENV=production`, сохранить PostgreSQL volumes и выполнить миграции `0005_auth_and_sharing` и `0006_public_only_demo_projects`.
 
 ## Источники
 

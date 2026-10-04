@@ -131,7 +131,7 @@ interface TourPersistence {
 | Контекст шагов (`TourContext`), рычаги экрана (`TourUi`) | `features/onboarding/tour/context.ts` |
 | Что тур запомнил за заход: проект, итог прогона, отвеченный вопрос | `features/onboarding/tour/session.ts` |
 | Хранилище прогресса поверх `entities/onboarding` | `features/onboarding/tour/create-persistence.ts` |
-| Сборка: когда показать приветствие, контекст из данных учебного проекта, `TourHost` | `widgets/onboarding-root/` (`OnboardingRoot` в `routes/_app.tsx`, `TourRoot` грузится лениво) |
+| Сборка: когда показать приветствие, контекст из данных учебного проекта, `TourHost` | `widgets/onboarding-root/`: `OnboardingRoot` (в `routes/_app.tsx`, знает только «онбординг включён») лениво грузит `onboarding-gate` (приветствие), а тот — `tour-root` (контекст и хост) |
 | Нейтральное открытие панели чек-листа | `entities/onboarding/ui.ts` (`useOnboardingUi.openChecklist()`) |
 
 **Слои.** Фичи про тур ничего не знают и `features/onboarding` не импортируют (проверка: `rg "features/onboarding" frontend/src` не находит ничего вне `widgets/onboarding-root`, `routes` и самого тура). Тур не знает про виджеты: рычаги экрана (`TourUi`) собирает `TourRoot` из публичных точек расширения; шаги — чистые данные от `TourContext`.

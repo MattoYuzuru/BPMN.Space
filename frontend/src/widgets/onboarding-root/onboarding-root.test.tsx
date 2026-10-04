@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type OnboardingState, onboardingKeys } from '@/entities/onboarding'
 import { sessionKeys } from '@/entities/session'
 import { stopTour, useTourStore } from '@/features/onboarding/tour'
@@ -48,6 +48,9 @@ function mount(initial: OnboardingState, extra?: React.ReactNode) {
 
 const welcome = () => screen.queryByRole('dialog', { name: 'Добро пожаловать в Архитектор' })
 const advance = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms))
+
+// Ленивый чанк приветствия загружаем заранее: тесты управляют только временем.
+beforeAll(() => import('./onboarding-gate'))
 
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true })

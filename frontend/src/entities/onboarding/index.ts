@@ -10,6 +10,7 @@ export {
   useSetChecklistHidden,
   useUpdateTour,
 } from './api'
+export { type ChecklistView, useChecklistView } from './hooks'
 export {
   CHECKLIST_GROUPS,
   CHECKLIST_ITEMS,

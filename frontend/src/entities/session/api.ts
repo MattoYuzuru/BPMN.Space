@@ -82,6 +82,8 @@ export function useLogout() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: async () => unwrap(await api.POST('/api/v1/auth/session/logout')),
+    // После выхода состояние онбординга перечитывать не нужно (это был бы 401).
+    meta: { skipOnboarding: true },
     onSuccess: () => {
       dropAccountData(client)
       client.setQueryData<Session>(sessionKeys.all, (session) => ({

@@ -35,6 +35,7 @@ export {
   DialogTrigger,
 } from './dialog/dialog'
 export { Divider, type DividerProps } from './divider/divider'
+export { DoneMark, type DoneMarkProps } from './done-mark/done-mark'
 export {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -67,6 +68,7 @@ export {
   PopoverTrigger,
 } from './popover/popover'
 export { Progress, type ProgressProps } from './progress/progress'
+export { ProgressRing, type ProgressRingProps } from './progress-ring/progress-ring'
 export {
   RadioGroup,
   RadioGroupItem,

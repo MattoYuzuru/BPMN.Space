@@ -42,7 +42,7 @@ export default defineConfig({
   projects: [
     {
       name: 'e2e',
-      testIgnore: /(screenshots|onboarding-tour)\.spec\.ts/,
+      testIgnore: /(screenshots|onboarding-tour|checklist)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 }, ...fakeMedia },
     },
     {
@@ -51,6 +51,14 @@ export default defineConfig({
       name: 'onboarding',
       testMatch: /onboarding-tour\.spec\.ts/,
       dependencies: ['e2e'],
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 }, ...fakeMedia },
+    },
+    {
+      // Чек-лист «Начало работы» — после обучения, а не вместе с ним: оба файла регистрируют
+      // пользователей, и параллельно они упираются в общий лимит запросов по адресу.
+      name: 'checklist',
+      testMatch: /checklist\.spec\.ts/,
+      dependencies: ['onboarding'],
       use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 }, ...fakeMedia },
     },
     {

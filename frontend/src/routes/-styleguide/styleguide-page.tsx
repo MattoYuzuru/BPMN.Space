@@ -5,6 +5,7 @@ import { cn } from '@/shared/lib/cn'
 import { Badge, Icon, Kbd, ScrollArea } from '@/shared/ui'
 import { AccountSection } from './account'
 import { BrandSection, HeroComposition } from './brand'
+import { ChecklistSection } from './checklist'
 import { ButtonsSection, ChoiceSection, FieldsSection } from './controls'
 import { FeedbackSection, LayoutSection, NavigationSection, StatusSection } from './display'
 import { ExampleSection } from './example'
@@ -56,6 +57,7 @@ const NAV = [
       ['account', 'Аккаунт и доступ'],
       ['sharing', 'Общий доступ'],
       ['onboarding', 'Обучение'],
+      ['checklist', 'Начало работы'],
       ['example', 'Пример экрана'],
     ],
   },
@@ -203,6 +205,7 @@ export function StyleguidePage() {
           <AccountSection />
           <SharingSection />
           <OnboardingSection />
+          <ChecklistSection />
           <ExampleSection />
         </div>
       </main>

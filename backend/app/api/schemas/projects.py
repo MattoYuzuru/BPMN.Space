@@ -12,6 +12,7 @@ from app.api.schemas.sources import Source
 from app.api.schemas.versions import Version
 from app.domain.models import ProjectStatus
 from app.services import projects as svc
+from app.services.access import ProjectRole
 
 
 class ProjectCounts(ApiModel):
@@ -30,9 +31,12 @@ class Project(ApiModel):
     updated_at: datetime
     counts: ProjectCounts
     lanes: list[str] = Field(description="Дорожки последней версии схемы — для карточки списка")
+    access: ProjectRole = Field(
+        description="Роль текущего пользователя: owner и editor меняют проект, viewer только читает"
+    )
 
     @classmethod
-    def of(cls, view: svc.ProjectView) -> "Project":
+    def of(cls, view: svc.ProjectView, access: ProjectRole) -> "Project":
         p = view.project
         return cls(
             id=p.id,
@@ -43,6 +47,7 @@ class Project(ApiModel):
             updated_at=p.updated_at,
             counts=ProjectCounts.model_validate(view.counts),
             lanes=view.lanes,
+            access=access,
         )
 
 
@@ -60,8 +65,8 @@ class ProjectDetail(Project):
     summary: QuestionsSummary
 
     @classmethod
-    def of_detail(cls, detail: svc.ProjectDetail) -> "ProjectDetail":
-        base = Project.of(detail.view)
+    def of_detail(cls, detail: svc.ProjectDetail, access: ProjectRole) -> "ProjectDetail":
+        base = Project.of(detail.view, access)
         return cls(
             **base.model_dump(),
             sources=[Source.model_validate(s) for s in detail.sources],

@@ -359,6 +359,10 @@
       },
       "Project": {
         "properties": {
+          "access": {
+            "$ref": "#/components/schemas/ProjectRole",
+            "description": "Роль текущего пользователя: owner и editor меняют проект, viewer только читает"
+          },
           "counts": {
             "$ref": "#/components/schemas/ProjectCounts"
           },
@@ -411,7 +415,8 @@
           "created_at",
           "updated_at",
           "counts",
-          "lanes"
+          "lanes",
+          "access"
         ],
         "title": "Project",
         "type": "object"
@@ -474,6 +479,10 @@
       },
       "ProjectDetail": {
         "properties": {
+          "access": {
+            "$ref": "#/components/schemas/ProjectRole",
+            "description": "Роль текущего пользователя: owner и editor меняют проект, viewer только читает"
+          },
           "active_run": {
             "anyOf": [
               {
@@ -565,6 +574,7 @@
           "updated_at",
           "counts",
           "lanes",
+          "access",
           "sources",
           "questions",
           "latest_version",
@@ -651,6 +661,15 @@
         ],
         "title": "ProjectPage",
         "type": "object"
+      },
+      "ProjectRole": {
+        "enum": [
+          "owner",
+          "editor",
+          "viewer"
+        ],
+        "title": "ProjectRole",
+        "type": "string"
       },
       "ProjectStatus": {
         "enum": [
@@ -1225,6 +1244,33 @@
           "data"
         ],
         "title": "RunVersionEvent",
+        "type": "object"
+      },
+      "SessionState": {
+        "description": "Состояние входа для клиента: всегда 200, чтобы не путать «гость» с ошибкой сети.",
+        "properties": {
+          "auth_enabled": {
+            "description": "false — стенд без аккаунтов, вход не нужен",
+            "title": "Auth Enabled",
+            "type": "boolean"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Текущий пользователь; null — гость"
+          }
+        },
+        "required": [
+          "auth_enabled",
+          "user"
+        ],
+        "title": "SessionState",
         "type": "object"
       },
       "Severity": {
@@ -2242,6 +2288,33 @@
         },
         "summary": "Register:Register",
         "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/session": {
+      "get": {
+        "operationId": "get_session_state",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Session State",
+        "tags": [
+          "auth",
           "auth"
         ]
       }

@@ -209,7 +209,9 @@ async def read_shared_project(
     return SharedProject(
         role=role,
         editor_requires_account=role is ShareRole.EDITOR,
-        detail=ProjectDetailSchema.of_detail(detail),
+        detail=ProjectDetailSchema.of_detail(
+            detail, ProjectRole.EDITOR if role is ShareRole.EDITOR else ProjectRole.VIEWER
+        ),
     )
 
 

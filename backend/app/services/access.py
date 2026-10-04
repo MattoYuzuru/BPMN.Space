@@ -44,6 +44,42 @@ async def get_project_role(
         return ProjectRole.VIEWER if project.public_read_only else None
 
 
+async def get_project_roles(
+    database: Database, project_ids: list[UUID], user_id: UUID | None
+) -> dict[UUID, ProjectRole]:
+    """Роли пользователя для страницы проектов двумя запросами вместо запроса на проект."""
+    if not project_ids:
+        return {}
+    async with database.sessions() as session:
+        projects = (
+            await session.execute(
+                select(ProjectRow.id, ProjectRow.owner_id, ProjectRow.public_read_only).where(
+                    ProjectRow.id.in_(project_ids)
+                )
+            )
+        ).all()
+        editable: set[UUID] = set()
+        if user_id is not None:
+            editable = set(
+                await session.scalars(
+                    select(ProjectMemberRow.project_id).where(
+                        ProjectMemberRow.project_id.in_(project_ids),
+                        ProjectMemberRow.user_id == user_id,
+                        ProjectMemberRow.role == ProjectRole.EDITOR,
+                    )
+                )
+            )
+    roles: dict[UUID, ProjectRole] = {}
+    for project_id, owner_id, public in projects:
+        if user_id is not None and owner_id == user_id:
+            roles[project_id] = ProjectRole.OWNER
+        elif project_id in editable:
+            roles[project_id] = ProjectRole.EDITOR
+        elif public:
+            roles[project_id] = ProjectRole.VIEWER
+    return roles
+
+
 async def get_resource_project_id(
     database: Database, resource_id: UUID, resource: str
 ) -> UUID | None:

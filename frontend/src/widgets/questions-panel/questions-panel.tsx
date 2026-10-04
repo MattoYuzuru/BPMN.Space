@@ -19,7 +19,7 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/shared/ui'
-import { useWorkspace } from '@/widgets/workspace/model'
+import { useWorkspace, useWorkspaceUi } from '@/widgets/workspace/model'
 import { QuestionCard } from './question-card'
 import { useQuestionTransitions } from './use-question-transitions'
 
@@ -33,8 +33,14 @@ const TABS: { value: QuestionGroup; label: string }[] = [
 export function QuestionsPanel({ onCollapse }: { onCollapse: () => void }) {
   const { project, selectedQuestionId } = useWorkspace()
   const [tab, setTab] = useState<QuestionGroup>('open')
+  const tabRequest = useWorkspaceUi((state) => state.questionsTabRequest)
   const transitions = useQuestionTransitions(project.questions)
   const counts = countByGroup(project.questions.filter((q) => q.status !== 'obsolete'))
+
+  // Вкладку можно попросить снаружи (обучение показывает «Открытые»).
+  useEffect(() => {
+    if (tabRequest) setTab(tabRequest.tab)
+  }, [tabRequest])
 
   // Выбранный извне вопрос (со схемы, из отчёта) открывает свою вкладку. Только при смене
   // выбора: если вопрос решился, пока выбран, вкладка остаётся — пусть уход будет виден.

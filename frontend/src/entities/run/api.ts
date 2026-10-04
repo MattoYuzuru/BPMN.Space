@@ -15,6 +15,11 @@ export async function startRun(projectId: string, mode: RunMode) {
   )
 }
 
+/** Состояние прогона по id: опрос, когда поток событий потерян. */
+export async function fetchRun(runId: string) {
+  return unwrap(await api.GET('/api/v1/runs/{run_id}', { params: { path: { run_id: runId } } }))
+}
+
 /**
  * Запуск прогона. Сразу кладём прогон в проект (active_run, статус) и в стор — панель хода
  * открывается без ожидания следующего запроса, а SSE-подписка стартует по active_run.

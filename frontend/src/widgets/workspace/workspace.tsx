@@ -108,6 +108,20 @@ export function WorkspaceView({
   useDocumentTitle(project.title)
   useEffect(() => () => useWorkspaceUi.getState().reset(), [])
 
+  // Просьба развернуть панель (например, из обучения): панель может быть свёрнута или ещё не готова.
+  const expandRequest = ui.expandRequest
+  useEffect(() => {
+    if (!expandRequest) return
+    const expand = () => {
+      const panel = expandRequest.panel === 'sources' ? sourcesRef.current : questionsRef.current
+      if (panel?.isCollapsed()) panel.expand()
+    }
+    expand()
+    // Раскладка могла ещё не примениться (экран только открыт): повторяем, когда она готова.
+    const timer = window.setTimeout(expand, 400)
+    return () => window.clearTimeout(timer)
+  }, [expandRequest, sourcesRef, questionsRef])
+
   const api = useMemo<WorkspaceApi>(
     () => ({
       project,
@@ -214,6 +228,7 @@ export function WorkspaceView({
         <>
           <AddTextDialog
             projectId={project.id}
+            suggestion={ui.textSuggestion}
             open={ui.dialog === 'text'}
             onOpenChange={(open) => ui.setDialog(open ? 'text' : null)}
           />

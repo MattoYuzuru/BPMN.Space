@@ -8,6 +8,7 @@ import {
 import { type ProjectDetail, projectKeys } from '@/entities/project'
 import type { Version, VersionDetail, VersionSource } from '@/entities/version'
 import { api, errorMessage, unwrap } from '@/shared/api/client'
+import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
 import { toast } from '@/shared/ui'
 import type { SharedProject, ShareRole } from './model'
 
@@ -66,7 +67,10 @@ export function useCreateShareLink(projectId: string) {
           body: { role, expires_in_days: days },
         }),
       ),
-    onSuccess: () => client.invalidateQueries({ queryKey: shareKeys.links(projectId) }),
+    onSuccess: () => {
+      emitOnboardingSignal({ type: 'share.created' })
+      return client.invalidateQueries({ queryKey: shareKeys.links(projectId) })
+    },
     onError: (error) =>
       toast.error('Не удалось создать ссылку', { description: errorMessage(error) }),
   })

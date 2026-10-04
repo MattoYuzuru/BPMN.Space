@@ -11,14 +11,15 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from pydantic.json_schema import models_json_schema
 
-from app.api.auth import CSRF_COOKIE, optional_user
-from app.api.auth import router as auth_router
+from app.api.auth import CSRF_COOKIE, build_auth_router
 from app.api.errors import install_error_handlers
+from app.api.ratelimit import install_rate_limits
 from app.api.v1 import api_router
 from app.api.v1.runs import OPENAPI_EXTRA_MODELS
 from app.config import Settings, get_settings
 from app.container import Container, build_container
 from app.infra.seed import build_seed
+from app.services.auth import optional_user
 
 
 def _openapi(app: FastAPI) -> dict[str, Any]:
@@ -65,6 +66,8 @@ def create_app(settings: Settings | None = None, *, container: Container | None 
     app.state.auth_enabled = settings.auth_enabled
     if not settings.auth_enabled:
         app.dependency_overrides[optional_user] = lambda: None
+    # Лимиты ставим раньше CORS: тогда 429 тоже получает CORS-заголовки.
+    install_rate_limits(app, settings)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -88,7 +91,7 @@ def create_app(settings: Settings | None = None, *, container: Container | None 
 
     install_error_handlers(app)
     app.include_router(api_router, prefix=settings.api_prefix)
-    app.include_router(auth_router, prefix=settings.api_prefix)
+    app.include_router(build_auth_router(settings), prefix=settings.api_prefix)
 
     @app.get("/health", tags=["service"])
     async def health() -> dict[str, str]:

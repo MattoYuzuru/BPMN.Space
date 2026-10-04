@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 from uuid import UUID
 
-from app.domain.bpmn.document import BpmnFormatError
+from app.domain.bpmn.document import BpmnFormatError, ensure_safe_xml
 from app.domain.bpmn.xsd import xsd_errors
 from app.domain.models import LintIssue, Quote, Version, VersionOrigin
 from app.domain.versions import build_version
@@ -83,6 +83,7 @@ class VersionService:
             raise InvalidInputError("Схема пустая")
         try:
             xsd_errors(xml)  # mock: корректность XML и корень bpmn:definitions
+            ensure_safe_xml(xml)  # только BPMN-пространства имён, без PI, DTD и script
             lint = await self._tools.lint(xml)
         except BpmnFormatError as error:
             raise InvalidInputError(str(error)) from error

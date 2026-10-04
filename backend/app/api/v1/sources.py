@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import (
     APIRouter,
     BackgroundTasks,
+    Depends,
     File,
     Form,
     Request,
@@ -14,9 +15,15 @@ from fastapi import (
     status,
 )
 
-from app.api.access import ensure_project_access, ensure_resource_access, require_account
+from app.api.access import (
+    ResourceKind,
+    ensure_project_access,
+    ensure_resource_access,
+    require_account,
+)
 from app.api.auth import OptionalUserDep
 from app.api.deps import ContainerDep
+from app.api.ratelimit import limit_expensive
 from app.api.schemas.common import errors
 from app.api.schemas.projects import Transcription
 from app.api.schemas.sources import Source, SourceTextCreate, SourceUpdate
@@ -27,7 +34,7 @@ router = APIRouter(tags=["sources"])
 @router.post(
     "/projects/{project_id}/sources/text",
     status_code=status.HTTP_201_CREATED,
-    responses=errors(404, 422),
+    responses=errors(401, 403, 404, 422),
 )
 async def create_text_source(
     project_id: UUID,
@@ -51,7 +58,8 @@ async def create_text_source(
 @router.post(
     "/projects/{project_id}/sources/file",
     status_code=status.HTTP_201_CREATED,
-    responses=errors(404, 413, 415, 422),
+    dependencies=[Depends(limit_expensive)],
+    responses=errors(401, 403, 404, 413, 415, 422, 429),
 )
 async def create_file_source(  # noqa: PLR0917 - multipart form fields are separate parameters
     project_id: UUID,
@@ -78,7 +86,7 @@ async def create_file_source(  # noqa: PLR0917 - multipart form fields are separ
     return Source.model_validate(source)
 
 
-@router.patch("/sources/{source_id}", responses=errors(404, 422))
+@router.patch("/sources/{source_id}", responses=errors(401, 403, 404, 422))
 async def update_source(
     source_id: UUID,
     body: SourceUpdate,
@@ -87,7 +95,9 @@ async def update_source(
     user: OptionalUserDep,
 ) -> Source:
     """Поправить название или текст, включить или выключить источник."""
-    await ensure_resource_access(request, container, source_id, user, resource="source", write=True)
+    await ensure_resource_access(
+        request, container, source_id, user, resource=ResourceKind.SOURCE, write=True
+    )
     source = await container.sources.update(
         source_id,
         title=body.title,
@@ -99,7 +109,9 @@ async def update_source(
 
 
 @router.delete(
-    "/sources/{source_id}", status_code=status.HTTP_204_NO_CONTENT, responses=errors(404, 422)
+    "/sources/{source_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=errors(401, 403, 404, 422),
 )
 async def delete_source(
     source_id: UUID,
@@ -108,12 +120,19 @@ async def delete_source(
     user: OptionalUserDep,
 ) -> Response:
     """Удалить источник. Удаление ответа возвращает отвеченный вопрос в `open`."""
-    await ensure_resource_access(request, container, source_id, user, resource="source", write=True)
+    await ensure_resource_access(
+        request, container, source_id, user, resource=ResourceKind.SOURCE, write=True
+    )
     await container.sources.delete(source_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/transcriptions", tags=["transcriptions"], responses=errors(413, 415, 422))
+@router.post(
+    "/transcriptions",
+    tags=["transcriptions"],
+    dependencies=[Depends(limit_expensive)],
+    responses=errors(401, 413, 415, 422, 429),
+)
 async def transcribe(
     request: Request,
     container: ContainerDep,

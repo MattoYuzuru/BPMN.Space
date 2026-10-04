@@ -7,16 +7,21 @@ TODO(real): #5 полноценный импортёр XML → ProcessGraph (RFC
 """
 
 from dataclasses import dataclass, field
-from xml.etree.ElementTree import Element, ParseError
+from xml.etree.ElementTree import Element, ParseError, TreeBuilder
 
 from defusedxml import DefusedXmlException
-from defusedxml.ElementTree import fromstring
+from defusedxml.ElementTree import DefusedXMLParser, fromstring
 
 BPMN_NS = "http://www.omg.org/spec/BPMN/20100524/MODEL"
 BPMNDI_NS = "http://www.omg.org/spec/BPMN/20100524/DI"
 DC_NS = "http://www.omg.org/spec/DD/20100524/DC"
 DI_NS = "http://www.omg.org/spec/DD/20100524/DI"
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
+# Расширения bpmn-js: цвета элементов.
+COLOR_NS = "http://www.omg.org/spec/BPMN/non-normative/color/1.0"
+BIOCOLOR_NS = "http://bpmn.io/schema/bpmn/biocolor/1.0"
+# Пространства имён, допустимые в XML от пользователя (см. `ensure_safe_xml`).
+ALLOWED_NAMESPACES = frozenset({BPMN_NS, BPMNDI_NS, DC_NS, DI_NS, XSI_NS, COLOR_NS, BIOCOLOR_NS})
 
 FLOW_NODE_TAGS = frozenset(
     {
@@ -158,3 +163,51 @@ def _collect_process(process: Element, document: BpmnDocument) -> None:
                     name=_name(element),
                 )
             )
+
+
+def _namespace(name: str) -> str | None:
+    return name[1:].partition("}")[0] if name.startswith("{") else None
+
+
+class _NoProcessingInstructions(TreeBuilder):
+    """Инструкции обработки (`<?xml-stylesheet …?>`) — вектор XSLT/XSS; в BPMN их быть не должно."""
+
+    def pi(self, target: str, text: str | None = None) -> Element:  # noqa: ARG002
+        raise BpmnFormatError("XML содержит инструкции обработки (<?…?>), это запрещено")
+
+
+def ensure_safe_xml(xml: str) -> None:
+    """Проверка XML от пользователя перед сохранением: только BPMN-пространства имён.
+
+    Запрещены DTD и сущности (XXE, «бомба миллиарда смехов»), сетевые и внешние ссылки,
+    инструкции обработки, любые элементы и атрибуты вне разрешённых пространств имён
+    и элемент `script` (в BPMN-схему такой XML всё равно не нужен: это защита от XSS,
+    если файл кто-то откроет как документ). Нарушение — `BpmnFormatError`.
+    """
+    parser = DefusedXMLParser(
+        target=_NoProcessingInstructions(),
+        forbid_dtd=True,
+        forbid_entities=True,
+        forbid_external=True,
+    )
+    try:
+        parser.feed(xml.encode("utf-8"))
+        root = parser.close()
+    except ParseError as error:
+        line, column = error.position
+        raise BpmnFormatError(f"XML повреждён: строка {line}, столбец {column}") from error
+    except DefusedXmlException as error:
+        raise BpmnFormatError("XML содержит запрещённые конструкции (DTD или сущности)") from error
+
+    for element in root.iter():
+        namespace = _namespace(element.tag)
+        if namespace not in ALLOWED_NAMESPACES:
+            raise BpmnFormatError(
+                f"Элемент «{element.tag}» вне пространств имён BPMN 2.0 — сохранение запрещено"
+            )
+        if element.tag.rpartition("}")[2].lower() == "script":
+            raise BpmnFormatError("Элемент script запрещён")
+        for attribute in element.attrib:
+            attribute_namespace = _namespace(attribute)
+            if attribute_namespace is not None and attribute_namespace not in ALLOWED_NAMESPACES:
+                raise BpmnFormatError(f"Атрибут «{attribute}» вне пространств имён BPMN 2.0")

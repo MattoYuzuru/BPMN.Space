@@ -74,7 +74,7 @@ describe('SignInForm: разметка для менеджеров пароле�
     await mount('register')
     expect(passwordField()).toHaveAttribute('autocomplete', 'new-password')
     expect(passwordField().getAttribute('passwordrules')).toMatch(
-      /minlength: 12; maxlength: 128; required: lower; required: upper; required: digit;/,
+      /minlength: 8; maxlength: 128; required: lower; required: upper; required: digit;/,
     )
     expect(keyButton()).toBeInTheDocument()
   })

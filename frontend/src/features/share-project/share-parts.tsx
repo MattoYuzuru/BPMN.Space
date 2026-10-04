@@ -10,6 +10,7 @@ import {
 } from '@/entities/share'
 import { cn } from '@/shared/lib/cn'
 import { formatDate } from '@/shared/lib/format'
+import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import {
   Avatar,
   Button,
@@ -71,7 +72,13 @@ export function ShareCreateForm({
             onValueChange={(value) => onDaysChange(Number(value))}
           />
         </Field>
-        <Button type="submit" variant="primary" leadingIcon="link" loading={pending}>
+        <Button
+          type="submit"
+          variant="primary"
+          leadingIcon="link"
+          loading={pending}
+          {...tourAnchor(TOUR_ANCHORS.shareCreate)}
+        >
           Создать ссылку
         </Button>
       </div>
@@ -105,6 +112,7 @@ export function ShareLinkResult({ url, access, expiresAt, onAnother }: ShareLink
               icon={copied ? 'check' : 'copy'}
               size="sm"
               label="Копировать ссылку"
+              {...tourAnchor(TOUR_ANCHORS.shareCopy)}
               onClick={() => void copy(url)}
             />
           }

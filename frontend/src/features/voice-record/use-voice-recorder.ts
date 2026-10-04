@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
 
 export type RecorderState =
   | { status: 'idle' }
@@ -32,6 +33,13 @@ export function levelFromSamples(samples: ArrayLike<number>): number {
   }
   const rms = Math.sqrt(sum / samples.length)
   return Math.min(1, rms * 3.2)
+}
+
+/** Запись недоступна: обучение подсказывает голосовой пример вместо микрофона. */
+function reportBlocked(reason: Extract<RecorderState, { status: 'blocked' }>['reason']) {
+  emitOnboardingSignal({
+    type: reason === 'denied' ? 'voice.permission-denied' : 'voice.unavailable',
+  })
 }
 
 function blockReason(error: unknown): Extract<RecorderState, { status: 'blocked' }>['reason'] {
@@ -75,6 +83,7 @@ export function useVoiceRecorder({ maxSeconds = 600 }: { maxSeconds?: number } =
     if (session.current) return
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       setState({ status: 'blocked', reason: 'unsupported' })
+      reportBlocked('unsupported')
       return
     }
     setState({ status: 'requesting' })
@@ -86,7 +95,11 @@ export function useVoiceRecorder({ maxSeconds = 600 }: { maxSeconds?: number } =
         audio: { echoCancellation: true, noiseSuppression: true },
       })
     } catch (error) {
-      if (mine === generation.current) setState({ status: 'blocked', reason: blockReason(error) })
+      if (mine === generation.current) {
+        const reason = blockReason(error)
+        setState({ status: 'blocked', reason })
+        reportBlocked(reason)
+      }
       return
     }
     if (mine !== generation.current) {

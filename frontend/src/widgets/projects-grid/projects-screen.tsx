@@ -7,6 +7,7 @@ import { useDebouncedValue } from '@/shared/hooks/use-debounced'
 import { useDocumentTitle } from '@/shared/hooks/use-document-title'
 import { useHotkey } from '@/shared/hooks/use-hotkey'
 import { formatNumber } from '@/shared/lib/format'
+import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import { Button, IconButton, Input, Kbd, SegmentedControl } from '@/shared/ui'
 import { AppHeader } from '@/widgets/app-header/app-header'
 import { ProjectsGrid } from './projects-grid'
@@ -109,7 +110,12 @@ export function ProjectsScreen({
             <Button leadingIcon="template" onClick={() => showCreate('example')}>
               Начать с примера
             </Button>
-            <Button variant="primary" leadingIcon="plus" onClick={() => showCreate('blank')}>
+            <Button
+              variant="primary"
+              leadingIcon="plus"
+              {...tourAnchor(TOUR_ANCHORS.projectsNew)}
+              onClick={() => showCreate('blank')}
+            >
               Новый проект
             </Button>
           </div>

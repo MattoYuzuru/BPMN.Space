@@ -1,6 +1,7 @@
 import { type QueryClient, useMutation, useQueryClient } from '@tanstack/react-query'
 import { type ProjectDetail, projectKeys } from '@/entities/project'
 import { api, errorMessage, unwrap } from '@/shared/api/client'
+import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
 import { toast } from '@/shared/ui'
 import { type Question, type QuestionStatus, shiftSummary } from './model'
 
@@ -81,7 +82,16 @@ export function useQuestionAction(projectId: string) {
         duration: 8000,
       })
     },
-    onSuccess: (question) => upsertQuestion(client, projectId, question),
+    onSuccess: (question, { action }) => {
+      upsertQuestion(client, projectId, question)
+      // Сигнал — по ответу сервера, а не по оптимистичному обновлению: обучение идёт дальше,
+      // только когда ответ действительно сохранён.
+      if (action.type === 'answer') {
+        emitOnboardingSignal({ type: 'question.answered', id: question.id })
+      } else if (action.type === 'ignore') {
+        emitOnboardingSignal({ type: 'question.ignored', id: question.id })
+      }
+    },
     onSettled: () => client.invalidateQueries({ queryKey: key }),
   })
   return mutation

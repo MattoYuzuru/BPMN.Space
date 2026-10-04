@@ -25,7 +25,7 @@ describe('пункты чек-листа', () => {
       ['assumption_accepted', 'Принять допущение', 'analysis'],
       ['diagram_rebuilt', 'Перестроить с учётом ответов', 'analysis'],
       ['diagram_edited', 'Изменить схему вручную', 'diagram'],
-      ['simulation_run', 'Запустить симуляцию токена', 'diagram'],
+      ['simulation_run', 'Запустить таймлайн процесса', 'diagram'],
       ['diagram_exported', 'Скачать схему', 'diagram'],
       ['project_shared', 'Поделиться проектом', 'team'],
     ])

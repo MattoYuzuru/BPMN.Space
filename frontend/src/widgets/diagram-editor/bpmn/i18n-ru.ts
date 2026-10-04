@@ -316,8 +316,8 @@ export function translateEventLabel(label: string): string | undefined {
  * поэтому словари раздельные.
  */
 export const SIMULATION_TITLES: Readonly<Record<string, string>> = {
-  'Toggle Simulation Log': 'Журнал симуляции',
-  'Reset Simulation': 'Сбросить симуляцию',
+  'Toggle Simulation Log': 'Журнал таймлайна',
+  'Reset Simulation': 'Сбросить таймлайн',
   'Play/Pause Simulation': 'Запустить или приостановить',
   'Set animation speed = Slow': 'Скорость: медленно',
   'Set animation speed = Normal': 'Скорость: обычно',
@@ -327,20 +327,20 @@ export const SIMULATION_TITLES: Readonly<Record<string, string>> = {
   'Add pause point': 'Поставить точку остановки',
   'Remove pause point': 'Убрать точку остановки',
   Close: 'Закрыть',
-  'Simulation Log': 'Журнал симуляции',
+  'Simulation Log': 'Журнал таймлайна',
   'No Entries': 'Записей пока нет',
-  'Token Simulation': 'Симуляция',
+  'Token Simulation': 'Таймлайн',
   Search: 'Поиск',
   Results: 'Результаты',
 }
 
 export const SIMULATION_MESSAGES: Readonly<Record<string, string>> = {
-  'Pause Simulation': 'Симуляция приостановлена',
-  'Play Simulation': 'Симуляция продолжена',
-  'Reset Simulation': 'Симуляция сброшена',
+  'Pause Simulation': 'Таймлайн на паузе',
+  'Play Simulation': 'Таймлайн продолжен',
+  'Reset Simulation': 'Таймлайн сброшен',
   Finished: 'Завершено',
   'Not supported': 'Не поддерживается',
-  'Found unsupported elements': 'Есть элементы, которые симуляция не поддерживает',
+  'Found unsupported elements': 'Есть элементы, которые таймлайн не поддерживает',
   'Process started': 'Процесс запущен',
   'Process finished': 'Процесс завершён',
   'Process canceled': 'Процесс отменён',

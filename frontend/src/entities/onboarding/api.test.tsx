@@ -270,7 +270,44 @@ describe('useReportOnboardingEvent', () => {
     expect(calls).toHaveLength(1)
   })
 
-  it('при выключенном онбординге и без данных ничего не шлёт', async () => {
+  it('кэш ещё не загружен: сначала дожидается состояния, потом шлёт отметку', async () => {
+    const calls = stubApi({
+      'GET /api/v1/me/onboarding': { body: base },
+      'POST /api/v1/me/onboarding/events': { status: 204 },
+    })
+    const { client, wrapper } = setup()
+    const { result } = renderHook(() => useReportOnboardingEvent(), { wrapper })
+    await act(async () => {
+      await result.current.mutateAsync('simulation_run')
+    })
+    expect(calls.map((call) => `${call.method} ${call.path}`).slice(0, 2)).toEqual([
+      'GET /api/v1/me/onboarding',
+      'POST /api/v1/me/onboarding/events',
+    ])
+    expect(client.getQueryData(onboardingKeys.user('user-1'))).toBeDefined()
+  })
+
+  it('кэш не загружен и уже отмечено на сервере: запроса отметки нет', async () => {
+    const marked: OnboardingState = {
+      ...base,
+      checklist: {
+        hidden: false,
+        items: [{ key: 'simulation_run', completed_at: '2026-10-04T10:00:00Z', source: 'client' }],
+      },
+    }
+    const calls = stubApi({
+      'GET /api/v1/me/onboarding': { body: marked },
+      'POST /api/v1/me/onboarding/events': { status: 204 },
+    })
+    const { wrapper } = setup()
+    const { result } = renderHook(() => useReportOnboardingEvent(), { wrapper })
+    await act(async () => {
+      await result.current.mutateAsync('simulation_run')
+    })
+    expect(calls.map((call) => call.method)).toEqual(['GET'])
+  })
+
+  it('при выключенном онбординге и при сбое загрузки состояния отметка не уходит', async () => {
     const calls = stubApi({ 'POST /api/v1/me/onboarding/events': { status: 204 } })
     for (const initial of [{ enabled: false } as OnboardingState, undefined]) {
       const { wrapper } = setup(initial)
@@ -279,7 +316,7 @@ describe('useReportOnboardingEvent', () => {
         await result.current.mutateAsync('simulation_run')
       })
     }
-    expect(calls).toHaveLength(0)
+    expect(calls.filter((call) => call.method === 'POST')).toHaveLength(0)
   })
 
   it('ошибка отправки не показывает уведомление и не отмечает пункт', async () => {

@@ -22,6 +22,7 @@ from app.domain.onboarding import (
     ChecklistItem,
     CompletedItem,
     ItemSource,
+    ProjectFacts,
     TourStatus,
     TourStepKey,
     UserOnboarding,
@@ -196,8 +197,21 @@ class AccessRepository(Protocol):
 class OnboardingRepository(Protocol):
     """Состояние тура и отмеченные пункты чек-листа пользователя."""
 
+    async def get(self, user_id: UUID) -> UserOnboarding | None: ...
+
     async def get_or_create(self, user_id: UUID, now: datetime) -> UserOnboarding:
-        """Строка пользователя; при первом обращении создаётся (`pending`, чек-лист виден)."""
+        """Строка пользователя; при первом обращении создаётся (`pending`, чек-лист виден).
+
+        Сначала чтение, вставка — только если строки нет.
+        """
+        ...
+
+    async def project_facts(self, user_id: UUID, *, limit: int) -> list[ProjectFacts]:
+        """Факты по проектам, которые пользователь может править (свои и где он редактор).
+
+        Не больше `limit` самых свежих проектов, одним запросом и без текстов источников и XML.
+        Демо-проекты только для чтения не входят.
+        """
         ...
 
     async def save_tour(

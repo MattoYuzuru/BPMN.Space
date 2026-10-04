@@ -45,7 +45,7 @@ async def one_run(index: int) -> tuple[bool, int, float]:
         duration_sec=None,
     )
     started = time.perf_counter()
-    run = await container.runs.start(project.id, mode=RunMode.BUILD)
+    run = await container.runs.start(project.id, mode=RunMode.BUILD, created_by=None)
     await container.spawner.wait_idle()
     run = await container.runs.get(run.id)
     seconds = time.perf_counter() - started

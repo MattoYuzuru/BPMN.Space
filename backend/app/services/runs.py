@@ -134,9 +134,7 @@ class RunService:
         # Этот lock ускоряет конфликт внутри процесса; уникальный индекс защищает между процессами.
         self._start_lock = asyncio.Lock()
 
-    async def start(
-        self, project_id: UUID, *, mode: RunMode, created_by: UUID | None = None
-    ) -> Run:
+    async def start(self, project_id: UUID, *, mode: RunMode, created_by: UUID | None) -> Run:
         async with self._start_lock, self._repos.atomic() as repos:
             # Блокировка проекта общая с ручным сохранением схемы и удалением проекта.
             if await repos.projects.lock(project_id) is None:
@@ -237,7 +235,6 @@ class RunService:
         except Exception:
             logger.exception("Прогон %s упал", run.id)
             await self._fail(run, _INTERNAL_ERROR, execution_started=execution_started)
-        await self._record_progress(run)  # только для успешно завершённого прогона
 
     async def _run_stages(self, run: Run, execution_started: float) -> None:
         run.status = RunStatus.RUNNING
@@ -247,6 +244,8 @@ class RunService:
             await self._enter(run, stage)
             await self._pace(stage)
             await self._perform(run, stage, state)
+        # Пункты отмечаются до статуса `succeeded`: кто увидит успех (SSE или опрос), уже видит их.
+        await self._record_progress(run)
         run.status = RunStatus.SUCCEEDED
         run.progress = 1.0
         run.finished_at = self._rt.clock()
@@ -255,13 +254,8 @@ class RunService:
         await self._repos.projects.touch(run.project_id, run.finished_at)
 
     async def _record_progress(self, run: Run) -> None:
-        """Успешная сборка отмечает пункты чек-листа тому, кто запустил прогон. Не бросает."""
-        if (
-            self._progress is None
-            or run.created_by is None
-            or run.mode is not RunMode.BUILD
-            or run.status is not RunStatus.SUCCEEDED
-        ):
+        """Успешная сборка отмечает пункты чека тому, кто запустил прогон. Не бросает."""
+        if self._progress is None or run.created_by is None or run.mode is not RunMode.BUILD:
             return
         try:
             await self._progress.record(run.created_by, ChecklistItem.DIAGRAM_BUILT)
@@ -280,8 +274,10 @@ class RunService:
         if previous is None:
             return False
         sources = await self._repos.sources.list_by_project(run.project_id)
+        # Ответы, пришедшие во время прогона, в эту сборку не вошли — не засчитываем.
         return any(
-            s.kind is SourceKind.ANSWER and s.created_at > previous.created_at for s in sources
+            s.kind is SourceKind.ANSWER and previous.created_at < s.created_at <= run.started_at
+            for s in sources
         )
 
     async def _enter(self, run: Run, stage: RunStage) -> None:

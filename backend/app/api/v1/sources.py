@@ -26,8 +26,11 @@ from app.api.deps import ContainerDep
 from app.api.limits import read_upload
 from app.api.ratelimit import limit_expensive
 from app.api.schemas.common import errors
+from app.api.schemas.onboarding import SampleAdd
 from app.api.schemas.projects import Transcription
 from app.api.schemas.sources import Source, SourceTextCreate, SourceUpdate
+from app.domain.models import SourceKind
+from app.domain.onboarding import ChecklistItem
 
 router = APIRouter(tags=["sources"])
 
@@ -52,6 +55,12 @@ async def create_text_source(
         title=body.title,
         kind=body.kind,
         duration_sec=body.duration_sec,
+    )
+    await container.onboarding.record(
+        user.id if user else None,
+        ChecklistItem.VOICE_ADDED
+        if source.kind is SourceKind.VOICE
+        else ChecklistItem.TEXT_SOURCE_ADDED,
     )
     return Source.model_validate(source)
 
@@ -84,6 +93,36 @@ async def create_file_source(  # noqa: PLR0917 - multipart form fields are separ
     )
     if slow:
         background.add_task(container.sources.process_file, source.id)
+    await container.onboarding.record(user.id if user else None, ChecklistItem.DOCUMENT_UPLOADED)
+    return Source.model_validate(source)
+
+
+@router.post(
+    "/projects/{project_id}/sources/sample",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(limit_expensive)],
+    responses=errors(401, 403, 404, 422, 429),
+)
+async def create_sample_source(  # noqa: PLR0917 - FastAPI binds each parameter independently
+    project_id: UUID,
+    body: SampleAdd,
+    request: Request,
+    container: ContainerDep,
+    background: BackgroundTasks,
+    user: OptionalUserDep,
+) -> Source:
+    """Добавить учебный материал из `GET /samples` как обычный источник: документ проходит тот
+    же разбор, что и `sources/file`, голосовая заметка сразу готова (`kind=voice`)."""
+    await ensure_project_access(request, container, project_id, user, write=True)
+    source, slow = await container.samples.add(project_id, body.sample_id)
+    if slow:
+        background.add_task(container.sources.process_file, source.id)
+    await container.onboarding.record(
+        user.id if user else None,
+        ChecklistItem.VOICE_ADDED
+        if source.kind is SourceKind.VOICE
+        else ChecklistItem.DOCUMENT_UPLOADED,
+    )
     return Source.model_validate(source)
 
 

@@ -107,6 +107,16 @@ class QuestionRepository(Protocol):
     async def add(self, question: Question) -> None: ...
     async def get(self, question_id: UUID) -> Question | None: ...
     async def update(self, question: Question) -> None: ...
+    async def apply_reconciled(
+        self, question: Question, *, expected_status: QuestionStatus
+    ) -> bool:
+        """Точечно записывает поля сверки (статус, цитата, ответ), только если статус не менялся.
+
+        Возвращает `False`, если вопрос удалён или его статус уже изменён (например, аналитик
+        ответил между чтением и записью): чужая правка не затирается.
+        """
+        ...
+
     async def list_by_project(
         self, project_id: UUID, *, status: QuestionStatus | None = None
     ) -> list[Question]:

@@ -217,6 +217,18 @@ class InMemoryQuestionRepository:
     async def update(self, question: Question) -> None:
         self._items[question.id] = copy.deepcopy(question)
 
+    async def apply_reconciled(
+        self, question: Question, *, expected_status: QuestionStatus
+    ) -> bool:
+        current = self._items.get(question.id)
+        if current is None or current.status is not expected_status:
+            return False
+        current.status = question.status
+        current.evidence = copy.deepcopy(question.evidence)
+        current.answer = copy.deepcopy(question.answer)
+        current.updated_at = question.updated_at
+        return True
+
     async def list_by_project(
         self, project_id: UUID, *, status: QuestionStatus | None = None
     ) -> list[Question]:

@@ -101,6 +101,20 @@ describe('reduceRun', () => {
     expect(steps[1]).toMatchObject({ status: 'error', description: 'Модель недоступна' })
   })
 
+  it('сохраняет предупреждения прогона из начального состояния и из done', () => {
+    const warning = 'Часть источников не поместилась в контекст и пропущена'
+    expect(initialRunView({ ...run, warnings: [warning] }, 0).warnings).toEqual([warning])
+    const view = play([
+      {
+        type: 'done',
+        id: 1,
+        data: { run: { ...run, status: 'succeeded', warnings: [warning] } },
+      },
+    ])
+    expect(view.warnings).toEqual([warning])
+    expect(play([]).warnings).toEqual([])
+  })
+
   it('для сборки показывает шесть этапов', () => {
     const view = initialRunView({ ...run, mode: 'build' }, 0)
     expect(runSteps(view)).toHaveLength(6)

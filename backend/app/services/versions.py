@@ -5,7 +5,7 @@ from uuid import UUID
 
 from app.domain.bpmn.document import BpmnFormatError, ensure_safe_xml
 from app.domain.bpmn.xsd import xsd_errors
-from app.domain.models import LintIssue, Quote, Version, VersionOrigin
+from app.domain.models import LintIssue, Quote, RunMode, Version, VersionOrigin
 from app.domain.versions import build_version
 from app.infra.bpmn_tools import BpmnTools
 from app.infra.repositories.base import Repositories
@@ -100,12 +100,14 @@ class VersionService:
         async with self._repos.atomic() as repos:
             if await repos.projects.lock(project_id) is None:
                 raise NotFoundError("Проект не найден")
-            # Прогон собирает схему от состояния на момент старта: правка, сохранённая посреди
-            # прогона, молча потерялась бы под новой версией. Блокировка проекта общая с запуском
-            # прогона, поэтому проверка не обгоняется.
-            if await repos.runs.active_for_project(project_id):
+            # Сборка строит схему от состояния на момент старта: правка, сохранённая посреди
+            # сборки, молча потерялась бы под новой версией. Анализ версий не создаёт, поэтому
+            # ему правка не мешает. Блокировка проекта общая с запуском прогона, поэтому
+            # проверка не обгоняется.
+            active = await repos.runs.active_for_project(project_id)
+            if active is not None and active.mode is RunMode.BUILD:
                 raise ConflictError(
-                    "Сейчас идёт прогон — дождитесь его завершения и сохраните правку снова, "
+                    "Сейчас идёт сборка схемы — дождитесь её завершения и сохраните правку снова, "
                     "иначе новая версия перекроет её"
                 )
             previous = await repos.versions.latest(project_id)

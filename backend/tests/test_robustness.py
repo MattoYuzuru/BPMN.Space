@@ -93,7 +93,7 @@ async def test_manual_save_during_active_run_is_conflict(service_container: Cont
     xml = read_bpmn("tp861_v2")
     await service_container.runs.start(project_id, mode=RunMode.BUILD)
 
-    with pytest.raises(ConflictError, match="идёт прогон"):
+    with pytest.raises(ConflictError, match="идёт сборка"):
         await service_container.versions.save_manual(project_id, xml=xml)
     assert await service_container.versions.list(project_id) == []
 
@@ -101,6 +101,26 @@ async def test_manual_save_during_active_run_is_conflict(service_container: Cont
     await service_container.spawner.wait_idle()
     saved = await service_container.versions.save_manual(project_id, xml=xml)
     assert saved.number == 2  # версия 1 собрана прогоном
+
+
+async def test_manual_save_during_active_analyze_run_is_allowed(
+    service_container: Container,
+) -> None:
+    gate = asyncio.Event()
+
+    async def hold(stage: RunStage) -> None:
+        if stage is RunStage.READING_SOURCES:
+            await gate.wait()
+
+    service_container.runs._pace = hold
+    project_id = await _project_with_text(service_container)
+    await service_container.runs.start(project_id, mode=RunMode.ANALYZE)
+
+    saved = await service_container.versions.save_manual(project_id, xml=read_bpmn("tp861_v2"))
+    assert saved.number == 1  # анализ версий не создаёт, правка ему не мешает
+
+    gate.set()
+    await service_container.spawner.wait_idle()
 
 
 async def test_manual_save_unknown_project_is_not_found(service_container: Container) -> None:
@@ -375,6 +395,42 @@ async def test_parsing_timeout_does_not_block_event_loop(monkeypatch: pytest.Mon
     assert ticks >= 2  # цикл событий жил, пока шёл разбор
 
 
+async def test_parsing_uses_dedicated_executor_not_default_pool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import threading  # noqa: PLC0415
+
+    names: list[str] = []
+
+    def work(*_args: object, **_kwargs: object) -> str:
+        names.append(threading.current_thread().name)
+        return "текст"
+
+    monkeypatch.setattr("app.ingest.parsers._pdf_text", work)
+    parser = LocalDocumentParser()
+    assert await parser.parse(file_name="x.pdf", data=b"%PDF") == "текст"
+    assert names[0].startswith("doc-parse")
+
+
+async def test_stuck_parsing_does_not_starve_default_pool(monkeypatch: pytest.MonkeyPatch) -> None:
+    release = __import__("threading").Event()
+
+    def stuck(*_args: object, **_kwargs: object) -> str:
+        release.wait(5)
+        return "текст"
+
+    monkeypatch.setattr("app.ingest.parsers._pdf_text", stuck)
+    parser = LocalDocumentParser(timeout_sec=0.05)
+    try:
+        for _ in range(2):  # занимаем оба слота выделенного пула
+            with pytest.raises(DocumentParseError, match="слишком много времени"):
+                await parser.parse(file_name="x.pdf", data=b"%PDF")
+        # Общий пул потоков остаётся свободным для остальной работы.
+        assert await asyncio.wait_for(asyncio.to_thread(lambda: "ok"), 1) == "ok"
+    finally:
+        release.set()
+
+
 async def test_docx_and_csv_parse_off_loop() -> None:
     parser = LocalDocumentParser()
     assert await parser.parse(file_name="a.docx", data=_docx("Привет")) == "Привет"
@@ -471,7 +527,7 @@ def test_backoff_is_bounded_and_jittered() -> None:
     high = DeepSeekPipeline(api_key="k", retry_base_sec=1, retry_max_sec=10, jitter=lambda: 1.0)
     assert [low._retry_delay(n, None) for n in range(6)] == [0.5, 1.0, 2.0, 4.0, 5.0, 5.0]
     assert [high._retry_delay(n, None) for n in range(6)] == [1.0, 2.0, 4.0, 8.0, 10.0, 10.0]
-    assert high._retry_delay(0, 1000.0) == 60.0  # Retry-After тоже ограничен
+    assert high._retry_delay(0, 1000.0) == 30.0  # Retry-After тоже ограничен
 
 
 def test_retry_after_with_a_date_is_ignored() -> None:
@@ -683,6 +739,59 @@ async def test_stream_is_closed_if_final_save_of_a_successful_run_fails(
     events = [e async for e in await service_container.runs.events(run.id)]
     assert events[-1].kind is RunEventKind.DONE
     assert (await service_container.runs.get(run.id)).status is RunStatus.FAILED
+
+
+async def test_done_is_published_even_if_run_read_fails(service_container: Container) -> None:
+    runs = service_container.repos.runs
+    run_id = uuid4()
+
+    async def broken_get(_run_id: UUID) -> Run | None:
+        raise OSError("БД недоступна")
+
+    runs.get = broken_get  # type: ignore[method-assign]
+    with pytest.raises(OSError, match="БД недоступна"):
+        await service_container.runs._execute(run_id)
+
+    events = [e async for e in service_container.runs._events.subscribe(run_id)]
+    assert events[-1].kind is RunEventKind.DONE
+
+
+async def test_reconcile_does_not_overwrite_answer_written_meanwhile(
+    service_container: Container,
+) -> None:
+    project_id = await _project_with_text(service_container)
+    container = service_container
+    questions = container.repos.questions
+    from app.domain.models import Question, QuestionKind, QuestionStatus, Severity  # noqa: PLC0415
+
+    question = Question(
+        id=uuid4(),
+        project_id=project_id,
+        code="Q-1",
+        kind=QuestionKind.MISSING_ACTOR,
+        severity=Severity.MAJOR,
+        status=QuestionStatus.OPEN,
+        text="Кто принимает заявку?",
+        assumption="",
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    await questions.add(question)
+    # Аналитик отвечает после того, как сверка прочитала вопрос.
+    stale = await questions.get(question.id)
+    assert stale is not None
+    answered = await questions.get(question.id)
+    assert answered is not None
+    answered.status = QuestionStatus.ANSWERED
+    await questions.update(answered)
+
+    stale.status = QuestionStatus.RESOLVED
+    ok = await questions.apply_reconciled(stale, expected_status=QuestionStatus.OPEN)
+
+    assert ok is False
+    kept = await questions.get(question.id)
+    assert kept is not None
+    assert kept.status is QuestionStatus.ANSWERED
 
 
 # ---------- бюджет контекста ----------

@@ -99,6 +99,7 @@ function RunCard({ view, onClose }: { view: RunView; onClose: () => void }) {
         ) : (
           <div className="flex flex-col gap-3 animate-fade-in">
             {view.summary && <SummaryChips summary={view.summary} />}
+            <RunWarnings warnings={view.warnings} />
             {view.mode === 'build' && (
               <span className="flex items-center gap-1.5 type-caption text-fg-muted">
                 <Icon name="diagram" size={14} />
@@ -121,4 +122,26 @@ function RunHint({ stage }: { stage: RunView['stage'] }) {
         : null
   if (!hint) return null
   return <p className="mt-3 border-t border-border pt-3 type-caption text-fg-muted">{hint}</p>
+}
+
+/** Спокойное предупреждение: прогон удался, но часть материалов учтена не полностью. */
+function RunWarnings({ warnings }: { warnings: readonly string[] }) {
+  if (warnings.length === 0) return null
+  return (
+    <div
+      role="note"
+      aria-label="Предупреждения прогона"
+      className="flex flex-col gap-1.5 rounded-md bg-amber-subtle px-3 py-2.5"
+    >
+      <span className="flex items-center gap-1.5 type-caption font-medium text-amber-fg">
+        <Icon name="alert-triangle" size={14} className="text-amber" />
+        Учтено не всё
+      </span>
+      <ul className="flex flex-col gap-1 type-caption text-amber-fg">
+        {warnings.map((warning) => (
+          <li key={warning}>{warning}</li>
+        ))}
+      </ul>
+    </div>
+  )
 }

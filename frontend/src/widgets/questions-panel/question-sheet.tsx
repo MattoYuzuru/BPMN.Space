@@ -239,6 +239,14 @@ function History({ question }: { question: Question }) {
       at: question.updated_at,
     })
   }
+  if (question.status === 'obsolete') {
+    items.push({
+      icon: 'history',
+      tone: 'text-fg-muted',
+      title: 'Предмет вопроса больше не относится к текущему процессу',
+      at: question.updated_at,
+    })
+  }
   return (
     <ol className="flex flex-col gap-3">
       {items.map((item, index) => (

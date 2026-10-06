@@ -10,7 +10,7 @@ from app.fixtures import read_bpmn
 from app.fixtures.examples import EXAMPLES
 from app.fixtures.playbook import PLAYBOOK
 from app.fixtures.samples import SAMPLES
-from app.infra.bpmn_tools import MockBpmnTools
+from app.infra.bpmn_tools import HttpBpmnTools, MockBpmnTools
 from app.infra.database import Database
 from app.infra.events import InMemoryRunEventBus
 from app.infra.repositories.base import Repositories
@@ -48,6 +48,18 @@ def _mock_pace(settings: Settings):
             await asyncio.sleep(delay)
 
     return pace
+
+
+def build_bpmn_tools(settings: Settings):
+    if settings.bpmn_tools_url:
+        return HttpBpmnTools(
+            settings.bpmn_tools_url,
+            timeout_sec=settings.bpmn_tools_timeout_sec,
+            max_bytes=settings.max_diagram_bytes,
+        )
+    if settings.app_env.lower() in {"prod", "production"}:
+        raise ValueError("Production требует BPMN_TOOLS_URL для настоящей проверки схем")
+    return MockBpmnTools()
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,8 +117,7 @@ def build_container(
     realtime = RealtimeHub()
     spawner = AsyncioTaskSpawner()
     assistant_model: AssistantModel | None = None
-    # TODO(real): #6 HTTP-клиент к bpmn-tools (раскладка и bpmnlint) вместо MockBpmnTools.
-    bpmn_tools = MockBpmnTools()
+    bpmn_tools = build_bpmn_tools(settings)
     match settings.llm_provider.lower():
         case "mock":
             pipeline = MockPipeline(playbook=PLAYBOOK, read_bpmn=read_bpmn)

@@ -123,8 +123,21 @@ def build_run_context(
         project_id=project.id,
         project_title=project.title,
         sources=fitted,
+        evidence_sources=usable,
         questions=list(questions),
         current_xml=latest.xml if latest else None,
+        current_trace=dict(latest.trace) if latest else {},
+        base_version_id=latest.id if latest else None,
+        base_generated_xml=next(
+            (
+                v.xml
+                for v in versions
+                if v.origin is VersionOrigin.GENERATED
+                and latest is not None
+                and v.number < latest.number
+            ),
+            None,
+        ),
         current_is_manual=latest is not None and latest.origin is VersionOrigin.MANUAL,
         generated_versions=sum(1 for v in versions if v.origin is VersionOrigin.GENERATED),
         warnings=warnings,

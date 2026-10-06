@@ -193,6 +193,52 @@ async def test_pipeline_builds_diagram_and_keeps_only_verifiable_quotes() -> Non
         sources=[source],
         questions=[],
     )
+
+    def recorded_ir(quote: str) -> dict:
+        first = {
+            "source_id": str(source_id),
+            "quote": "Оператор проверяет комплектность документов.",
+        }
+        second = {"source_id": str(source_id), "quote": quote}
+        return {
+            "schema_version": 1,
+            "title": context.project_title,
+            "lanes": [
+                {"id": "Operator", "name": "Оператор", "source": first},
+                {
+                    "id": "Manager",
+                    "name": "Руководитель",
+                    "source": {
+                        "source_id": str(source_id),
+                        "quote": "Руководитель согласует заявку.",
+                    },
+                },
+            ],
+            "nodes": [
+                {"id": "Start", "type": "start", "name": "Начало", "lane": "Operator"},
+                {
+                    "id": "Task_1",
+                    "type": "task",
+                    "name": "Проверить комплектность документов",
+                    "lane": "Operator",
+                    "source": first,
+                },
+                {
+                    "id": "Task_2",
+                    "type": "task",
+                    "name": "Согласовать заявку",
+                    "lane": "Manager",
+                    "source": second,
+                },
+                {"id": "End", "type": "end", "name": "Завершение", "lane": "Manager"},
+            ],
+            "flows": [
+                {"id": "F1", "source_id": "Start", "target_id": "Task_1"},
+                {"id": "F2", "source_id": "Task_1", "target_id": "Task_2"},
+                {"id": "F3", "source_id": "Task_2", "target_id": "End"},
+            ],
+        }
+
     responses = iter(
         [
             json.dumps(
@@ -202,49 +248,15 @@ async def test_pipeline_builds_diagram_and_keeps_only_verifiable_quotes() -> Non
                             "kind": "missing_outcome",
                             "severity": "major",
                             "text": "Что происходит после согласования?",
-                            "assumption": "Процесс завершается после согласования.",
+                            "assumption": "Процесс завершается",
                             "source_id": str(source_id),
                             "quote": "Руководитель согласует заявку.",
                         }
                     ]
                 }
             ),
-            json.dumps(
-                {
-                    "steps": [
-                        {
-                            "name": "Проверить комплектность документов",
-                            "lane": "Оператор",
-                            "source_id": str(source_id),
-                            "quote": "Оператор проверяет комплектность документов.",
-                        },
-                        {
-                            "name": "Согласовать заявку",
-                            "lane": "Руководитель",
-                            "source_id": str(source_id),
-                            "quote": "Цитата, которой нет в источнике.",
-                        },
-                    ]
-                }
-            ),
-            json.dumps(
-                {
-                    "steps": [
-                        {
-                            "name": "Проверить комплектность документов",
-                            "lane": "Оператор",
-                            "source_id": str(source_id),
-                            "quote": "Оператор проверяет комплектность документов.",
-                        },
-                        {
-                            "name": "Согласовать заявку",
-                            "lane": "Руководитель",
-                            "source_id": str(source_id),
-                            "quote": "Руководитель согласует заявку.",
-                        },
-                    ]
-                }
-            ),
+            json.dumps(recorded_ir("Цитата, которой нет в источнике.")),
+            json.dumps(recorded_ir("Руководитель согласует заявку.")),
         ]
     )
     pipeline = OpenAICompatiblePipeline(
@@ -258,7 +270,7 @@ async def test_pipeline_builds_diagram_and_keeps_only_verifiable_quotes() -> Non
     assert analysis.new_questions[0].about is not None
     assert "bpmn:process" in draft.xml
     assert "Проверить комплектность документов" in draft.xml
-    assert set(draft.trace) == {"Task_1", "Task_2"}
+    assert {"Task_1", "Task_2"} <= set(draft.trace)
     assert draft.trace["Task_1"].quote == "Оператор проверяет комплектность документов."
     assert draft.trace["Task_2"].quote == "Руководитель согласует заявку."
 
@@ -282,21 +294,40 @@ async def test_pipeline_refuses_steps_without_source_quotes_after_repair() -> No
     )
     response = json.dumps(
         {
-            "steps": [
+            "schema_version": 1,
+            "title": "Согласование",
+            "lanes": [
                 {
-                    "name": "Отправить договор",
-                    "lane": "Оператор",
-                    "source_id": str(source_id),
-                    "quote": "Цитаты в источнике нет.",
+                    "id": "Operator",
+                    "name": "Оператор",
+                    "source": {
+                        "source_id": str(source_id),
+                        "quote": "Оператор проверяет комплектность документов.",
+                    },
                 }
-            ]
+            ],
+            "nodes": [
+                {"id": "Start", "type": "start", "name": "Начало", "lane": "Operator"},
+                {
+                    "id": "Task",
+                    "type": "task",
+                    "name": "Отправить договор",
+                    "lane": "Operator",
+                    "source": {"source_id": str(source_id), "quote": "Цитаты в источнике нет."},
+                },
+                {"id": "End", "type": "end", "name": "Конец", "lane": "Operator"},
+            ],
+            "flows": [
+                {"id": "F1", "source_id": "Start", "target_id": "Task"},
+                {"id": "F2", "source_id": "Task", "target_id": "End"},
+            ],
         }
     )
     pipeline = OpenAICompatiblePipeline(
         api_key="test-only", complete=lambda _system, _prompt: response
     )
 
-    with pytest.raises(PipelineError, match="не смогла подтвердить цитатами"):
+    with pytest.raises(PipelineError, match="цитата не найдена"):
         await pipeline.structure(context, AnalysisResult())
 
 

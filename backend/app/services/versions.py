@@ -4,10 +4,11 @@ from collections.abc import Mapping
 from uuid import UUID
 
 from app.domain.bpmn.document import BpmnFormatError, ensure_safe_xml
+from app.domain.bpmn.importer import retain_trace
 from app.domain.bpmn.xsd import require_valid_bpmn
 from app.domain.models import LintIssue, Quote, RunMode, Version, VersionOrigin
 from app.domain.versions import build_version, rechecked_version
-from app.infra.bpmn_tools import BpmnTools
+from app.infra.bpmn_tools import BpmnTools, BpmnToolsError
 from app.infra.repositories.base import Repositories
 from app.services.common import Runtime, get_project, get_version, too_large
 from app.services.errors import (
@@ -15,6 +16,7 @@ from app.services.errors import (
     InvalidInputError,
     NotFoundError,
     StaleVersionError,
+    UnavailableError,
 )
 
 
@@ -29,6 +31,8 @@ async def add_version(
     trace: Mapping[str, Quote],
     run_id: UUID | None = None,
     actor_email: str | None = None,
+    expected_base_version_id: UUID | None = None,
+    enforce_base: bool = False,
 ) -> Version:
     """Новая версия: номер, дифф с прошлой, допущения по текущим вопросам, дорожки.
 
@@ -40,6 +44,10 @@ async def add_version(
         if await tx.projects.lock(project_id) is None:
             raise NotFoundError("Проект не найден")
         previous = await tx.versions.latest(project_id)
+        if enforce_base and (previous.id if previous else None) != expected_base_version_id:
+            raise StaleVersionError(
+                previous.id if previous else None, previous.number if previous else None
+            )
         questions = await tx.questions.list_by_project(project_id)
         now = runtime.clock()
         version = build_version(
@@ -108,6 +116,8 @@ class VersionService:
             require_valid_bpmn(xml)
             ensure_safe_xml(xml)  # только BPMN-пространства имён, без PI, DTD и script
             lint = await self._tools.lint(xml)
+        except BpmnToolsError as error:
+            raise UnavailableError(str(error)) from error
         except BpmnFormatError as error:
             raise InvalidInputError(str(error)) from error
         async with self._repos.atomic() as repos:
@@ -129,7 +139,7 @@ class VersionService:
                 raise StaleVersionError(
                     current_id, previous.number if previous is not None else None
                 )
-            trace = dict(previous.trace) if previous else {}
+            trace = retain_trace(previous.xml, xml, previous.trace) if previous else {}
             return await add_version(
                 repos,
                 self._rt,

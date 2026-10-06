@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { CoachCard, type CoachCardProps } from './coach-card'
@@ -67,6 +67,38 @@ describe('CoachCard', () => {
     await user.click(screen.getByRole('button', { name: 'Завершить обучение' }))
     expect(onRequestEnd).toHaveBeenCalledTimes(1)
     await user.keyboard('{Escape}')
+    expect(onRequestEnd).toHaveBeenCalledTimes(2)
+  })
+
+  it('глобальный Esc уступает открытому слою, даже если его обработчик подключился позже', () => {
+    const { onRequestEnd } = setup({ placement: 'center', autoFocus: false })
+    const layer = document.createElement('div')
+    layer.setAttribute('role', 'dialog')
+    layer.setAttribute('data-state', 'open')
+    const control = document.createElement('button')
+    layer.append(control)
+    document.body.append(layer)
+    const beforeLayer = vi.fn()
+    const dismiss = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      beforeLayer(event.defaultPrevented)
+      event.preventDefault()
+    }
+    document.addEventListener('keydown', dismiss)
+    try {
+      fireEvent.keyDown(control, { key: 'Escape' })
+      expect(beforeLayer).toHaveBeenCalledWith(false)
+      expect(onRequestEnd).not.toHaveBeenCalled()
+      // Явный Esc в карточке сохраняет своё действие, даже пока окно приложения открыто.
+      fireEvent.keyDown(screen.getByRole('heading', { name: 'Добавьте источник' }), {
+        key: 'Escape',
+      })
+      expect(onRequestEnd).toHaveBeenCalledOnce()
+    } finally {
+      document.removeEventListener('keydown', dismiss)
+      layer.remove()
+    }
+    fireEvent.keyDown(document.body, { key: 'Escape' })
     expect(onRequestEnd).toHaveBeenCalledTimes(2)
   })
 

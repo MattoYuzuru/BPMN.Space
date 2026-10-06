@@ -55,6 +55,23 @@ export interface DiagramRemoteMove {
   delta: DiagramPoint
 }
 
+export interface SimulationOption {
+  id: string
+  label: string
+}
+
+/** Состояние локального воспроизведения; скорости и позиции не сохраняются в BPMN. */
+export interface DiagramSimulation {
+  active: boolean
+  paused: boolean
+  status: 'ready' | 'playing' | 'paused' | 'waiting' | 'completed'
+  starts: readonly SimulationOption[]
+  choices: readonly SimulationOption[]
+  choiceLabel?: string
+  waiting: readonly SimulationOption[]
+  message?: string
+}
+
 /** Императивное API редактора. Доступно через `ref` и в `onReady`. */
 export interface DiagramEditorHandle {
   /** Вписать схему в окно (плавно, с отступами, без увеличения больше 100 %). */
@@ -84,6 +101,11 @@ export interface DiagramEditorHandle {
   toggleMinimap(open?: boolean): boolean
   /** Включить или выключить симуляцию токена. Без аргумента переключает. Возвращает новое состояние. */
   toggleSimulation(active?: boolean): boolean
+  startSimulation(startId?: string): void
+  pauseSimulation(): void
+  resetSimulation(): void
+  chooseSimulationFlow(flowId: string): void
+  triggerSimulationEvent(elementId: string): void
   /** Отрисовать панель свойств в контейнере экрана; `null` — убрать её. */
   setPropertiesPanel(container: HTMLElement | null): void
 }
@@ -96,6 +118,10 @@ export interface DiagramEditorProps {
    * и только если XML действительно стал другим. Возврат этого XML обратно в `xml` не перечитывает схему.
    */
   onChange?: (xml: string) => void
+  /** Включение режима, пауза, ожидание и завершение. */
+  onSimulationChange?: (simulation: DiagramSimulation) => void
+  /** Реально создан экземпляр процесса (включение режима без запуска сюда не приходит). */
+  onSimulationStart?: () => void
   /** Только просмотр: нет палитры, правок, контекстного меню; панель свойств неактивна. */
   readOnly?: boolean
   highlights?: Partial<DiagramHighlights>

@@ -158,4 +158,22 @@ describe('TourRoot: контекст шагов из данных учебног
     // Оптимистичный ответ: q1 уже не открыт, а прожектор остаётся на нём.
     expect(useTourSession.getState().pickedId).toBe('q1')
   })
+
+  it('шаг 7 отслеживает открытие и закрытие голосового поповера для смены якоря', async () => {
+    stubApi({ 'GET /api/v1/projects/p1': { body: project() } })
+    act(() => startTour('question.answer', { restored: true }))
+    mount()
+    await waitFor(() => expect(captured.context?.loaded).toBe(true))
+    expect(captured.context?.present.voiceCapture).toBe(false)
+    const capture = document.createElement('div')
+    capture.setAttribute('data-tour', 'voice.capture')
+    document.body.append(capture)
+    try {
+      await waitFor(() => expect(captured.context?.present.voiceCapture).toBe(true))
+      capture.remove()
+      await waitFor(() => expect(captured.context?.present.voiceCapture).toBe(false))
+    } finally {
+      capture.remove()
+    }
+  })
 })

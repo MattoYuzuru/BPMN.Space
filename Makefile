@@ -10,7 +10,7 @@ NPM_FRONT := npm run --workspace frontend
 
 .PHONY: help setup up down logs db-upgrade dev-backend dev-frontend deploy deploy-env \
         format lint typecheck design-lint check-fast test test-backend test-frontend \
-        test-postgres build contract-check openapi gen-api fixtures check e2e screenshots secrets verify mr-report
+        test-postgres build contract-check openapi gen-api fixtures check e2e e2e-diagram screenshots secrets verify mr-report
 
 help: ## Список команд
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -98,6 +98,9 @@ check: check-fast test contract-check build ## Полная проверка (pr
 e2e: ## e2e Playwright: Docker-стек или уже запущенный E2E_BASE_URL
 	@if [ -z "$$E2E_BASE_URL" ]; then docker compose up -d --build --wait; else echo "Использую уже запущенный стенд: $$E2E_BASE_URL"; fi
 	$(NPM_FRONT) e2e
+
+e2e-diagram: ## Настоящий BPMN canvas: токены, шлюзы, экспорт, readOnly и мини-карта (Vite, без backend)
+	$(NPM_FRONT) test:diagram
 
 screenshots: ## Скриншоты ключевых экранов; E2E_BASE_URL задаёт готовый стенд
 	@if [ -z "$$E2E_BASE_URL" ]; then docker compose up -d --build --wait; else echo "Использую уже запущенный стенд: $$E2E_BASE_URL"; fi

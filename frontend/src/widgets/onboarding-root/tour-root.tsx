@@ -24,7 +24,13 @@ import { toast } from '@/shared/ui'
 import { useWorkspaceUi } from '@/widgets/workspace/model'
 
 /** Шаги, на которых нужно знать, открыты ли окна (кнопка меню или поле окна). */
-const PRESENCE_STEPS = new Set(['project.create', 'sources.text', 'sources.voice', 'share.create'])
+const PRESENCE_STEPS = new Set([
+  'project.create',
+  'sources.text',
+  'sources.voice',
+  'question.answer',
+  'share.create',
+])
 /** С этих шагов итог прогона уже известен — после перезагрузки его берём из данных проекта. */
 const AFTER_RUN = new Set([
   'run.wait',

@@ -298,6 +298,13 @@ export default function TourHost<Ctx>({
   // иначе затемнение и карточка оказались бы поверх него, вне FocusScope и под aria-hidden.
   const modal = modalAround(anchor.element) ?? (floating ? topOpenModal() : null)
   const modalSettled = useAnimationsSettled(modal)
+  const waiting = Boolean(selector) && (!anchor.element || !rect) && !anchor.timedOut
+  const showCard = (!waiting && modalSettled) || confirming
+  const focusKey = step && view ? `${step.key}:${view.pageIndex}:${confirming}` : null
+  const focusedPage = useRef<string | null>(null)
+  const autoFocusCard = focusedPage.current !== focusKey && !typingInside(modal)
+  // Перепорталивание в только что открытый поповер не должно отбирать фокус у его контролов.
+  // Фокус просим один раз при показе страницы или явном переходе в подтверждение завершения.
 
   // Необязательный шаг без якоря молча пропускается.
   useEffect(() => {
@@ -363,12 +370,10 @@ export default function TourHost<Ctx>({
   }
 
   const cutout = Boolean(anchor.element && rect)
-  const waiting = Boolean(selector) && !anchor.element && !anchor.timedOut
   const dim = !modal && !floating
   // Шаг-действие без найденного якоря не должен запирать экран: действие нужно сделать.
   const stuckAction = anchor.timedOut && (step.kind === 'action' || step.kind === 'wait')
   const block = dim && !view.allowOutside && !stuckAction
-  const showCard = (!waiting && modalSettled) || confirming
   const centered = !cutout
 
   const counter = stepCounter(steps, step.key, context)
@@ -435,7 +440,10 @@ export default function TourHost<Ctx>({
           side={view.side}
           align={view.align}
           portalContainer={modal}
-          autoFocus={!typingInside(modal)}
+          autoFocus={autoFocusCard}
+          onShown={() => {
+            focusedPage.current = focusKey
+          }}
           eyebrow={eyebrow}
           title={view.title}
           text={view.text}

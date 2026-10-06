@@ -280,11 +280,15 @@ const baseSteps: TourStep<TourContext>[] = [
     kind: 'action',
     route: workspace,
     anchor: (ctx) => {
+      if (ctx.present.voiceCapture) return TOUR_ANCHORS.voiceCapture
       const id = ctx.pickedId ?? ctx.openQuestionIds[0]
-      return id ? inQuestion(id, TOUR_ANCHORS.answerSubmit, TOUR_ANCHORS.questionAnswer) : undefined
+      return id
+        ? inQuestion(id, TOUR_ANCHORS.answerComposer, TOUR_ANCHORS.questionAnswer)
+        : undefined
     },
-    // Карточка стоит у всей карточки вопроса, а подсвечена кнопка внутри неё.
+    // Карточка стоит у вопроса; вырез освобождает всю форму: ввод, микрофон и отправку.
     cardAnchor: (ctx) => {
+      if (ctx.present.voiceCapture) return TOUR_ANCHORS.voiceCapture
       const id = ctx.pickedId ?? ctx.openQuestionIds[0]
       return id ? { selector: `[data-question-id="${id}"]` } : undefined
     },
@@ -335,7 +339,13 @@ const baseSteps: TourStep<TourContext>[] = [
     side: 'right',
     pages: [
       { text: COPY.diagram.canvas, anchor: TOUR_ANCHORS.diagramCanvas, allowOutside: true },
-      { text: COPY.diagram.simulation, anchor: TOUR_ANCHORS.diagramSimulation, side: 'bottom' },
+      {
+        text: COPY.diagram.simulation,
+        anchor: TOUR_ANCHORS.diagramCanvas,
+        cardAnchor: TOUR_ANCHORS.diagramSimulation,
+        side: 'bottom',
+        allowOutside: true,
+      },
       { text: COPY.diagram.download, anchor: TOUR_ANCHORS.headerDownload, side: 'bottom' },
     ],
     // Схемы нет, если прогон упал: показывать нечего.

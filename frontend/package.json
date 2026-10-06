@@ -19,7 +19,8 @@
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "e2e": "playwright test",
-    "gen:api": "openapi-typescript ../docs/api/openapi.json -o src/shared/api/schema.gen.ts"
+    "gen:api": "openapi-typescript ../docs/api/openapi.json -o src/shared/api/schema.gen.ts",
+    "test:diagram": "playwright test --config playwright.diagram.config.ts"
   },
   "dependencies": {
     "@bpmn-io/properties-panel": "3.56.0",

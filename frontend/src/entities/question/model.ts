@@ -33,7 +33,7 @@ export const QUESTION_STATUS: Record<QuestionStatus, { label: string; tone: Badg
 export type QuestionGroup = 'open' | 'assumed' | 'resolved'
 
 export function questionGroup(status: QuestionStatus): QuestionGroup {
-  if (status === 'open' || status === 'answered') return 'open'
+  if (status === 'open') return 'open'
   if (status === 'ignored') return 'assumed'
   return 'resolved'
 }
@@ -44,18 +44,18 @@ function codeNumber(code: string): number {
 }
 
 /**
- * Порядок карточек: сначала требующие ответа (open раньше answered), затем по важности, затем по номеру.
- * В «Решено» — новые решения сверху.
+ * Порядок карточек: сначала открытые, затем допущения, затем отвеченные и решённые.
+ * В первых двух группах — важность и номер; в «Решённые» — свежие изменения сверху.
  */
 export function sortQuestions(questions: readonly Question[]): Question[] {
   return [...questions].sort((a, b) => {
     const groupA = questionGroup(a.status)
-    if (groupA === 'resolved' && questionGroup(b.status) === 'resolved') {
+    const groupB = questionGroup(b.status)
+    const order: Record<QuestionGroup, number> = { open: 0, assumed: 1, resolved: 2 }
+    if (groupA !== groupB) return order[groupA] - order[groupB]
+    if (groupA === 'resolved') {
       return b.updated_at.localeCompare(a.updated_at)
     }
-    const waitingA = a.status === 'answered' ? 1 : 0
-    const waitingB = b.status === 'answered' ? 1 : 0
-    if (waitingA !== waitingB) return waitingA - waitingB
     const rank = SEVERITY[a.severity].rank - SEVERITY[b.severity].rank
     if (rank !== 0) return rank
     return codeNumber(a.code) - codeNumber(b.code)

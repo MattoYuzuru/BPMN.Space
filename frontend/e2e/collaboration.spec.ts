@@ -3,6 +3,30 @@ import { createExampleProject, runViaApi } from './support'
 
 const SIGNED_OUT = { cookies: [], origins: [] }
 
+/** Синхронизация сценария с комнатой не зависит от декоративного счётчика в интерфейсе. */
+function observeRoom(page: Page): () => number {
+  let sessions = new Set<string>()
+  page.on('websocket', (socket) =>
+    socket.on('framereceived', (frame) => {
+      try {
+        const event = JSON.parse(String(frame.payload)) as {
+          type: string
+          participants?: Array<{ session_id: string }>
+          participant?: { session_id: string }
+        }
+        if (event.type === 'ready' || event.type === 'presence.snapshot') {
+          sessions = new Set(event.participants?.map((item) => item.session_id))
+        } else if (event.type === 'presence.changed' && event.participant) {
+          sessions.add(event.participant.session_id)
+        }
+      } catch {
+        // Прочие сообщения не определяют состав комнаты.
+      }
+    }),
+  )
+  return () => sessions.size
+}
+
 async function guestPage(browser: Browser, baseURL: string | undefined): Promise<Page> {
   const context = await browser.newContext({
     baseURL,
@@ -25,10 +49,12 @@ test('движение BPMN-блока сразу видно во второй �
   const projectId = await createExampleProject(request)
   await runViaApi(request, projectId, 'build')
   const other = await guestPage(browser, baseURL)
+  const localCount = observeRoom(page)
+  const remoteCount = observeRoom(other)
   try {
     await Promise.all([page.goto(`/projects/${projectId}`), other.goto(`/projects/${projectId}`)])
-    await expect(page.getByText('2 в комнате')).toBeVisible({ timeout: 15_000 })
-    await expect(other.getByText('2 в комнате')).toBeVisible()
+    await expect.poll(localCount, { timeout: 15_000 }).toBe(2)
+    await expect.poll(remoteCount).toBe(2)
     await page.getByRole('button', { name: 'Вписать в окно' }).click()
     await other.getByRole('button', { name: 'Вписать в окно' }).click()
 
@@ -68,9 +94,11 @@ test('общая доска показывает живое присутстви
 
   const projectId = await createExampleProject(request)
   await runViaApi(request, projectId, 'build')
+  const ownerCount = observeRoom(page)
   await page.goto(`/projects/${projectId}`)
   await page.getByRole('button', { name: 'Вписать в окно' }).click()
-  await expect(page.getByText('Подключаем участников')).toHaveCount(0, { timeout: 15_000 })
+  await expect.poll(ownerCount, { timeout: 15_000 }).toBe(1)
+  await expect(page.getByText(/\d+ в комнате/)).toHaveCount(0)
 
   await page.getByRole('button', { name: 'Поделиться' }).click()
   const dialog = page.getByRole('dialog', { name: 'Поделиться проектом' })
@@ -81,6 +109,7 @@ test('общая доска показывает живое присутстви
   await page.keyboard.press('Escape')
 
   const guest = await guestPage(browser, baseURL)
+  const guestCount = observeRoom(guest)
   const guestSelections: string[][] = []
   const guestDragFrames: Array<{ phase?: string; current?: { x: number; y: number } }> = []
   guest.on('websocket', (socket) =>
@@ -105,8 +134,9 @@ test('общая доска показывает живое присутстви
   try {
     await guest.goto(shareUrl)
     await expect(guest.getByText('Только просмотр').first()).toBeVisible()
-    await expect(page.getByText('2 в комнате')).toBeVisible({ timeout: 15_000 })
-    await expect(guest.getByText('2 в комнате')).toBeVisible()
+    await expect.poll(ownerCount, { timeout: 15_000 }).toBe(2)
+    await expect.poll(guestCount).toBe(2)
+    await expect(page.getByText(/\d+ в комнате/)).toHaveCount(0)
 
     const canvas = page.locator('[aria-label^="Схема процесса"] .djs-container')
     const bounds = await canvas.boundingBox()

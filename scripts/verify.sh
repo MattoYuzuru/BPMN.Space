@@ -40,6 +40,7 @@ step test-postgres make test-postgres
 step contract make contract-check
 step build make build
 step secrets make secrets
+step e2e-diagram make e2e-diagram
 step e2e make e2e
 
 coverage="$(grep -Eo 'TOTAL.*[0-9]+%' reports/.verify-tests.log | grep -Eo '[0-9]+%$' || echo 'n/a')"

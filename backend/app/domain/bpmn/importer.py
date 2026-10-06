@@ -242,10 +242,18 @@ def import_graph(xml: str) -> GraphIR:
         for element in process
         if element.tag not in {_q("laneSet"), _q("sequenceFlow")}
     ]
+    used = {lane_of[node.id] for node in nodes if node.id in lane_of}
+    for lane in lanes:
+        if lane.id not in used:
+            raise GraphValidationError(
+                [
+                    f"Пустая дорожка «{lane.name}» пока не поддерживается при сборке. "
+                    "Текущая схема сохранена. Добавьте в дорожку элемент либо явно "
+                    "пересоберите схему из источников."
+                ]
+            )
     if any(node.lane == "Lane_Unassigned" for node in nodes):
         lanes.append(LaneIR(id="Lane_Unassigned", name="Исполнитель"))
-    used = {node.lane for node in nodes}
-    lanes = [lane for lane in lanes if lane.id in used]
     participant, collaboration_id = _participants(root)
     return GraphIR(
         title=participant.get("name") or "Процесс" if participant is not None else "Процесс",

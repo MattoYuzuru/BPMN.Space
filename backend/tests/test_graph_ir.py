@@ -24,7 +24,9 @@ from app.domain.models import (
     SourceKind,
 )
 from app.fixtures import read_bpmn
+from app.fixtures.playbook import PLAYBOOK
 from app.llm.base import PipelineError
+from app.llm.mock import MockPipeline
 from app.llm.openai_compatible import OpenAICompatiblePipeline
 
 SOURCE_ID = UUID("11111111-1111-4111-8111-111111111111")
@@ -329,3 +331,35 @@ def test_legacy_fixture_task_subtypes_are_imported_without_flattening():
     assert any(node.type == "and" for node in graph.nodes)
     xml = compile_graph(graph)
     assert "sendTask" in xml
+
+
+@pytest.mark.asyncio
+async def test_mock_keeps_manual_across_two_builds_and_explicit_replace_can_leave_it():
+    base = compile_graph(GraphIR.model_validate(graph_case()))
+    manual = base.replace('name="Check"', 'name="Ручная проверка"')
+    source = ContextSource(
+        id=SOURCE_ID,
+        kind=SourceKind.TEXT,
+        title="Описание",
+        content=TEXT,
+        created_at=datetime.now(UTC),
+    )
+    context = RunContext(
+        project_id=uuid4(),
+        project_title="Заявка",
+        sources=[source],
+        questions=[],
+        current_xml=manual,
+        current_is_manual=True,
+        base_generated_xml=base,
+    )
+    mock = MockPipeline(playbook=PLAYBOOK, read_bpmn=read_bpmn)
+    first = await mock.structure(context, AnalysisResult())
+    assert first.manual_overrides
+    context.current_is_manual = False
+    context.manual_overrides = first.manual_overrides
+    second = await mock.structure(context, AnalysisResult())
+    assert second.xml == manual
+    context.replace_manual = True
+    replaced = await mock.structure(context, AnalysisResult())
+    assert "Ручная проверка" not in replaced.xml

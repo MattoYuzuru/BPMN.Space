@@ -280,6 +280,7 @@ const baseSteps: TourStep<TourContext>[] = [
     kind: 'action',
     route: workspace,
     anchor: (ctx) => {
+      if (ctx.present.voiceCapture) return TOUR_ANCHORS.voiceCapture
       const id = ctx.pickedId ?? ctx.openQuestionIds[0]
       return id
         ? inQuestion(id, TOUR_ANCHORS.answerComposer, TOUR_ANCHORS.questionAnswer)
@@ -287,6 +288,7 @@ const baseSteps: TourStep<TourContext>[] = [
     },
     // Карточка стоит у вопроса; вырез освобождает всю форму: ввод, микрофон и отправку.
     cardAnchor: (ctx) => {
+      if (ctx.present.voiceCapture) return TOUR_ANCHORS.voiceCapture
       const id = ctx.pickedId ?? ctx.openQuestionIds[0]
       return id ? { selector: `[data-question-id="${id}"]` } : undefined
     },

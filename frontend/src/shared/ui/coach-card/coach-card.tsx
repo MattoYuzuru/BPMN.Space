@@ -12,7 +12,7 @@ import {
 import { createPortal } from 'react-dom'
 import { useTourLayerTracking } from '@/shared/hooks/use-tour-layer'
 import { cn } from '@/shared/lib/cn'
-import { TOUR_LAYER_ATTR } from '@/shared/lib/tour-anchors'
+import { hasOpenAppLayer, TOUR_LAYER_ATTR } from '@/shared/lib/tour-anchors'
 import { Button } from '../button/button'
 import { IconButton } from '../icon-button/icon-button'
 import { Spinner } from '../spinner/spinner'
@@ -70,6 +70,8 @@ export interface CoachCardProps {
   /** Дополнительное содержимое под текстом (тур его не использует). */
   /** Забирать фокус на заголовок при показе и смене страницы. По умолчанию — кроме `inline`. */
   autoFocus?: boolean
+  /** Заголовок страницы появился; решение о фокусе уже принято. */
+  onShown?: () => void
   children?: ReactNode
   className?: string
 }
@@ -113,17 +115,21 @@ export function CoachCard({
   onConfirmEnd,
   onCancelEnd,
   autoFocus = placement !== 'inline',
+  onShown,
   children,
   className,
 }: CoachCardProps) {
   useTourLayerTracking()
   const headingId = useId()
   const headingRef = useRef<HTMLHeadingElement | null>(null)
+  const onShownRef = useRef(onShown)
+  onShownRef.current = onShown
   // Портал Radix монтирует содержимое со второго рендера, поэтому фокус ставим и при появлении заголовка.
   const setHeading = useCallback(
     (node: HTMLHeadingElement | null) => {
       headingRef.current = node
       if (autoFocus) node?.focus({ preventScroll: true })
+      if (node) onShownRef.current?.()
     },
     [autoFocus],
   )
@@ -133,6 +139,7 @@ export function CoachCard({
   // biome-ignore lint/correctness/useExhaustiveDependencies: pageKey и confirming — триггеры
   useEffect(() => {
     if (autoFocus) headingRef.current?.focus({ preventScroll: true })
+    if (headingRef.current) onShownRef.current?.()
   }, [pageKey, confirming])
 
   useEffect(() => {
@@ -170,12 +177,12 @@ export function CoachCard({
     }
   }
 
-  // Esc вне карточки: если его уже забрало окно или меню (оно закрылось), второй раз не трогаем.
-  // Карточка — не слой Radix, поэтому окно под ней остаётся верхним слоем и закрывается по Esc.
+  // Esc вне карточки принадлежит открытому окну или меню независимо от порядка обработчиков.
+  // Esc внутри карточки обрабатывает onKeyDown выше, сохраняя подтверждение завершения тура.
   useEffect(() => {
     if (placement === 'inline') return
     const onDocKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented) return
+      if (event.key !== 'Escape' || event.defaultPrevented || hasOpenAppLayer()) return
       event.preventDefault()
       handleEscape()
     }

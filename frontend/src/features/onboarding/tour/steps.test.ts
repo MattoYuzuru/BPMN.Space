@@ -469,6 +469,9 @@ describe('сценарий тура', () => {
       selector:
         '[data-question-id="q1"] [data-tour="answer.composer"], [data-question-id="q1"] [data-tour="question.answer"]',
     })
+    const voice = makeCtx({ present: { ...ctx.present, voiceCapture: true } })
+    expect(viewOf('question.answer', voice).anchor).toBe('voice.capture')
+    expect(viewOf('question.answer', voice).cardAnchor).toBe('voice.capture')
   })
 
   it('шаги 2–4: карточка справа от кнопки, по её верхнему краю', () => {

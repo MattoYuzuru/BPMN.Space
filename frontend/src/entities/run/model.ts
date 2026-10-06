@@ -94,7 +94,7 @@ export function initialRunView(run: Run, now: number): RunView {
     error: run.error ?? null,
     lastEventId: 0,
     startedAt: Date.parse(run.started_at) || now,
-    finishedAt: finished ? now : null,
+    finishedAt: finished ? Date.parse(run.finished_at ?? '') || now : null,
   }
 }
 
@@ -149,7 +149,7 @@ export function reduceRun(view: RunView, event: RunEvent, now: number): RunView 
         warnings: run.warnings?.length ? run.warnings : view.warnings,
         error: failed ? (run.error ?? view.error ?? 'Прогон не завершён') : null,
         stageFinishedAt: failed ? view.stageFinishedAt : finishStage(view, now),
-        finishedAt: now,
+        finishedAt: Date.parse(run.finished_at ?? '') || now,
       }
     }
   }
@@ -173,7 +173,9 @@ export function runSteps(view: RunView): StepItem[] {
       description: status === 'error' ? (view.error ?? undefined) : undefined,
       meta:
         status === 'complete' && started !== undefined && finished !== undefined
-          ? formatDuration(Math.max(finished - started, 1000))
+          ? finished - started < 1000
+            ? 'менее 1 с'
+            : formatDuration(finished - started)
           : undefined,
     }
   })

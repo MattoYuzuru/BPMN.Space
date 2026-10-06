@@ -14,6 +14,8 @@ export type OnboardingSignal =
   /** Прогон реально запущен пользователем (не повторное подключение к идущему). */
   | { type: 'run.started'; id: string; projectId: string }
   | { type: 'run.status'; status: RunSignalStatus; projectId: string }
+  /** Итог прогона показан; бизнес-сигнал run.finished приходит независимо и раньше. */
+  | { type: 'run.presented'; runId: string; projectId: string }
   | {
       type: 'run.finished'
       status: string

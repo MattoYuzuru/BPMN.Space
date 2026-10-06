@@ -177,7 +177,8 @@ class SourceService:
         полям разбора и только пока источник в `processing`: название и `active`, которые
         пользователь поменял за время разбора, не затираются, а удалённый источник не оживает.
         """
-        await asyncio.sleep(self._parse_delay)
+        if self._parse_delay:
+            await asyncio.sleep(self._parse_delay)
         source = await self._repos.sources.get(source_id)
         if source is None or source.status is not SourceStatus.PROCESSING or not source.file_key:
             return

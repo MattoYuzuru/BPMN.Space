@@ -64,6 +64,8 @@ export interface TourContext {
   /** Этап прогона по событиям потока. */
   stage: string | null
   readonly result: RunResult | null
+  /** Итог уже показан в карточке; серверное завершение не зависит от её анимации. */
+  readonly resultPresented: boolean
   /** Открытые вопросы в порядке панели. */
   openQuestionIds: string[]
   /** Вопрос шага 7: ответивший на него — до ответа и после. */

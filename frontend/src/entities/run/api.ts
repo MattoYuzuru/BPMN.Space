@@ -44,7 +44,7 @@ export function useStartRun(projectId: string) {
         (project) => project && { ...project, active_run: run, status },
       )
       patchProjectInLists(client, projectId, (project) => ({ ...project, status }))
-      track(run)
+      track(run, true)
       emitOnboardingSignal({ type: 'run.started', id: run.id, projectId })
     },
     onError: (error) =>

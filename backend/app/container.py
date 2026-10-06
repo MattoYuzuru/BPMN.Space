@@ -40,7 +40,9 @@ from app.services.versions import VersionService
 
 def _mock_pace(settings: Settings):
     async def pace(stage: RunStage) -> None:
-        # TODO(real): #5 убрать задержки, когда mock перестанет быть основным демо-режимом.
+        # Задержки нужны только для демонстрации mock; реальный прогон не ждёт анимацию UI.
+        if settings.llm_provider.lower() != "mock":
+            return
         delay = settings.mock_delay(settings.mock_stage_delays.get(stage.value, 0.0))
         if delay:
             await asyncio.sleep(delay)
@@ -166,7 +168,11 @@ def build_container(
         runtime=runtime,
         max_text_chars=settings.max_text_chars,
         max_upload_bytes=settings.max_upload_bytes,
-        parse_delay_sec=settings.mock_delay(settings.mock_parse_delay_sec),
+        parse_delay_sec=(
+            settings.mock_delay(settings.mock_parse_delay_sec)
+            if settings.llm_provider.lower() == "mock"
+            else 0.0
+        ),
     )
 
     return Container(

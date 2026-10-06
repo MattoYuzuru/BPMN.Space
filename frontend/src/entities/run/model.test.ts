@@ -140,6 +140,23 @@ describe('reduceRun', () => {
     const view = initialRunView(run, 1234)
     expect(view.startedAt).toBe(Date.parse(run.started_at))
   })
+
+  it('быстрый этап не становится секундой, окончание берётся с сервера', () => {
+    let view = initialRunView(run, 0)
+    view = reduceRun(view, stage(1, 'reading_sources'), 100)
+    view = reduceRun(view, stage(2, 'extracting'), 200)
+    expect(runSteps(view)[0]?.meta).toBe('менее 1 с')
+    view = reduceRun(
+      view,
+      {
+        type: 'done',
+        id: 3,
+        data: { run: { ...run, status: 'succeeded', finished_at: new Date(300).toISOString() } },
+      },
+      9000,
+    )
+    expect(view.finishedAt).toBe(300)
+  })
 })
 
 describe('formatSummary', () => {

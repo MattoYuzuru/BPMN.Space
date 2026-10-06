@@ -11,12 +11,11 @@ import {
 } from '@/entities/run'
 import { formatDuration } from '@/shared/lib/format'
 import { floatingPanel } from '@/shared/lib/motion'
+import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import { Button, Card, FlowLine, Icon, IconButton, Stepper, toast } from '@/shared/ui'
 import { SummaryChips } from './summary-chips'
-
-/** Сколько итог прогона остаётся на экране после завершения. */
-const SUMMARY_VISIBLE_MS = 6000
+import { SUMMARY_VISIBLE_MS, useRunPresentation } from './use-run-presentation'
 
 /**
  * Ход прогона: плавающая карточка над схемой со Stepper этапов из SSE и линией тока.
@@ -31,18 +30,10 @@ export function RunProgress({
 }) {
   const view = useRunView(projectId)
   const expanded = useRunStore((state) => state.expanded[projectId] ?? false)
-  const setExpanded = useRunStore((state) => state.setExpanded)
   const cancel = useMutation({
     mutationFn: cancelRun,
     onError: () => toast.error('Не удалось отменить общий прогон'),
   })
-  const finished = view && view.status !== 'running'
-
-  useEffect(() => {
-    if (!finished || view?.status === 'failed') return
-    const timer = setTimeout(() => setExpanded(projectId, false), SUMMARY_VISIBLE_MS)
-    return () => clearTimeout(timer)
-  }, [finished, view?.status, projectId, setExpanded])
 
   return (
     <AnimatePresence mode="wait">
@@ -55,9 +46,8 @@ export function RunProgress({
           exit="exit"
           className="pointer-events-auto w-80"
         >
-          <RunCard
+          <PresentedRun
             view={view}
-            onClose={() => setExpanded(projectId, false)}
             onCancel={() => cancel.mutate(view.runId)}
             canCancel={canCancel}
             cancelling={cancel.isPending}
@@ -68,14 +58,62 @@ export function RunProgress({
   )
 }
 
+function PresentedRun({
+  view,
+  ...props
+}: {
+  view: RunView
+  onCancel: () => void
+  canCancel: boolean
+  cancelling: boolean
+}) {
+  const presented = useRunStore((state) => state.presented[view.projectId] === view.runId)
+  const { displayView, presenting, summaryShown } = useRunPresentation(view, !presented)
+  const finishPresentation = useRunStore((state) => state.finishPresentation)
+  const setExpanded = useRunStore((state) => state.setExpanded)
+
+  const close = () => {
+    // Устаревший таймер не может свернуть карточку нового прогона.
+    if (useRunStore.getState().views[view.projectId]?.runId !== view.runId) return
+    finishPresentation(view.projectId, view.runId)
+    setExpanded(view.projectId, false)
+    emitOnboardingSignal({ type: 'run.presented', runId: view.runId, projectId: view.projectId })
+  }
+
+  useEffect(() => {
+    if (!summaryShown) return
+    const timer = setTimeout(() => {
+      if (useRunStore.getState().views[view.projectId]?.runId !== view.runId) return
+      finishPresentation(view.projectId, view.runId)
+      setExpanded(view.projectId, false)
+      emitOnboardingSignal({ type: 'run.presented', runId: view.runId, projectId: view.projectId })
+    }, SUMMARY_VISIBLE_MS)
+    return () => clearTimeout(timer)
+  }, [summaryShown, view.projectId, view.runId, finishPresentation, setExpanded])
+
+  return (
+    <RunCard
+      {...props}
+      view={displayView}
+      actualView={view}
+      presenting={presenting}
+      onClose={close}
+    />
+  )
+}
+
 function RunCard({
   view,
+  actualView,
+  presenting,
   onClose,
   onCancel,
   canCancel,
   cancelling,
 }: {
   view: RunView
+  actualView: RunView
+  presenting: boolean
   onClose: () => void
   onCancel: () => void
   canCancel: boolean
@@ -91,12 +129,13 @@ function RunCard({
     const timer = window.setInterval(() => setClock(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [running])
-  const elapsed = Math.max(0, (view.finishedAt ?? clock) - view.startedAt)
+  const elapsed = Math.max(0, (actualView.finishedAt ?? clock) - actualView.startedAt)
+  const showingCompletedStages = presenting && actualView.status === 'succeeded'
   return (
     <Card
       variant="elevated"
       padding="none"
-      glow={running}
+      glow={running && !showingCompletedStages}
       role="status"
       aria-live="polite"
       aria-label={`Ход прогона: ${labels.title}`}
@@ -104,20 +143,33 @@ function RunCard({
       className="overflow-hidden bg-surface-raised shadow-lg"
     >
       <FlowLine
-        state={running ? 'active' : failed ? 'idle' : 'done'}
+        state={
+          cancelled || failed
+            ? 'idle'
+            : showingCompletedStages
+              ? 'done'
+              : running
+                ? 'active'
+                : 'done'
+        }
         className="absolute inset-x-0 top-0"
       />
       <div className="flex items-center gap-2 px-4 pt-3.5 pb-3">
         <span
           className={
-            failed
-              ? 'grid size-6 place-items-center rounded-md bg-danger-subtle text-danger-fg'
-              : running
-                ? 'grid size-6 place-items-center rounded-md bg-accent-subtle text-accent-fg'
-                : 'grid size-6 place-items-center rounded-md bg-success-subtle text-success-fg'
+            cancelled
+              ? 'grid size-6 place-items-center rounded-md bg-surface text-fg-muted'
+              : failed
+                ? 'grid size-6 place-items-center rounded-md bg-danger-subtle text-danger-fg'
+                : running
+                  ? 'grid size-6 place-items-center rounded-md bg-accent-subtle text-accent-fg'
+                  : 'grid size-6 place-items-center rounded-md bg-success-subtle text-success-fg'
           }
         >
-          <Icon name={failed ? 'alert-circle' : running ? 'bolt' : 'circle-check'} size={14} />
+          <Icon
+            name={cancelled ? 'x' : failed ? 'alert-circle' : running ? 'bolt' : 'circle-check'}
+            size={14}
+          />
         </span>
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="type-subheading text-fg">
@@ -126,14 +178,20 @@ function RunCard({
               : failed
                 ? 'Прогон остановлен'
                 : running
-                  ? labels.title
+                  ? showingCompletedStages
+                    ? 'Результат готов'
+                    : labels.title
                   : labels.done}
           </span>
           <span className="type-caption text-fg-subtle" data-numeric role="timer" aria-live="off">
-            {running ? `Прошло ${formatDuration(elapsed)}` : formatDuration(elapsed)}
+            {actualView.status === 'running'
+              ? `Прошло ${formatDuration(elapsed)}`
+              : elapsed < 1000
+                ? 'менее 1 с'
+                : formatDuration(elapsed)}
           </span>
         </div>
-        {running && canCancel && (
+        {actualView.status === 'running' && canCancel && (
           <Button
             size="sm"
             variant="ghost"
@@ -145,13 +203,15 @@ function RunCard({
             {cancelling ? 'Отменяю…' : 'Отменить прогон'}
           </Button>
         )}
-        {!running && <IconButton icon="x" size="sm" label="Скрыть" onClick={onClose} />}
+        {actualView.status !== 'running' && (
+          <IconButton icon="x" size="sm" label="Скрыть" onClick={onClose} />
+        )}
       </div>
       <div className="px-4 pb-4">
         {running || failed ? (
           <>
             <Stepper aria-label="Этапы прогона" steps={runSteps(view)} />
-            {running && <RunHint stage={view.stage} />}
+            {actualView.status === 'running' && <RunHint stage={view.stage} />}
           </>
         ) : (
           <div className="flex flex-col gap-3 animate-fade-in">

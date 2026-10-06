@@ -61,6 +61,7 @@ from app.services.versions import add_version
 logger = logging.getLogger(__name__)
 
 type Pace = Callable[[RunStage], Awaitable[None]]
+type RealtimePublisher = Callable[[UUID, dict[str, object]], Awaitable[None]]
 
 
 class ProgressRecorder(Protocol):
@@ -119,6 +120,7 @@ class RunService:
         context_budget_chars: int = 120_000,
         deadline_sec: float = 600.0,
         progress: ProgressRecorder | None = None,
+        broadcast: RealtimePublisher | None = None,
     ) -> None:
         self._repos = repos
         self._pipeline = pipeline
@@ -130,7 +132,9 @@ class RunService:
         self._context_budget = context_budget_chars
         self._deadline_sec = deadline_sec
         self._progress = progress
+        self._broadcast = broadcast
         self._limit = asyncio.Semaphore(max(max_concurrent, 1))
+        self._cancel_requested: set[UUID] = set()
         # Этот lock ускоряет конфликт внутри процесса; уникальный индекс защищает между процессами.
         self._start_lock = asyncio.Lock()
 
@@ -174,10 +178,36 @@ class RunService:
                     "По проекту уже идёт прогон — дождитесь его завершения"
                 ) from error
             await repos.projects.touch(project_id, now)
+        await self._publish_live(run)
         self._spawner.spawn(self._execute(run.id), name=f"run-{run.id}")
         return run
 
     async def get(self, run_id: UUID) -> Run:
+        return await get_run(self._repos, run_id)
+
+    async def cancel(self, run_id: UUID) -> Run:
+        """Отменить общий прогон проекта; безопасно повторяется после его завершения."""
+        run = await get_run(self._repos, run_id)
+        if run.status not in ACTIVE_STATUSES:
+            return run
+
+        # Сначала даём активному исполнителю обработать CancelledError и сохранить терминальный
+        # статус. Для задачи, ещё ожидающей семафор, coroutine может вообще не начать работу —
+        # тогда статус фиксируем здесь.
+        self._cancel_requested.add(run_id)
+        try:
+            cancelled_task = await self._spawner.cancel(name=f"run-{run_id}")
+        finally:
+            self._cancel_requested.discard(run_id)
+        current = await get_run(self._repos, run_id)
+        if current.status in ACTIVE_STATUSES:
+            current.status = RunStatus.CANCELLED
+            current.error = "Прогон отменён участником"
+            current.finished_at = self._rt.clock()
+            await self._repos.runs.update(current)
+            await self._publish(current, RunEventKind.DONE, current)
+        elif not cancelled_task:
+            return current
         return await get_run(self._repos, run_id)
 
     async def events(self, run_id: UUID, *, after: int = 0) -> AsyncIterator[RunEvent]:
@@ -204,9 +234,8 @@ class RunService:
                 # получают `done`: иначе поток висел бы вечно. Повтор `done` шина игнорирует.
                 # Если прогона нет в БД без ошибки чтения, закрывать нечего.
                 if run is not None or sys.exc_info()[0] is not None:
-                    await self._events.publish(
-                        run_id, RunEventKind.DONE, run or self._lost_run(run_id)
-                    )
+                    lost = run or self._lost_run(run_id)
+                    await self._publish(lost, RunEventKind.DONE, lost)
 
     def _lost_run(self, run_id: UUID) -> Run:
         """Заглушка для финального `done`, когда прогон не удалось прочитать из БД."""
@@ -228,10 +257,22 @@ class RunService:
                 async with asyncio.timeout(deadline) as scope:
                     await self._run_stages(run, execution_started)
         except asyncio.CancelledError:
-            await self._fail(
-                run, "Прогон прерван остановкой сервера", execution_started=execution_started
-            )
-            raise
+            if run.id not in self._cancel_requested:
+                await self._fail(
+                    run,
+                    "Прогон прерван остановкой сервера",
+                    execution_started=execution_started,
+                )
+                raise
+            run.status = RunStatus.CANCELLED
+            run.error = "Прогон отменён участником"
+            run.finished_at = self._rt.clock()
+            run.latency_ms = max(0, round((time.perf_counter() - execution_started) * 1000))
+            try:
+                await self._repos.runs.update(run)
+            except Exception:
+                logger.exception("Не удалось сохранить отмену прогона %s", run.id)
+            await self._publish(run, RunEventKind.DONE, run)
         except (PipelineError, BpmnFormatError) as error:
             await self._fail(run, str(error), execution_started=execution_started)
         except TimeoutError:
@@ -295,7 +336,7 @@ class RunService:
         progress = StageProgress(
             stage=stage, label=stage_label(run.status, stage), progress=run.progress
         )
-        await self._events.publish(run.id, RunEventKind.STAGE, progress)
+        await self._publish(run, RunEventKind.STAGE, progress)
 
     async def _perform(self, run: Run, stage: RunStage, state: _RunState) -> None:
         match stage:
@@ -380,13 +421,13 @@ class RunService:
                     question.code,
                 )
                 continue
-            await self._events.publish(run.id, RunEventKind.QUESTION, question)
+            await self._publish(run, RunEventKind.QUESTION, question)
         for question in outcome.created:
             await self._repos.questions.add(question)
-            await self._events.publish(run.id, RunEventKind.QUESTION, question)
+            await self._publish(run, RunEventKind.QUESTION, question)
         run.summary = outcome.summary
         await self._repos.runs.update(run)
-        await self._events.publish(run.id, RunEventKind.SUMMARY, outcome.summary)
+        await self._publish(run, RunEventKind.SUMMARY, outcome.summary)
 
     async def _layout(self, run: Run, state: _RunState) -> None:
         if state.xml is None or state.draft is None:
@@ -406,7 +447,7 @@ class RunService:
         run.version_id = version.id
         run.report = _json_data(version.report)
         await self._repos.runs.update(run)
-        await self._events.publish(run.id, RunEventKind.VERSION, version)
+        await self._publish(run, RunEventKind.VERSION, version)
 
     async def _model_call(
         self,
@@ -453,5 +494,29 @@ class RunService:
             # Даже если БД недоступна, подписчик должен узнать об ошибке и закрыть поток.
             logger.exception("Не удалось сохранить ошибку прогона %s", run.id)
         finally:
-            await self._events.publish(run.id, RunEventKind.ERROR, RunError(message=message))
-            await self._events.publish(run.id, RunEventKind.DONE, run)
+            await self._publish(run, RunEventKind.ERROR, RunError(message=message))
+            await self._publish(run, RunEventKind.DONE, run)
+
+    async def _publish(self, run: Run, kind: RunEventKind, payload: Any) -> None:
+        await self._events.publish(run.id, kind, payload)
+        await self._publish_live(run)
+
+    async def _publish_live(self, run: Run) -> None:
+        if self._broadcast is None:
+            return
+        message: dict[str, object] = {
+            "type": "run.changed",
+            "run_id": str(run.id),
+            "mode": run.mode.value,
+            "status": run.status.value,
+            "actor": run.actor_email,
+            "stage": run.stage.value if run.stage else None,
+            "progress": run.progress,
+            "version_id": str(run.version_id) if run.version_id else None,
+            "error": run.error,
+        }
+        try:
+            await self._broadcast(run.project_id, message)
+        except Exception:
+            # Realtime is a best-effort projection; it must never fail or stop the durable run.
+            logger.exception("Прогон %s: не удалось разослать realtime-событие", run.id)

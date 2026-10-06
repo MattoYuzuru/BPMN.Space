@@ -101,6 +101,22 @@ describe('reduceRun', () => {
     expect(steps[1]).toMatchObject({ status: 'error', description: 'Модель недоступна' })
   })
 
+  it('отличает отменённый прогон от ошибки и не помечает его успешным', () => {
+    const view = play([
+      stage(1, 'reading_sources'),
+      {
+        type: 'done',
+        id: 2,
+        data: {
+          run: { ...run, status: 'cancelled', error: 'Прогон отменён участником' },
+        },
+      },
+    ])
+    expect(view.status).toBe('cancelled')
+    expect(view.progress).toBe(0.25)
+    expect(runSteps(view)[0]?.status).toBe('current')
+  })
+
   it('сохраняет предупреждения прогона из начального состояния и из done', () => {
     const warning = 'Часть источников не поместилась в контекст и пропущена'
     expect(initialRunView({ ...run, warnings: [warning] }, 0).warnings).toEqual([warning])

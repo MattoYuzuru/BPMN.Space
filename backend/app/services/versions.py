@@ -14,6 +14,7 @@ from app.services.errors import (
     ConflictError,
     InvalidInputError,
     NotFoundError,
+    StaleVersionError,
 )
 
 
@@ -82,7 +83,12 @@ class VersionService:
         return await get_version(self._repos, version_id)
 
     async def save_manual(
-        self, project_id: UUID, *, xml: str, actor_email: str | None = None
+        self,
+        project_id: UUID,
+        *,
+        xml: str,
+        base_version_id: UUID | None = None,
+        actor_email: str | None = None,
     ) -> Version:
         """Ручная правка из bpmn-js → версия `manual`.
 
@@ -115,6 +121,11 @@ class VersionService:
                     "иначе новая версия перекроет её"
                 )
             previous = await repos.versions.latest(project_id)
+            current_id = previous.id if previous else None
+            if current_id != base_version_id:
+                raise StaleVersionError(
+                    current_id, previous.number if previous is not None else None
+                )
             trace = dict(previous.trace) if previous else {}
             return await add_version(
                 repos,

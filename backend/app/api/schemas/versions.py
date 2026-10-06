@@ -1,11 +1,12 @@
 """Схемы версий BPMN-схемы."""
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import Field
 
-from app.api.schemas.common import ApiModel, Quote
+from app.api.schemas.common import ApiModel, ErrorResponse, Quote
 from app.domain.models import LintSeverity, VersionOrigin
 
 
@@ -60,3 +61,18 @@ class VersionDetail(Version):
 
 class DiagramSave(ApiModel):
     xml: str = Field(min_length=1, description="BPMN 2.0 XML из bpmn-js (`saveXML`)")
+    base_version_id: UUID | None = Field(
+        description="Версия, от которой сделана правка; null только до первой версии"
+    )
+
+
+class DiagramConflictResponse(ErrorResponse):
+    code: Literal["stale_version"] | None = Field(
+        default=None, description="Причина конфликта, если сохранение основано на старой версии"
+    )
+    head_version_id: UUID | None = Field(
+        default=None, description="Текущая версия проекта для синхронизации"
+    )
+    head_version_number: int | None = Field(
+        default=None, description="Номер текущей версии проекта"
+    )

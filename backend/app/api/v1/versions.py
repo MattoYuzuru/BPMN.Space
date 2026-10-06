@@ -9,7 +9,7 @@ from app.api.auth import OptionalUserDep
 from app.api.deps import ContainerDep
 from app.api.responses import bpmn_attachment
 from app.api.schemas.common import errors
-from app.api.schemas.versions import DiagramSave, Version, VersionDetail
+from app.api.schemas.versions import DiagramConflictResponse, DiagramSave, Version, VersionDetail
 from app.domain.onboarding import ChecklistItem
 
 router = APIRouter(tags=["versions"])
@@ -66,7 +66,13 @@ async def download_version(
 @router.put(
     "/projects/{project_id}/diagram",
     status_code=status.HTTP_201_CREATED,
-    responses=errors(401, 403, 404, 409, 413, 422),
+    responses={
+        **errors(401, 403, 404, 413, 422),
+        409: {
+            "model": DiagramConflictResponse,
+            "description": "Сборка уже выполняется или схема сохранена другим участником",
+        },
+    },
 )
 async def save_diagram(
     project_id: UUID,
@@ -80,7 +86,21 @@ async def save_diagram(
     Пока по проекту идёт прогон — 409: его версия перекрыла бы правку."""
     await ensure_project_access(request, container, project_id, user, write=True)
     saved = await container.versions.save_manual(
-        project_id, xml=body.xml, actor_email=user.email if user else None
+        project_id,
+        xml=body.xml,
+        base_version_id=body.base_version_id,
+        actor_email=user.email if user else None,
+    )
+    await container.realtime.publish(
+        project_id,
+        {
+            "type": "diagram.version",
+            "version_id": str(saved.id),
+            "number": saved.number,
+            "actor": saved.actor_email,
+            "created_at": saved.created_at.isoformat(),
+            "base_version_id": str(body.base_version_id) if body.base_version_id else None,
+        },
     )
     await container.onboarding.record(user.id if user else None, ChecklistItem.DIAGRAM_EDITED)
     return Version.model_validate(saved)

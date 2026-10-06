@@ -132,7 +132,9 @@ def test_manual_save_returns_422_for_dangerous_xml(client: TestClient) -> None:
     xml = (
         f'<bpmn:definitions {BPMN}><bpmn:process id="p"/><x:b xmlns:x="urn:x"/></bpmn:definitions>'
     )
-    response = client.put(f"{API}/projects/{DEMO}/diagram", json={"xml": xml})
+    response = client.put(
+        f"{API}/projects/{DEMO}/diagram", json={"xml": xml, "base_version_id": None}
+    )
 
     assert response.status_code == 422
     assert "вне пространств имён BPMN 2.0" in response.json()["detail"]

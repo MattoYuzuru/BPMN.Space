@@ -810,7 +810,8 @@ async def test_manual_save_rejects_malicious_xml(stack: Stack) -> None:
 
     # Допустимое содержимое не режем: `bpmn:script` внутри scriptTask — часть стандарта.
     script_task = (
-        '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+        '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" '
+        'targetNamespace="urn:allowed-script-task">'
         '<bpmn:process id="p"><bpmn:scriptTask id="t"><bpmn:script>x = 1</bpmn:script>'
         "</bpmn:scriptTask></bpmn:process></bpmn:definitions>"
     )

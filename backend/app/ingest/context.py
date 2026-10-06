@@ -13,7 +13,9 @@ TODO(real): #6 вместо обрезки — дайджест больших �
 """
 
 import hashlib
+import json
 from collections.abc import Sequence
+from copy import deepcopy
 from typing import Any
 
 from app.domain.analysis import MAX_SOURCE_TEXT_CHARS, ContextSource, RunContext
@@ -34,6 +36,26 @@ _LISTED_TITLES = 3
 
 def _digest(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
+
+
+def source_snapshot_hash(sources: Sequence[Source]) -> str:
+    """Снимок всех источников, включая inactive/processing; текст в аудит не копируется."""
+    values = sorted(
+        [
+            (
+                str(s.id),
+                s.kind.value,
+                s.title,
+                s.status.value,
+                s.active,
+                _digest(s.content),
+                str(s.question_id),
+                s.created_at.isoformat(),
+            )
+            for s in sources
+        ]
+    )
+    return _digest(json.dumps(values, ensure_ascii=False))
 
 
 def _cut(text: str, limit: int) -> str:
@@ -119,12 +141,17 @@ def build_run_context(
         if s.active and s.status is SourceStatus.READY and s.content.strip()
     ]
     fitted, warnings = fit_sources(usable, budget_chars=budget_chars)
+    unavailable = [s for s in sources if s.active and s.status is not SourceStatus.READY]
+    if unavailable:
+        warnings.append(
+            f"Активных источников без готового текста: {len(unavailable)}. Их содержимое ещё не "
+            "учтено; исключение вопросов как неактуальных не подтверждается неполным контекстом."
+        )
     return RunContext(
         project_id=project.id,
         project_title=project.title,
         sources=fitted,
-        evidence_sources=usable,
-        questions=list(questions),
+        questions=deepcopy(list(questions)),
         current_xml=latest.xml if latest else None,
         current_trace=dict(latest.trace) if latest else {},
         base_version_id=latest.id if latest else None,
@@ -141,6 +168,10 @@ def build_run_context(
         current_is_manual=latest is not None and latest.origin is VersionOrigin.MANUAL,
         generated_versions=sum(1 for v in versions if v.origin is VersionOrigin.GENERATED),
         warnings=warnings,
+        evidence_sources=usable,
+        analysis_budget_chars=budget_chars,
+        source_snapshot_hash=source_snapshot_hash(sources),
+        analysis_input_complete=not unavailable,
     )
 
 
@@ -170,6 +201,22 @@ def describe_context(context: RunContext) -> dict[str, Any]:
             else None
         ),
         "current_is_manual": context.current_is_manual,
+        "analysis_sources": [
+            {
+                "id": str(s.id),
+                "kind": s.kind.value,
+                "chars": len(s.content),
+                "sha256": _digest(s.content),
+            }
+            for s in (
+                context.evidence_sources
+                if context.evidence_sources is not None
+                else context.sources
+            )
+        ],
+        "analysis_budget_chars": context.analysis_budget_chars,
+        "source_snapshot_hash": context.source_snapshot_hash,
+        "analysis_input_complete": context.analysis_input_complete,
         "generated_versions": context.generated_versions,
         "warnings": context.warnings,
     }

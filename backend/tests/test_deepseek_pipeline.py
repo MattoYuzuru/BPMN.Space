@@ -32,7 +32,7 @@ def test_request_uses_current_model_and_server_side_bearer_auth() -> None:
     assert request_body["model"] == "deepseek-flash"
     assert "thinking" not in request_body
     assert request_body["response_format"] == {"type": "json_object"}
-    assert request_body["max_tokens"] == 4096
+    assert request_body["max_tokens"] == 8192
     assert request_body["temperature"] == 0.0
 
 
@@ -243,6 +243,8 @@ async def test_pipeline_builds_diagram_and_keeps_only_verifiable_quotes() -> Non
         [
             json.dumps(
                 {
+                    "complete": True,
+                    "question_updates": [],
                     "new_questions": [
                         {
                             "kind": "missing_outcome",
@@ -252,7 +254,15 @@ async def test_pipeline_builds_diagram_and_keeps_only_verifiable_quotes() -> Non
                             "source_id": str(source_id),
                             "quote": "Руководитель согласует заявку.",
                         }
-                    ]
+                    ],
+                }
+            ),
+            json.dumps(
+                {
+                    "complete": True,
+                    "decisions": [
+                        {"id": "N-1", "valid": True, "reason": "Результат согласования не описан"}
+                    ],
                 }
             ),
             json.dumps(recorded_ir("Цитата, которой нет в источнике.")),

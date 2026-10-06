@@ -475,7 +475,11 @@ class SqlQuestionRepository:
             )
 
     async def apply_reconciled(
-        self, question: Question, *, expected_status: QuestionStatus
+        self,
+        question: Question,
+        *,
+        expected_status: QuestionStatus,
+        expected_updated_at: datetime | None = None,
     ) -> bool:
         statement = (
             update(QuestionRow)
@@ -488,6 +492,8 @@ class SqlQuestionRepository:
                 updated_at=question.updated_at,
             )
         )
+        if expected_updated_at is not None:
+            statement = statement.where(QuestionRow.updated_at == expected_updated_at)
         async with self.sessions.begin() as session:
             result = cast(CursorResult[Any], await session.execute(statement))
         return result.rowcount > 0

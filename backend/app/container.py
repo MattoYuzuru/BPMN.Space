@@ -140,6 +140,7 @@ def build_container(
                 model=model,
                 timeout_sec=timeout,
                 json_mode=settings.llm_json_mode,
+                json_max_tokens=settings.llm_json_max_tokens,
                 max_retries=retries,
                 retry_base_sec=retry_base,
                 retry_max_sec=retry_max,

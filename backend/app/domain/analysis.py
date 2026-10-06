@@ -42,13 +42,17 @@ class RunContext:
     current_is_manual: bool = False
     generated_versions: int = 0
     current_trace: dict[str, Quote] = field(default_factory=dict[str, Quote])
-    evidence_sources: list[ContextSource] = field(default_factory=list[ContextSource])
     base_version_id: UUID | None = None
     base_generated_xml: str | None = None
     replace_manual: bool = False
     manual_overrides: dict[str, Any] | None = None
     # Что не поместилось в бюджет контекста и было обрезано или пропущено (показываем в прогоне).
     warnings: list[str] = field(default_factory=list[str])
+    # Полный доступный снимок знаний для порционной сверки, без обрезки fitted sources структуры.
+    evidence_sources: list[ContextSource] | None = None
+    analysis_budget_chars: int = 120_000
+    source_snapshot_hash: str | None = None
+    analysis_input_complete: bool = True
 
 
 @dataclass(slots=True, kw_only=True)
@@ -69,12 +73,16 @@ class NewQuestion:
     assumption: str
     about: Quote | None = None
     element_ids: list[str] = field(default_factory=list[str])
+    # Проверенная связь с исторической неопределённостью; не заменяет её основание и историю.
+    related_code: str | None = None
 
 
 @dataclass(slots=True, kw_only=True)
 class AnalysisResult:
     question_updates: list[QuestionUpdate] = field(default_factory=list[QuestionUpdate])
     new_questions: list[NewQuestion] = field(default_factory=list[NewQuestion])
+    warnings: list[str] = field(default_factory=list[str])
+    audit: dict[str, Any] = field(default_factory=dict[str, Any])
 
 
 @dataclass(slots=True, kw_only=True)

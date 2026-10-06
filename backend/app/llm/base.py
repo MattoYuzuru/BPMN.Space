@@ -26,6 +26,10 @@ class PipelineError(Exception):
     """Модель не справилась (после repair-кругов). Сообщение — для пользователя."""
 
 
+class OutputTruncatedError(RuntimeError):
+    """Провайдер явно не завершил ответ; такой JSON не является полным результатом."""
+
+
 class ProcessPipeline(Protocol):
     @property
     def model_name(self) -> str: ...

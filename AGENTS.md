@@ -50,7 +50,7 @@ make deploy-env   # передать production-переменные из лок
 make deploy       # задеплоить commit из main после MR и make verify
 ```
 
-Деплой: сначала прочитайте [`docs/deployment.md`](docs/deployment.md). Production выкладывается только из `origin/main` по SHA, секреты хранятся отдельно в `/opt/arkhitektor/shared/.env` на VM.
+Деплой: сначала прочитайте [`docs/deployment.md`](docs/deployment.md). Production выкладывается только из `origin/main` по SHA, секреты хранятся отдельно в `/home/deploy/arkhitektor/shared/.env` на VM.
 
 ## Правила
 

@@ -91,16 +91,17 @@ async def save_diagram(
         base_version_id=body.base_version_id,
         actor_email=user.email if user else None,
     )
-    await container.realtime.publish(
-        project_id,
-        {
-            "type": "diagram.version",
-            "version_id": str(saved.id),
-            "number": saved.number,
-            "actor": saved.actor_email,
-            "created_at": saved.created_at.isoformat(),
-            "base_version_id": str(body.base_version_id) if body.base_version_id else None,
-        },
-    )
-    await container.onboarding.record(user.id if user else None, ChecklistItem.DIAGRAM_EDITED)
+    if saved.id != body.base_version_id:
+        await container.realtime.publish(
+            project_id,
+            {
+                "type": "diagram.version",
+                "version_id": str(saved.id),
+                "number": saved.number,
+                "actor": saved.actor_email,
+                "created_at": saved.created_at.isoformat(),
+                "base_version_id": str(body.base_version_id) if body.base_version_id else None,
+            },
+        )
+        await container.onboarding.record(user.id if user else None, ChecklistItem.DIAGRAM_EDITED)
     return Version.model_validate(saved)

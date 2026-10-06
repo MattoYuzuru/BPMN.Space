@@ -120,7 +120,9 @@ class ProjectService:
         if questions is None:
             questions = await repos.questions.list_by_project(project.id)
         versions = (
-            versions if versions is not None else await repos.versions.list_by_project(project.id)
+            versions
+            if versions is not None
+            else await repos.versions.list_by_project(project.id, include_xml=False)
         )
         if not active_known:
             active_run = await repos.runs.active_for_project(project.id)
@@ -190,7 +192,7 @@ class ProjectService:
         project = await get_project(repos, project_id)
         sources = await repos.sources.list_by_project(project_id)
         questions = await repos.questions.list_by_project(project_id)
-        versions = await repos.versions.list_by_project(project_id)
+        versions = await repos.versions.list_by_project(project_id, include_xml=False)
         runs = await repos.runs.list_by_project(project_id)
         active = next((r for r in runs if r.status in ACTIVE_STATUSES), None)
         finished = [r for r in runs if r.status is RunStatus.SUCCEEDED]

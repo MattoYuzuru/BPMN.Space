@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.domain.analysis import AnalysisResult, ContextSource, RunContext
+from app.domain.bpmn.xsd import require_valid_bpmn
 from app.domain.models import SourceKind
 from app.infra.bpmn_tools import HttpBpmnTools
 from app.llm.openai_compatible import OpenAICompatiblePipeline
@@ -44,6 +45,7 @@ async def export(url: str, output: Path) -> None:
             AnalysisResult(),
         )
         xml = await tools.layout(draft.xml)
+        require_valid_bpmn(xml)
         errors = [issue for issue in await tools.lint(xml) if issue.severity.value == "error"]
         if errors:
             raise ValueError(errors)
@@ -52,7 +54,7 @@ async def export(url: str, output: Path) -> None:
             (output / f"{path.stem}.ir.json").write_text,
             json.dumps(draft.ir, ensure_ascii=False, indent=2),
         )
-        print(f"{path.stem}: IR/HTTP layout/full lint ok → {output / (path.stem + '.bpmn')}")
+        print(f"{path.stem}: IR/HTTP layout/XSD/full lint ok → {output / (path.stem + '.bpmn')}")
 
 
 if __name__ == "__main__":

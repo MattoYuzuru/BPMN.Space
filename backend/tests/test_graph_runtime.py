@@ -45,6 +45,22 @@ from tests.test_graph_ir import SOURCE_ID, TEXT, graph_case
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def recorded_reply(prompt: str, case: str = "xor") -> str:
+    payload = json.loads(prompt)
+    if payload.get("phase") == "analyze":
+        return json.dumps(
+            {
+                "complete": True,
+                "question_updates": [
+                    {"code": question["key"], "status": "keep"}
+                    for question in payload.get("existing_questions", [])
+                ],
+                "new_questions": [],
+            }
+        )
+    return json.dumps(graph_case(case))
+
+
 @pytest.fixture(scope="module")
 def node_url():
     code = (
@@ -205,12 +221,8 @@ async def test_sources_recorded_ir_xml_version_roundtrip_and_audit(node_url):
         )
     )
 
-    def complete(system, prompt):
-        return (
-            json.dumps({"new_questions": []})
-            if "new_questions" in system
-            else json.dumps(graph_case("nested"))
-        )
+    def complete(_system, prompt):
+        return recorded_reply(prompt, "nested")
 
     pipeline = OpenAICompatiblePipeline(api_key="test-only", complete=complete)
     spawner = AsyncioTaskSpawner()
@@ -289,7 +301,10 @@ async def test_new_task_keeps_fixed_manual_position_and_expands_pool_lane(node_u
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("change", ["new_source", "inactive", "title", "question"])
+@pytest.mark.parametrize(
+    "change",
+    ["new_source", "processing_source", "inactive_source", "inactive", "title", "question"],
+)
 async def test_changed_knowledge_does_not_publish_old_graph(node_url, change):
 
     store = InMemoryStore()
@@ -336,12 +351,8 @@ async def test_changed_knowledge_does_not_publish_old_graph(node_url, change):
             await release.wait()
             return result
 
-    def complete(system, _prompt):
-        return (
-            json.dumps({"new_questions": []})
-            if "new_questions" in system
-            else json.dumps(graph_case())
-        )
+    def complete(_system, prompt):
+        return recorded_reply(prompt)
 
     spawner = AsyncioTaskSpawner()
     runs = RunService(
@@ -355,7 +366,7 @@ async def test_changed_knowledge_does_not_publish_old_graph(node_url, change):
     )
     run = await runs.start(pid, mode=RunMode.BUILD, created_by=None)
     await asyncio.wait_for(ready.wait(), 5)
-    if change == "new_source":
+    if change in {"new_source", "processing_source", "inactive_source"}:
         await repos.sources.add(
             Source(
                 id=uuid4(),
@@ -363,8 +374,10 @@ async def test_changed_knowledge_does_not_publish_old_graph(node_url, change):
                 kind=SourceKind.TEXT,
                 title="Дополнение",
                 content="Другой порядок согласования.",
-                status=SourceStatus.READY,
-                active=True,
+                status=SourceStatus.PROCESSING
+                if change == "processing_source"
+                else SourceStatus.READY,
+                active=change != "inactive_source",
                 created_at=now,
             )
         )
@@ -435,7 +448,7 @@ async def test_manual_conflict_question_preserves_resolved_summary_and_bindings(
         base_generated_xml=base_xml,
     )
     pipeline = OpenAICompatiblePipeline(
-        api_key="test-only", complete=lambda _s, _p: json.dumps(graph_case())
+        api_key="test-only", complete=lambda _s, prompt: recorded_reply(prompt)
     )
     draft = await pipeline.structure(context, AnalysisResult())
     assert draft.conflicts
@@ -451,6 +464,8 @@ async def test_manual_conflict_question_preserves_resolved_summary_and_bindings(
     )
     run = await runs.start(pid, mode=RunMode.BUILD, created_by=None)
     await spawner.wait_idle()
+    completed = await runs.get(run.id)
+    assert completed.status is RunStatus.SUCCEEDED, completed.error
     run.summary = RunSummary(resolved=2)
     await runs._graph_questions(repos, run, draft)
     assert run.summary.resolved == 2

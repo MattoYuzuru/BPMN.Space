@@ -162,6 +162,34 @@ def test_verified_quote_accepts_pdf_line_wraps_and_returns_verbatim_source() -> 
     assert excerpt == "Сотрудник проверяет комплектность документов:\n«Лист сверки с учётом даты»."
 
 
+def test_verified_quote_rejects_a_fabricated_suffix_after_a_long_valid_prefix() -> None:
+    source = ContextSource(
+        id=uuid4(),
+        kind=SourceKind.TEXT,
+        title="Регламент",
+        content="а" * 1200,
+        created_at=datetime.now(UTC),
+    )
+    assert _verified_quote([source], str(source.id), source.content + " ВЫДУМАННЫЙ ФАКТ") == (
+        None,
+        None,
+    )
+
+
+def test_verified_quote_preserves_a_fact_after_expanded_pdf_whitespace() -> None:
+    source = ContextSource(
+        id=uuid4(),
+        kind=SourceKind.TEXT,
+        title="PDF регламент",
+        content="Инженер" + " " * 1300 + "готовит акт.",
+        created_at=datetime.now(UTC),
+    )
+    assert _verified_quote([source], str(source.id), "Инженер готовит акт.") == (
+        source.id,
+        source.content,
+    )
+
+
 def test_chat_request_is_plain_text_and_receives_project_context() -> None:
     payload = {"choices": [{"message": {"content": "Уточните, кто принимает решение."}}]}
     pipeline = OpenAICompatiblePipeline(api_key="test-only")

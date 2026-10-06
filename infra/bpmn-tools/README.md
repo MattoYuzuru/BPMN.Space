@@ -22,7 +22,7 @@ uv run --directory backend python scripts/export_ir_checks.py \
 ```
 
 Экспортный скрипт проходит источники → записанный JSON адаптера → typed IR → XML → HTTP
-layout/full lint, без live LLM. Сценарии: XOR/default, AND/join, вложенный XOR в AND, цикл,
+layout/официальная XSD/full lint, без live LLM. Сценарии: XOR/default, AND/join, вложенный XOR в AND, цикл,
 альтернативные message starts и отдельные нормальные ends параллельных ветвей.
 
 Не более двух worker threads одновременно, каждый ограничен 256 MiB старого JS heap.

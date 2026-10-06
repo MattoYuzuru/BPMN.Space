@@ -1,7 +1,7 @@
 """Вход и выход LLM-пайплайна (RFC §5.1–5.3) в виде, не зависящем от провайдера.
 
 `RunContext` собирает `ingest/context.py`, `AnalysisResult` и `DiagramDraft` возвращает реализация
-`app.llm.base.ProcessPipeline` (сейчас — `app.llm.mock.MockPipeline`).
+`app.llm.base.ProcessPipeline` (OpenAI-совместимый адаптер или записанный mock).
 """
 
 from dataclasses import dataclass, field

@@ -66,10 +66,10 @@ from app.infra.repositories.sql import SqlRunRepository, SqlStore
 from app.infra.seed import DEMO_PROJECT_ID, build_seed
 from app.infra.storage import LocalFileStorage
 from app.infra.tasks import AsyncioTaskSpawner
-from app.ingest.parsers import LocalDocumentParser
-from app.llm.base import PipelineError
 from app.infra.version_codec import MAX_DEPTH
 from app.infra.version_maintenance import maintain as maintain_versions
+from app.ingest.parsers import LocalDocumentParser
+from app.llm.base import PipelineError
 from app.llm.mock import MockPipeline
 from app.llm.openai_compatible import OpenAICompatiblePipeline
 from app.main import create_app

@@ -1496,8 +1496,19 @@ export interface components {
         };
         /** RunCreate */
         RunCreate: {
+            /**
+             * Base Version Id
+             * @description Голова, которую видит инициатор; устаревшая — 409
+             */
+            base_version_id?: string | null;
             /** @description `analyze` — только вопросы, `build` — вопросы и схема */
             mode: components["schemas"]["RunMode"];
+            /**
+             * Replace Manual
+             * @description Осознанно пересобрать из источников вместо manual; требует актуальный base_version_id
+             * @default false
+             */
+            replace_manual: boolean;
         };
         /** RunDoneEvent */
         RunDoneEvent: {
@@ -3158,6 +3169,15 @@ export interface operations {
             };
             /** @description Некорректные данные */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Сервис или помощник не настроен */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

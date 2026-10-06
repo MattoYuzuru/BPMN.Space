@@ -1,16 +1,16 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { type ProjectDetail, patchProjectInLists, projectKeys } from '@/entities/project'
 import { ApiError, api, errorMessage, unwrap } from '@/shared/api/client'
+import type { components } from '@/shared/api/schema.gen'
 import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
 import { toast } from '@/shared/ui'
 import type { RunMode } from './model'
 import { useRunStore } from './store'
 
 /** Явное перестроение сохраняет историю и требует голову, подтверждённую пользователем. */
-interface RunOptions {
-  base_version_id?: string
-  replace_manual?: boolean
-}
+type RunOptions = Partial<
+  Pick<components['schemas']['RunCreate'], 'base_version_id' | 'replace_manual'>
+>
 
 export type StartRunInput = RunMode | ({ mode: RunMode } & RunOptions)
 

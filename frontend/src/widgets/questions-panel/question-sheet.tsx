@@ -116,7 +116,7 @@ function QuestionDetail({ question }: { question: Question }) {
             {question.evidence && (
               <QuoteLink
                 clamp={false}
-                tone="evidence"
+                tone={question.status === 'obsolete' ? 'about' : 'evidence'}
                 quote={question.evidence}
                 source={sourceOf(question.evidence.source_id)}
               />

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 import { createToolsServer } from '../server.mjs'
 import { layout, lint } from '../tools.mjs'
@@ -24,6 +24,21 @@ test('известный fake-join имеет предупреждение на�
       (i) => i.rule === 'fake-join' && i.element_id === 'Task_CheckCompleteness',
     ),
   )
+})
+
+test('примеры для жюри и BPMN-фикстуры проходят настоящий recommended lint', async () => {
+  for (const directory of ['../../../examples/', '../../../backend/app/fixtures/bpmn/']) {
+    const root = new URL(directory, import.meta.url)
+    const files = (await readdir(root, { recursive: true })).filter((name) =>
+      name.endsWith('.bpmn'),
+    )
+    assert.ok(files.length > 0, directory)
+    for (const name of files) {
+      const xml = await readFile(new URL(name, root), 'utf8')
+      const errors = (await lint(xml)).issues.filter((issue) => issue.severity === 'error')
+      assert.deepEqual(errors, [], `${directory}${name}`)
+    }
+  }
 })
 
 test('HTTP порт имеет health, layout и bounded failure, не возвращает success на плохом XML', async () => {

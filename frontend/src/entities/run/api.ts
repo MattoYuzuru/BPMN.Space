@@ -19,7 +19,7 @@ export async function startRun(projectId: string, mode: RunMode, options: RunOpt
   return unwrap(
     await api.POST('/api/v1/projects/{project_id}/runs', {
       params: { path: { project_id: projectId } },
-      body: { mode, ...options },
+      body: { mode, ...options, replace_manual: options.replace_manual ?? false },
     }),
   )
 }

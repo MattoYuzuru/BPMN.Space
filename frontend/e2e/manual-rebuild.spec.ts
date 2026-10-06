@@ -49,6 +49,14 @@ test('ручная правка → новый источник → обычна
       xml,
     )?.[1]
   expect(bounds(rebuilt)).toBe(bounds(saved))
+  // Приоритет ручного смысла сохраняется и после того, как новая версия стала generated.
+  await startRun(page, 'build')
+  const repeated = (await detail()).latest_version
+  expect(repeated.number).toBeGreaterThan(generated.number)
+  const repeatedXml = await (await request.get(`/api/v1/versions/${repeated.id}/xml`)).text()
+  expect(repeatedXml).toContain('Подать проверенную заявку')
+  expect(bounds(repeatedXml)).toBe(bounds(saved))
+  expect(repeated.trace.Task_SubmitApplication).toBeUndefined()
   const history = await (await request.get(`/api/v1/projects/${projectId}/versions`)).json()
   expect(history.some((version: { id: string }) => version.id === manual.id)).toBe(true)
 

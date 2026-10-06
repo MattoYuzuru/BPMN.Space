@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, m } from 'motion/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useReportOnboardingEvent } from '@/entities/onboarding'
 import { projectKeys } from '@/entities/project'
 import { useRunView } from '@/entities/run'
 import { addedElementIds, diagramElements, useSaveDiagram, versionKeys } from '@/entities/version'
@@ -10,7 +11,7 @@ import { ApiError } from '@/shared/api/client'
 import { useDebouncedCallback } from '@/shared/hooks/use-debounced'
 import { floatingPanel } from '@/shared/lib/motion'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
-import { Badge, Button, Skeleton, toast } from '@/shared/ui'
+import { Button, Skeleton, toast } from '@/shared/ui'
 import { type DiagramEditorHandle, LazyDiagramEditor } from '@/widgets/diagram-editor'
 import { RunProgress } from '@/widgets/run-progress/run-progress'
 import { useWorkspace } from '@/widgets/workspace/model'
@@ -45,6 +46,8 @@ export function DiagramPanel() {
 
   const [markers, setMarkers] = useState<MarkerToggles>({ assumptions: true, added: true })
   const [inspected, setInspected] = useState<string | null>(null)
+  const [simulationActive, setSimulationActive] = useState(false)
+  const reportOnboarding = useReportOnboardingEvent()
   const [ready, setReady] = useState(false)
   const propertiesRef = useRef<HTMLDivElement>(null)
   const [propertiesOpen, setPropertiesOpen] = useState(false)
@@ -377,6 +380,7 @@ export function DiagramPanel() {
         isLatest={isLatest}
         ready={ready}
         saving={save.isPending}
+        simulationActive={simulationActive}
         saved={save.isSuccess}
         markers={markers}
         onMarkersChange={setMarkers}
@@ -400,6 +404,8 @@ export function DiagramPanel() {
               xml={xml}
               readOnly={readOnly}
               highlights={highlights}
+              onSimulationChange={(state) => setSimulationActive(state.active)}
+              onSimulationStart={() => reportOnboarding.mutate('simulation_run')}
               onChange={handleChange}
               onSelectionChange={handleSelectionChange}
               onViewportChange={() => setViewportRevision((value) => value + 1)}
@@ -425,14 +431,6 @@ export function DiagramPanel() {
             viewportRevision={viewportRevision}
           />
           <span hidden data-viewport-revision={viewportRevision} />
-
-          <div className="pointer-events-none absolute right-3 top-3 z-30">
-            <Badge tone={collaboration.connected ? 'success' : 'neutral'} dot>
-              {collaboration.connected
-                ? `${collaboration.participantCount} в комнате`
-                : 'Подключаем участников'}
-            </Badge>
-          </div>
 
           {remoteUpdate && (
             <div className="absolute inset-x-3 top-11 z-30 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber/40 bg-surface px-3 py-2 shadow-md">

@@ -7,10 +7,12 @@ import 'bpmn-js-token-simulation/assets/css/bpmn-js-token-simulation.css'
 import '@bpmn-io/properties-panel/dist/assets/properties-panel.css'
 import './styles/index.css'
 
-import { type Ref, useEffect, useImperativeHandle, useLayoutEffect, useRef } from 'react'
+import { type Ref, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 import { cn } from '@/shared/lib/cn'
 import { DiagramController } from '../bpmn/diagram-controller'
+import { EMPTY_SIMULATION } from '../bpmn/playback'
 import type { DiagramEditorHandle, DiagramEditorProps } from '../types'
+import { SimulationControls } from './SimulationControls'
 
 const NOT_READY = 'Редактор схемы ещё не загрузился'
 
@@ -22,6 +24,8 @@ export default function DiagramEditor({
   ref,
   xml,
   onChange,
+  onSimulationStart,
+  onSimulationChange,
   onSelectionChange,
   onViewportChange,
   readOnly = false,
@@ -33,10 +37,13 @@ export default function DiagramEditor({
   className,
   ariaLabel = 'Схема процесса',
 }: DiagramEditorProps & { ref?: Ref<DiagramEditorHandle> }) {
+  const [simulation, setSimulation] = useState(EMPTY_SIMULATION)
   const rootRef = useRef<HTMLElement>(null)
   const controllerRef = useRef<DiagramController | null>(null)
   const callbacksRef = useRef({
     onChange,
+    onSimulationStart,
+    onSimulationChange,
     onElementClick,
     onSelectionChange,
     onViewportChange,
@@ -51,6 +58,8 @@ export default function DiagramEditor({
   useLayoutEffect(() => {
     callbacksRef.current = {
       onChange,
+      onSimulationStart,
+      onSimulationChange,
       onElementClick,
       onSelectionChange,
       onViewportChange,
@@ -78,6 +87,10 @@ export default function DiagramEditor({
     if (!root) return
     const controller = new DiagramController(root, () => ({
       ...callbacksRef.current,
+      onSimulationChange: (state) => {
+        setSimulation(state)
+        callbacksRef.current.onSimulationChange?.(state)
+      },
       onReady: () => callbacksRef.current.onReady?.(handle),
     }))
     controller.setReadOnly(readOnlyRef.current)
@@ -102,7 +115,9 @@ export default function DiagramEditor({
   }, [highlights])
 
   return (
-    <section ref={rootRef} aria-label={ariaLabel} className={cn('de-root font-sans', className)} />
+    <section ref={rootRef} aria-label={ariaLabel} className={cn('de-root font-sans', className)}>
+      <SimulationControls state={simulation} handle={handle} />
+    </section>
   )
 }
 
@@ -130,6 +145,11 @@ function createHandle(
     exportPng: async (scale, options) => ensure().exportPng(scale, options),
     toggleMinimap: (open) => get()?.toggleMinimap(open) ?? false,
     toggleSimulation: (active) => get()?.toggleSimulation(active) ?? false,
+    startSimulation: (id) => get()?.startSimulation(id),
+    pauseSimulation: () => get()?.pauseSimulation(),
+    resetSimulation: () => get()?.resetSimulation(),
+    chooseSimulationFlow: (id) => get()?.chooseSimulationFlow(id),
+    triggerSimulationEvent: (id) => get()?.triggerSimulationEvent(id),
     setPropertiesPanel: (container) => {
       rememberPanel(container)
       get()?.setPropertiesPanel(container)

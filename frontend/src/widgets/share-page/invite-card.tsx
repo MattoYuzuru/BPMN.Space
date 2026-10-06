@@ -22,7 +22,7 @@ export function InviteCard({ state }: { state: InviteCardState }) {
         <BrandMark size="lg" />
         <h1 className="type-title text-fg">Приглашение в проект</h1>
       </div>
-      <Card variant="elevated" padding="lg" className="flex w-full flex-col gap-5">
+      <Card variant="elevated" padding="lg" className="flex w-full flex-col gap-5" data-lens-block>
         {state.kind !== 'sign-in' && (
           <div className="flex items-center gap-3">
             <span className="grid size-10 shrink-0 place-items-center rounded-md border border-border bg-bg-subtle text-fg-muted">

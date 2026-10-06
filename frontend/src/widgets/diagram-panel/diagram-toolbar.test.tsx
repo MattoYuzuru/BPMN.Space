@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { type OnboardingState, onboardingKeys } from '@/entities/onboarding'
 import { sessionKeys } from '@/entities/session'
@@ -54,7 +54,7 @@ const events = (calls: ReturnType<typeof stubApi>) =>
 afterEach(() => vi.unstubAllGlobals())
 
 describe('таймлайн процесса и чек-лист', () => {
-  it('включение сообщает simulation_run один раз, выключение — ничего не шлёт', async () => {
+  it('переключение режима само не отмечает simulation_run', async () => {
     let active = false
     const calls = mount(() => {
       active = !active
@@ -62,12 +62,9 @@ describe('таймлайн процесса и чек-лист', () => {
     })
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Таймлайн процесса' }))
-    await waitFor(() => expect(events(calls)).toHaveLength(1))
-    expect(events(calls)[0]?.body).toEqual({ item: 'simulation_run' })
-
+    expect(active).toBe(true)
     await user.click(screen.getByRole('button', { name: 'Остановить таймлайн' }))
-    await user.click(screen.getByRole('button', { name: 'Таймлайн процесса' }))
-    await new Promise((resolve) => setTimeout(resolve, 30))
-    expect(events(calls)).toHaveLength(1)
+    expect(active).toBe(false)
+    expect(events(calls)).toHaveLength(0)
   })
 })

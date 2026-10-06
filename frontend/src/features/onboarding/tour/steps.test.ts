@@ -142,7 +142,7 @@ describe('сценарий тура', () => {
     it('шаг 7: кнопки внутри первой открытой карточки по data-question-id; шаг 8 — другая карточка', () => {
       expect(anchorOf('question.answer', makeCtx())).toEqual({
         selector:
-          '[data-question-id="q1"] [data-tour="answer.submit"], [data-question-id="q1"] [data-tour="question.answer"]',
+          '[data-question-id="q1"] [data-tour="answer.composer"], [data-question-id="q1"] [data-tour="question.answer"]',
       })
       expect(anchorOf('question.ignore', makeCtx())).toEqual({
         selector: '[data-question-id="q2"] [data-tour="question.ignore"]',
@@ -154,7 +154,7 @@ describe('сценарий тура', () => {
       // До закрепления вопроса подсвечиваем первый открытый; открытых нет — по центру.
       expect(anchorOf('question.answer', makeCtx({ pickedId: null }))).toEqual({
         selector:
-          '[data-question-id="q1"] [data-tour="answer.submit"], [data-question-id="q1"] [data-tour="question.answer"]',
+          '[data-question-id="q1"] [data-tour="answer.composer"], [data-question-id="q1"] [data-tour="question.answer"]',
       })
       expect(
         anchorOf('question.answer', makeCtx({ pickedId: null, openQuestionIds: [] })),
@@ -164,10 +164,14 @@ describe('сценарий тура', () => {
     it('шаг 9: холст, затем симуляция, затем скачивание', () => {
       expect(step('diagram.tour').pages.map((page) => page.anchor)).toEqual([
         'diagram.canvas',
-        'diagram.simulation',
+        'diagram.canvas',
         'header.download',
       ])
       expect(step('diagram.tour').pages[0]?.allowOutside).toBe(true)
+      expect(step('diagram.tour').pages[1]).toMatchObject({
+        cardAnchor: 'diagram.simulation',
+        allowOutside: true,
+      })
     })
 
     it('шаг 10: «Поделиться», затем «Создать ссылку», затем «Копировать ссылку»', () => {
@@ -447,7 +451,7 @@ describe('сценарий тура', () => {
     expect(tour.goto).toHaveBeenCalledWith('share.create')
   })
 
-  it('шаги 7–8: карточка стоит у всей карточки вопроса, подсвечена кнопка внутри неё', () => {
+  it('шаг 7 освобождает всю форму ответа, шаг 8 подсвечивает кнопку в другой карточке', () => {
     const ctx = makeCtx()
     const answer = step('question.answer').cardAnchor
     const ignore = step('question.ignore').cardAnchor
@@ -461,6 +465,13 @@ describe('сценарий тура', () => {
       selector: '[data-question-id="q1"]',
     })
     expect(viewOf('question.answer', ctx).align).toBe('start')
+    expect(viewOf('question.answer', ctx).anchor).toEqual({
+      selector:
+        '[data-question-id="q1"] [data-tour="answer.composer"], [data-question-id="q1"] [data-tour="question.answer"]',
+    })
+    const voice = makeCtx({ present: { ...ctx.present, voiceCapture: true } })
+    expect(viewOf('question.answer', voice).anchor).toBe('voice.capture')
+    expect(viewOf('question.answer', voice).cardAnchor).toBe('voice.capture')
   })
 
   it('шаги 2–4: карточка справа от кнопки, по её верхнему краю', () => {

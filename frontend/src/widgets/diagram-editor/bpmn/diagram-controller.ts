@@ -39,8 +39,12 @@ import type {
   DiagramPoint,
   DiagramRemoteMove,
   DiagramRemoteSelection,
+  DiagramSimulation,
   PngExportOptions,
 } from '../types'
+import { boundMinimap } from './bounded-minimap'
+import { Playback } from './playback'
+import { cleanPlaybackSvg, RuntimeColorsModule } from './runtime-colors'
 import { SimulationLocalizationModule } from './simulation-localization'
 import {
   type RendererPalette,
@@ -63,6 +67,8 @@ const SIMULATION_TOGGLE_EVENT = 'tokenSimulation.toggleMode'
 
 export interface ControllerCallbacks {
   onChange?: (xml: string) => void
+  onSimulationChange?: (simulation: DiagramSimulation) => void
+  onSimulationStart?: () => void
   onElementClick?: (elementId: string) => void
   onSelectionChange?: (elementIds: string[]) => void
   onViewportChange?: () => void
@@ -161,6 +167,7 @@ async function fontsReady(fontFamily: string): Promise<void> {
 export class DiagramController {
   private readonly modeler: Modeler
   private readonly changes: ChangeEmitter
+  private readonly playback: Playback
   private readonly disposers: Array<() => void> = []
   private readonly focusTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private remoteMarkers = new Map<string, string>()
@@ -200,6 +207,7 @@ export class DiagramController {
         TranslateModule,
         MinimapModule,
         TokenSimulationModule,
+        RuntimeColorsModule,
         SimulationLocalizationModule,
         BpmnPropertiesPanelModule,
         BpmnPropertiesProviderModule,
@@ -218,6 +226,7 @@ export class DiagramController {
         },
       },
       minimap: { open: false },
+      animation: { randomize: false },
     })
 
     this.changes = createChangeEmitter({
@@ -251,6 +260,21 @@ export class DiagramController {
       root.classList.toggle('de-simulating', event.active)
       if (!event.active && this.readOnly) this.service<CanvasLock>('canvasLock').lock()
     })
+
+    this.playback = new Playback(
+      this.modeler,
+      (state) => this.callbacks().onSimulationChange?.(state),
+      () => this.callbacks().onSimulationStart?.(),
+    )
+    this.disposers.push(
+      boundMinimap(this.service('minimap'), this.service('canvas'), (box, smooth) => {
+        if (smooth) this.animateTo(box)
+        else {
+          this.stopAnimation?.()
+          this.service<Canvas>('canvas').viewbox(box)
+        }
+      }),
+    )
 
     this.disposers.push(observeTheme(() => this.applyTheme()))
   }
@@ -387,7 +411,7 @@ export class DiagramController {
     const { svg } = await this.modeler.saveSVG()
     // Без встроенного шрифта SVG всё равно корректен, просто подписи будут системным шрифтом.
     const fontCss = await loadEmbeddedFontCss(this.theme.fontFamily).catch(() => '')
-    return embedStyle(svg, fontCss)
+    return embedStyle(cleanPlaybackSvg(svg), fontCss)
   }
 
   async exportPng(scale = 2, options: PngExportOptions = {}): Promise<Blob> {
@@ -405,7 +429,24 @@ export class DiagramController {
   toggleSimulation(active?: boolean): boolean {
     const next = active ?? !this.simulationActive
     this.service<ToggleMode>('toggleMode').toggleMode(next)
+    if (next) this.playback.autoStart()
     return this.simulationActive
+  }
+
+  startSimulation(id?: string): void {
+    this.playback.start(id)
+  }
+  pauseSimulation(): void {
+    this.playback.pause()
+  }
+  resetSimulation(): void {
+    this.playback.reset()
+  }
+  chooseSimulationFlow(id: string): void {
+    this.playback.choose(id)
+  }
+  triggerSimulationEvent(id: string): void {
+    this.playback.trigger(id)
   }
 
   setPropertiesPanel(container: HTMLElement | null): void {
@@ -425,6 +466,8 @@ export class DiagramController {
   destroy(): void {
     if (this.destroyed) return
     this.destroyed = true
+    this.playback.destroy()
+    if (this.simulationActive) this.service<ToggleMode>('toggleMode').toggleMode(false)
     this.stopAnimation?.()
     for (const timer of this.focusTimers.values()) clearTimeout(timer)
     for (const dispose of this.disposers) dispose()
@@ -460,6 +503,8 @@ export class DiagramController {
   }
 
   private async runImport(xml: string): Promise<void> {
+    // Останавливаем до import.parse.start: библиотека иначе автоматически включает старый режим.
+    if (this.simulationActive) this.service<ToggleMode>('toggleMode').toggleMode(false)
     const first = !this.imported
     const canvas = this.service<Canvas>('canvas')
     const keepViewbox = first ? null : canvas.viewbox()
@@ -560,6 +605,7 @@ export class DiagramController {
   private syncGrid(viewbox: { x: number; y: number; scale: number }): void {
     const step = gridStep(this.gridSize * viewbox.scale)
     const offset = (value: number) => `${(((-value * viewbox.scale) % step) + step) % step}px`
+    this.root.style.setProperty('--de-scale', String(viewbox.scale))
     this.root.style.setProperty('--de-grid-step', `${step}px`)
     this.root.style.setProperty('--de-grid-x', offset(viewbox.x))
     this.root.style.setProperty('--de-grid-y', offset(viewbox.y))
@@ -581,11 +627,14 @@ export class DiagramController {
    * После смены темы сбрасываем кэш и, если симуляция идёт, заново красим элементы.
    */
   private refreshSimulationColors(): void {
-    const styles = this.modeler.get<{ _cache?: Record<string, string> } | null>(
-      'simulationStyles',
-      false,
-    )
-    if (styles?._cache) styles._cache = {}
+    const styles = this.modeler.get<{
+      _cache?: Record<string, string>
+      _computedStyle?: CSSStyleDeclaration
+    } | null>('simulationStyles', false)
+    if (styles?._cache) {
+      styles._cache = {}
+      styles._computedStyle = undefined
+    }
     if (!this.simulationActive) return
     const neutral = this.modeler.get<{ _setNeutralColors?: () => void } | null>(
       'neutralElementColors',

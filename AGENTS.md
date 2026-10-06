@@ -6,7 +6,7 @@
 
 ИИ-ассистент «Архитектор BPMN-диаграмм» (хакатон «ИИ-ассистенты для энергетики», Интер РАО / Codenrock). Аналитик складывает в проект источники (текст, голос, документы), система задаёт уточняющие вопросы и строит BPMN 2.0 (валиден по XSD, редактируется в bpmn.io).
 
-**Каноничный документ архитектуры и плана:** [`docs/rfc/0001-architecture.md`](docs/rfc/0001-architecture.md). Задачи — GitLab Issues #1–#6.
+**Каноничный документ архитектуры и плана:** [`docs/rfc/0001-architecture.md`](docs/rfc/0001-architecture.md). Первоначальные задачи — GitLab Issues #1–#6; текущие задачи — в GitLab. Воспроизведение и модель бизнес-времени — [`RFC-0003`](docs/rfc/0003-process-playback-and-timing.md).
 
 ## Карта
 
@@ -20,6 +20,8 @@
 | `backend/app/fixtures/` | демо-данные mock-а: тексты, BPMN-схемы, записанные ответы модели (`make fixtures` пересобирает схемы) |
 | `examples/` | примеры входа и выхода для жюри (копии фикстур) |
 | `frontend/` | React 19 + Vite + TS, TanStack Router/Query, Tailwind v4, Radix, bpmn-js |
+| `frontend/src/widgets/diagram-editor` | BPMN, локальное воспроизведение, мини-карта и экспорт — `docs/frontend/diagram-editor.md`; скорость анимации не задаёт длительности бизнеса |
+| `frontend/src/features/project-collaboration`, `backend/app/{api/v1,services}/collaboration.py` | WebSocket-комната, курсоры и защита сохранений через `base_version_id` — `docs/rfc/0002-realtime-collaboration.md` |
 | `frontend/scripts/design-lint.mjs` | правила дизайн-системы (нативные контролы, сырые цвета, символы вместо иконок…) |
 | `docs/api/openapi.json` | контракт API, генерируется из backend (`make gen-api`) |
 | `frontend/src/shared/api/schema.gen.ts` | TS-типы из контракта (генерируются, руками не править) |
@@ -41,13 +43,14 @@ make check        # всё: + тесты (backend cov ≥80%) + контракт
 make gen-api      # после изменения API: OpenAPI + TS-типы
 make fixtures     # пересобрать BPMN-фикстуры и examples/ (Node, XSD, bpmnlint)
 make e2e          # Playwright против Docker-стека; E2E_BASE_URL задаёт уже запущенный стенд
+make e2e-diagram  # настоящий BPMN canvas: воспроизведение, шлюзы, экспорт, мини-карта; Vite без backend
 make verify       # перед MR: check + e2e + секреты → reports/verify-<sha>.md
 make mr-report    # отчёт verify комментарием в MR
 make deploy-env   # передать production-переменные из локального .env на VM по SSH
 make deploy       # задеплоить commit из main после MR и make verify
 ```
 
-Деплой: сначала прочитайте [`docs/deployment.md`](docs/deployment.md). Production выкладывается только из `origin/main` по SHA, секреты хранятся отдельно в `/opt/arkhitektor/shared/.env` на VM.
+Деплой: сначала прочитайте [`docs/deployment.md`](docs/deployment.md). Production выкладывается только из `origin/main` по SHA, секреты хранятся отдельно в `/home/deploy/arkhitektor/shared/.env` на VM.
 
 ## Правила
 

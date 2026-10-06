@@ -10,7 +10,7 @@ export interface AnswerComposerProps {
   onDone?: () => void
   onCancel?: () => void
   autoFocus?: boolean
-  /** Ставить обучающий якорь на «Отправить ответ»; у композера в листе вопроса — нет. */
+  /** Ставить обучающие якоря на форму и отправку; у композера в листе вопроса — нет. */
   tourAnchored?: boolean
 }
 
@@ -42,7 +42,11 @@ export function AnswerComposer({
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-2 animate-fade-in">
+    <form
+      onSubmit={submit}
+      className="flex flex-col gap-2 animate-fade-in"
+      {...(tourAnchored ? tourAnchor(TOUR_ANCHORS.answerComposer) : {})}
+    >
       <div className="relative">
         <Textarea
           autoFocus={autoFocus}

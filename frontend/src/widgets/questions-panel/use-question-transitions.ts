@@ -15,7 +15,9 @@ export interface Transitions {
 
 /**
  * Следит за сменой статусов вопросов (SSE, ответ сервера, перезапрос) и отмечает переходы,
- * которые стоит показать движением: open/answered -> resolved и появление нового вопроса.
+ * которые стоит показать движением: open -> resolved и появление нового вопроса.
+ * Переход answered -> resolved остаётся в «Решённых», ignored -> resolved идёт туда из
+ * «Допущений»: промежуточный показ в «Открытых» нужен только для open -> resolved.
  * Первая загрузка ничего не отмечает.
  */
 export function detectTransitions(
@@ -29,10 +31,7 @@ export function detectTransitions(
     const before = previous.get(question.id)
     if (before === undefined) {
       if (question.status === 'open') added.push(question.id)
-    } else if (
-      question.status === 'resolved' &&
-      (before === 'open' || before === 'answered' || before === 'ignored')
-    ) {
+    } else if (question.status === 'resolved' && before === 'open') {
       resolved.push(question.id)
     }
   }

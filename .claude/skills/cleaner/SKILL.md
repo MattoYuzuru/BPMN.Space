@@ -33,7 +33,7 @@ description: Уборка кода и документации этого реп
    - баги и уязвимости → тест, который падает, затем фикс;
    - нарушения слоёв (`domain` импортирует `infra`/`llm`) → перенос кода, `lint-imports` зелёный.
 4. Сверка документации (методика `documentation-reconciliation`):
-   - `make openapi` → `docs/api/openapi.json` и TS-клиент;
+   - `make gen-api` → `docs/api/openapi.json` и TS-клиент;
    - mermaid-диаграммы в `docs/architecture/` и RFC — модули, таблицы, эндпоинты совпадают с кодом;
    - `AGENTS.md`, `README.md`, `docs/README.md` — команды и пути реальные;
    - ADR не переписываем задним числом — при изменении решения новый ADR со ссылкой «supersedes».

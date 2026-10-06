@@ -112,6 +112,23 @@ function coach(page: Page, title: string): Locator {
   return page.getByRole('dialog', { name: title })
 }
 
+/** Сравниваем живой DOMRect якоря и кольца: сдвиг без resize тоже должен догоняться. */
+async function expectSpotlightMatches(page: Page, target: Locator) {
+  await expect
+    .poll(async () => {
+      const box = await target.boundingBox()
+      const ring = await page.locator('[data-tour-layer] .ring-2').boundingBox()
+      if (!box || !ring) return Number.POSITIVE_INFINITY
+      return Math.max(
+        Math.abs(ring.x - (box.x - 6)),
+        Math.abs(ring.y - (box.y - 6)),
+        Math.abs(ring.width - (box.width + 12)),
+        Math.abs(ring.height - (box.height + 12)),
+      )
+    })
+    .toBeLessThan(1.5)
+}
+
 async function tourState(request: APIRequestContext) {
   return (await request.get('/api/v1/me/onboarding')).json()
 }
@@ -192,12 +209,18 @@ test('приветствие и весь тур от создания проек
     const field = dialog.getByRole('textbox', { name: 'Текст' })
     await expect(field).toBeFocused()
     await expect(dialog.getByRole('button', { name: 'Напишу сам' })).toBeVisible()
-    await dialog.getByRole('button', { name: 'Вставить' }).click()
+    await expectSpotlightMatches(page, field)
+    const before = await field.boundingBox()
+    await field.press('Tab')
     // Текст впечатывается в поле, а не появляется разом.
     await expect.poll(async () => (await field.inputValue()).length).toBeGreaterThan(20)
+    await expectSpotlightMatches(page, field)
     await expect
       .poll(async () => (await field.inputValue()).length, { timeout: 15_000 })
       .toBeGreaterThan(300)
+    await expectSpotlightMatches(page, field)
+    const after = await field.boundingBox()
+    expect(Math.abs((after?.y ?? 0) - (before?.y ?? 0))).toBeGreaterThan(2)
     await expect(dialog.getByRole('textbox', { name: 'Название' })).toHaveValue('Описание процесса')
     await dialog.getByRole('button', { name: 'Добавить источник' }).click()
     await expect(dialog).toBeHidden()
@@ -226,9 +249,24 @@ test('приветствие и весь тур от создания проек
     await expect(card).toContainText('Шаг 7 из 11')
     const first = page.locator('[data-question-id]').first()
     await first.getByRole('button', { name: 'Ответить', exact: true }).click()
-    await first
-      .getByRole('textbox')
-      .fill('Акт готовит сетевая организация в течение трёх рабочих дней.')
+    const field = first.getByRole('textbox')
+    await expectSpotlightMatches(page, first.locator('[data-tour="answer.composer"]'))
+    await expect(first.getByRole('button', { name: 'Отправить ответ' })).toBeDisabled()
+    // fill() сам фокусирует поле и не замечает перехватчика кликов: нужен настоящий клик и ввод.
+    await field.click()
+    await field.pressSequentially('Акт готовит сетевая организация в течение трёх рабочих дней.')
+    await expect(field).toBeFocused()
+    await first.getByRole('button', { name: 'Ответить голосом' }).click()
+    await expect(page.getByText('Идёт запись', { exact: true })).toBeVisible()
+    await expectSpotlightMatches(page, page.locator('[data-tour="voice.capture"]'))
+    await expect(coach(page, 'Ответьте на вопрос').getByRole('heading')).not.toBeFocused()
+    await page.getByRole('button', { name: 'Остановить', exact: true }).click()
+    await expect(page.getByText('Запись распознана', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Записать заново', exact: true }).click()
+    await expect(page.getByText('Идёт запись', { exact: true })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByText('Идёт запись', { exact: true })).toBeHidden()
+    await expect(field).not.toBeEmpty()
     await first.getByRole('button', { name: 'Отправить ответ' }).click()
   })
 
@@ -239,7 +277,8 @@ test('приветствие и весь тур от создания проек
     const open = page
       .locator('[data-question-id]')
       .filter({ has: page.getByRole('button', { name: 'Игнорировать' }) })
-    await expect(answered).toHaveCount(1)
+    await expect(answered).toHaveCount(0)
+    await expect(page.getByRole('tab', { name: /Решённые/ })).toContainText('1')
     await open.first().getByRole('button', { name: 'Игнорировать' }).click()
   })
 
@@ -249,6 +288,15 @@ test('приветствие и весь тур от создания проек
     await expect(card).toContainText('обычный редактор BPMN')
     await card.getByRole('button', { name: 'Далее' }).click()
     await expect(card).toContainText('Таймлайн процесса')
+    // Освещён весь холст, карточка привязана к кнопке: движение видно и управление доступно.
+    await expectSpotlightMatches(page, page.locator('[data-tour="diagram.canvas"]'))
+    await page.getByRole('button', { name: 'Таймлайн процесса', exact: true }).click()
+    const playback = page.getByRole('group', { name: 'Воспроизведение процесса' })
+    await expect(playback).toContainText('Процесс воспроизводится')
+    await expect(page.locator('.bts-token').first()).toBeVisible()
+    await playback.getByRole('button', { name: 'Пауза', exact: true }).click()
+    await expect(playback).toContainText('Пауза')
+    await page.getByRole('button', { name: 'Остановить таймлайн', exact: true }).click()
     await card.getByRole('button', { name: 'Далее' }).click()
     await expect(card).toContainText('.bpmn, .svg или .png')
     await card.getByRole('button', { name: 'Далее' }).click()
@@ -329,6 +377,35 @@ test('перезагрузка на шаге 7 продолжает тур с ш
   await expect(coach(page, 'Ответьте на вопрос')).toBeVisible()
   await expect(coach(page, 'Ответьте на вопрос')).toContainText('Шаг 7 из 11')
   expect((await tourState(request)).tour.step).toBe('question.answer')
+  await page.close()
+})
+
+test('шаг 4: кольцо остаётся на блоке записи после появления расшифровки', async ({
+  browser,
+  baseURL,
+}) => {
+  const player = await sharedPlayer(browser, baseURL)
+  const { page } = player
+  const projectId = await seedTour(player, 'sources.voice')
+  await page.goto(`/projects/${projectId}`)
+  await expect(coach(page, 'Надиктуйте процесс')).toBeVisible()
+  await page.getByRole('button', { name: 'Добавить источник' }).click()
+  await page.getByRole('menuitem', { name: 'Голосовая заметка', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Голосовая заметка' })
+  const capture = dialog.locator('[data-tour="voice.capture"]')
+  await expect(capture).toContainText('Идёт запись')
+  await expectSpotlightMatches(page, capture)
+  const before = await capture.boundingBox()
+  await page.waitForTimeout(900)
+  await dialog.getByRole('button', { name: 'Остановить' }).click()
+  await expect(capture).toContainText('Запись распознана', { timeout: 15_000 })
+  await expect(dialog.getByRole('textbox', { name: 'Расшифровка' })).not.toBeEmpty()
+  await expectSpotlightMatches(page, capture)
+  const after = await capture.boundingBox()
+  expect(Math.abs((after?.y ?? 0) - (before?.y ?? 0))).toBeGreaterThan(2)
+  await dialog.getByRole('textbox', { name: 'Расшифровка' }).click()
+  await dialog.getByRole('button', { name: 'Добавить как источник' }).click()
+  await expect(coach(page, 'Постройте схему')).toBeVisible()
   await page.close()
 })
 

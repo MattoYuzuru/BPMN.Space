@@ -24,6 +24,7 @@ export const TOUR_ANCHORS = {
   runProgress: 'run.progress',
   questionAnswer: 'question.answer',
   questionIgnore: 'question.ignore',
+  answerComposer: 'answer.composer',
   answerSubmit: 'answer.submit',
   diagramCanvas: 'diagram.canvas',
   diagramSimulation: 'diagram.simulation',
@@ -57,6 +58,14 @@ export function anchorSelector(ref: AnchorRef): string {
 /** Событие произошло внутри слоя обучения (карточка, затемнение, подсказка). */
 export function isInsideTourLayer(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest(`[${TOUR_LAYER_ATTR}]`) !== null
+}
+
+/** Открытый слой приложения имеет приоритет над глобальными клавишами обучения. */
+export function hasOpenAppLayer(): boolean {
+  const layers = document.querySelectorAll(
+    '[data-state="open"][role="dialog"], [data-state="open"][role="alertdialog"], [data-state="open"][role="menu"], [data-state="open"][role="listbox"]',
+  )
+  return [...layers].some((layer) => !isInsideTourLayer(layer))
 }
 
 /** Последнее нажатие указателя началось в слое обучения (запоминается, пока слой на экране). */

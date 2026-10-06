@@ -6,13 +6,15 @@
 
 ИИ-ассистент «Архитектор BPMN-диаграмм» (хакатон «ИИ-ассистенты для энергетики», Интер РАО / Codenrock). Аналитик складывает в проект источники (текст, голос, документы), система задаёт уточняющие вопросы и строит BPMN 2.0 (валиден по XSD, редактируется в bpmn.io).
 
-**Каноничный документ архитектуры и плана:** [`docs/rfc/0001-architecture.md`](docs/rfc/0001-architecture.md). Первоначальные задачи — GitLab Issues #1–#6; текущие задачи — в GitLab. Воспроизведение и модель бизнес-времени — [`RFC-0003`](docs/rfc/0003-process-playback-and-timing.md).
+**Каноничный документ архитектуры и плана:** [`docs/rfc/0001-architecture.md`](docs/rfc/0001-architecture.md). Правила генерации — [`docs/backend/generation-quality.md`](docs/backend/generation-quality.md). Общий план — GitLab #1–#6, первая очередь качества — #18–#23, дальнейшие задачи — #17 и #24–#34. Воспроизведение и модель бизнес-времени — [`RFC-0003`](docs/rfc/0003-process-playback-and-timing.md).
 
 ## Карта
 
 | Путь | Что |
 |---|---|
 | `backend/` | FastAPI, Python 3.13, uv. Слои `api → services → (llm, ingest, infra) → domain` (проверяет import-linter). PostgreSQL/Alembic описаны в `docs/backend/persistence.md`; оставшиеся заглушки — `docs/backend/mock.md` |
+| `backend/app/llm/{question_analysis,graph_generation}.py`, `domain/bpmn/{ir,compiler,importer,manual,xsd}.py` | порционная сверка вопросов с проверкой оснований, граф IR v1, компилятор, приоритет ручных правок и offline XSD — `docs/backend/generation-quality.md` |
+| `infra/bpmn-tools/`, `backend/app/infra/bpmn_tools.py` | внутренний Node layout/lint и HTTP-адаптер; точные пределы и команды — `infra/bpmn-tools/README.md` |
 | `frontend/src/entities/{session,share}`, маршруты `/login`, `/share/$token` | аккаунты и общий доступ: правила — `docs/backend/auth-and-sharing.md`, UI-паттерны — стайлгайд §16 |
 | `frontend/src/features/onboarding`, `widgets/onboarding-root`, `shared/lib/{tour-anchors,onboarding-signals}.ts` | обучение: движок тура, сценарий из 11 шагов, приветствие, подсказки-указатели, якоря `data-tour`, сигналы приложения — `docs/frontend/onboarding.md`, паттерн — стайлгайд §10 |
 | `backend/app/{domain,services,api/v1}/onboarding.py`, `fixtures/samples*` | онбординг: тур, чек-лист «Начало работы», учебные материалы «Примеры»; правила — `docs/backend/onboarding.md` |
@@ -38,8 +40,10 @@ make up           # стек в Docker → http://localhost:8080
 make db-upgrade   # вручную применить миграции к локальной PostgreSQL
 make dev-backend  # :8000 с автоперезагрузкой
 make dev-frontend # :5173, /api проксируется на :8000
+make dev-bpmn-tools # :3000; backend: BPMN_TOOLS_URL=http://localhost:3000
 make check-fast   # линт + design-lint + типы (после каждой правки)
 make check        # всё: + тесты (backend cov ≥80%) + контракт + сборка (pre-push)
+make test-bpmn-tools # настоящий Node layout/lint; также входит в make check/verify
 make gen-api      # после изменения API: OpenAPI + TS-типы
 make fixtures     # пересобрать BPMN-фикстуры и examples/ (Node, XSD, bpmnlint)
 make e2e          # Playwright против Docker-стека; E2E_BASE_URL задаёт уже запущенный стенд

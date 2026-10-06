@@ -16,18 +16,31 @@ from app.domain.bpmn.ir import GraphIR, GraphValidationError, validate_graph
 from app.domain.bpmn.xsd import XSD_ENTRY
 from app.domain.models import (
     Answer,
+    Project,
     Question,
     QuestionKind,
     QuestionStatus,
     Quote,
+    RunMode,
+    RunStatus,
     Severity,
+    Source,
     SourceKind,
+    SourceStatus,
+    VersionOrigin,
 )
 from app.fixtures import read_bpmn
 from app.fixtures.playbook import PLAYBOOK
+from app.infra.bpmn_tools import MockBpmnTools
+from app.infra.events import InMemoryRunEventBus
+from app.infra.repositories.memory import InMemoryStore
+from app.infra.tasks import AsyncioTaskSpawner
 from app.llm.base import PipelineError
 from app.llm.mock import MockPipeline
 from app.llm.openai_compatible import OpenAICompatiblePipeline
+from app.services.common import Runtime
+from app.services.runs import RunService
+from app.services.versions import add_version
 
 SOURCE_ID = UUID("11111111-1111-4111-8111-111111111111")
 TEXT = (
@@ -278,6 +291,111 @@ def test_opaque_manual_attributes_are_not_lost(extra):
     xml = compile_graph(GraphIR.model_validate(graph_case()))
     with pytest.raises(GraphValidationError, match="вне IR"):
         import_graph(xml.replace('<bpmn:task id="Check"', f'<bpmn:task {extra} id="Check"'))
+
+
+def manual_with_empty_lane() -> str:
+    return compile_graph(GraphIR.model_validate(graph_case())).replace(
+        "</bpmn:laneSet>",
+        '<bpmn:lane id="FutureReviewer" name="Новый согласующий"/></bpmn:laneSet>',
+    )
+
+
+def test_import_rejects_empty_declared_lane_instead_of_removing_it():
+    xml = manual_with_empty_lane()
+    schema = etree.XMLSchema(etree.parse(str(XSD_ENTRY)))
+    assert schema.validate(etree.fromstring(xml.encode())), schema.error_log
+    with pytest.raises(GraphValidationError, match="Пустая дорожка «Новый согласующий»"):
+        import_graph(xml)
+
+
+@pytest.mark.asyncio
+async def test_empty_manual_lane_blocks_structure_before_model_and_keeps_version_head():
+    now = datetime.now(UTC)
+    pid = uuid4()
+    manual = manual_with_empty_lane()
+    source = ContextSource(
+        id=SOURCE_ID, kind=SourceKind.TEXT, title="Регламент", content=TEXT, created_at=now
+    )
+    calls = []
+
+    def complete(_system, prompt):
+        calls.append(json.loads(prompt))
+        return json.dumps(graph_case())
+
+    class RecordedAnalysisPipeline(OpenAICompatiblePipeline):
+        async def analyze(self, context: RunContext) -> AnalysisResult:
+            return AnalysisResult()
+
+    pipeline = RecordedAnalysisPipeline(api_key="test-only", complete=complete)
+    context = RunContext(
+        project_id=pid,
+        project_title="Заявка",
+        sources=[source],
+        questions=[],
+        current_xml=manual,
+        current_is_manual=True,
+    )
+    with pytest.raises(PipelineError, match="Пустая дорожка"):
+        await pipeline.structure(context, AnalysisResult())
+    assert calls == []
+    assert context.current_xml == manual
+
+    repos = InMemoryStore().repositories()
+    await repos.projects.add(
+        Project(id=pid, title="Заявка", description=None, created_at=now, updated_at=now)
+    )
+    await repos.sources.add(
+        Source(
+            id=SOURCE_ID,
+            project_id=pid,
+            kind=SourceKind.TEXT,
+            title=source.title,
+            content=TEXT,
+            status=SourceStatus.READY,
+            active=True,
+            created_at=now,
+        )
+    )
+    head = await add_version(
+        repos,
+        Runtime(),
+        project_id=pid,
+        xml=manual,
+        origin=VersionOrigin.MANUAL,
+        lint=[],
+        trace={},
+    )
+    spawner = AsyncioTaskSpawner()
+    runs = RunService(
+        repos,
+        pipeline=pipeline,
+        bpmn_tools=MockBpmnTools(),
+        events=InMemoryRunEventBus(),
+        spawner=spawner,
+        runtime=Runtime(),
+        max_concurrent=2,
+    )
+    try:
+        run = await runs.start(pid, mode=RunMode.BUILD, created_by=None)
+        await spawner.wait_idle()
+        actual = await runs.get(run.id)
+        assert actual.status is RunStatus.FAILED
+        assert actual.error
+        assert "Пустая дорожка" in actual.error
+        assert calls == []
+        retained = await repos.versions.latest(pid)
+        assert retained
+        assert retained.id == head.id
+        assert retained.xml == manual
+        assert len(await repos.versions.list_by_project(pid)) == 1
+    finally:
+        await spawner.shutdown()
+
+    context.replace_manual = True
+    rebuilt = await pipeline.structure(context, AnalysisResult())
+    assert len(calls) == 1
+    assert "FutureReviewer" not in rebuilt.xml
+    assert context.current_xml == manual
 
 
 @pytest.mark.asyncio

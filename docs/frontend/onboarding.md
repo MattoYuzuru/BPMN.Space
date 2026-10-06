@@ -214,7 +214,7 @@ interface TourPersistence {
 
 ### Клиентские пункты
 
-`simulation_run` — при включении таймлайна процесса (`diagram-toolbar`), `diagram_exported` — когда файл отдан браузеру (`exportDiagram({ onSaved })`, оба меню скачивания). Отправляет `useReportOnboardingEvent`: если пункт уже отмечен в кэше — запрос не уходит, ответ не ждём.
+`simulation_run` — после создания реального экземпляра процесса (`DiagramPanel.onSimulationStart`), а не при включении режима; при нескольких стартах сначала нужен выбор. `diagram_exported` — когда файл отдан браузеру (`exportDiagram({ onSaved })`, оба меню скачивания). Отправляет `useReportOnboardingEvent`: если пункт уже отмечен в кэше — запрос не уходит, ответ не ждём.
 
 ### Переход к пункту
 

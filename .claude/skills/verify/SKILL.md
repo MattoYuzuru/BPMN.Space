@@ -12,11 +12,13 @@ CI на GitLab Codenrock не используется, поэтому «зел�
 0. До финального коммита сверь документацию затронутых функций, статусы RFC/плана, `AGENTS.md` и навигатор `docs/README.md`. Не оставляй выполненные обещания как будущую работу и не отмечай предложенную архитектуру реализованной. Проверка качества кода не заменяет эту сверку.
 1. Проверь чистоту дерева: `git status --porcelain`. Отчёт пишется только для закоммиченного состояния — иначе sha не соответствует проверенному коду. Незакоммиченные изменения — спроси пользователя, что с ними делать.
 2. Запусти полный прогон: `make verify`. Он включает (RFC §9.1):
-   - `ruff format --check`, `ruff check`, `biome check`, `gitleaks`;
+   - `ruff format --check`, `ruff check`, `biome check`, `secretlint --maskSecrets`;
    - `pyright`, `lint-imports` (import-linter);
    - `pytest` unit + integration с `--cov-fail-under=80` на `backend/app/{domain,services,ingest}`;
    - `vitest`, `tsc --noEmit`, `vite build`;
-   - `docker compose up -d --wait`, Playwright smoke, остановка стека;
+   - PostgreSQL-тесты репозиториев и HTTP-доступов (`make test-postgres`);
+   - `make e2e-diagram`: настоящий BPMN canvas, воспроизведение/шлюзы/экспорт/мини-карта; собственный Vite без backend;
+   - `make e2e`: сборка и запуск Docker-стека, Playwright сценарии; стек остаётся для диагностики. `E2E_BASE_URL` задаёт уже работающий стенд;
    - XSD + bpmnlint на всех `examples/**/*.bpmn`.
 3. Если что-то упало — **не правь тесты под код и не снижай порог покрытия**. Найди причину, почини, закоммить, начни с шага 1. Флаки-тест — отметь в отчёте, не скрывай.
 4. Опционально (тратит токены, спроси пользователя): `make eval` — golden set на текущей модели; приложи таблицу метрик.

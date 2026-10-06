@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import Field, RootModel
+from pydantic import Field, RootModel, model_validator
 
 from app.api.schemas.common import ApiModel
 from app.api.schemas.questions import Question
@@ -83,6 +83,22 @@ class Run(ApiModel):
 
 
 class RunCreate(ApiModel):
+    base_version_id: UUID | None = Field(
+        default=None, description="Голова, которую видит инициатор; устаревшая — 409"
+    )
+    replace_manual: bool = Field(
+        default=False,
+        description=(
+            "Осознанно пересобрать из источников вместо manual; требует актуальный base_version_id"
+        ),
+    )
+
+    @model_validator(mode="after")
+    def explicit_replace(self) -> "RunCreate":
+        if self.replace_manual and (self.mode is not RunMode.BUILD or self.base_version_id is None):
+            raise ValueError("Замена ручных правок требует build и актуальный base_version_id")
+        return self
+
     mode: RunMode = Field(description="`analyze` — только вопросы, `build` — вопросы и схема")
 
 

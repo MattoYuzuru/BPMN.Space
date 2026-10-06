@@ -23,6 +23,28 @@ const question: Question = {
 
 afterEach(() => vi.unstubAllGlobals())
 
+it('неактуальный вопрос остаётся в архиве без блокирующей плашки и потери кода', () => {
+  const client = new QueryClient()
+  const workspace = {
+    project: { id: 'p1', sources: [] },
+    canEdit: true,
+    selectQuestion: vi.fn(),
+    focusElements: vi.fn(),
+  } as unknown as WorkspaceApi
+  renderUi(
+    <QueryClientProvider client={client}>
+      <WorkspaceContext.Provider value={workspace}>
+        <QuestionCard question={{ ...question, status: 'obsolete' }} />
+      </WorkspaceContext.Provider>
+    </QueryClientProvider>,
+  )
+  expect(screen.getByText('Q-1')).toBeVisible()
+  expect(screen.getByText('Неактуален')).toBeVisible()
+  expect(screen.queryByText('Блокирует')).not.toBeInTheDocument()
+  expect(screen.queryByText('Решён', { exact: true })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Ответить' })).not.toBeInTheDocument()
+})
+
 it('отвеченный вопрос честно показывает ожидание анализа и сохраняет возврат', async () => {
   const calls = stubApi({
     'POST /api/v1/questions/q1/reopen': { body: { ...question, status: 'open', answer: null } },

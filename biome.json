@@ -5,6 +5,9 @@
     "includes": [
       "frontend/**",
       "scripts/**/*.mjs",
+      "infra/bpmn-tools/**/*.mjs",
+      "infra/bpmn-tools/package.json",
+      "backend/app/fixtures/ir/**/*.json",
       "!frontend/src/routeTree.gen.ts",
       "!frontend/playwright-report",
       "!frontend/test-results",
@@ -51,7 +54,13 @@
       "linter": { "rules": { "complexity": { "noImportantStyles": "off" } } }
     },
     {
-      "includes": ["scripts/**", "frontend/scripts/**", "frontend/e2e/**", "frontend/*.config.ts"],
+      "includes": [
+        "scripts/**",
+        "infra/bpmn-tools/**",
+        "frontend/scripts/**",
+        "frontend/e2e/**",
+        "frontend/*.config.ts"
+      ],
       "linter": { "rules": { "suspicious": { "noConsole": "off" } } }
     }
   ],

@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { isRunning, projectStatusView, useRenameProject } from '@/entities/project'
 import { useRunView, useStartRun } from '@/entities/run'
 import { VERSION_ORIGIN, versionLabel } from '@/entities/version'
+import { RebuildFromSources } from '@/features/run-analysis/rebuild-from-sources'
 import { ShareProjectButton } from '@/features/share-project/share-project-button'
 import { formatRelative } from '@/shared/lib/format'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
@@ -171,6 +172,13 @@ function HeaderActions({ running }: { running: boolean }) {
           >
             Построить схему
           </Button>
+          {latest && (
+            <RebuildFromSources
+              projectId={project.id}
+              baseVersionId={latest.id}
+              disabled={noSources || running}
+            />
+          )}
         </>
       )}
 

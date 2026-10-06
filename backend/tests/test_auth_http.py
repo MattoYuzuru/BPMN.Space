@@ -752,6 +752,28 @@ async def test_xml_is_served_as_inert_attachment(stack: Stack) -> None:
         assert response.text == ids["xml"]
 
 
+async def test_runtime_xsd_rejects_manual_xml_without_creating_postgres_version(
+    stack: Stack,
+) -> None:
+    owner = await stack.user("xsd-runtime@example.com")
+    ids = await _finished_project(owner)
+    before = (await owner.get(f"/projects/{ids['project']}")).json()
+    invalid = ids["xml"].replace(
+        "</bpmn:process>", '<bpmn:banana id="Invalid_Element"/></bpmn:process>', 1
+    )
+    response = await owner.put(
+        f"/projects/{ids['project']}/diagram",
+        json={"xml": invalid, "base_version_id": ids["version"]},
+    )
+    assert response.status_code == 422
+    assert "XSD" in response.json()["detail"]
+    after = (await owner.get(f"/projects/{ids['project']}")).json()
+    versions = (await owner.get(f"/projects/{ids['project']}/versions")).json()
+    assert after["latest_version"]["id"] == ids["version"]
+    assert after["counts"]["versions"] == before["counts"]["versions"]
+    assert len(versions) == before["counts"]["versions"]
+
+
 MALICIOUS_XML = {
     "xhtml-script": (
         '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
@@ -788,7 +810,8 @@ async def test_manual_save_rejects_malicious_xml(stack: Stack) -> None:
 
     # Допустимое содержимое не режем: `bpmn:script` внутри scriptTask — часть стандарта.
     script_task = (
-        '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+        '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" '
+        'targetNamespace="urn:allowed-script-task">'
         '<bpmn:process id="p"><bpmn:scriptTask id="t"><bpmn:script>x = 1</bpmn:script>'
         "</bpmn:scriptTask></bpmn:process></bpmn:definitions>"
     )

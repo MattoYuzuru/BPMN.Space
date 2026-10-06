@@ -103,8 +103,11 @@ class SourceService:
             created_at=now,
             duration_sec=duration_sec if kind is SourceKind.VOICE else None,
         )
-        await self._repos.sources.add(source)
-        await touch_project(self._repos, project_id, now)
+        async with self._repos.atomic() as repos:
+            await repos.projects.lock(project_id)
+            await get_project(repos, project_id)
+            await repos.sources.add(source)
+            await touch_project(repos, project_id, now)
         return source
 
     async def create_file(
@@ -150,8 +153,11 @@ class SourceService:
         if not background:
             for name, value in (await self._parse_changes(file_name=file_name, data=data)).items():
                 setattr(source, name, value)
-        await self._repos.sources.add(source)
-        await touch_project(self._repos, project_id, now)
+        async with self._repos.atomic() as repos:
+            await repos.projects.lock(project_id)
+            await get_project(repos, project_id)
+            await repos.sources.add(source)
+            await touch_project(repos, project_id, now)
         return source, background
 
     async def _parse_changes(self, *, file_name: str, data: bytes) -> dict[str, Any]:
@@ -177,7 +183,8 @@ class SourceService:
         полям разбора и только пока источник в `processing`: название и `active`, которые
         пользователь поменял за время разбора, не затираются, а удалённый источник не оживает.
         """
-        await asyncio.sleep(self._parse_delay)
+        if self._parse_delay:
+            await asyncio.sleep(self._parse_delay)
         source = await self._repos.sources.get(source_id)
         if source is None or source.status is not SourceStatus.PROCESSING or not source.file_key:
             return
@@ -187,7 +194,10 @@ class SourceService:
         except Exception:
             logger.exception("Не удалось разобрать источник %s", source_id)
             changes = {"status": SourceStatus.FAILED, "error": "Не удалось разобрать файл"}
-        await self._repos.sources.patch(source_id, changes, only_status=SourceStatus.PROCESSING)
+        # Blob IO и parser закончены: lock охватывает только фиксацию метаданных.
+        async with self._repos.atomic() as repos:
+            await repos.projects.lock(source.project_id)
+            await repos.sources.patch(source_id, changes, only_status=SourceStatus.PROCESSING)
 
     async def update(
         self,
@@ -199,43 +209,62 @@ class SourceService:
         fields: set[str],
     ) -> Source:
         source = await get_source(self._repos, source_id)
-        changes: dict[str, Any] = {}
-        if "title" in fields and title is not None:
-            changes["title"] = self._clean_title(title) or source.title
-        if "content" in fields and content is not None:
-            if source.status is SourceStatus.PROCESSING:
-                raise InvalidInputError("Файл ещё обрабатывается — текст можно поправить позже")
-            changes["content"] = self._clean_content(content)
-            if source.status is SourceStatus.FAILED:
-                changes["status"] = SourceStatus.READY  # аналитик вписал текст вручную
-                changes["error"] = None
-        if "active" in fields and active is not None:
-            changes["active"] = active
-        if changes:
-            # Правка текста не должна обгонять разбор: статус проверяется в самом UPDATE.
-            guard = source.status if "content" in changes else None
-            if not await self._repos.sources.patch(source_id, changes, only_status=guard):
-                await get_source(self._repos, source_id)  # удалён → 404
+        expected_status = source.status
+        async with self._repos.atomic() as repos:
+            await repos.projects.lock(source.project_id)
+            source = await get_source(repos, source_id)
+            if "content" in fields and source.status is not expected_status:
                 raise ConflictError("Источник только что изменился — обновите страницу и повторите")
-        source = await get_source(self._repos, source_id)
-        now = self._rt.clock()
-        if source.question_id and "content" in fields:
-            question = await self._repos.questions.get(source.question_id)
-            if question is not None and question.answer and question.answer.source_id == source.id:
-                question_rules.update_answer_text(question, text=source.content, now=now)
-                await self._repos.questions.update(question)
-        await touch_project(self._repos, source.project_id, now)
-        return source
+            changes: dict[str, Any] = {}
+            if "title" in fields and title is not None:
+                changes["title"] = self._clean_title(title) or source.title
+            if "content" in fields and content is not None:
+                if source.status is SourceStatus.PROCESSING:
+                    raise InvalidInputError("Файл ещё обрабатывается — текст можно поправить позже")
+                changes["content"] = self._clean_content(content)
+                if source.status is SourceStatus.FAILED:
+                    changes["status"] = SourceStatus.READY  # аналитик вписал текст вручную
+                    changes["error"] = None
+            if "active" in fields and active is not None:
+                changes["active"] = active
+            if changes:
+                # Правка текста не должна обгонять разбор: статус проверяется в самом UPDATE.
+                guard = source.status if "content" in changes else None
+                if not await repos.sources.patch(source_id, changes, only_status=guard):
+                    await get_source(repos, source_id)  # удалён → 404
+                    raise ConflictError(
+                        "Источник только что изменился — обновите страницу и повторите"
+                    )
+            source = await get_source(repos, source_id)
+            now = self._rt.clock()
+            if source.question_id and "content" in fields:
+                question = await repos.questions.get(source.question_id)
+                if (
+                    question is not None
+                    and question.answer
+                    and question.answer.source_id == source.id
+                ):
+                    question_rules.update_answer_text(question, text=source.content, now=now)
+                    await repos.questions.update(question)
+            await touch_project(repos, source.project_id, now)
+            return source
 
     async def delete(self, source_id: UUID) -> None:
         source = await get_source(self._repos, source_id)
-        now = self._rt.clock()
-        if source.question_id:
-            question = await self._repos.questions.get(source.question_id)
-            if question is not None and question.answer and question.answer.source_id == source.id:
-                question_rules.drop_answer(question, now=now)
-                await self._repos.questions.update(question)
+        async with self._repos.atomic() as repos:
+            await repos.projects.lock(source.project_id)
+            source = await get_source(repos, source_id)
+            now = self._rt.clock()
+            if source.question_id:
+                question = await repos.questions.get(source.question_id)
+                if (
+                    question is not None
+                    and question.answer
+                    and question.answer.source_id == source.id
+                ):
+                    question_rules.drop_answer(question, now=now)
+                    await repos.questions.update(question)
+            await repos.sources.delete(source_id)
+            await touch_project(repos, source.project_id, now)
         if source.file_key:
             await self._storage.delete(source.file_key)
-        await self._repos.sources.delete(source_id)
-        await touch_project(self._repos, source.project_id, now)

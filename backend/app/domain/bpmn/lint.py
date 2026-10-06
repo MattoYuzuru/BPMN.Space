@@ -1,8 +1,8 @@
 """Минимальная проверка структуры схемы — подмножество правил `bpmnlint:recommended`.
 
-Нужна mock-реализации `BpmnTools.lint`, сиду и проверке ручной правки, чтобы отчёт был честным
-для любой схемы. Имена правил совпадают с bpmnlint, сообщения — на русском.
-TODO(real): #6 полный набор правил — сервис bpmn-tools `/lint` (bpmnlint), RFC §4, §5.5.
+Нужна mock-реализации `BpmnTools.lint` и сиду. Рабочий runtime использует полный набор
+`bpmnlint:recommended` через внутренний Node-сервис. Имена правил совпадают с bpmnlint,
+сообщения — на русском; ограниченный mock явно отмечается в предупреждениях.
 """
 
 from app.domain.bpmn.document import BpmnDocument, BpmnNode

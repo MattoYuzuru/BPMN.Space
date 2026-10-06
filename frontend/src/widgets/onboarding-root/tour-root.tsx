@@ -8,7 +8,7 @@ import {
 } from '@/entities/onboarding'
 import { projectQueryOptions, projectsInfiniteOptions } from '@/entities/project'
 import { sortQuestions } from '@/entities/question'
-import { useRunView, useStartRun } from '@/entities/run'
+import { useRunStore, useRunView, useStartRun } from '@/entities/run'
 import { useCurrentUser } from '@/entities/session'
 import { useCreateProjectDialog } from '@/features/create-project/model'
 import { TourHost, useTourStore } from '@/features/onboarding/tour'
@@ -92,6 +92,8 @@ export default function TourRoot({ state }: { state: OnboardingState }) {
     retry: false,
   })
   const runView = useRunView(projectId ?? '')
+  // Обновление контекста после показа итога; геттер ниже читает состояние синхронно для сигналов.
+  useRunStore((store) => store.presented[projectId ?? ''])
   const startRun = useStartRun(projectId ?? '')
   const presence = useAnchorPresence(tourActive && PRESENCE_STEPS.has(stepKey ?? ''))
 
@@ -161,6 +163,11 @@ export default function TourRoot({ state }: { state: OnboardingState }) {
     stage: runView?.stage ?? null,
     get result() {
       return useTourSession.getState().runResult
+    },
+    get resultPresented() {
+      const store = useRunStore.getState()
+      const view = store.views[projectId ?? '']
+      return view?.status !== 'succeeded' || store.presented[projectId ?? ''] === view.runId
     },
     openQuestionIds,
     get pickedId() {

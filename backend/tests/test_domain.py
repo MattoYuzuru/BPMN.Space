@@ -10,6 +10,7 @@ from app.domain.bpmn.diff import diff_documents
 from app.domain.bpmn.document import BpmnFormatError, parse_bpmn
 from app.domain.bpmn.lint import lint_document
 from app.domain.models import (
+    Answer,
     ProjectStatus,
     Question,
     QuestionKind,
@@ -130,7 +131,7 @@ def test_reconcile_requires_real_quote() -> None:
                 about=Quote(source_id=source.id, quote="нет такой цитаты"),
             ),
             NewQuestion(
-                kind=QuestionKind.CONFLICT,
+                kind=QuestionKind.MISSING_ACTOR,
                 severity=Severity.MINOR,
                 text="вопрос Q-1",  # дубль существующего
                 assumption="—",
@@ -162,13 +163,19 @@ def test_reconcile_requires_real_quote() -> None:
     assert (summary.resolved, summary.open, summary.new) == (1, 0, 1)
 
 
-def test_reconcile_answered_back_to_open_drops_answer() -> None:
+def test_reconcile_answered_back_to_open_preserves_answer_history() -> None:
     answered = _question("Q-1", QuestionStatus.ANSWERED)
     answer_id = uuid.uuid4()
-    answered.answer = None
+    answered.answer = Answer(source_id=answer_id, text="Не знаю")
     outcome = reconcile(
         [answered],
-        AnalysisResult(question_updates=[QuestionUpdate(code="Q-1", status=QuestionStatus.OPEN)]),
+        AnalysisResult(
+            question_updates=[
+                QuestionUpdate(
+                    code="Q-1", status=QuestionStatus.OPEN, reason="Ответ не указал исполнителя"
+                )
+            ]
+        ),
         [],
         project_id=PROJECT,
         run_id=uuid.uuid4(),
@@ -177,7 +184,34 @@ def test_reconcile_answered_back_to_open_drops_answer() -> None:
     )
     assert answered.status is QuestionStatus.OPEN
     assert outcome.summary.open == 1
-    assert answer_id
+    assert answered.answer == Answer(source_id=answer_id, text="Не знаю")
+
+
+def test_exact_question_text_does_not_merge_different_source_contexts() -> None:
+    first, second = _source("Согласовать заявку."), _source("Согласовать счёт.")
+    old = _question()
+    old.about = Quote(source_id=first.id, quote=first.content)
+    result = reconcile(
+        [old],
+        AnalysisResult(
+            new_questions=[
+                NewQuestion(
+                    text=old.text,
+                    kind=old.kind,
+                    severity=old.severity,
+                    assumption="Не определён",
+                    about=Quote(source_id=second.id, quote=second.content),
+                )
+            ]
+        ),
+        [first, second],
+        project_id=PROJECT,
+        run_id=uuid.uuid4(),
+        now=NOW,
+        new_id=uuid.uuid4,
+    )
+    assert len(result.created) == 1
+    assert result.created[0].about == Quote(source_id=second.id, quote=second.content)
 
 
 def test_derive_status() -> None:

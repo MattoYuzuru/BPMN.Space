@@ -23,6 +23,7 @@ from app.domain.pagination import Cursor, InvalidCursorError
 from app.domain.projects import default_source_title, derive_status
 from app.domain.questions import project_summary
 from app.domain.runs import ACTIVE_STATUSES
+from app.domain.versions import rechecked_version
 from app.fixtures import read_text
 from app.fixtures.types import Example
 from app.infra.repositories.base import Repositories
@@ -205,7 +206,7 @@ class ProjectService:
             view=view,
             sources=sources,
             questions=questions,
-            latest_version=versions[0] if versions else None,
+            latest_version=rechecked_version(versions[0]) if versions else None,
             active_run=active,
             summary=project_summary(questions, latest_run_id=finished[-1].id if finished else None),
         )
@@ -244,7 +245,10 @@ class ProjectService:
             active=True,
             created_at=view.project.created_at,
         )
-        await self._repos.sources.add(source)
+        async with self._repos.atomic() as repos:
+            await repos.projects.lock(view.project.id)
+            await get_project(repos, view.project.id)
+            await repos.sources.add(source)
         return await self._view(view.project)
 
     async def update(

@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _MB = 1024 * 1024
@@ -36,13 +36,17 @@ class Settings(BaseSettings):
     rate_limit_expensive_per_min: int = 60  # прогоны, помощник, расшифровка, загрузка, на аккаунт
     rate_limit_expensive_ip_per_min: int = 120  # те же вызовы суммарно с одного IP (все аккаунты)
 
+    # В Compose всегда настоящий внутренний Node-сервис. None — ограниченный локальный mock.
+    bpmn_tools_url: str | None = None
+    bpmn_tools_timeout_sec: float = Field(default=20.0, gt=0, le=120)
+
     # --- Прогоны (RFC §5.1) ---
     max_concurrent_runs: int = 2
     # Общий срок одного прогона (секунды, 0 — без срока): новые запросы к модели после него
     # не начинаются, прогон завершается ошибкой, а не висит.
     run_deadline_sec: float = 600.0
-    # Сколько символов текста источников суммарно отдаём модели за прогон (≈ 40–45 тыс. токенов).
-    # Лишнее обрезается поровну между источниками; обрезка попадает в `warnings` прогона.
+    # Анализ: бюджет одного запроса целиком, включая schema; полные источники идут порциями.
+    # Построение: суммарный бюджет fitted sources, обрезка отмечается в warnings.
     llm_context_budget_chars: int = 120_000
 
     # --- Ограничения загрузок ---
@@ -78,6 +82,8 @@ class Settings(BaseSettings):
     llm_model: str | None = None
     llm_timeout_sec: float = 120.0
     llm_json_mode: bool = True
+    # Настраивается под ограничения провайдера; незавершённый length-ответ не применяется.
+    llm_json_max_tokens: int = Field(default=8192, ge=256, le=131_072)
     # Температура для JSON-ответов (анализ, сборка). Дефолт провайдера (DeepSeek — 1.0)
     # даёт редкие ответы не по схеме; 0.0 — рекомендация DeepSeek для структурированного вывода.
     llm_json_temperature: float | None = 0.0
@@ -101,6 +107,7 @@ class Settings(BaseSettings):
 
     @field_validator(
         "database_url",
+        "bpmn_tools_url",
         "session_cookie_secure",
         "llm_api_key",
         "deepseek_api_key",

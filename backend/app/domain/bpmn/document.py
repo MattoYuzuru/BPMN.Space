@@ -1,9 +1,8 @@
 """Чтение BPMN 2.0 XML в плоскую модель: участники, дорожки, узлы, потоки.
 
-Это упрощённый «импортёр» для mock-а: его хватает для диффа версий, подписей дорожек
-и проверки правки из bpmn-js на корректность XML.
-TODO(real): #5 полноценный импортёр XML → ProcessGraph (RFC §5.3, §5.6 `importer.py`)
-с подпроцессами, событиями-границами и message flow; XSD-проверка — в `bpmn/xsd.py`.
+Модель используется для диффа версий, подписей дорожек и ограниченного mock-линта.
+`importer.py` отдельно переводит поддерживаемую семантику XML в GraphIR для повторной
+сборки, а неподдерживаемую отвергает без уплощения. XSD-проверка — в `bpmn/xsd.py`.
 """
 
 from dataclasses import dataclass, field
@@ -88,6 +87,11 @@ class BpmnDocument:
     @property
     def element_ids(self) -> set[str]:
         return {*self.nodes, *(lane.id for lane in self.lanes)}
+
+    @property
+    def all_element_ids(self) -> set[str]:
+        """В том числе стрелки: их условия тоже имеют provenance и assumption bindings."""
+        return self.element_ids | {flow.id for flow in self.flows}
 
     @property
     def has_layout(self) -> bool:

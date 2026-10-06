@@ -10,13 +10,14 @@ NPM_FRONT := npm run --workspace frontend
 
 .PHONY: help setup up down logs db-upgrade dev-backend dev-frontend deploy deploy-env \
         format lint typecheck design-lint check-fast test test-backend test-frontend \
-        test-postgres build contract-check openapi gen-api fixtures check e2e e2e-diagram screenshots secrets verify mr-report
+        test-postgres test-bpmn-tools dev-bpmn-tools build contract-check openapi gen-api fixtures check e2e e2e-diagram screenshots secrets verify mr-report
 
 help: ## Список команд
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 setup: ## Установить зависимости, браузер для e2e и git-хуки
 	npm ci
+	npm ci --prefix infra/bpmn-tools --ignore-scripts
 	cd backend && uv sync --frozen
 	npx --workspace frontend playwright install chromium
 
@@ -75,7 +76,13 @@ test-postgres: ## SQL-репозитории и HTTP-тесты с автори�
 test-frontend: ## vitest
 	$(NPM_FRONT) test
 
-test: test-backend test-frontend ## Все unit- и интеграционные тесты
+test-bpmn-tools: ## Unit/HTTP integration настоящего Node layout и bpmnlint
+	npm --prefix infra/bpmn-tools test
+
+dev-bpmn-tools: ## Runtime сервис схем на :3000 (backend: BPMN_TOOLS_URL=http://localhost:3000)
+	npm --prefix infra/bpmn-tools start
+
+test: test-backend test-frontend test-bpmn-tools ## Все unit- и интеграционные тесты
 
 build: ## Production-сборка фронтенда + бюджет стартового бандла (bpmn-js только лениво)
 	$(NPM_FRONT) build

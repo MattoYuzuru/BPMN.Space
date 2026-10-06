@@ -116,7 +116,7 @@ function QuestionDetail({ question }: { question: Question }) {
             {question.evidence && (
               <QuoteLink
                 clamp={false}
-                tone="evidence"
+                tone={question.status === 'obsolete' ? 'about' : 'evidence'}
                 quote={question.evidence}
                 source={sourceOf(question.evidence.source_id)}
               />
@@ -236,6 +236,14 @@ function History({ question }: { question: Question }) {
       icon: 'circle-check',
       tone: 'text-success-fg',
       title: evidenceSource ? `Решён по источнику «${evidenceSource.title}»` : 'Решён',
+      at: question.updated_at,
+    })
+  }
+  if (question.status === 'obsolete') {
+    items.push({
+      icon: 'history',
+      tone: 'text-fg-muted',
+      title: 'Предмет вопроса больше не относится к текущему процессу',
       at: question.updated_at,
     })
   }

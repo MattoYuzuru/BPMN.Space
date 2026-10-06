@@ -34,6 +34,7 @@ function makeCtx(patch: Partial<Record<string, unknown>> = {}): TourContext {
     queued: false,
     stage: null,
     result: null,
+    resultPresented: true,
     openQuestionIds: ['q1', 'q2'],
     pickedId: 'q1',
     shareCreated: false,
@@ -304,6 +305,7 @@ describe('сценарий тура', () => {
           status: 'succeeded',
           openQuestions: 2,
           hasDiagram: true,
+          projectId: 'p1',
           ...patch,
         }) as OnboardingSignal
       expect(until?.(finished({}), makeCtx())).toBe(true)
@@ -501,6 +503,29 @@ describe('сценарий тура', () => {
     view.actions?.[0]?.run(tour)
     expect(ctx.ui.closeShareDialog).toHaveBeenCalled()
     expect(tour.next).toHaveBeenCalled()
+  })
+
+  it('шаг ожидания остаётся до показа итога, не задерживая серверный результат', () => {
+    const ctx = makeCtx({ result: result(), resultPresented: false })
+    const waiting = step('run.wait')
+    expect(waiting.doneWhen?.(ctx)).toBe(false)
+    expect(
+      waiting.until?.(
+        {
+          type: 'run.finished',
+          status: 'succeeded',
+          openQuestions: 2,
+          hasDiagram: true,
+          projectId: 'p1',
+        },
+        ctx,
+      ),
+    ).toBe(false)
+    expect(waiting.until?.({ type: 'run.presented', runId: 'r1', projectId: 'other' }, ctx)).toBe(
+      false,
+    )
+    expect(waiting.until?.({ type: 'run.presented', runId: 'r1', projectId: 'p1' }, ctx)).toBe(true)
+    expect(waiting.doneWhen?.(makeCtx({ result: result(), resultPresented: true }))).toBe(true)
   })
 
   it('шаг 2: «Далее» листает страницу, на второй — только «Пропустить шаг»', () => {

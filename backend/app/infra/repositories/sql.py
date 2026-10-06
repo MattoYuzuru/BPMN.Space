@@ -386,6 +386,18 @@ class SqlSourceRepository:
             result = cast(CursorResult[Any], await session.execute(statement.values(**values)))
         return result.rowcount > 0
 
+    async def lock_by_project(self, project_id: UUID) -> list[Source]:
+        async with self.sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(SourceRow)
+                    .where(SourceRow.project_id == project_id)
+                    .order_by(SourceRow.id)
+                    .with_for_update()
+                )
+            ).all()
+            return [_source(row) for row in rows]
+
     async def fail_processing(self, error: str) -> int:
         async with self.sessions.begin() as session:
             result = cast(
@@ -453,6 +465,14 @@ class SqlQuestionRepository:
     async def update(self, question: Question) -> None:
         async with self.sessions.begin() as session:
             await session.merge(self._row(question))
+
+    async def bind_elements(self, question_id: UUID, element_ids: list[str]) -> None:
+        async with self.sessions.begin() as session:
+            await session.execute(
+                update(QuestionRow)
+                .where(QuestionRow.id == question_id)
+                .values(element_ids=list(element_ids))
+            )
 
     async def apply_reconciled(
         self, question: Question, *, expected_status: QuestionStatus

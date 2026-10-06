@@ -1,6 +1,6 @@
 # Деплой на демо-VM
 
-Текущая production-схема — Ubuntu 24.04, Docker Compose, Caddy на портах 80 и 443, FastAPI и PostgreSQL 16 во внутренней сети Compose. Для `bpmn.space` и `www.bpmn.space` Caddy автоматически получает и обновляет TLS-сертификаты Let's Encrypt. Данные сертификатов сохраняются в volumes `caddy_data` и `caddy_config`. PostgreSQL хранит состояние проектов в volume `postgres_data`, загруженные документы — в `uploads_data`. Деплой отправляет архив проверенного Git-коммита по SSH; VM не нужен доступ к приватному GitLab. GitLab CI/CD не используется.
+Текущая production-схема — Ubuntu 24.04, Docker Compose, Caddy на портах 80 и 443, FastAPI, PostgreSQL 16 и Node `bpmn-tools` во внутренней сети Compose. Runtime layout/lint не публикует порт наружу; backend ждёт его healthcheck. Для `bpmn.space` и `www.bpmn.space` Caddy автоматически получает и обновляет TLS-сертификаты Let's Encrypt. Данные сертификатов сохраняются в volumes `caddy_data` и `caddy_config`. PostgreSQL хранит состояние проектов в volume `postgres_data`, загруженные документы — в `uploads_data`. Деплой отправляет архив проверенного Git-коммита по SSH; VM не нужен доступ к приватному GitLab. GitLab CI/CD не используется.
 
 ## Один раз: подготовить VM
 

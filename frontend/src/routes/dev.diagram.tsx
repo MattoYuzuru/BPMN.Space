@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   type DiagramEditorHandle,
   type DiagramHighlights,
@@ -27,11 +27,13 @@ type DemoEvent =
   | { type: 'import'; warnings: number }
   | { type: 'error'; message: string }
   | { type: 'click'; id: string }
+  | { type: 'simulation-start' }
 
 declare global {
   interface Window {
     __diagram?: DiagramEditorHandle
     __diagramEvents?: DemoEvent[]
+    __diagramSetXml?: (xml: string) => void
   }
 }
 
@@ -76,6 +78,12 @@ function DiagramDemo() {
   const search = Route.useSearch()
   const [xml, setXml] = useState(search.broken ? BROKEN_XML : sample)
   const panelRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (import.meta.env.DEV) window.__diagramSetXml = setXml
+    return () => {
+      delete window.__diagramSetXml
+    }
+  }, [])
 
   const highlights = useMemo(
     () => ({
@@ -101,6 +109,7 @@ function DiagramDemo() {
       <LazyDiagramEditor
         xml={xml}
         onChange={handleChange}
+        onSimulationStart={() => record({ type: 'simulation-start' })}
         highlights={highlights}
         readOnly={search.readOnly}
         onReady={handleReady}

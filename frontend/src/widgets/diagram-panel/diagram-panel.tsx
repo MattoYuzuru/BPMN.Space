@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, m } from 'motion/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useReportOnboardingEvent } from '@/entities/onboarding'
 import { projectKeys } from '@/entities/project'
 import { useRunView } from '@/entities/run'
 import { addedElementIds, diagramElements, useSaveDiagram, versionKeys } from '@/entities/version'
@@ -45,6 +46,8 @@ export function DiagramPanel() {
 
   const [markers, setMarkers] = useState<MarkerToggles>({ assumptions: true, added: true })
   const [inspected, setInspected] = useState<string | null>(null)
+  const [simulationActive, setSimulationActive] = useState(false)
+  const reportOnboarding = useReportOnboardingEvent()
   const [ready, setReady] = useState(false)
   const propertiesRef = useRef<HTMLDivElement>(null)
   const [propertiesOpen, setPropertiesOpen] = useState(false)
@@ -377,6 +380,7 @@ export function DiagramPanel() {
         isLatest={isLatest}
         ready={ready}
         saving={save.isPending}
+        simulationActive={simulationActive}
         saved={save.isSuccess}
         markers={markers}
         onMarkersChange={setMarkers}
@@ -400,6 +404,8 @@ export function DiagramPanel() {
               xml={xml}
               readOnly={readOnly}
               highlights={highlights}
+              onSimulationChange={(state) => setSimulationActive(state.active)}
+              onSimulationStart={() => reportOnboarding.mutate('simulation_run')}
               onChange={handleChange}
               onSelectionChange={handleSelectionChange}
               onViewportChange={() => setViewportRevision((value) => value + 1)}

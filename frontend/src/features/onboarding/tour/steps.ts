@@ -337,7 +337,13 @@ const baseSteps: TourStep<TourContext>[] = [
     side: 'right',
     pages: [
       { text: COPY.diagram.canvas, anchor: TOUR_ANCHORS.diagramCanvas, allowOutside: true },
-      { text: COPY.diagram.simulation, anchor: TOUR_ANCHORS.diagramSimulation, side: 'bottom' },
+      {
+        text: COPY.diagram.simulation,
+        anchor: TOUR_ANCHORS.diagramCanvas,
+        cardAnchor: TOUR_ANCHORS.diagramSimulation,
+        side: 'bottom',
+        allowOutside: true,
+      },
       { text: COPY.diagram.download, anchor: TOUR_ANCHORS.headerDownload, side: 'bottom' },
     ],
     // Схемы нет, если прогон упал: показывать нечего.

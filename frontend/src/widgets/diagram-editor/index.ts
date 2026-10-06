@@ -11,8 +11,10 @@ export type {
   DiagramHighlights,
   DiagramImportResult,
   DiagramImportWarning,
+  DiagramSimulation,
   LazyDiagramEditorProps,
   PngBackground,
   PngExportOptions,
+  SimulationOption,
 } from './types'
 export { LazyDiagramEditor, preloadDiagramEditor } from './ui/LazyDiagramEditor'

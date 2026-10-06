@@ -43,6 +43,7 @@ make check        # всё: + тесты (backend cov ≥80%) + контракт
 make gen-api      # после изменения API: OpenAPI + TS-типы
 make fixtures     # пересобрать BPMN-фикстуры и examples/ (Node, XSD, bpmnlint)
 make e2e          # Playwright против Docker-стека; E2E_BASE_URL задаёт уже запущенный стенд
+make e2e-diagram  # настоящий BPMN canvas: воспроизведение, шлюзы, экспорт, мини-карта; Vite без backend
 make verify       # перед MR: check + e2e + секреты → reports/verify-<sha>.md
 make mr-report    # отчёт verify комментарием в MR
 make deploy-env   # передать production-переменные из локального .env на VM по SSH

@@ -13,8 +13,8 @@ test('итоги вопросов: равные ячейки и числа 0–9
       }, width)
       const measurements = await summary.evaluate((element) => {
         const outer = element.getBoundingClientRect()
-        const cells = [...element.children].map((child) => child.getBoundingClientRect())
-        const labels = [...element.querySelectorAll('dt, dd')].map((child) =>
+        const cells = Array.from(element.children).map((child) => child.getBoundingClientRect())
+        const labels = Array.from(element.querySelectorAll('dt, dd')).map((child) =>
           child.getBoundingClientRect(),
         )
         return {

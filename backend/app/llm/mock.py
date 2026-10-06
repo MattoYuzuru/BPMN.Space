@@ -236,9 +236,16 @@ class MockPipeline:
     ) -> DiagramDraft:
         if _has_marker(MARKER_FAIL_STRUCTURING, context.sources):
             raise PipelineError("Не удалось построить схему (режим mock: fail-structuring)")
-        if context.current_is_manual and context.current_xml:
+        if context.current_is_manual and context.current_xml and not context.replace_manual:
             # Правки аналитика приоритетнее (RFC §5.2). TODO(real): #5 учесть их через ProcessGraph.
-            return DiagramDraft(xml=context.current_xml)
+            sources = {source.id: source for source in context.evidence_sources or context.sources}
+            trace = {
+                element_id: quote
+                for element_id, quote in context.current_trace.items()
+                if quote.source_id in sources
+                and quote_in_source(quote.quote, sources[quote.source_id].content)
+            }
+            return DiagramDraft(xml=context.current_xml, trace=trace)
         rule = self._pick_diagram(context.sources)
         if rule is not None:
             return DiagramDraft(

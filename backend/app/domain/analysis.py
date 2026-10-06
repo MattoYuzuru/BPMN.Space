@@ -6,6 +6,7 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from app.domain.models import (
@@ -40,6 +41,12 @@ class RunContext:
     current_xml: str | None = None
     current_is_manual: bool = False
     generated_versions: int = 0
+    current_trace: dict[str, Quote] = field(default_factory=dict[str, Quote])
+    evidence_sources: list[ContextSource] = field(default_factory=list[ContextSource])
+    base_version_id: UUID | None = None
+    base_generated_xml: str | None = None
+    replace_manual: bool = False
+    manual_overrides: dict[str, Any] | None = None
     # Что не поместилось в бюджет контекста и было обрезано или пропущено (показываем в прогоне).
     warnings: list[str] = field(default_factory=list[str])
 
@@ -76,3 +83,8 @@ class DiagramDraft:
 
     xml: str
     trace: dict[str, Quote] = field(default_factory=dict[str, Quote])
+    ir: dict[str, Any] | None = None
+    bindings: dict[str, list[str]] = field(default_factory=dict[str, list[str]])
+    warnings: list[str] = field(default_factory=list[str])
+    conflicts: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
+    manual_overrides: dict[str, Any] | None = None

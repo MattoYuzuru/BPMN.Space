@@ -53,6 +53,8 @@ async def start_run(
         await container.runs.start(
             project_id,
             mode=body.mode,
+            base_version_id=body.base_version_id,
+            replace_manual=body.replace_manual,
             created_by=user.id if user else None,
             actor_email=user.email if user else None,
         )

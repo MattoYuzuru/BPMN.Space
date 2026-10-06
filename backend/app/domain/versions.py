@@ -33,7 +33,7 @@ def rechecked_version(version: Version) -> Version:
 
 def assumption_marks(questions: Iterable[Question], document: BpmnDocument) -> list[AssumptionMark]:
     """Элементы схемы, построенные на допущениях: вопрос открыт или проигнорирован."""
-    present = document.element_ids
+    present = document.all_element_ids
     return [
         AssumptionMark(element_id=element_id, question_id=q.id, text=q.assumption)
         for q in questions
@@ -61,7 +61,7 @@ def build_version(
 ) -> Version:
     document = parse_bpmn(xml)
     previous = parse_bpmn(previous_xml) if previous_xml is not None else None
-    present = document.element_ids
+    present = document.all_element_ids
     return Version(
         id=version_id,
         project_id=project_id,

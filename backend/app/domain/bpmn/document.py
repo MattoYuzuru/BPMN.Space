@@ -90,6 +90,11 @@ class BpmnDocument:
         return {*self.nodes, *(lane.id for lane in self.lanes)}
 
     @property
+    def all_element_ids(self) -> set[str]:
+        """В том числе стрелки: их условия тоже имеют provenance и assumption bindings."""
+        return self.element_ids | {flow.id for flow in self.flows}
+
+    @property
     def has_layout(self) -> bool:
         """Есть ли координаты (DI) — без них bpmn.io покажет пустой холст."""
         return self.shapes > 0

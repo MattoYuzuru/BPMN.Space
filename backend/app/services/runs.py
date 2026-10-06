@@ -605,6 +605,9 @@ class RunService:
         execution = (run.ir or {}).get("execution", {})
         base = execution.get("base_version_id")
         async with self._repos.atomic() as repos:
+            # Откат SQL не откатывает dataclass: результат переносим в живой Run только
+            # после commit, иначе _fail может записать ссылку на несуществующую версию.
+            staged = deepcopy(run)
             if await repos.projects.lock(run.project_id) is None:
                 raise NotFoundError("Проект не найден")
             latest = await repos.versions.latest(run.project_id)
@@ -642,7 +645,7 @@ class RunService:
                         "Источник изменился во время сборки; "
                         "повторите её, чтобы обновить доказательства"
                     )
-            graph_questions = await self._graph_questions(repos, run, state.draft)
+            graph_questions = await self._graph_questions(repos, staged, state.draft)
             version = await add_version(
                 repos,
                 self._rt,
@@ -656,9 +659,12 @@ class RunService:
                 expected_base_version_id=UUID(base) if base else None,
                 enforce_base=True,
             )
-            run.version_id = version.id
-            run.report = _json_data(version.report)
-            await repos.runs.update(run)
+            staged.version_id = version.id
+            staged.report = _json_data(version.report)
+            await repos.runs.update(staged)
+        run.summary = staged.summary
+        run.version_id = staged.version_id
+        run.report = staged.report
         await self._publish_graph_result(run, version, graph_questions)
 
     async def _publish_graph_result(

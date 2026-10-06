@@ -4,7 +4,9 @@ import asyncio
 import json
 import logging
 import os
+import time
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -20,6 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.config import Settings
 from app.container import build_container
+from app.domain.analysis import AnalysisResult
+from app.domain.bpmn.compiler import compile_graph
+from app.domain.bpmn.ir import GraphIR
 from app.domain.models import (
     Answer,
     LlmCall,
@@ -30,6 +35,7 @@ from app.domain.models import (
     Run,
     RunMode,
     RunStatus,
+    RunSummary,
     Severity,
     Source,
     SourceKind,
@@ -37,6 +43,7 @@ from app.domain.models import (
     Version,
     VersionOrigin,
 )
+from app.domain.runs import RunEventKind
 from app.fixtures import read_bpmn
 from app.fixtures.playbook import PLAYBOOK
 from app.infra.bpmn_tools import MockBpmnTools
@@ -60,6 +67,7 @@ from app.infra.seed import DEMO_PROJECT_ID, build_seed
 from app.infra.storage import LocalFileStorage
 from app.infra.tasks import AsyncioTaskSpawner
 from app.ingest.parsers import LocalDocumentParser
+from app.llm.base import PipelineError
 from app.llm.mock import MockPipeline
 from app.llm.openai_compatible import OpenAICompatiblePipeline
 from app.main import create_app
@@ -68,10 +76,11 @@ from app.services.common import Runtime
 from app.services.errors import ConflictError, NotFoundError, StaleVersionError
 from app.services.projects import ProjectService
 from app.services.questions import QuestionService
-from app.services.runs import RunService
+from app.services.runs import RunService, _RunState
 from app.services.sharing import SharingService
 from app.services.sources import SourceService
 from app.services.versions import VersionService, add_version
+from tests.test_graph_ir import SOURCE_ID, TEXT, graph_case
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
 
@@ -733,6 +742,139 @@ async def test_concurrent_answers_create_one_atomic_source_in_postgres(sql_store
     assert kept.answer is not None
     assert sources[0].id == kept.answer.source_id
     assert sources[0].content == kept.answer.text
+
+
+async def test_graph_commit_rollback_keeps_run_consistent_and_allows_retry(  # noqa: PLR0915 — порядок единого SQL-отката
+    sql_store,
+) -> None:
+    class MetadataTools:
+        # Раскладка/линт отдельно проверены через настоящий Node; здесь ошибка commit SQL.
+        quality = "full"
+
+        async def layout(self, xml: str) -> str:
+            return xml
+
+        async def lint(self, xml: str) -> list:
+            return []
+
+    store, _ = sql_store
+    repos = store.repositories()
+    runtime = Runtime()
+    project = await _make_project(repos)
+    await repos.sources.add(
+        Source(
+            id=SOURCE_ID,
+            project_id=project.id,
+            kind=SourceKind.TEXT,
+            title="Регламент",
+            content=TEXT,
+            status=SourceStatus.READY,
+            active=True,
+            created_at=project.created_at,
+        )
+    )
+    question = Question(
+        id=uuid4(),
+        project_id=project.id,
+        code="Q-1",
+        kind=QuestionKind.MISSING_ACTOR,
+        severity=Severity.MAJOR,
+        status=QuestionStatus.OPEN,
+        text="Кто проверяет заявку?",
+        assumption="Оператор",
+        element_ids=["Reject"],
+        created_at=project.created_at,
+        updated_at=project.created_at,
+    )
+    await repos.questions.add(question)
+    base_xml = compile_graph(GraphIR.model_validate(graph_case()))
+    await add_version(
+        repos,
+        runtime,
+        project_id=project.id,
+        xml=base_xml,
+        origin=VersionOrigin.GENERATED,
+        lint=[],
+        trace={},
+    )
+    head = await add_version(
+        repos,
+        runtime,
+        project_id=project.id,
+        xml=base_xml.replace('name="Check"', 'name="Ручная проверка"'),
+        origin=VersionOrigin.MANUAL,
+        lint=[],
+        trace={},
+    )
+    run = Run(
+        id=uuid4(),
+        project_id=project.id,
+        mode=RunMode.BUILD,
+        status=RunStatus.RUNNING,
+        started_at=project.created_at,
+        summary=RunSummary(open=1),
+        ir={"execution": {"base_version_id": str(head.id), "replace_manual": False}},
+    )
+    await repos.runs.add(run)
+    pipeline = OpenAICompatiblePipeline(
+        api_key="recorded-only", complete=lambda _s, _p: json.dumps(graph_case())
+    )
+    spawner = AsyncioTaskSpawner()
+    bus = InMemoryRunEventBus()
+    runs = RunService(
+        repos,
+        pipeline=pipeline,
+        bpmn_tools=MetadataTools(),
+        events=bus,
+        spawner=spawner,
+        runtime=runtime,
+        max_concurrent=1,
+    )
+    context = await runs._context(project.id)
+    draft = await pipeline.structure(context, AnalysisResult())
+    draft.bindings = {"Q-1": ["Check"]}
+    assert draft.conflicts
+    original_transaction = repos.transaction
+    assert original_transaction is not None
+
+    @asynccontextmanager
+    async def fail_commit():
+        async with original_transaction() as bound:
+            yield bound
+            # И version, и bindings/conflict, и Run уже flushed. Откатываем всё до commit.
+            raise PipelineError("Проверяемый отказ фиксации графа")
+
+    runs._repos = replace(repos, transaction=fail_commit)
+    with pytest.raises(PipelineError, match="отказ фиксации"):
+        await runs._layout(run, _RunState(context=context, draft=draft, xml=draft.xml))
+    runs._repos = repos
+    await runs._fail(run, "Проверяемый отказ фиксации графа", execution_started=time.perf_counter())
+    kept = await repos.runs.get(run.id)
+    assert kept is not None
+    assert kept.status is RunStatus.FAILED
+    assert kept.version_id is None
+    assert kept.report is None
+    assert kept.summary == RunSummary(open=1)
+    assert run.version_id is None
+    assert run.report is None
+    assert run.summary == RunSummary(open=1)
+    assert await repos.runs.active_for_project(project.id) is None
+    versions = await repos.versions.list_by_project(project.id)
+    assert [v.number for v in versions] == [2, 1]
+    assert versions[0].id == head.id
+    assert await repos.questions.list_by_project(project.id) == [question]
+    events = [event async for event in await runs.events(run.id)]
+    assert [event.kind for event in events] == [RunEventKind.ERROR, RunEventKind.DONE]
+    done = cast(Run, events[-1].payload)
+    assert done.status is RunStatus.FAILED
+    assert done.version_id is None
+    assert done.summary == RunSummary(open=1)
+    retry = await runs.start(
+        project.id, mode=RunMode.BUILD, created_by=None, base_version_id=head.id
+    )
+    assert retry.id != run.id
+    await runs.cancel(retry.id)
+    await spawner.shutdown()
 
 
 @pytest.mark.parametrize("before_guard", [True, False])

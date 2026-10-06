@@ -260,10 +260,18 @@ class InMemoryQuestionRepository:
             stored.element_ids = list(element_ids)
 
     async def apply_reconciled(
-        self, question: Question, *, expected_status: QuestionStatus
+        self,
+        question: Question,
+        *,
+        expected_status: QuestionStatus,
+        expected_updated_at: datetime | None = None,
     ) -> bool:
         current = self._items.get(question.id)
-        if current is None or current.status is not expected_status:
+        if (
+            current is None
+            or current.status is not expected_status
+            or (expected_updated_at is not None and current.updated_at != expected_updated_at)
+        ):
             return False
         current.status = question.status
         current.evidence = copy.deepcopy(question.evidence)

@@ -76,7 +76,8 @@ def test_unhelpful_answer_returns_question_to_open(client: TestClient) -> None:
         data["question"]["code"]: data["question"] for kind, data in events if kind == "question"
     }
     assert changed["Q-6"]["status"] == "open"
-    assert changed["Q-6"]["answer"] is None
+    assert changed["Q-6"]["answer"]["text"] == "Не знаю"
+    assert any("Ответ не помог" in warning for warning in events[-1][1]["run"]["warnings"])
 
 
 def test_versions_list_detail_and_download(client: TestClient) -> None:

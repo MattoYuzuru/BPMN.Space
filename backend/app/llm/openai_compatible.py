@@ -16,14 +16,18 @@ from app.domain.analysis import (
     AnalysisResult,
     ContextSource,
     DiagramDraft,
-    NewQuestion,
-    Quote,
     RunContext,
 )
-from app.domain.models import QuestionKind, Severity
 from app.domain.questions import normalize
-from app.llm.base import DEADLINE_MESSAGE, PipelineError, record_usage, remaining_sec
+from app.llm.base import (
+    DEADLINE_MESSAGE,
+    OutputTruncatedError,
+    PipelineError,
+    record_usage,
+    remaining_sec,
+)
 from app.llm.graph_generation import generate_graph
+from app.llm.question_analysis import QuestionAnalyzer
 
 # Временные отказы провайдера: перегрузка, лимит частоты, сбой шлюза.
 _RETRYABLE_HTTP = frozenset({408, 429, 500, 502, 503, 504})
@@ -44,6 +48,7 @@ class OpenAICompatiblePipeline:
         base_url: str = "https://api.deepseek.com",
         timeout_sec: float = 120,
         json_mode: bool = True,
+        json_max_tokens: int = 8192,
         max_retries: int = 3,
         retry_base_sec: float = 1.0,
         retry_max_sec: float = 30.0,
@@ -67,6 +72,9 @@ class OpenAICompatiblePipeline:
             raise ValueError("HTTP разрешён только для локального совместимого провайдера")
         self._timeout_sec = timeout_sec
         self._json_mode = json_mode
+        if isinstance(json_max_tokens, bool) or json_max_tokens < 1:
+            raise ValueError("Лимит JSON-ответа должен быть положительным числом токенов")
+        self._json_max_tokens = json_max_tokens
         # Только для DeepSeek: без явного `thinking: disabled` модель тратит max_tokens на
         # рассуждение и обрезает JSON. Другим провайдерам параметр не шлём (None).
         self._thinking = thinking
@@ -80,56 +88,33 @@ class OpenAICompatiblePipeline:
         self._retry_max_sec = retry_max_sec
         self._sleep = sleep
         self._jitter = jitter
+        self._question_analyzer = QuestionAnalyzer(
+            self._analyze_complete, _verified_quote, self._analysis_model
+        )
 
     @property
     def model_name(self) -> str:
         return self._model
 
     async def analyze(self, context: RunContext) -> AnalysisResult:
-        sources = _source_payload(context.sources)
-        question = (
-            "Проанализируй материалы как бизнес-аналитик. Найди только существенные пробелы "
-            "и противоречия, которые мешают однозначно описать процесс. Не повторяй уже заданные "
-            'вопросы. Верни JSON: {"new_questions":[{"kind":"missing_actor|ambiguous_condition|'
-            'unclear_order|missing_outcome|conflict","severity":"blocker|major|minor",'
-            '"text":"вопрос","assumption":"явное допущение","source_id":"UUID или null",'
-            '"quote":"точная цитата из source_id или пустая строка"}]}. Максимум 5 вопросов. '
-            "Не придумывай цитату. Если существенных неясностей нет, верни пустой список."
-        )
-        prompt = json.dumps(
-            {
-                "project": context.project_title,
-                "sources": sources,
-                "existing_questions": [question.text for question in context.questions],
-            },
-            ensure_ascii=False,
-        )
         try:
-            data = json.loads(await self._complete_async(question, prompt, json_mode=True))
-            items = data.get("new_questions", [])
-            result: list[NewQuestion] = []
-            for item in items[:5]:
-                source_id, quote = _verified_quote(
-                    context.sources, item.get("source_id"), item.get("quote")
-                )
-                result.append(
-                    NewQuestion(
-                        kind=QuestionKind(item["kind"]),
-                        severity=Severity(item["severity"]),
-                        text=str(item["text"]).strip()[:1000],
-                        assumption=str(item["assumption"]).strip()[:1000],
-                        about=Quote(source_id=source_id, quote=quote)
-                        if source_id and quote
-                        else None,
-                    )
-                )
-            return AnalysisResult(new_questions=result)
-        except (ValueError, KeyError, TypeError, AttributeError) as error:
-            raise PipelineError(
-                "Не удалось разобрать ответ модели. Попробуйте повторить анализ."
-            ) from error
+            return await self._question_analyzer.analyze(context)
         except RuntimeError as error:
             raise PipelineError(str(error)) from error
+
+    async def _analyze_complete(self, system: str, prompt: str) -> str:
+        return await self._complete_async(system, prompt, json_mode=True)
+
+    def _analysis_model(self) -> object:
+        # Кэш нельзя переиспользовать после смены провайдера, модели или бюджета ответа.
+        return {
+            "provider": self._base_url,
+            "model": self._model,
+            "json_mode": self._json_mode,
+            "output_budget": self._json_max_tokens,
+            "thinking": self._thinking,
+            "temperature": self._json_temperature,
+        }
 
     async def structure(self, context: RunContext, analysis: AnalysisResult) -> DiagramDraft:
         async def complete(system: str, prompt: str) -> str:
@@ -245,7 +230,7 @@ class OpenAICompatiblePipeline:
                 **{
                     "model": self._model,
                     "stream": False,
-                    "max_tokens": 4096,
+                    "max_tokens": self._json_max_tokens if json_mode else 4096,
                     "messages": [
                         {"role": "system", "content": system},
                         {"role": "user", "content": prompt},
@@ -287,7 +272,9 @@ class OpenAICompatiblePipeline:
                 tokens_out=_token_count(usage.get("completion_tokens")),
             )
             if choice.get("finish_reason") == "length":
-                raise RuntimeError("Ответ модели обрезан по лимиту длины. Повторите анализ.")
+                raise OutputTruncatedError(
+                    "Ответ модели обрезан по лимиту длины: результат неполный и не применён"
+                )
             content = choice["message"]["content"]
             if not isinstance(content, str) or not content.strip():
                 raise RuntimeError("Модель вернула пустой или неподдерживаемый ответ")
@@ -384,7 +371,7 @@ def _verified_quote(
     # Текст из PDF часто разорван переносами посреди предложения. Сравниваем с нормализацией
     # пробелов, регистра и «ё», но в трассировку кладём исходный фрагмент источника,
     # чтобы пользователь видел дословную цитату.
-    normalized = normalize(quote[:1200])
+    normalized = normalize(quote)
     if not normalized:
         return None, None
     pattern = r"\s+".join(re.escape(part) for part in normalized.split())
@@ -392,4 +379,4 @@ def _verified_quote(
     match = re.search(pattern, source.content, flags=re.IGNORECASE)
     if match is None:
         return None, None
-    return parsed_id, match.group(0)[:1200]
+    return parsed_id, match.group(0)

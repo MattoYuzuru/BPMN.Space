@@ -245,7 +245,10 @@ class ProjectService:
             active=True,
             created_at=view.project.created_at,
         )
-        await self._repos.sources.add(source)
+        async with self._repos.atomic() as repos:
+            await repos.projects.lock(view.project.id)
+            await get_project(repos, view.project.id)
+            await repos.sources.add(source)
         return await self._view(view.project)
 
     async def update(

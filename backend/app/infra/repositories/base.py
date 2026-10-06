@@ -135,9 +135,13 @@ class QuestionRepository(Protocol):
         ...
 
     async def apply_reconciled(
-        self, question: Question, *, expected_status: QuestionStatus
+        self,
+        question: Question,
+        *,
+        expected_status: QuestionStatus,
+        expected_updated_at: datetime | None = None,
     ) -> bool:
-        """Точечно записывает поля сверки (статус, цитата, ответ), только если статус не менялся.
+        """Точечно записывает поля сверки, если статус и версия вопроса не менялись.
 
         Возвращает `False`, если вопрос удалён или его статус уже изменён (например, аналитик
         ответил между чтением и записью): чужая правка не затирается.

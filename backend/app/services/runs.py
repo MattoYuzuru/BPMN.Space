@@ -12,6 +12,7 @@ import logging
 import sys
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
+from copy import deepcopy
 from dataclasses import asdict, dataclass, field, is_dataclass, replace
 from datetime import date, datetime
 from enum import Enum
@@ -26,6 +27,7 @@ from app.domain.models import (
     LlmCall,
     Question,
     QuestionKind,
+    QuestionStatus,
     Quote,
     Run,
     RunMode,
@@ -54,7 +56,7 @@ from app.infra.bpmn_tools import BpmnTools, BpmnToolsError
 from app.infra.events import RunEventBus
 from app.infra.repositories.base import ActiveRunConflictError, Repositories
 from app.infra.tasks import TaskSpawner
-from app.ingest.context import build_run_context, describe_context
+from app.ingest.context import build_run_context, describe_context, source_snapshot_hash
 from app.llm.base import (
     DEADLINE_MESSAGE,
     PipelineError,
@@ -464,60 +466,121 @@ class RunService:
         return state.context
 
     async def _context(self, project_id: UUID) -> RunContext:
-        project = await get_project(self._repos, project_id)
-        versions = await self._repos.versions.list_by_project(project_id)
-        context = build_run_context(
-            project=project,
-            sources=await self._repos.sources.list_by_project(project_id),
-            questions=await self._repos.questions.list_by_project(project_id),
-            versions=versions,
-            budget_chars=self._context_budget,
-        )
-        base = (
-            versions[0]
-            if versions and versions[0].run_id
-            else next((v for v in versions if v.run_id), None)
-        )
-        if base and base.run_id:
-            previous_run = await self._repos.runs.get(base.run_id)
-            if previous_run and previous_run.ir:
-                context = replace(context, manual_overrides=previous_run.ir.get("manual_overrides"))
-        return context
+        async with self._repos.atomic() as repos:
+            await repos.projects.lock(project_id)
+            project = await get_project(repos, project_id)
+            versions = await repos.versions.list_by_project(project_id)
+            context = build_run_context(
+                project=project,
+                sources=await repos.sources.list_by_project(project_id),
+                questions=await repos.questions.list_by_project(project_id),
+                versions=versions,
+                budget_chars=self._context_budget,
+            )
+            base = (
+                versions[0]
+                if versions and versions[0].run_id
+                else next((v for v in versions if v.run_id), None)
+            )
+            if base and base.run_id:
+                previous_run = await repos.runs.get(base.run_id)
+                if previous_run and previous_run.ir:
+                    context = replace(
+                        context, manual_overrides=previous_run.ir.get("manual_overrides")
+                    )
+            return context
 
     async def _reconcile(self, run: Run, state: _RunState) -> None:
         context = self._require(state)
-        questions = await self._repos.questions.list_by_project(run.project_id)
-        # `reconcile` меняет вопросы на месте — статусы до сверки нужны для условной записи.
-        before = {q.id: q.status for q in questions}
-        outcome = reconcile(
-            questions,
-            state.analysis,
-            context.sources,
-            project_id=run.project_id,
-            run_id=run.id,
-            now=self._rt.clock(),
-            new_id=self._rt.new_id,
-        )
-        for reason in outcome.rejected:
-            logger.info("Прогон %s: отклонено обновление вопроса — %s", run.id, reason)
-        for question in outcome.changed:
-            # Условная запись: ответ аналитика, пришедший после чтения вопросов, не затирается.
-            if not await self._repos.questions.apply_reconciled(
-                question, expected_status=before[question.id]
-            ):
-                logger.info(
-                    "Прогон %s: вопрос %s изменён параллельно, сверка пропущена",
-                    run.id,
-                    question.code,
+        changed = []
+        resolved_now = 0
+        warnings = list(state.analysis.warnings)
+        async with self._repos.atomic() as repos:
+            project = await repos.projects.lock(run.project_id)
+            sources = await repos.sources.lock_by_project(run.project_id)
+            current = await repos.questions.list_by_project(run.project_id)
+            versions = await repos.versions.list_by_project(run.project_id)
+            usable = [
+                ContextSource(
+                    id=s.id, kind=s.kind, title=s.title, content=s.content, created_at=s.created_at
                 )
-                continue
-            await self._publish(run, RunEventKind.QUESTION, question)
-        for question in outcome.created:
-            await self._repos.questions.add(question)
-            await self._publish(run, RunEventKind.QUESTION, question)
-        run.summary = outcome.summary
+                for s in sources
+                if s.active and s.status is SourceStatus.READY and s.content.strip()
+            ]
+            snapshot = (
+                context.evidence_sources
+                if context.evidence_sources is not None
+                else context.sources
+            )
+            same_sources = {s.id: s for s in usable} == {s.id: s for s in snapshot}
+            if context.source_snapshot_hash is not None:
+                same_sources = (
+                    same_sources and source_snapshot_hash(sources) == context.source_snapshot_hash
+                )
+            same_questions = {q.id: q for q in current} == {q.id: q for q in context.questions}
+            same_diagram = (versions[0].xml if versions else None) == context.current_xml
+            same_project = project is not None and project.title == context.project_title
+            if not same_sources or not same_questions or not same_diagram or not same_project:
+                warnings.append(
+                    "Источники, вопросы или схема изменились во время анализа: сверка по прежнему "
+                    "снимку не применена. Повторите анализ актуальных материалов."
+                )
+            else:
+                before = {q.id: deepcopy(q) for q in current}
+                outcome = reconcile(
+                    current,
+                    state.analysis,
+                    snapshot,
+                    project_id=run.project_id,
+                    run_id=run.id,
+                    now=self._rt.clock(),
+                    new_id=self._rt.new_id,
+                )
+                warnings.extend(outcome.rejected)
+                for question in outcome.changed:
+                    previous = before[question.id]
+                    # Даже изменение ответа без изменения статуса не затирается старым решением.
+                    if not await repos.questions.apply_reconciled(
+                        question,
+                        expected_status=previous.status,
+                        expected_updated_at=previous.updated_at,
+                    ):
+                        warnings.append(
+                            f"{question.code}: вопрос изменён параллельно, сверка пропущена"
+                        )
+                        continue
+                    changed.append(question)
+                    resolved_now += int(question.status is QuestionStatus.RESOLVED)
+                    reason = next(
+                        (
+                            u.reason
+                            for u in state.analysis.question_updates
+                            if u.code == question.code
+                        ),
+                        None,
+                    )
+                    if reason:
+                        warnings.append(f"{question.code}: {reason}")
+                for question in outcome.created:
+                    await repos.questions.add(question)
+                    changed.append(question)
+            # Итог считает только реально сохранённые решения, включая CAS-отказы.
+            actual = await repos.questions.list_by_project(run.project_id)
+            run.summary = run_summary(actual, run_id=run.id, resolved_now=resolved_now)
+        run.warnings = list(dict.fromkeys([*run.warnings, *warnings]))
+        state.analysis.audit["application"] = {
+            "sources_unchanged": same_sources,
+            "questions_unchanged": same_questions,
+            "diagram_unchanged": same_diagram,
+            "project_unchanged": same_project,
+            "applied_question_codes": [q.code for q in changed],
+            "warnings": warnings,
+        }
+        run.analysis = _json_data(state.analysis)
         await self._repos.runs.update(run)
-        await self._publish(run, RunEventKind.SUMMARY, outcome.summary)
+        for question in changed:
+            await self._publish(run, RunEventKind.QUESTION, question)
+        await self._publish(run, RunEventKind.SUMMARY, run.summary)
 
     async def _layout(self, run: Run, state: _RunState) -> None:
         if state.xml is None or state.draft is None:
@@ -550,8 +613,13 @@ class RunService:
                     latest.id if latest else None, latest.number if latest else None
                 )
             locked_sources = await repos.sources.lock_by_project(run.project_id)
-            if state.context and _source_snapshot(locked_sources) != _source_snapshot(
-                state.context.evidence_sources or state.context.sources
+            if state.context and (
+                (
+                    state.context.source_snapshot_hash is not None
+                    and source_snapshot_hash(locked_sources) != state.context.source_snapshot_hash
+                )
+                or _source_snapshot(locked_sources)
+                != _source_snapshot(state.context.evidence_sources or state.context.sources)
             ):
                 raise PipelineError(
                     "Материалы проекта изменились во время сборки; "
@@ -631,11 +699,19 @@ class RunService:
                 )
             )
         if proposals:
-            context = await self._context(run.project_id)
+            # Внешняя layout-транзакция уже держит project/source locks. Повторный
+            # self._context открыл бы другую SQL-сессию и ждал бы собственную блокировку.
+            context = build_run_context(
+                project=await get_project(repos, run.project_id),
+                sources=await repos.sources.list_by_project(run.project_id),
+                questions=questions,
+                versions=await repos.versions.list_by_project(run.project_id),
+                budget_chars=self._context_budget,
+            )
             outcome = reconcile(
                 questions,
                 AnalysisResult(new_questions=proposals),
-                context.sources,
+                context.evidence_sources or context.sources,
                 project_id=run.project_id,
                 run_id=run.id,
                 now=self._rt.clock(),

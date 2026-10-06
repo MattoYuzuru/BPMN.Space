@@ -154,16 +154,36 @@ def reconcile(
                 continue
             question.evidence = evidence
             resolved_now += 1
-        if update.status is QuestionStatus.OPEN:
-            question.answer = None
+        if update.status in {QuestionStatus.OPEN, QuestionStatus.OBSOLETE} and not (
+            update.reason and update.reason.strip()
+        ):
+            outcome.rejected.append(f"{update.code}: причина изменения статуса не указана")
+            continue
+        if update.status is QuestionStatus.OBSOLETE and (
+            update.evidence is None or not _quote_ok(update.evidence, by_source)
+        ):
+            outcome.rejected.append(f"{update.code}: исчезновение предмета не подтверждено цитатой")
+            continue
+        if update.status is QuestionStatus.OBSOLETE:
+            question.evidence = update.evidence
+        # Ответ остаётся частью истории даже когда его недостаточно для решения вопроса.
         question.status = update.status
         question.updated_at = now
         outcome.changed.append(question)
 
-    known_texts = {normalize(q.text) for q in questions}
     all_questions = list(questions)
     for spec in analysis.new_questions:
-        if normalize(spec.text) in known_texts:
+        related = by_code.get(spec.related_code) if spec.related_code else None
+        if spec.related_code and related is None:
+            outcome.rejected.append(f"{spec.related_code}: исторический вопрос не найден")
+            continue
+        text = f"Уточнение к {related.code}: {spec.text}" if related else spec.text
+        if any(
+            normalize(q.text) == normalize(text)
+            and q.kind is spec.kind
+            and _same_context(q.element_ids, q.about, spec.element_ids, spec.about)
+            for q in all_questions
+        ):
             continue
         about = spec.about if spec.about and _quote_ok(spec.about, by_source) else None
         created = Question(
@@ -173,7 +193,7 @@ def reconcile(
             kind=spec.kind,
             severity=spec.severity,
             status=QuestionStatus.OPEN,
-            text=spec.text,
+            text=text,
             assumption=spec.assumption,
             about=about,
             element_ids=list(spec.element_ids),
@@ -181,7 +201,6 @@ def reconcile(
             updated_at=now,
             run_id=run_id,
         )
-        known_texts.add(normalize(created.text))
         all_questions.append(created)
         outcome.created.append(created)
 
@@ -192,6 +211,17 @@ def reconcile(
 def _quote_ok(quote: Quote, by_source: dict[UUID, ContextSource]) -> bool:
     source = by_source.get(quote.source_id)
     return source is not None and quote_in_source(quote.quote, source.content)
+
+
+def _same_context(
+    left_ids: list[str], left: Quote | None, right_ids: list[str], right: Quote | None
+) -> bool:
+    """Защитный exact fallback после семантической проверки: разные поводы не сливаем."""
+    if left_ids or right_ids:
+        return bool(set(left_ids) & set(right_ids))
+    if left is None or right is None:
+        return left is right
+    return left.source_id == right.source_id and normalize(left.quote) == normalize(right.quote)
 
 
 def run_summary(questions: Iterable[Question], *, run_id: UUID, resolved_now: int) -> RunSummary:

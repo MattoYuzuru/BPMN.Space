@@ -297,6 +297,50 @@ describe('защита слоёв: нажатие в слое обучения �
       hidden: true,
     })
 
+  it('поповер, открытый во время шага, сохраняет фокус на контролах и закрывается по Esc', async () => {
+    function Host() {
+      const [open, setOpen] = useState(false)
+      return (
+        <>
+          <Popover open={open} onOpenChange={setOpen}>
+            <div data-tour="composer">
+              <PopoverTrigger asChild>
+                <Button>Ответить голосом</Button>
+              </PopoverTrigger>
+            </div>
+            <PopoverContent aria-label="Голосовой ответ">
+              <div data-tour="voice.capture">Идёт запись</div>
+              <Button>Остановить запись</Button>
+            </PopoverContent>
+          </Popover>
+          <TourHost
+            steps={[
+              { ...base, key: 'answer', title: 'Ответьте', kind: 'action', anchor: 'composer' },
+            ]}
+            context={null}
+            persistence={persistence()}
+            restore={false}
+          />
+        </>
+      )
+    }
+    const { user } = renderUi(<Host />)
+    act(() => startTour('answer'))
+    await screen.findByRole('dialog', { name: 'Ответьте' })
+    await user.click(screen.getByRole('button', { name: 'Ответить голосом' }))
+    const popover = await screen.findByRole('dialog', { name: 'Голосовой ответ' })
+    // Дожидаемся реального перепорталивания, которое раньше повторно фокусировало заголовок.
+    await waitFor(() =>
+      expect(popover).toContainElement(screen.getByRole('dialog', { name: 'Ответьте' })),
+    )
+    expect(screen.getByRole('button', { name: 'Остановить запись' })).toHaveFocus()
+    expect(document.querySelectorAll('[data-tour-blocker]')).toHaveLength(0)
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(popover).not.toBeInTheDocument())
+    expect(screen.queryByRole('heading', { name: 'Завершить обучение?' })).toBeNull()
+    expect(useTourStore.getState().stepKey).toBe('answer')
+  })
+
   it('Sheet', async () => {
     const onOpenChange = vi.fn()
     renderUi(

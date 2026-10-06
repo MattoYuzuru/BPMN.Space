@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { TOUR_LAYER_ATTR } from '@/shared/lib/tour-anchors'
+import { hasOpenAppLayer, TOUR_LAYER_ATTR } from '@/shared/lib/tour-anchors'
 
 /** Сколько ждём появления якоря, прежде чем показать запасной вариант. */
 export const ANCHOR_TIMEOUT_MS = 5000
@@ -152,10 +152,7 @@ export function useFloatingLayerOpen(enabled: boolean): boolean {
     let frame = 0
     const check = () => {
       frame = 0
-      const layers = document.querySelectorAll(
-        `[role="menu"][data-state="open"], [role="listbox"][data-state="open"], ${OPEN_MODALS}`,
-      )
-      setOpen([...layers].some((layer) => !layer.closest(`[${TOUR_LAYER_ATTR}]`)))
+      setOpen(hasOpenAppLayer())
     }
     const schedule = () => {
       if (!frame) frame = requestAnimationFrame(check)

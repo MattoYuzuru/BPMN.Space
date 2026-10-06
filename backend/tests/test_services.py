@@ -86,6 +86,54 @@ async def test_cancelled_run_is_failed(service_container: Container) -> None:
     assert final.error == "Прогон прерван остановкой сервера"
 
 
+async def test_project_editor_can_cancel_shared_run(service_container: Container) -> None:
+    entered = asyncio.Event()
+
+    async def hold(_: RunStage) -> None:
+        entered.set()
+        await asyncio.sleep(3600)
+
+    service_container.runs._pace = hold
+    run = await service_container.runs.start(DEMO_PROJECT_ID, mode=RunMode.BUILD, created_by=None)
+    await asyncio.wait_for(entered.wait(), timeout=1)
+
+    cancelled = await service_container.runs.cancel(run.id)
+
+    assert cancelled.status is RunStatus.CANCELLED
+    assert cancelled.error == "Прогон отменён участником"
+    events = [event async for event in await service_container.runs.events(run.id)]
+    assert events[-1].kind is RunEventKind.DONE
+    assert isinstance(events[-1].payload, Run)
+    assert events[-1].payload.status is RunStatus.CANCELLED
+
+
+async def test_queued_run_can_be_cancelled_before_it_starts(service_container: Container) -> None:
+    gate = asyncio.Event()
+    entered = asyncio.Event()
+    service_container.runs._limit = asyncio.Semaphore(1)
+
+    async def hold(_: RunStage) -> None:
+        entered.set()
+        await gate.wait()
+
+    service_container.runs._pace = hold
+    project_ids = [await _new_project(service_container) for _ in range(2)]
+    running = await service_container.runs.start(
+        project_ids[0], mode=RunMode.ANALYZE, created_by=None
+    )
+    await asyncio.wait_for(entered.wait(), timeout=1)
+    queued = await service_container.runs.start(
+        project_ids[1], mode=RunMode.ANALYZE, created_by=None
+    )
+    assert (await service_container.runs.get(queued.id)).status is RunStatus.QUEUED
+
+    cancelled = await service_container.runs.cancel(queued.id)
+    assert cancelled.status is RunStatus.CANCELLED
+    assert (await service_container.runs.get(running.id)).status is RunStatus.RUNNING
+    gate.set()
+    await service_container.spawner.wait_idle()
+
+
 async def test_unexpected_error_marks_run_failed(service_container: Container) -> None:
     async def boom(_: RunStage) -> None:
         raise RuntimeError("сбой")

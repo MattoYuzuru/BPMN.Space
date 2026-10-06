@@ -22,6 +22,8 @@ export default function DiagramEditor({
   ref,
   xml,
   onChange,
+  onSelectionChange,
+  onViewportChange,
   readOnly = false,
   highlights,
   onElementClick,
@@ -33,13 +35,29 @@ export default function DiagramEditor({
 }: DiagramEditorProps & { ref?: Ref<DiagramEditorHandle> }) {
   const rootRef = useRef<HTMLElement>(null)
   const controllerRef = useRef<DiagramController | null>(null)
-  const callbacksRef = useRef({ onChange, onElementClick, onImport, onError, onReady })
+  const callbacksRef = useRef({
+    onChange,
+    onElementClick,
+    onSelectionChange,
+    onViewportChange,
+    onImport,
+    onError,
+    onReady,
+  })
   const readOnlyRef = useRef(readOnly)
   // Контейнер панели свойств переживает пересоздание контроллера (StrictMode, горячая перезагрузка).
   const panelRef = useRef<HTMLElement | null>(null)
 
   useLayoutEffect(() => {
-    callbacksRef.current = { onChange, onElementClick, onImport, onError, onReady }
+    callbacksRef.current = {
+      onChange,
+      onElementClick,
+      onSelectionChange,
+      onViewportChange,
+      onImport,
+      onError,
+      onReady,
+    }
     readOnlyRef.current = readOnly
   })
 
@@ -102,6 +120,11 @@ function createHandle(
     zoomIn: () => get()?.zoomIn(),
     zoomOut: () => get()?.zoomOut(),
     focusElement: (id) => get()?.focusElement(id) ?? false,
+    screenToDiagram: (clientX, clientY) =>
+      get()?.screenToDiagram(clientX, clientY) ?? { x: 0, y: 0 },
+    diagramToScreen: (point) => get()?.diagramToScreen(point) ?? { x: 0, y: 0 },
+    setRemoteSelections: (selections) => get()?.setRemoteSelections(selections),
+    setRemoteMoves: (moves) => get()?.setRemoteMoves(moves),
     exportXml: async () => ensure().exportXml(),
     exportSvg: async () => ensure().exportSvg(),
     exportPng: async (scale, options) => ensure().exportPng(scale, options),

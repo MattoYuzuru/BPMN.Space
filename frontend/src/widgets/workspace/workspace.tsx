@@ -75,6 +75,8 @@ export interface WorkspaceViewProps {
   header: ReactNode
   /** Только чтение независимо от роли в проекте (просмотр по ссылке). */
   readOnly?: boolean
+  /** Публичная ссылка для получения гостевого билета WebSocket. */
+  collaborationShareToken?: string
   /** Регистрировать команды рабочего места в палитре. */
   commands?: boolean
   search: WorkspaceSearch
@@ -91,6 +93,7 @@ export function WorkspaceView({
   versions,
   header,
   readOnly = false,
+  collaborationShareToken,
   commands = true,
   search,
   onSearchChange,
@@ -126,6 +129,7 @@ export function WorkspaceView({
     () => ({
       project,
       versions,
+      collaborationShareToken,
       ...(readOnly
         ? { canEdit: false, canManage: false, canShare: false }
         : projectCapabilities(project.access, authEnabled)),
@@ -147,6 +151,7 @@ export function WorkspaceView({
     [
       project,
       versions,
+      collaborationShareToken,
       readOnly,
       authEnabled,
       search.question,

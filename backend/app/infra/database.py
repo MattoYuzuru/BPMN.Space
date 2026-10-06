@@ -1,6 +1,7 @@
 """Подключение к PostgreSQL: жизненный цикл, миграции и сид демо-данных."""
 
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -13,7 +14,7 @@ from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from alembic.script.revision import ResolutionError
 from alembic.util.exc import CommandError
-from sqlalchemy import update
+from sqlalchemy import event, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from app.domain.models import RunStatus
@@ -21,6 +22,7 @@ from app.infra.db_models import Base, ProjectRow, RunRow
 from app.infra.repositories.sql import SqlStore
 
 logger = logging.getLogger(__name__)
+SLOW_CHECKOUT_WARNING_SEC = 5.0
 
 INTERRUPTED_PARSE_ERROR = (
     "Разбор файла прервался из-за перезапуска сервера. "
@@ -48,10 +50,38 @@ class Database:
         *,
         migrations_dir: Path | None = None,
         connect_args: dict[str, Any] | None = None,
+        pool_size: int = 10,
+        max_overflow: int = 10,
+        pool_timeout: float = 5.0,
     ) -> None:
         self.engine: AsyncEngine = create_async_engine(
-            url, pool_pre_ping=True, connect_args=connect_args or {}
+            url,
+            pool_pre_ping=True,
+            pool_size=pool_size,
+            max_overflow=max_overflow,
+            pool_timeout=pool_timeout,
+            connect_args=connect_args or {},
         )
+
+        # Surface slow checkouts before the pool is exhausted. This records only elapsed time;
+        # no query text, user data, or credentials enter logs.
+        @event.listens_for(self.engine.sync_engine, "checkout")
+        def _mark_checkout(_dbapi_connection, connection_record, _connection_proxy) -> None:
+            connection_record.info["checked_out_at"] = time.monotonic()
+
+        @event.listens_for(self.engine.sync_engine, "checkin")
+        def _log_slow_checkout(_dbapi_connection, connection_record) -> None:
+            checked_out_at = connection_record.info.pop("checked_out_at", None)
+            if checked_out_at is None:
+                return
+            duration = time.monotonic() - checked_out_at
+            if duration >= SLOW_CHECKOUT_WARNING_SEC:
+                logger.warning(
+                    "Database connection was checked out for %.1fs; %s",
+                    duration,
+                    self.engine.pool.status(),
+                )
+
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
         self.store = SqlStore(self.sessions)
         self._migrations_dir = migrations_dir or Path(__file__).resolve().parents[2] / "migrations"

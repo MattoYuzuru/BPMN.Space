@@ -99,7 +99,10 @@ async def test_manual_save_during_active_run_is_conflict(service_container: Cont
 
     gate.set()
     await service_container.spawner.wait_idle()
-    saved = await service_container.versions.save_manual(project_id, xml=xml)
+    latest = (await service_container.versions.list(project_id))[0]
+    saved = await service_container.versions.save_manual(
+        project_id, xml=xml, base_version_id=latest.id
+    )
     assert saved.number == 2  # версия 1 собрана прогоном
 
 
@@ -141,7 +144,8 @@ def test_manual_save_conflict_is_http_409(client: TestClient, container: Contain
         client.post(f"{API}/projects/{project_id}/runs", json={"mode": "build"}).status_code == 202
     )
     response = client.put(
-        f"{API}/projects/{project_id}/diagram", json={"xml": read_bpmn("tp861_v2")}
+        f"{API}/projects/{project_id}/diagram",
+        json={"xml": read_bpmn("tp861_v2"), "base_version_id": None},
     )
     assert response.status_code == 409
     assert "дождитесь" in response.json()["detail"]
@@ -328,7 +332,7 @@ def test_chunked_body_without_content_length_is_counted(small_client: TestClient
         yield b'{"xml": "'
         for _ in range(100):
             yield b"x" * 2048
-        yield b'"}'
+        yield b'", "base_version_id": null}'
 
     response = small_client.put(
         f"{API}/projects/{project_id}/diagram",
@@ -342,7 +346,8 @@ def test_chunked_body_without_content_length_is_counted(small_client: TestClient
 def test_diagram_over_limit_is_rejected(small_client: TestClient) -> None:
     project_id = create_project(small_client)
     response = small_client.put(
-        f"{API}/projects/{project_id}/diagram", json={"xml": "<a>" + "x" * 5000 + "</a>"}
+        f"{API}/projects/{project_id}/diagram",
+        json={"xml": "<a>" + "x" * 5000 + "</a>", "base_version_id": None},
     )
     assert response.status_code == 413
 

@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 class TaskSpawner(Protocol):
     def spawn(self, coro: Coroutine[Any, Any, None], *, name: str) -> None: ...
+    async def cancel(self, *, name: str) -> bool: ...
     async def shutdown(self) -> None: ...
 
 
@@ -32,6 +33,15 @@ class AsyncioTaskSpawner:
         self._tasks.discard(task)
         if not task.cancelled() and task.exception() is not None:
             logger.error("Фоновая задача %s упала", task.get_name(), exc_info=task.exception())
+
+    async def cancel(self, *, name: str) -> bool:
+        """Отменить задачу по стабильному имени и дождаться её безопасного завершения."""
+        task = next((item for item in self._tasks if item.get_name() == name), None)
+        if task is None:
+            return False
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        return True
 
     async def shutdown(self) -> None:
         tasks = list(self._tasks)

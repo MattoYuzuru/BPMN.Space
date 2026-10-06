@@ -325,7 +325,7 @@ IR компилируется в **ProcessGraph**: узлы, стрелки, д�
 
 - `lxml`, примерно 200–300 строк: `collaboration` → `participant` → `process` → `laneSet/lane` с `flowNodeRef`; `sequenceFlow` с `name` («Да»/«Нет») и `conditionExpression`.
 - **Обязательно** `incoming`/`outgoing` у каждого узла. Без них bpmnlint считает узлы оторванными, хотя XSD их пропускает.
-- XSD: пять официальных файлов OMG в `backend/app/domain/bpmn/xsd/`. Проверено, что `lxml` и `xmlschema` валидируют результат `bpmn-auto-layout`.
+- XSD: пять официальных файлов OMG в `backend/app/domain/bpmn/xsd/`. Runtime-гейт реализован в #18: кэшированный `lxml.XMLSchema`, локальный resolver, безопасность XML, отказ ручного сохранения с `422` и отказ генерации без новой версии. Исторический флаг в ответе API перепроверяется без изменения сохранённого XML; XSD не заменяет семантическую проверку графа и BPMN lint. Проверено, что `lxml` и `xmlschema` валидируют результат `bpmn-auto-layout`.
 - Ограничение: `bpmn-auto-layout` пересчитывает все координаты. После нового прогона ручная *раскладка* не сохраняется, хотя ручные *правки логики* учитываются через ProcessGraph.
 
 ### 5.6. Модули backend

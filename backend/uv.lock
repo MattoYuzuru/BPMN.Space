@@ -91,6 +91,7 @@ dependencies = [
     { name = "defusedxml" },
     { name = "fastapi" },
     { name = "fastapi-users", extra = ["sqlalchemy"] },
+    { name = "lxml" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pypdf" },
@@ -104,7 +105,6 @@ dependencies = [
 dev = [
     { name = "httpx" },
     { name = "import-linter" },
-    { name = "lxml" },
     { name = "lxml-stubs" },
     { name = "pip-audit" },
     { name = "pytest" },
@@ -122,6 +122,7 @@ requires-dist = [
     { name = "defusedxml" },
     { name = "fastapi" },
     { name = "fastapi-users", extras = ["sqlalchemy"], specifier = ">=15.0.5,<16" },
+    { name = "lxml" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pypdf", specifier = ">=6.19.0" },
@@ -135,7 +136,6 @@ requires-dist = [
 dev = [
     { name = "httpx" },
     { name = "import-linter" },
-    { name = "lxml" },
     { name = "lxml-stubs" },
     { name = "pip-audit" },
     { name = "pytest" },

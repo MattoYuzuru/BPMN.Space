@@ -1,11 +1,13 @@
 """Сборка версии схемы: дифф с прошлой версией, отчёт проверки, допущения, дорожки."""
 
 from collections.abc import Iterable, Mapping
+from dataclasses import replace
 from datetime import datetime
 from uuid import UUID
 
 from app.domain.bpmn.diff import diff_documents
-from app.domain.bpmn.document import BpmnDocument, parse_bpmn
+from app.domain.bpmn.document import BpmnDocument, BpmnFormatError, parse_bpmn
+from app.domain.bpmn.xsd import xsd_errors
 from app.domain.models import (
     AssumptionMark,
     LintIssue,
@@ -18,6 +20,15 @@ from app.domain.models import (
 )
 
 _ASSUMPTION_STATUSES = {QuestionStatus.OPEN, QuestionStatus.IGNORED}
+
+
+def rechecked_version(version: Version) -> Version:
+    """Перепроверяет исторический флаг в ответе API, не изменяя сохранённый XML или отчёт."""
+    try:
+        valid = not xsd_errors(version.xml)
+    except BpmnFormatError:
+        valid = False
+    return replace(version, report=replace(version.report, xsd_valid=valid))
 
 
 def assumption_marks(questions: Iterable[Question], document: BpmnDocument) -> list[AssumptionMark]:
@@ -60,7 +71,7 @@ def build_version(
         xml=xml,
         diff=diff_documents(previous, document),
         report=Report(
-            xsd_valid=xsd_valid,
+            xsd_valid=xsd_valid and not xsd_errors(xml),
             lint=lint,
             assumptions=assumption_marks(questions, document),
         ),

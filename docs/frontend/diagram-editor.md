@@ -138,6 +138,12 @@ function DiagramPanel({ version, question, onSave }: Props) {
 
 Настоящий canvas проверяет `make e2e-diagram`: линейный запуск, пауза/повтор, AND/OR join с ожиданием события, XOR/цикл, событийный шлюз, несколько и одноимённые старты, readOnly, темы/reduced motion, XML/SVG и мини-карта. Отдельный Playwright-конфиг поднимает свой Vite на зарезервированном :5189 с strictPort, без reuse чужого сервера и без backend. Этот gate входит в `make verify`; dev-API `window.__diagramSetXml` меняет фикстуру, `simulation-start` фиксирует реальный запуск.
 
+`generated-graph.spec.ts` дополнительно проверяет шесть записанных сценариев IR: XOR,
+AND, вложенные ветви, цикл, альтернативные старты и параллельные завершения. Перед
+открытием canvas записанный ответ проходит настоящий адаптер, компилятор и временный
+HTTP Node layout/lint. Chromium проверяет импорт всех узлов, сохранность семантики
+экспорта XML, SVG и видимый запуск токенов. Живая модель в этом gate не вызывается.
+
 Логика без настоящего canvas покрыта Vitest: `model/*.test.ts`, `bpmn/translate.test.ts`, `ui/LazyDiagramEditor.test.tsx`, `scripts/check-bundle.test.mjs`.
 
 ## Повторная сборка и ручные изменения

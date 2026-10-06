@@ -247,7 +247,7 @@ const baseSteps: TourStep<TourContext>[] = [
           ],
         }
       }
-      if (finishedWithoutQuestions(ctx)) {
+      if (finishedWithoutQuestions(ctx) && ctx.resultPresented) {
         return {
           title: COPY.run.noQuestionsTitle,
           pages: [{ text: COPY.run.noQuestions }],
@@ -270,8 +270,16 @@ const baseSteps: TourStep<TourContext>[] = [
       }
     },
     // Вопросы есть (в том числе у упавшего прогона): идём к ним; пустые итоги разбирает `view`.
-    until: (signal) => signal.type === 'run.finished' && signal.openQuestions > 0,
-    doneWhen: (ctx) => ctx.result !== null && ctx.result.openQuestions > 0,
+    until: (signal, ctx) =>
+      (signal.type === 'run.finished' &&
+        signal.projectId === ctx.projectId &&
+        signal.openQuestions > 0 &&
+        ctx.resultPresented) ||
+      (signal.type === 'run.presented' &&
+        signal.projectId === ctx.projectId &&
+        ctx.result !== null &&
+        ctx.result.openQuestions > 0),
+    doneWhen: (ctx) => ctx.result !== null && ctx.result.openQuestions > 0 && ctx.resultPresented,
   },
   {
     key: 'question.answer',

@@ -16,7 +16,8 @@ const outputRoot = fileURLToPath(new URL('../../reports/tmp/generated-ir/', impo
 let output: string
 const cases = ['xor', 'and', 'nested', 'loop', 'starts', 'parallel_ends'] as const
 
-test.beforeAll(async (_fixtures, info) => {
+test.beforeAll(async ({ baseURL }, info) => {
+  if (!baseURL) throw new Error('Не задан адрес canvas-стенда')
   test.setTimeout(90_000)
   output = `${outputRoot}canvas-${info.parallelIndex}/`
   // Отдельный HTTP-процесс: recorded адаптер проходит тот же runtime layout/lint, что backend.

@@ -7,6 +7,8 @@
 | [`/styleguide`](http://localhost:5173/styleguide) | Живая витрина: все токены и компоненты во всех состояниях, обе темы (`make dev-frontend`) |
 | [screenshots/](screenshots/) | Скриншоты витрины для команды и презентаций |
 | [diagram-editor.md](diagram-editor.md) | Виджет редактора BPMN |
+| [onboarding.md](onboarding.md) | Сценарий обучения, динамические якоря и доступность ввода |
+| [RFC-0003](../rfc/0003-process-playback-and-timing.md) | Воспроизведение BPMN; предложенная модель бизнес-времени |
 | [RFC-0001 §5.9](../rfc/0001-architecture.md) | Экраны продукта: три панели, вопросы, редактор |
 
 ## Где что лежит

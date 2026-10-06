@@ -86,6 +86,7 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
         refetched,
         new Promise((resolve) => setTimeout(resolve, FINISH_REFETCH_MS)),
       ]).then(() => {
+        if (useRunStore.getState().views[projectId]?.runId !== run.id) return
         const project = client.getQueryData<ProjectDetail>(projectKeys.detail(projectId))
         emitOnboardingSignal({
           type: 'run.finished',

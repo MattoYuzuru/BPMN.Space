@@ -15,7 +15,7 @@
 
 Структура: записанная схема (`DiagramRule`), если её цитаты есть в источниках; иначе
 линейная схема по шагам, извлечённым из текста; после ручной правки — схема аналитика.
-Боевой путь — `deepseek.py` (`LLM_PROVIDER=deepseek`); этот модуль остаётся фикстурой для
+Рабочий путь — `openai_compatible.py`; этот модуль остаётся фикстурой для
 тестов сервисов и демо без ключа (RFC §9.1).
 """
 
@@ -31,7 +31,9 @@ from app.domain.analysis import (
     QuestionUpdate,
     RunContext,
 )
+from app.domain.bpmn.importer import import_graph
 from app.domain.bpmn.linear import LinearStep, build_linear_diagram
+from app.domain.bpmn.manual import ManualPolicy
 from app.domain.models import Question, QuestionStatus, Quote, SourceKind
 from app.domain.questions import find_source_with_quote, normalize, quote_in_source
 from app.fixtures.generic import RESPONSIBLE_MARKER, generic_questions
@@ -236,9 +238,32 @@ class MockPipeline:
     ) -> DiagramDraft:
         if _has_marker(MARKER_FAIL_STRUCTURING, context.sources):
             raise PipelineError("Не удалось построить схему (режим mock: fail-structuring)")
-        if context.current_is_manual and context.current_xml:
-            # Правки аналитика приоритетнее (RFC §5.2). TODO(real): #5 учесть их через ProcessGraph.
-            return DiagramDraft(xml=context.current_xml)
+        if (
+            (context.current_is_manual or context.manual_overrides)
+            and context.current_xml
+            and not context.replace_manual
+        ):
+            # Демо сохраняет исходный XML и ту же manual-policy для следующих сборок.
+            sources = {source.id: source for source in context.evidence_sources or context.sources}
+            trace = {
+                element_id: quote
+                for element_id, quote in context.current_trace.items()
+                if quote.source_id in sources
+                and quote_in_source(quote.quote, sources[quote.source_id].content)
+            }
+            policy = context.manual_overrides
+            if context.current_is_manual:
+                try:
+                    graph = import_graph(context.current_xml)
+                    base = (
+                        import_graph(context.base_generated_xml)
+                        if context.base_generated_xml
+                        else None
+                    )
+                    policy = ManualPolicy.compare(graph, base, policy).dump()
+                except ValueError:
+                    policy = {"opaque_manual": True}
+            return DiagramDraft(xml=context.current_xml, trace=trace, manual_overrides=policy)
         rule = self._pick_diagram(context.sources)
         if rule is not None:
             return DiagramDraft(

@@ -217,6 +217,9 @@ class InMemorySourceRepository:
             setattr(stored, name, value)
         return True
 
+    async def lock_by_project(self, project_id: UUID) -> list[Source]:
+        return await self.list_by_project(project_id)
+
     async def fail_processing(self, error: str) -> int:
         stuck = [s for s in self._items.values() if s.status is SourceStatus.PROCESSING]
         for source in stuck:
@@ -251,11 +254,24 @@ class InMemoryQuestionRepository:
     async def update(self, question: Question) -> None:
         self._items[question.id] = copy.deepcopy(question)
 
+    async def bind_elements(self, question_id: UUID, element_ids: list[str]) -> None:
+        stored = self._items.get(question_id)
+        if stored is not None:
+            stored.element_ids = list(element_ids)
+
     async def apply_reconciled(
-        self, question: Question, *, expected_status: QuestionStatus
+        self,
+        question: Question,
+        *,
+        expected_status: QuestionStatus,
+        expected_updated_at: datetime | None = None,
     ) -> bool:
         current = self._items.get(question.id)
-        if current is None or current.status is not expected_status:
+        if (
+            current is None
+            or current.status is not expected_status
+            or (expected_updated_at is not None and current.updated_at != expected_updated_at)
+        ):
             return False
         current.status = question.status
         current.evidence = copy.deepcopy(question.evidence)

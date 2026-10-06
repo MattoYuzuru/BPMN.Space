@@ -7,6 +7,8 @@
   - [Аккаунты и общий доступ к проектам](backend/auth-and-sharing.md)
   - [Постоянное хранение данных](backend/persistence.md)
   - [Онбординг: тур, чек-лист, учебные материалы](backend/onboarding.md)
+  - [Сверка вопросов, граф IR и сохранение ручных правок](backend/generation-quality.md)
+  - [Runtime layout/lint: запуск и пределы Node-сервиса](../infra/bpmn-tools/README.md)
   - [Что ещё заглушено и что нужно для настоящей реализации](backend/mock.md)
   - [Настройка LLM и распознавания речи](backend/подключение-провайдеров.md)
 - [Frontend: принципы и устройство](frontend/README.md)
@@ -17,3 +19,4 @@
   - [Присутствие и история версий](adr/0003-presence-and-version-history.md)
   - [Realtime-комнаты и защита от конфликтных сохранений](adr/0004-realtime-collaboration.md)
   - [Локальное воспроизведение и отдельная модель длительностей](adr/0005-process-playback.md)
+  - [Граф IR, проверяемая сверка вопросов и приоритет ручных правок](adr/0006-generation-quality.md)

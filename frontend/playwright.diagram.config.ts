@@ -3,7 +3,7 @@ import { defineConfig } from '@playwright/test'
 /** Настоящий canvas и dev-API редактора, без общего проекта и backend. */
 export default defineConfig({
   testDir: './e2e',
-  testMatch: /diagram-playback\.spec\.ts/,
+  testMatch: /(diagram-playback|generated-graph)\.spec\.ts/,
   fullyParallel: true,
   workers: 2,
   timeout: 45_000,

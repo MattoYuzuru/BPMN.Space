@@ -4,10 +4,11 @@ from collections.abc import Mapping
 from uuid import UUID
 
 from app.domain.bpmn.document import BpmnFormatError, ensure_safe_xml
-from app.domain.bpmn.xsd import xsd_errors
+from app.domain.bpmn.importer import retain_trace
+from app.domain.bpmn.xsd import require_valid_bpmn
 from app.domain.models import LintIssue, Quote, RunMode, Version, VersionOrigin
-from app.domain.versions import build_version
-from app.infra.bpmn_tools import BpmnTools
+from app.domain.versions import build_version, rechecked_version
+from app.infra.bpmn_tools import BpmnTools, BpmnToolsError
 from app.infra.repositories.base import Repositories
 from app.services.common import Runtime, get_project, get_version, too_large
 from app.services.errors import (
@@ -15,6 +16,7 @@ from app.services.errors import (
     InvalidInputError,
     NotFoundError,
     StaleVersionError,
+    UnavailableError,
 )
 
 
@@ -29,16 +31,23 @@ async def add_version(
     trace: Mapping[str, Quote],
     run_id: UUID | None = None,
     actor_email: str | None = None,
+    expected_base_version_id: UUID | None = None,
+    enforce_base: bool = False,
 ) -> Version:
     """Новая версия: номер, дифф с прошлой, допущения по текущим вопросам, дорожки.
 
     Номер берётся под блокировкой проекта в одной транзакции: ручное сохранение и прогон
     (или два редактора) получают подряд идущие номера и не упираются в уникальный индекс.
     """
+    require_valid_bpmn(xml)
     async with repos.atomic() as tx:
         if await tx.projects.lock(project_id) is None:
             raise NotFoundError("Проект не найден")
         previous = await tx.versions.latest(project_id)
+        if enforce_base and (previous.id if previous else None) != expected_base_version_id:
+            raise StaleVersionError(
+                previous.id if previous else None, previous.number if previous else None
+            )
         questions = await tx.questions.list_by_project(project_id)
         now = runtime.clock()
         version = build_version(
@@ -50,7 +59,7 @@ async def add_version(
             previous_xml=previous.xml if previous else None,
             questions=questions,
             lint=lint,
-            xsd_valid=not xsd_errors(xml),
+            xsd_valid=True,
             trace=trace,
             created_at=now,
             run_id=run_id,
@@ -77,7 +86,10 @@ class VersionService:
 
     async def list(self, project_id: UUID) -> list[Version]:
         await get_project(self._repos, project_id)
-        return await self._repos.versions.list_by_project(project_id)
+        return [
+            rechecked_version(version)
+            for version in await self._repos.versions.list_by_project(project_id)
+        ]
 
     async def get(self, version_id: UUID) -> Version:
         return await get_version(self._repos, version_id)
@@ -92,9 +104,8 @@ class VersionService:
     ) -> Version:
         """Ручная правка из bpmn-js → версия `manual`.
 
-        Mock: проверка корректности XML и корневого элемента BPMN, линтер — подмножество bpmnlint.
-        TODO(real): #5 XSD-проверка (`domain/bpmn/xsd.py`) и импорт XML → ProcessGraph, чтобы
-        следующий прогон учитывал правку логики (RFC §5.3, §5.5).
+        Проверяет безопасность XML и официальную XSD до сохранения и вызова BPMN-инструментов.
+        Импорт XML → ProcessGraph для сохранения логики при сборке описан в RFC §5.3, §5.5.
         """
         await get_project(self._repos, project_id)
         if len(xml.encode("utf-8")) > self._max_bytes:
@@ -102,9 +113,11 @@ class VersionService:
         if not xml.strip():
             raise InvalidInputError("Схема пустая")
         try:
-            xsd_errors(xml)  # mock: корректность XML и корень bpmn:definitions
+            require_valid_bpmn(xml)
             ensure_safe_xml(xml)  # только BPMN-пространства имён, без PI, DTD и script
             lint = await self._tools.lint(xml)
+        except BpmnToolsError as error:
+            raise UnavailableError(str(error)) from error
         except BpmnFormatError as error:
             raise InvalidInputError(str(error)) from error
         async with self._repos.atomic() as repos:
@@ -126,7 +139,7 @@ class VersionService:
                 raise StaleVersionError(
                     current_id, previous.number if previous is not None else None
                 )
-            trace = dict(previous.trace) if previous else {}
+            trace = retain_trace(previous.xml, xml, previous.trace) if previous else {}
             return await add_version(
                 repos,
                 self._rt,

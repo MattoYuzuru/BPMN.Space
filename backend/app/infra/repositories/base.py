@@ -117,6 +117,10 @@ class SourceRepository(Protocol):
         """Источники проекта по возрастанию `created_at`."""
         ...
 
+    async def lock_by_project(self, project_id: UUID) -> list[Source]:
+        """Свежие источники под row lock; вызывается внутри Repositories.atomic()."""
+        ...
+
     async def fail_processing(self, error: str) -> int:
         """Все источники в `processing` → `failed` с причиной `error`; возвращает их число."""
         ...
@@ -126,10 +130,18 @@ class QuestionRepository(Protocol):
     async def add(self, question: Question) -> None: ...
     async def get(self, question_id: UUID) -> Question | None: ...
     async def update(self, question: Question) -> None: ...
+    async def bind_elements(self, question_id: UUID, element_ids: list[str]) -> None:
+        """Меняет только связи с диаграммой, не перезаписывая статус, ответ или доказательство."""
+        ...
+
     async def apply_reconciled(
-        self, question: Question, *, expected_status: QuestionStatus
+        self,
+        question: Question,
+        *,
+        expected_status: QuestionStatus,
+        expected_updated_at: datetime | None = None,
     ) -> bool:
-        """Точечно записывает поля сверки (статус, цитата, ответ), только если статус не менялся.
+        """Точечно записывает поля сверки, если статус и версия вопроса не менялись.
 
         Возвращает `False`, если вопрос удалён или его статус уже изменён (например, аналитик
         ответил между чтением и записью): чужая правка не затирается.

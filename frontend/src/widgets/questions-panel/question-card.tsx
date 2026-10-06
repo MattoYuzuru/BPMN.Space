@@ -37,12 +37,13 @@ export function QuestionCard({ question, settling = false, fresh = false }: Ques
   const sourceOf = (id?: string): Source | undefined =>
     project.sources.find((source) => source.id === id)
   const resolved = question.status === 'resolved' || settling
+  const obsolete = question.status === 'obsolete'
   const hasElements = question.element_ids.length > 0
 
   return (
     <Card
       padding="none"
-      glow={selected && !resolved}
+      glow={selected && !resolved && !obsolete}
       data-question={question.code}
       data-question-id={question.id}
       aria-current={selected || undefined}
@@ -63,11 +64,13 @@ export function QuestionCard({ question, settling = false, fresh = false }: Ques
         aria-hidden="true"
         className={cn(
           'absolute inset-y-0 left-0 w-0.5 transition-colors duration-slow',
-          resolved
-            ? 'bg-success'
-            : question.status === 'answered'
-              ? 'bg-accent'
-              : SEVERITY_STRIP[question.severity],
+          obsolete
+            ? 'bg-border-strong'
+            : resolved
+              ? 'bg-success'
+              : question.status === 'answered'
+                ? 'bg-accent'
+                : SEVERITY_STRIP[question.severity],
         )}
       />
       <div className="flex flex-col gap-2.5 py-3 pr-3 pl-4">
@@ -80,12 +83,16 @@ export function QuestionCard({ question, settling = false, fresh = false }: Ques
             <span className="truncate">{kind.label}</span>
           </span>
           <span className="ml-auto flex shrink-0 items-center gap-1">
-            {fresh && !resolved && (
+            {fresh && !resolved && !obsolete && (
               <Badge tone="accent" icon="sparkles">
                 Новый
               </Badge>
             )}
-            {resolved ? (
+            {obsolete ? (
+              <Badge tone="neutral" variant="outline">
+                Неактуален
+              </Badge>
+            ) : resolved ? (
               <Badge tone="success" icon="circle-check">
                 Решён
               </Badge>
@@ -103,11 +110,11 @@ export function QuestionCard({ question, settling = false, fresh = false }: Ques
 
         <p className="type-body text-fg">{question.text}</p>
 
-        {resolved && question.evidence ? (
+        {(resolved || obsolete) && question.evidence ? (
           <QuoteLink
             quote={question.evidence}
             source={sourceOf(question.evidence.source_id)}
-            tone="evidence"
+            tone={obsolete ? 'about' : 'evidence'}
           />
         ) : (
           question.about && (

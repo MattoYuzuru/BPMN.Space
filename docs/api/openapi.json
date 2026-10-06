@@ -1319,9 +1319,28 @@
       },
       "RunCreate": {
         "properties": {
+          "base_version_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Голова, которую видит инициатор; устаревшая — 409",
+            "title": "Base Version Id"
+          },
           "mode": {
             "$ref": "#/components/schemas/RunMode",
             "description": "`analyze` — только вопросы, `build` — вопросы и схема"
+          },
+          "replace_manual": {
+            "default": false,
+            "description": "Осознанно пересобрать из источников вместо manual; требует актуальный base_version_id",
+            "title": "Replace Manual",
+            "type": "boolean"
           }
         },
         "required": [
@@ -4083,6 +4102,16 @@
               }
             },
             "description": "Некорректные данные"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Сервис или помощник не настроен"
           }
         },
         "security": [

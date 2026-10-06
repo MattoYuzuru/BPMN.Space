@@ -18,7 +18,13 @@ BPMN = 'xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"'
 
 
 def _csrf_cookie(**settings: object) -> str:
-    config = Settings(database_url=None, seed_demo_data=False, auth_enabled=True, **settings)  # type: ignore[arg-type]
+    config = Settings(
+        bpmn_tools_url="http://127.0.0.1:1",
+        database_url=None,
+        seed_demo_data=False,
+        auth_enabled=True,
+        **settings,  # type: ignore[arg-type]
+    )  # type: ignore[arg-type]
     with TestClient(create_app(config, container=build_container(config))) as client:
         response = client.get(f"{API}/auth/csrf")
         return response.headers["set-cookie"]

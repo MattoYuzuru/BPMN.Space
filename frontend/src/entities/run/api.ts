@@ -1,17 +1,25 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { type ProjectDetail, patchProjectInLists, projectKeys } from '@/entities/project'
-import { api, errorMessage, unwrap } from '@/shared/api/client'
+import { ApiError, api, errorMessage, unwrap } from '@/shared/api/client'
+import type { components } from '@/shared/api/schema.gen'
 import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
 import { toast } from '@/shared/ui'
 import type { RunMode } from './model'
 import { useRunStore } from './store'
 
+/** Явное перестроение сохраняет историю и требует голову, подтверждённую пользователем. */
+type RunOptions = Partial<
+  Pick<components['schemas']['RunCreate'], 'base_version_id' | 'replace_manual'>
+>
+
+export type StartRunInput = RunMode | ({ mode: RunMode } & RunOptions)
+
 /** Запустить прогон (без кэша и уведомлений — для составных сценариев). */
-export async function startRun(projectId: string, mode: RunMode) {
+export async function startRun(projectId: string, mode: RunMode, options: RunOptions = {}) {
   return unwrap(
     await api.POST('/api/v1/projects/{project_id}/runs', {
       params: { path: { project_id: projectId } },
-      body: { mode },
+      body: { mode, ...options, replace_manual: options.replace_manual ?? false },
     }),
   )
 }
@@ -36,7 +44,10 @@ export function useStartRun(projectId: string) {
   const client = useQueryClient()
   const track = useRunStore((state) => state.track)
   return useMutation({
-    mutationFn: (mode: RunMode) => startRun(projectId, mode),
+    mutationFn: (input: StartRunInput) =>
+      typeof input === 'string'
+        ? startRun(projectId, input)
+        : startRun(projectId, input.mode, input),
     onSuccess: (run) => {
       const status = run.mode === 'build' ? 'building' : 'analyzing'
       client.setQueryData<ProjectDetail>(
@@ -44,10 +55,14 @@ export function useStartRun(projectId: string) {
         (project) => project && { ...project, active_run: run, status },
       )
       patchProjectInLists(client, projectId, (project) => ({ ...project, status }))
-      track(run)
+      track(run, true)
       emitOnboardingSignal({ type: 'run.started', id: run.id, projectId })
     },
-    onError: (error) =>
-      toast.error('Прогон не запущен', { description: errorMessage(error), duration: 8000 }),
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 409) {
+        void client.invalidateQueries({ queryKey: projectKeys.detail(projectId) })
+      }
+      toast.error('Прогон не запущен', { description: errorMessage(error), duration: 8000 })
+    },
   })
 }

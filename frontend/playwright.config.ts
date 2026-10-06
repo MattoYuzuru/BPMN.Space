@@ -42,7 +42,8 @@ export default defineConfig({
   projects: [
     {
       name: 'e2e',
-      testIgnore: /(diagram-playback|screenshots|onboarding-tour|checklist)\.spec\.ts/,
+      testIgnore:
+        /(diagram-playback|generated-graph|screenshots|onboarding-tour|checklist)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 }, ...fakeMedia },
     },
     {

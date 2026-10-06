@@ -20,6 +20,14 @@ services:
       retries: 10
     restart: unless-stopped
 
+  bpmn-tools:
+    build: ./infra/bpmn-tools
+    environment:
+      BPMN_TOOLS_TIMEOUT_SEC: ${BPMN_TOOLS_TIMEOUT_SEC:-20}
+    expose:
+      - "3000"
+    restart: unless-stopped
+
   backend:
     build: ./backend
     environment:
@@ -37,7 +45,18 @@ services:
       DATABASE_POOL_TIMEOUT_SEC: ${DATABASE_POOL_TIMEOUT_SEC:-5}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-arkhitektor}:${POSTGRES_PASSWORD:-local-dev-only}@db:5432/${POSTGRES_DB:-arkhitektor}
       UPLOAD_DIR: /data/uploads
+      BPMN_TOOLS_URL: http://bpmn-tools:3000
+      BPMN_TOOLS_TIMEOUT_SEC: ${BPMN_TOOLS_TIMEOUT_SEC:-20}
       LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_TIMEOUT_SEC: ${LLM_TIMEOUT_SEC:-120}
+      LLM_JSON_MODE: ${LLM_JSON_MODE:-true}
+      LLM_JSON_MAX_TOKENS: ${LLM_JSON_MAX_TOKENS:-8192}
+      LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-3}
+      LLM_RETRY_BASE_SEC: ${LLM_RETRY_BASE_SEC:-1}
+      LLM_RETRY_MAX_SEC: ${LLM_RETRY_MAX_SEC:-30}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-flash}
@@ -66,6 +85,8 @@ services:
     volumes:
       - uploads_data:/data/uploads
     depends_on:
+      bpmn-tools:
+        condition: service_healthy
       db:
         condition: service_healthy
     restart: unless-stopped

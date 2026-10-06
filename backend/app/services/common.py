@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from app.domain.models import Project, Question, Run, Source, Version
+from app.domain.versions import rechecked_version
 from app.infra.repositories.base import Repositories
 from app.services.errors import NotFoundError, PayloadTooLargeError
 
@@ -55,7 +56,7 @@ async def get_version(repos: Repositories, version_id: UUID) -> Version:
     version = await repos.versions.get(version_id)
     if version is None:
         raise NotFoundError("Версия схемы не найдена")
-    return version
+    return rechecked_version(version)
 
 
 async def touch_project(repos: Repositories, project_id: UUID, at: datetime) -> None:

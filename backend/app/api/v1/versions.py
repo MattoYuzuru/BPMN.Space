@@ -67,7 +67,7 @@ async def download_version(
     "/projects/{project_id}/diagram",
     status_code=status.HTTP_201_CREATED,
     responses={
-        **errors(401, 403, 404, 413, 422),
+        **errors(401, 403, 404, 413, 422, 503),
         409: {
             "model": DiagramConflictResponse,
             "description": "Сборка уже выполняется или схема сохранена другим участником",

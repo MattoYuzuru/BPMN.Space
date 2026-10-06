@@ -16,6 +16,7 @@ CI на GitLab Codenrock не используется, поэтому «зел�
    - `pyright`, `lint-imports` (import-linter);
    - `pytest` unit + integration с `--cov-fail-under=80` на `backend/app/{domain,services,ingest}`;
    - `vitest`, `tsc --noEmit`, `vite build`;
+   - настоящий Node `bpmn-tools`: unit/HTTP integration layout и `bpmnlint` (`make test-bpmn-tools`, входит в `make test`);
    - PostgreSQL-тесты репозиториев и HTTP-доступов (`make test-postgres`);
    - `make e2e-diagram`: настоящий BPMN canvas, воспроизведение/шлюзы/экспорт/мини-карта; собственный Vite без backend;
    - `make e2e`: сборка и запуск Docker-стека, Playwright сценарии; стек остаётся для диагностики. `E2E_BASE_URL` задаёт уже работающий стенд;

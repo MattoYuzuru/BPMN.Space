@@ -71,6 +71,48 @@
   stroke: var(--color-accent) !important;
 }
 
+/* --- Выбор участника комнаты: общий элемент обведён цветом его указателя --- */
+
+.de-root:not(.de-simulating) .djs-element.de-collab-selection-0 .djs-visual > :first-child {
+  stroke: var(--palette-tok-500) !important;
+  stroke-width: 3px !important;
+}
+
+.de-root:not(.de-simulating) .djs-element.de-collab-selection-1 .djs-visual > :first-child {
+  stroke: var(--palette-pine-600) !important;
+  stroke-width: 3px !important;
+}
+
+.de-root:not(.de-simulating) .djs-element.de-collab-selection-2 .djs-visual > :first-child {
+  stroke: var(--palette-amber-600) !important;
+  stroke-width: 3px !important;
+}
+
+.de-root:not(.de-simulating) .djs-element.de-collab-selection-3 .djs-visual > :first-child {
+  stroke: var(--palette-surik-500) !important;
+  stroke-width: 3px !important;
+}
+
+.de-root:not(.de-simulating) .djs-element.de-collab-selection-4 .djs-visual > :first-child {
+  stroke: var(--palette-tok-700) !important;
+  stroke-width: 3px !important;
+}
+
+.de-root:not(.de-simulating) .djs-element.de-collab-selection-5 .djs-visual > :first-child {
+  stroke: var(--palette-pine-500) !important;
+  stroke-width: 3px !important;
+}
+
+.de-root:not(.de-simulating) .djs-element.de-collab-selection-6 .djs-visual > :first-child {
+  stroke: var(--palette-amber-700) !important;
+  stroke-width: 3px !important;
+}
+
+.de-root:not(.de-simulating) .djs-element.de-collab-selection-7 .djs-visual > :first-child {
+  stroke: var(--palette-surik-700) !important;
+  stroke-width: 3px !important;
+}
+
 /* --- Короткая подсветка после focusElement: контур вспыхивает и гаснет --- */
 .de-root .djs-element.hl-focus .djs-outline {
   visibility: visible;
@@ -101,4 +143,7 @@
     transition: none !important;
     animation: none !important;
   }
+}
+.de-root .djs-element.de-collab-moving {
+  transition: transform 60ms linear;
 }

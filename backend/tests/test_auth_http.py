@@ -31,6 +31,7 @@ from app.infra.database import Database
 from app.infra.db_models import ProjectShareLinkRow, UserRow
 from app.infra.seed import DEMO_PROJECT_ID, SeedData, build_seed
 from app.main import create_app
+from app.services.auth import SESSION_COOKIE, stream_user
 
 API = "/api/v1"
 PASSWORD = "test-password-long-enough"  # noqa: S105
@@ -179,7 +180,10 @@ async def test_version_history_records_actual_author(stack: Stack) -> None:
     generated = (await owner.get(f"/projects/{project_id}/versions")).json()[0]
     assert generated["actor_email"] == owner.email
 
-    manual = await owner.put(f"/projects/{project_id}/diagram", json={"xml": finished["xml"]})
+    manual = await owner.put(
+        f"/projects/{project_id}/diagram",
+        json={"xml": finished["xml"], "base_version_id": finished["version"]},
+    )
     assert manual.status_code == 201, manual.text
     assert manual.json()["actor_email"] == owner.email
     versions = (await owner.get(f"/projects/{project_id}/versions")).json()
@@ -195,6 +199,33 @@ async def test_presence_requires_project_access(stack: Stack) -> None:
     path = f"/projects/{created.json()['id']}/presence/events"
     assert (await guest.get(path)).status_code == 401
     assert (await stranger.get(path)).status_code == 404
+
+
+async def test_collaboration_ticket_checks_membership_and_guest_share_role(stack: Stack) -> None:
+    owner = await stack.user("collab-owner@example.com")
+    stranger = await stack.user("collab-stranger@example.com")
+    guest = await stack.guest()
+    created = await owner.post("/projects", json={"title": "Общая доска"})
+    assert created.status_code == 201, created.text
+    project_id = created.json()["id"]
+
+    owner_ticket = await owner.post(f"/projects/{project_id}/collaboration-ticket")
+    assert owner_ticket.status_code == 200, owner_ticket.text
+    assert len(owner_ticket.json()["ticket"]) >= 40
+    assert (await stranger.post(f"/projects/{project_id}/collaboration-ticket")).status_code == 404
+
+    link = await owner.post(f"/projects/{project_id}/share-links", json={"role": "viewer"})
+    assert link.status_code == 201, link.text
+    token = link.json()["url_path"].removeprefix("/share/")
+    guest_ticket = await guest.post(f"/shares/{token}/collaboration-ticket")
+    assert guest_ticket.status_code == 200, guest_ticket.text
+    assert guest_ticket.json()["expires_at"]
+
+    editor_link = await owner.post(f"/projects/{project_id}/share-links", json={"role": "editor"})
+    assert editor_link.status_code == 201, editor_link.text
+    editor_token = editor_link.json()["url_path"].removeprefix("/share/")
+    editor_guest_ticket = await guest.post(f"/shares/{editor_token}/collaboration-ticket")
+    assert editor_guest_ticket.status_code == 401
 
 
 async def test_presence_stream_emits_authorized_user_and_cleans_up(stack: Stack) -> None:
@@ -224,6 +255,26 @@ async def test_presence_stream_emits_authorized_user_and_cleans_up(stack: Stack)
     assert len(stack.app.state.presence._snapshot(project_id)) == 1
     await stream.aclose()
     assert stack.app.state.presence._snapshot(project_id) == []
+
+
+async def test_stream_auth_reads_user_and_releases_database_connection(stack: Stack) -> None:
+    owner = await stack.user("stream-auth@example.com")
+    token = owner.http.cookies.get(SESSION_COOKIE)
+    assert token
+    request = Request(
+        {
+            "type": "http",
+            "app": stack.app,
+            "headers": [(b"cookie", f"{SESSION_COOKIE}={token}".encode())],
+        }
+    )
+
+    user = await stream_user(request)
+
+    assert user is not None
+    assert str(user.id) == owner.user_id
+    assert user.email == owner.email
+    assert cast(Any, stack.database.engine.pool).checkedout() == 0
 
 
 # ---------- сессия и CSRF ----------
@@ -310,7 +361,7 @@ def _guest_calls() -> list[tuple[str, str, dict[str, Any]]]:
         ("GET", f"/projects/{pid}/versions", {}),
         ("GET", f"/versions/{oid}", {}),
         ("GET", f"/versions/{oid}/xml", {}),
-        ("PUT", f"/projects/{pid}/diagram", {"json": {"xml": "<a/>"}}),
+        ("PUT", f"/projects/{pid}/diagram", {"json": {"xml": "<a/>", "base_version_id": None}}),
         ("POST", f"/projects/{pid}/assistant", {"json": {"message": "привет"}}),
         ("POST", "/assistant/chat", {"json": {"message": "привет", "project_title": "Процесс"}}),
         ("POST", "/transcriptions", {"files": {"file": ("a.webm", b"1234", "audio/webm")}}),
@@ -369,7 +420,11 @@ async def test_other_user_cannot_see_or_change_private_project(stack: Stack) -> 
         ("GET", f"/projects/{pid}/versions", {}),
         ("GET", f"/versions/{ids['version']}", {}),
         ("GET", f"/versions/{ids['version']}/xml", {}),
-        ("PUT", f"/projects/{pid}/diagram", {"json": {"xml": ids["xml"]}}),
+        (
+            "PUT",
+            f"/projects/{pid}/diagram",
+            {"json": {"xml": ids["xml"], "base_version_id": None}},
+        ),
         ("POST", f"/projects/{pid}/assistant", {"json": {"message": "привет"}}),
         ("GET", f"/projects/{pid}/members", {}),
         ("GET", f"/projects/{pid}/share-links", {}),
@@ -412,7 +467,11 @@ async def test_demo_project_is_read_only_for_everyone(stack: Stack) -> None:
         ("DELETE", f"/sources/{source_id}", {}),
         ("POST", f"/questions/{questions[0]['id']}/ignore", {}),
         ("POST", f"/projects/{DEMO}/runs", {"json": {"mode": "analyze"}}),
-        ("PUT", f"/projects/{DEMO}/diagram", {"json": {"xml": "<a/>"}}),
+        (
+            "PUT",
+            f"/projects/{DEMO}/diagram",
+            {"json": {"xml": "<a/>", "base_version_id": None}},
+        ),
     ]
     for method, path, kwargs in forbidden:
         response = await user.request(method, path, **kwargs)
@@ -539,6 +598,40 @@ async def test_editor_can_edit_but_not_delete_or_share(stack: Stack) -> None:
 
     assert (await owner.delete(f"/projects/{pid}")).status_code == 204
     assert (await owner.get(f"/projects/{pid}")).status_code == 404
+
+
+async def test_editor_can_cancel_shared_run_but_viewer_cannot(stack: Stack) -> None:
+    owner = await stack.user("cancel-owner@example.com")
+    editor = await stack.user("cancel-editor@example.com")
+    viewer = await stack.user("cancel-viewer@example.com")
+    created = await owner.post("/projects/from-example", json={"example_id": "tp861"})
+    assert created.status_code == 201, created.text
+    project_id = created.json()["id"]
+
+    for account, role in ((editor, "editor"), (viewer, "viewer")):
+        link = await owner.post(f"/projects/{project_id}/share-links", json={"role": role})
+        assert link.status_code == 201, link.text
+        token = link.json()["url_path"].removeprefix("/share/")
+        assert (await account.post(f"/shares/{token}/accept")).status_code == 200
+
+    entered = asyncio.Event()
+
+    async def hold(_stage) -> None:
+        entered.set()
+        await asyncio.sleep(3600)
+
+    stack.app.state.container.runs._pace = hold
+    started = await owner.post(f"/projects/{project_id}/runs", json={"mode": "build"})
+    assert started.status_code == 202, started.text
+    run_id = started.json()["id"]
+    await asyncio.wait_for(entered.wait(), timeout=1)
+
+    denied = await viewer.post(f"/runs/{run_id}/cancel")
+    assert denied.status_code == 403, denied.text
+    cancelled = await editor.post(f"/runs/{run_id}/cancel")
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["status"] == "cancelled"
+    assert (await owner.get(f"/runs/{run_id}")).json()["status"] == "cancelled"
 
 
 async def test_viewer_link_can_be_saved_to_profile_but_stays_read_only(stack: Stack) -> None:
@@ -689,7 +782,7 @@ async def test_manual_save_rejects_malicious_xml(stack: Stack) -> None:
     path = f"/projects/{ids['project']}/diagram"
 
     for name, xml in MALICIOUS_XML.items():
-        response = await owner.put(path, json={"xml": xml})
+        response = await owner.put(path, json={"xml": xml, "base_version_id": ids["version"]})
         assert response.status_code == 422, (name, response.text)
         assert response.json()["detail"], name
 
@@ -699,12 +792,12 @@ async def test_manual_save_rejects_malicious_xml(stack: Stack) -> None:
         '<bpmn:process id="p"><bpmn:scriptTask id="t"><bpmn:script>x = 1</bpmn:script>'
         "</bpmn:scriptTask></bpmn:process></bpmn:definitions>"
     )
-    allowed = await owner.put(path, json={"xml": script_task})
+    allowed = await owner.put(path, json={"xml": script_task, "base_version_id": ids["version"]})
     assert allowed.status_code == 201, allowed.text
 
     # Не навредили: версий не прибавилось, а корректный XML (в т.ч. bpmn-js) сохраняется.
     versions = (await owner.get(f"/projects/{ids['project']}/versions")).json()
-    ok = await owner.put(path, json={"xml": ids["xml"]})
+    ok = await owner.put(path, json={"xml": ids["xml"], "base_version_id": allowed.json()["id"]})
     assert ok.status_code == 201, ok.text
     assert (
         len((await owner.get(f"/projects/{ids['project']}/versions")).json()) == len(versions) + 1

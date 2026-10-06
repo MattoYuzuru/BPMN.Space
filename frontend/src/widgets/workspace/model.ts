@@ -12,6 +12,8 @@ export interface WorkspaceApi extends ProjectCapabilities {
   project: ProjectDetail
   /** Откуда берутся версии схемы и куда ведёт скачивание. */
   versions: VersionSource
+  /** Токен публичной viewer-ссылки; нужен только для выдачи короткого WS-билета гостю. */
+  collaborationShareToken?: string
   editorRef: RefObject<DiagramEditorHandle | null>
   selectedQuestionId?: string
   /** Просматриваемая версия; undefined — последняя. */

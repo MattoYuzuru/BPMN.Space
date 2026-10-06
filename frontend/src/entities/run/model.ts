@@ -50,7 +50,7 @@ export interface RunView {
   runId: string
   projectId: string
   mode: RunMode
-  status: 'running' | 'succeeded' | 'failed'
+  status: 'running' | 'succeeded' | 'failed' | 'cancelled'
   stage: RunStage | null
   progress: number
   label: string
@@ -71,12 +71,17 @@ export interface RunView {
 }
 
 export function initialRunView(run: Run, now: number): RunView {
-  const finished = run.status === 'succeeded' || run.status === 'failed'
+  const finished =
+    run.status === 'succeeded' || run.status === 'failed' || run.status === 'cancelled'
+  const status: RunView['status'] =
+    run.status === 'succeeded' || run.status === 'failed' || run.status === 'cancelled'
+      ? run.status
+      : 'running'
   return {
     runId: run.id,
     projectId: run.project_id,
     mode: run.mode,
-    status: finished ? (run.status as 'succeeded' | 'failed') : 'running',
+    status,
     stage: run.stage,
     progress: run.progress,
     label: run.stage_label,
@@ -134,10 +139,11 @@ export function reduceRun(view: RunView, event: RunEvent, now: number): RunView 
     case 'done': {
       const { run } = event.data
       const failed = run.status === 'failed' || view.status === 'failed'
+      const cancelled = run.status === 'cancelled' || view.status === 'cancelled'
       return {
         ...next,
-        status: failed ? 'failed' : 'succeeded',
-        progress: failed ? view.progress : 1,
+        status: cancelled ? 'cancelled' : failed ? 'failed' : 'succeeded',
+        progress: failed || cancelled ? view.progress : 1,
         summary: run.summary ?? view.summary,
         versionId: run.version_id ?? view.versionId,
         warnings: run.warnings?.length ? run.warnings : view.warnings,

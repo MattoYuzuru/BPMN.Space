@@ -18,6 +18,7 @@ from app.services.auth import (
     build_fastapi_users,
     optional_user,
     required_user,
+    stream_user,
 )
 
 CSRF_COOKIE = "arkhitektor_csrf"
@@ -65,6 +66,9 @@ class UserRead(BaseUser[UUID]):
 
 
 OptionalUserDep = Annotated[UserRow | None, Depends(optional_user)]
+# SSE может жить долго: проверяем cookie в короткой сессии до запуска потока,
+# чтобы соединение БД не удерживалось всё время подписки клиента.
+OptionalUserStreamDep = Annotated[UserRow | None, Depends(stream_user, scope="function")]
 RequiredUserDep = Annotated[UserRow, Depends(required_user)]
 
 

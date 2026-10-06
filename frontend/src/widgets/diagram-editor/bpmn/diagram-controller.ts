@@ -36,6 +36,9 @@ import type {
   DiagramHighlights,
   DiagramImportResult,
   DiagramImportWarning,
+  DiagramPoint,
+  DiagramRemoteMove,
+  DiagramRemoteSelection,
   PngExportOptions,
 } from '../types'
 import { SimulationLocalizationModule } from './simulation-localization'
@@ -61,6 +64,8 @@ const SIMULATION_TOGGLE_EVENT = 'tokenSimulation.toggleMode'
 export interface ControllerCallbacks {
   onChange?: (xml: string) => void
   onElementClick?: (elementId: string) => void
+  onSelectionChange?: (elementIds: string[]) => void
+  onViewportChange?: () => void
   onImport?: (result: DiagramImportResult) => void
   onError?: (error: DiagramEditorError) => void
   /** Первая схема открыта. */
@@ -70,6 +75,10 @@ export interface ControllerCallbacks {
 interface CanvasLock {
   lock(): void
   unlock(): void
+}
+
+interface GraphicsCanvas {
+  getGraphics(element: string | DiagramElement): SVGGraphicsElement | null
 }
 
 interface ToggleMode {
@@ -154,8 +163,14 @@ export class DiagramController {
   private readonly changes: ChangeEmitter
   private readonly disposers: Array<() => void> = []
   private readonly focusTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private remoteMarkers = new Map<string, string>()
   private theme: DiagramTheme
   private markers: MarkerPlan = new Map()
+  private remoteSelections: readonly DiagramRemoteSelection[] = []
+  private remoteMoveTransforms = new Map<
+    string,
+    { graphics: SVGGraphicsElement; transform: string | null }
+  >()
   private highlights: Partial<DiagramHighlights> | undefined
   /** Последний XML, который редактор показывает: импортированный или выданный в onChange. */
   private currentXml: string | undefined
@@ -220,9 +235,15 @@ export class DiagramController {
       this.changes.notify(event.trigger),
     )
     eventBus.on('element.click', (event: { element: DiagramElement }) => this.handleClick(event))
+    eventBus.on('selection.changed', (event: { newSelection?: DiagramElement[] }) =>
+      this.callbacks().onSelectionChange?.((event.newSelection ?? []).map((element) => element.id)),
+    )
     eventBus.on(
       'canvas.viewbox.changed',
-      (event: { viewbox: { x: number; y: number; scale: number } }) => this.syncGrid(event.viewbox),
+      (event: { viewbox: { x: number; y: number; scale: number } }) => {
+        this.syncGrid(event.viewbox)
+        this.callbacks().onViewportChange?.()
+      },
     )
     // После штатного обработчика симуляции (приоритет 1000), который снимает блокировку холста.
     eventBus.on(SIMULATION_TOGGLE_EVENT, 500, (event: { active: boolean }) => {
@@ -286,6 +307,76 @@ export class DiagramController {
     this.animateTo(focusViewbox(viewbox.outer, viewbox, bbox))
     for (const element of elements) this.flash(element.id)
     return true
+  }
+
+  screenToDiagram(clientX: number, clientY: number): DiagramPoint {
+    const viewbox = this.service<Canvas>('canvas').viewbox()
+    const rect = this.root.getBoundingClientRect()
+    return {
+      x: viewbox.x + (clientX - rect.left) / viewbox.scale,
+      y: viewbox.y + (clientY - rect.top) / viewbox.scale,
+    }
+  }
+
+  diagramToScreen(point: DiagramPoint): DiagramPoint {
+    const viewbox = this.service<Canvas>('canvas').viewbox()
+    const rect = this.root.getBoundingClientRect()
+    return {
+      x: rect.left + (point.x - viewbox.x) * viewbox.scale,
+      y: rect.top + (point.y - viewbox.y) * viewbox.scale,
+    }
+  }
+
+  setRemoteSelections(selections: readonly DiagramRemoteSelection[]): void {
+    this.remoteSelections = selections
+    this.applyRemoteSelections()
+  }
+
+  setRemoteMoves(moves: readonly DiagramRemoteMove[]): void {
+    for (const { graphics, transform } of this.remoteMoveTransforms.values()) {
+      if (transform === null) graphics.removeAttribute('transform')
+      else graphics.setAttribute('transform', transform)
+      graphics.classList.remove('de-collab-moving')
+    }
+    this.remoteMoveTransforms.clear()
+    if (!this.imported) return
+
+    const canvas = this.service<GraphicsCanvas>('canvas')
+    const registry = this.service<ElementRegistry>('elementRegistry')
+    for (const move of moves) {
+      for (const id of move.elementIds) {
+        const element = registry.get(id) as DiagramElement | undefined
+        if (!element || element.type === 'label' || element.type.includes('SequenceFlow')) continue
+        const graphics = canvas.getGraphics(element)
+        if (!graphics || this.remoteMoveTransforms.has(id)) continue
+        const transform = graphics.getAttribute('transform')
+        this.remoteMoveTransforms.set(id, { graphics, transform })
+        graphics.setAttribute(
+          'transform',
+          `translate(${move.delta.x} ${move.delta.y})${transform ? ` ${transform}` : ''}`,
+        )
+        graphics.classList.add('de-collab-moving')
+      }
+    }
+  }
+
+  private applyRemoteSelections(): void {
+    if (!this.imported) return
+    const canvas = this.service<Canvas>('canvas')
+    const registry = this.service<ElementRegistry>('elementRegistry')
+    const next = new Map<string, string>()
+    for (const selection of this.remoteSelections) {
+      const colorKey = Math.abs(Math.trunc(selection.colorKey)) % 8
+      const marker = `de-collab-selection-${colorKey}`
+      for (const id of selection.elementIds) next.set(id, marker)
+    }
+    for (const [id, marker] of this.remoteMarkers) {
+      if (next.get(id) !== marker && registry.get(id)) canvas.removeMarker(id, marker)
+    }
+    for (const [id, marker] of next) {
+      if (this.remoteMarkers.get(id) !== marker && registry.get(id)) canvas.addMarker(id, marker)
+    }
+    this.remoteMarkers = next
   }
 
   exportXml(): Promise<string> {
@@ -372,6 +463,7 @@ export class DiagramController {
     const first = !this.imported
     const canvas = this.service<Canvas>('canvas')
     const keepViewbox = first ? null : canvas.viewbox()
+    this.setRemoteMoves([])
     this.changes.cancel()
     try {
       const { warnings } = await this.modeler.importXML(xml)
@@ -381,6 +473,7 @@ export class DiagramController {
       this.changes.setBaseline(await this.serialize())
       this.markers = new Map()
       this.applyHighlights()
+      this.applyRemoteSelections()
       if (keepViewbox) canvas.viewbox(keepViewbox)
       else this.fitNow()
       this.callbacks().onImport?.({ warnings: toWarnings(warnings) })

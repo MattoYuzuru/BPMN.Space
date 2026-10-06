@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     assistant,
+    collaboration,
     onboarding,
     presence,
     projects,
@@ -22,6 +23,7 @@ for module in (
     runs,
     versions,
     assistant,
+    collaboration,
     sharing,
     onboarding,
     presence,

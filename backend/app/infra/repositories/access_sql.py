@@ -106,6 +106,11 @@ class SqlAccessRepository:
             )
             return _link(row) if row else None
 
+    async def get_share_link(self, link_id: UUID) -> ShareLink | None:
+        async with self.sessions() as session:
+            row = await session.get(ProjectShareLinkRow, link_id)
+            return _link(row) if row else None
+
     async def add_share_link(self, link: ShareLink) -> None:
         async with self.sessions.begin() as session:
             session.add(

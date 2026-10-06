@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from app.api.access import ensure_project_access
-from app.api.auth import OptionalUserDep
+from app.api.auth import OptionalUserStreamDep
 from app.api.deps import ContainerDep
 from app.api.schemas.common import errors
 from app.domain.access import ProjectRole
@@ -41,7 +41,7 @@ async def project_presence(
     project_id: UUID,
     request: Request,
     container: ContainerDep,
-    user: OptionalUserDep,
+    user: OptionalUserStreamDep,
 ) -> EventSourceResponse:
     """Показывает только вошедших пользователей с доступом к проекту."""
     role = await ensure_project_access(request, container, project_id, user, write=False)

@@ -24,6 +24,7 @@ export const TOUR_ANCHORS = {
   runProgress: 'run.progress',
   questionAnswer: 'question.answer',
   questionIgnore: 'question.ignore',
+  answerComposer: 'answer.composer',
   answerSubmit: 'answer.submit',
   diagramCanvas: 'diagram.canvas',
   diagramSimulation: 'diagram.simulation',

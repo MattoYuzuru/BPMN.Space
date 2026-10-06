@@ -74,7 +74,7 @@ function QuestionDetail({ question }: { question: Question }) {
               Игнорировать
             </Button>
           )}
-          {canEdit && question.status === 'ignored' && (
+          {canEdit && (question.status === 'ignored' || question.status === 'answered') && (
             <Button
               variant="ghost"
               leadingIcon="undo"
@@ -148,7 +148,7 @@ function QuestionDetail({ question }: { question: Question }) {
           </Section>
         )}
 
-        {question.status !== 'resolved' && question.status !== 'obsolete' && (
+        {(question.status === 'open' || question.status === 'ignored') && (
           <AssumptionFrame
             label={question.status === 'ignored' ? 'Принято допущение' : 'Если не ответить'}
           >

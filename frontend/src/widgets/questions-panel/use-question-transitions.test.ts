@@ -24,11 +24,21 @@ describe('detectTransitions', () => {
       q('e', 'open'),
       q('f', 'resolved'),
     ])
-    expect(result).toEqual({ resolved: ['a', 'b'], added: ['e'] })
+    expect(result).toEqual({ resolved: ['a'], added: ['e'] })
   })
 })
 
 describe('useQuestionTransitions', () => {
+  it.each(['answered', 'ignored'] as const)(
+    '%s → resolved не показывает карточку временно среди открытых',
+    (status) => {
+      const { result, rerender } = renderHook(({ list }) => useQuestionTransitions(list), {
+        initialProps: { list: [q('a', status)] },
+      })
+      rerender({ list: [q('a', 'resolved')] })
+      expect(result.current.settling.has('a')).toBe(false)
+    },
+  )
   it('держит решённый вопрос среди открытых, пока идёт анимация', () => {
     vi.useFakeTimers()
     const { result, rerender } = renderHook(({ list }) => useQuestionTransitions(list), {

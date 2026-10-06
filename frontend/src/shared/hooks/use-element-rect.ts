@@ -32,15 +32,12 @@ export function sameRect(a: Rect | null, b: Rect | null): boolean {
 }
 
 /**
- * Следит за положением элемента: ResizeObserver, прокрутка любого предка и ресайз окна
- * (capture), троттлинг через requestAnimationFrame. `settleMs` — первые мс после появления
- * элемента кадры снимаются непрерывно (окно ещё «выезжает» анимацией, ResizeObserver молчит).
- * Без элемента ничего не наблюдается.
+ * Следит за геометрией активного якоря каждый кадр. ResizeObserver не замечает смещение
+ * без изменения размера: например, центрированный диалог переезжает после исчезновения
+ * подсказки или появления расшифровки. React обновляется только при изменении координат.
+ * Без элемента и после снятия подсказки кадры не запрашиваются.
  */
-export function useElementRect(
-  element: Element | null,
-  { settleMs = 450 }: { settleMs?: number } = {},
-): Rect | null {
+export function useElementRect(element: Element | null): Rect | null {
   const [rect, setRect] = useState<Rect | null>(null)
 
   useEffect(() => {
@@ -49,30 +46,17 @@ export function useElementRect(
       return
     }
     let frame = 0
-    const settleUntil = performance.now() + settleMs
     const measure = () => {
-      frame = 0
       const next = rectOf(element)
       setRect((prev) => (sameRect(prev, next) ? prev : next))
-      if (performance.now() < settleUntil) schedule()
+      frame = requestAnimationFrame(measure)
     }
-    const schedule = () => {
-      if (!frame) frame = requestAnimationFrame(measure)
-    }
-    const onChange = () => schedule()
     setRect(rectOf(element))
-    schedule()
-    const observer = new ResizeObserver(onChange)
-    observer.observe(element)
-    window.addEventListener('scroll', onChange, { capture: true, passive: true })
-    window.addEventListener('resize', onChange)
+    frame = requestAnimationFrame(measure)
     return () => {
-      if (frame) cancelAnimationFrame(frame)
-      observer.disconnect()
-      window.removeEventListener('scroll', onChange, { capture: true })
-      window.removeEventListener('resize', onChange)
+      cancelAnimationFrame(frame)
     }
-  }, [element, settleMs])
+  }, [element])
 
   return rect
 }

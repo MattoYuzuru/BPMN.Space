@@ -10,7 +10,7 @@ import { ApiError } from '@/shared/api/client'
 import { useDebouncedCallback } from '@/shared/hooks/use-debounced'
 import { floatingPanel } from '@/shared/lib/motion'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
-import { Badge, Button, Skeleton, toast } from '@/shared/ui'
+import { Button, Skeleton, toast } from '@/shared/ui'
 import { type DiagramEditorHandle, LazyDiagramEditor } from '@/widgets/diagram-editor'
 import { RunProgress } from '@/widgets/run-progress/run-progress'
 import { useWorkspace } from '@/widgets/workspace/model'
@@ -425,14 +425,6 @@ export function DiagramPanel() {
             viewportRevision={viewportRevision}
           />
           <span hidden data-viewport-revision={viewportRevision} />
-
-          <div className="pointer-events-none absolute right-3 top-3 z-30">
-            <Badge tone={collaboration.connected ? 'success' : 'neutral'} dot>
-              {collaboration.connected
-                ? `${collaboration.participantCount} в комнате`
-                : 'Подключаем участников'}
-            </Badge>
-          </div>
 
           {remoteUpdate && (
             <div className="absolute inset-x-3 top-11 z-30 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber/40 bg-surface px-3 py-2 shadow-md">

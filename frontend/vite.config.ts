@@ -20,14 +20,14 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': { target: apiTarget, changeOrigin: true },
+      '/api': { target: apiTarget, changeOrigin: true, ws: true },
       '/health': { target: apiTarget, changeOrigin: true },
     },
   },
   preview: {
     port: 4173,
     proxy: {
-      '/api': { target: apiTarget, changeOrigin: true },
+      '/api': { target: apiTarget, changeOrigin: true, ws: true },
       '/health': { target: apiTarget, changeOrigin: true },
     },
   },

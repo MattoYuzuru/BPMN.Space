@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useReportOnboardingEvent } from '@/entities/onboarding'
 import { VERSION_ORIGIN, type VersionDetail, versionLabel } from '@/entities/version'
 import { cn } from '@/shared/lib/cn'
 import { formatRelative } from '@/shared/lib/format'
@@ -27,6 +26,7 @@ export interface DiagramToolbarProps {
   version?: VersionDetail
   latestNumber: number
   isLatest: boolean
+  simulationActive?: boolean
   ready: boolean
   saving: boolean
   saved: boolean
@@ -44,6 +44,7 @@ export function DiagramToolbar({
   latestNumber,
   isLatest,
   ready,
+  simulationActive,
   saving,
   saved,
   markers,
@@ -54,8 +55,8 @@ export function DiagramToolbar({
   const { editorRef, viewVersion, versions } = useWorkspace()
   const setSheet = useWorkspaceUi((state) => state.setSheet)
   const [minimap, setMinimap] = useState(false)
-  const [simulation, setSimulation] = useState(false)
-  const report = useReportOnboardingEvent()
+  const [localSimulation, setSimulation] = useState(false)
+  const simulation = simulationActive ?? localSimulation
   const origin = version ? VERSION_ORIGIN[version.origin] : null
   const issues = version?.report.lint.length ?? 0
   const assumptions = version?.report.assumptions.length ?? 0
@@ -189,7 +190,6 @@ export function DiagramToolbar({
           onClick={() => {
             const active = editorRef.current?.toggleSimulation() ?? false
             setSimulation(active)
-            if (active) report.mutate('simulation_run')
           }}
           {...tourAnchor(TOUR_ANCHORS.diagramSimulation)}
         />

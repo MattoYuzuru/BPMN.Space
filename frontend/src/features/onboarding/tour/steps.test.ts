@@ -164,10 +164,14 @@ describe('сценарий тура', () => {
     it('шаг 9: холст, затем симуляция, затем скачивание', () => {
       expect(step('diagram.tour').pages.map((page) => page.anchor)).toEqual([
         'diagram.canvas',
-        'diagram.simulation',
+        'diagram.canvas',
         'header.download',
       ])
       expect(step('diagram.tour').pages[0]?.allowOutside).toBe(true)
+      expect(step('diagram.tour').pages[1]).toMatchObject({
+        cardAnchor: 'diagram.simulation',
+        allowOutside: true,
+      })
     })
 
     it('шаг 10: «Поделиться», затем «Создать ссылку», затем «Копировать ссылку»', () => {

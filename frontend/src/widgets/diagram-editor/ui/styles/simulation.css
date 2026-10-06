@@ -1,8 +1,7 @@
 /* biome-ignore-all lint/complexity/noImportantStyles: bpmn-js пишет fill/stroke и фон правки подписей во встроенный style — перекрыть можно только так */
 /*
  * Симуляция токена (bpmn-js-token-simulation). Включает и выключает её экран
- * (handle.toggleSimulation), поэтому встроенный переключатель скрыт. Палитра управления
- * (пуск, сброс, журнал) занимает место палитры инструментов.
+ * (handle.toggleSimulation), поэтому встроенный переключатель скрыт. Панель из UI-кита управляет пуском, паузой и сбросом, библиотека — событиями на холсте.
  */
 .de-root .bts-container {
   --token-simulation-primary: var(--color-accent);
@@ -15,7 +14,7 @@
   --token-simulation-disabled-color: var(--color-fg-subtle);
   --token-simulation-highlight-background: var(--color-bg-subtle);
 
-  /* Цвета элементов на время симуляции (пишутся в DI и при сохранении XML откатываются). */
+  /* Временные цвета элементов применяются RuntimeColors только в SVG DOM, не в BPMN DI. */
   --token-simulation-element-stroke-color: var(--color-fg-subtle);
   --token-simulation-element-fill-color: var(--color-surface);
   --token-simulation-active-outgoing-flow-stroke-color: var(--color-accent);
@@ -299,4 +298,71 @@
 .de-root .bts-scopes .bts-scope {
   font-size: 12px;
   box-shadow: var(--de-shadow-control);
+}
+
+/* Управление из UI-кита; библиотека отвечает за семантику и кнопки событий на холсте. */
+.de-root .bts-palette {
+  display: none;
+}
+
+/* Раскраска только SVG DOM: исходные DI-атрибуты не меняются. */
+.de-root .de-simulation-color .djs-visual > :first-child {
+  stroke: var(--de-sim-stroke) !important;
+  fill: var(--de-sim-fill) !important;
+}
+.de-root .de-simulation-color.djs-connection .djs-visual > path {
+  fill: none !important;
+}
+.de-root .de-playback-active .djs-visual > :first-child {
+  stroke: var(--color-accent-fg) !important;
+  stroke-width: 3px !important;
+  filter: drop-shadow(0 0 3px var(--color-accent));
+}
+.de-root .de-playback-active:not(.djs-connection) .djs-visual > :first-child {
+  fill: var(--color-accent-subtle) !important;
+}
+.de-root .bts-token .bts-circle {
+  fill: var(--color-accent);
+  stroke: var(--color-surface);
+  stroke-width: 2px;
+}
+.de-root .bts-token .bts-text {
+  fill: var(--color-fg-on-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Последовательность исполняется, движение токена заменяет статичная подсветка потока. */
+  .de-root .bts-animation-tokens {
+    visibility: hidden;
+  }
+}
+
+/* На общем плане токен остаётся размером не меньше 12 экранных пикселей. */
+.de-root .bts-token .bts-circle {
+  r: max(10px, calc(6px / var(--de-scale, 1)));
+  stroke-width: max(2px, calc(1px / var(--de-scale, 1)));
+}
+
+/* Корневое начало запускается единственным выбором панели; ветви/события на холсте доступны. */
+.de-root .de-playback-root-start .bts-context-pad {
+  display: none;
+}
+
+/* Scope IDs — внутренние идентификаторы движка; статус и предупреждения остаются читаемыми. */
+.de-root .bts-notifications .bts-scope,
+.de-root .bts-scopes {
+  display: none;
+}
+.de-root .bts-notifications .bts-notification.success {
+  display: none;
+}
+
+/* У соединения первым дочерним узлом могут быть defs: красим сам путь, а не маркер. */
+.de-root .de-simulation-color.djs-connection .djs-visual > path {
+  stroke: var(--de-sim-stroke) !important;
+}
+.de-root .de-playback-active.djs-connection .djs-visual > path {
+  stroke: var(--color-accent-fg) !important;
+  stroke-width: 3px !important;
+  filter: drop-shadow(0 0 3px var(--color-accent));
 }

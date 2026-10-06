@@ -183,6 +183,8 @@ describe('страница по ссылке: приглашение редак�
     const link = await screen.findByRole('link', { name: 'Войти, чтобы принять' })
     expect(link).toHaveAttribute('href', `/login?redirect=${encodeURIComponent(`/share/${TOKEN}`)}`)
     expect(screen.queryByRole('button', { name: 'Принять приглашение' })).not.toBeInTheDocument()
+    expect(link.closest('[data-lens-block]')).not.toBeNull()
+    await waitFor(() => expect(document.querySelector('main canvas')).not.toBeNull())
   })
 
   it('вошедший видит проект и принимает приглашение: переход в проект и уведомление', async () => {

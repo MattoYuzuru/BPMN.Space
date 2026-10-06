@@ -46,33 +46,43 @@ export function SummaryChips({
   className?: string
 }) {
   return (
-    <div
+    <dl
+      aria-label="Итоги вопросов"
       className={cn(
-        'inline-flex items-stretch rounded-md border border-border bg-surface',
-        size === 'sm' ? 'h-7' : 'h-8',
+        'items-stretch rounded-md border border-border bg-surface',
+        size === 'sm' ? 'inline-flex h-7' : '@container grid min-h-8 w-full grid-cols-3',
         className,
       )}
     >
       {ITEMS.map((item, index) => (
         <Tooltip key={item.key} content={item.hint} side="bottom">
-          <span
+          <div
             className={cn(
-              'flex items-center gap-1.5 px-2.5 type-caption text-fg-muted',
+              'flex min-w-0 items-center justify-center type-caption text-fg-muted',
+              size === 'sm'
+                ? 'gap-1.5 px-2.5'
+                : 'flex-col gap-0.5 px-2 py-1 @[24rem]:flex-row @[24rem]:gap-1.5',
               index > 0 && 'border-l border-border',
             )}
           >
-            <Icon name={item.icon} size={14} className={item.tone} />
-            {item.label}
-            <span
+            <dt className="flex min-w-0 items-center gap-1.5 whitespace-nowrap">
+              <Icon
+                name={item.icon}
+                size={14}
+                className={cn('shrink-0', item.tone, size === 'md' && 'hidden @[17rem]:block')}
+              />
+              {item.label}
+            </dt>
+            <dd
               key={summary[item.key]}
               data-numeric
-              className="font-medium text-fg animate-pop-in"
+              className="shrink-0 font-medium text-fg animate-pop-in"
             >
               {summary[item.key]}
-            </span>
-          </span>
+            </dd>
+          </div>
         </Tooltip>
       ))}
-    </div>
+    </dl>
   )
 }

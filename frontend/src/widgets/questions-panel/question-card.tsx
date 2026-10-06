@@ -63,7 +63,11 @@ export function QuestionCard({ question, settling = false, fresh = false }: Ques
         aria-hidden="true"
         className={cn(
           'absolute inset-y-0 left-0 w-0.5 transition-colors duration-slow',
-          resolved ? 'bg-success' : SEVERITY_STRIP[question.severity],
+          resolved
+            ? 'bg-success'
+            : question.status === 'answered'
+              ? 'bg-accent'
+              : SEVERITY_STRIP[question.severity],
         )}
       />
       <div className="flex flex-col gap-2.5 py-3 pr-3 pl-4">
@@ -84,6 +88,10 @@ export function QuestionCard({ question, settling = false, fresh = false }: Ques
             {resolved ? (
               <Badge tone="success" icon="circle-check">
                 Решён
+              </Badge>
+            ) : question.status === 'answered' ? (
+              <Badge tone="accent" variant="outline" icon="message-question">
+                Ответ получен
               </Badge>
             ) : (
               <Badge tone={severity.tone} variant="outline">
@@ -114,7 +122,7 @@ export function QuestionCard({ question, settling = false, fresh = false }: Ques
               Ваш ответ
             </span>
             <p className="line-clamp-4 type-ui text-fg">{question.answer.text}</p>
-            <span className="type-caption text-fg-muted">Учтётся при следующем анализе</span>
+            <span className="type-caption text-fg-muted">Ответ учтётся при следующем анализе</span>
           </div>
         )}
 
@@ -147,6 +155,16 @@ export function QuestionCard({ question, settling = false, fresh = false }: Ques
           />
         ) : (
           <div className="flex flex-wrap items-center gap-1">
+            {canEdit && question.status === 'answered' && (
+              <Button
+                size="sm"
+                variant="ghost"
+                leadingIcon="undo"
+                onClick={() => action.mutate({ question, action: { type: 'reopen' } })}
+              >
+                Вернуть
+              </Button>
+            )}
             {canEdit && question.status === 'open' && (
               <>
                 <Button

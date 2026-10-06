@@ -281,9 +281,11 @@ const baseSteps: TourStep<TourContext>[] = [
     route: workspace,
     anchor: (ctx) => {
       const id = ctx.pickedId ?? ctx.openQuestionIds[0]
-      return id ? inQuestion(id, TOUR_ANCHORS.answerSubmit, TOUR_ANCHORS.questionAnswer) : undefined
+      return id
+        ? inQuestion(id, TOUR_ANCHORS.answerComposer, TOUR_ANCHORS.questionAnswer)
+        : undefined
     },
-    // Карточка стоит у всей карточки вопроса, а подсвечена кнопка внутри неё.
+    // Карточка стоит у вопроса; вырез освобождает всю форму: ввод, микрофон и отправку.
     cardAnchor: (ctx) => {
       const id = ctx.pickedId ?? ctx.openQuestionIds[0]
       return id ? { selector: `[data-question-id="${id}"]` } : undefined

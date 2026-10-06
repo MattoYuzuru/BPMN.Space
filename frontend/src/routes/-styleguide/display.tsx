@@ -22,6 +22,7 @@ import {
   Tag,
   toast,
 } from '@/shared/ui'
+import { SummaryChips } from '@/widgets/run-progress/summary-chips'
 import { Caption, Section, Specimen, SpecimenGrid } from './kit'
 
 const QUESTION_NUMBERS = Array.from({ length: 16 }, (_, i) => i + 1)
@@ -110,6 +111,16 @@ export function StatusSection() {
                 Новых 1
               </Badge>
             </div>
+          </div>
+        </Specimen>
+        <Specimen
+          title="Итоги вопросов"
+          note="три равные части, числа до 999; узкая карточка переносит число под подпись"
+        >
+          <div className="flex flex-col gap-3">
+            {[0, 9, 99, 999].map((count) => (
+              <SummaryChips key={count} summary={{ resolved: count, open: count, new: count }} />
+            ))}
           </div>
         </Specimen>
         <Specimen title="Tag и Avatar" note="источники, роли, дорожки">

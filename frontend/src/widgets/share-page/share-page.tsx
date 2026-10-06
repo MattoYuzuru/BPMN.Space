@@ -12,7 +12,7 @@ import { AccountMenu } from '@/features/account-menu/account-menu'
 import { ThemeSwitch } from '@/features/theme-switch/theme-switch'
 import { ApiError } from '@/shared/api/client'
 import { useDocumentTitle } from '@/shared/hooks/use-document-title'
-import { GridBackdrop, toast } from '@/shared/ui'
+import { EntryScene, toast } from '@/shared/ui'
 import { ShareStateScreen } from '@/widgets/route-states/route-states'
 import { WorkspaceSkeleton } from '@/widgets/skeletons/screen-skeletons'
 import { InviteCard, type InviteCardState } from './invite-card'
@@ -148,15 +148,15 @@ function InviteScreen({
             }
 
   return (
-    <div className="flex min-h-dvh flex-col bg-bg">
-      <header className="flex h-14 shrink-0 items-center justify-end gap-2 px-4 wide:px-5">
-        <ThemeSwitch compact />
-        <AccountMenu afterLogout={() => window.location.reload()} withChecklist={false} />
-      </header>
-      <main className="relative isolate grid flex-1 place-items-center px-6 pb-16">
-        <GridBackdrop pattern="grid" glow />
-        <InviteCard state={card} />
-      </main>
-    </div>
+    <EntryScene
+      header={
+        <>
+          <ThemeSwitch compact />
+          <AccountMenu afterLogout={() => window.location.reload()} withChecklist={false} />
+        </>
+      }
+    >
+      <InviteCard state={card} />
+    </EntryScene>
   )
 }

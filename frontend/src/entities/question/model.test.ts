@@ -18,7 +18,7 @@ const make = (patch: Partial<Question>): Question => ({
 describe('вопросы', () => {
   it('раскладывает статусы по вкладкам', () => {
     expect(questionGroup('open')).toBe('open')
-    expect(questionGroup('answered')).toBe('open')
+    expect(questionGroup('answered')).toBe('resolved')
     expect(questionGroup('ignored')).toBe('assumed')
     expect(questionGroup('resolved')).toBe('resolved')
     expect(questionGroup('obsolete')).toBe('resolved')
@@ -35,12 +35,14 @@ describe('вопросы', () => {
     expect(sorted.map((question) => question.code)).toEqual(['Q-3', 'Q-4', 'Q-9', 'Q-10', 'Q-2'])
   })
 
-  it('решённые — свежие сверху', () => {
+  it('отвеченные и решённые — свежие сверху, открытые всегда раньше', () => {
     const sorted = sortQuestions([
       make({ code: 'Q-1', status: 'resolved', updated_at: '2026-10-01T10:00:00Z' }),
       make({ code: 'Q-2', status: 'resolved', updated_at: '2026-10-02T10:00:00Z' }),
+      make({ code: 'Q-3', status: 'answered', updated_at: '2026-10-03T10:00:00Z' }),
+      make({ code: 'Q-4', status: 'open', updated_at: '2026-10-01T10:00:00Z' }),
     ])
-    expect(sorted.map((question) => question.code)).toEqual(['Q-2', 'Q-1'])
+    expect(sorted.map((question) => question.code)).toEqual(['Q-4', 'Q-3', 'Q-2', 'Q-1'])
   })
 
   it('считает вопросы по вкладкам', () => {
@@ -51,7 +53,7 @@ describe('вопросы', () => {
         make({ status: 'ignored' }),
         make({ status: 'resolved' }),
       ]),
-    ).toEqual({ open: 2, assumed: 1, resolved: 1 })
+    ).toEqual({ open: 1, assumed: 1, resolved: 2 })
   })
 })
 

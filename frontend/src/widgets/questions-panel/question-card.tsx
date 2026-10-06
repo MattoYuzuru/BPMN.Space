@@ -110,11 +110,11 @@ export function QuestionCard({ question, settling = false, fresh = false }: Ques
 
         <p className="type-body text-fg">{question.text}</p>
 
-        {resolved && question.evidence ? (
+        {(resolved || obsolete) && question.evidence ? (
           <QuoteLink
             quote={question.evidence}
             source={sourceOf(question.evidence.source_id)}
-            tone="evidence"
+            tone={obsolete ? 'about' : 'evidence'}
           />
         ) : (
           question.about && (

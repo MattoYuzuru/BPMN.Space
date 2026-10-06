@@ -15,9 +15,9 @@
   - `bpmn-tools`: Node-сервис с `bpmn-auto-layout` (раскладка) и `bpmnlint` (проверка).
   - Frontend: React + Vite + bpmn-js.
   - БД: Postgres. Всё в Docker Compose.
-  - Распознавание речи (STT): Yandex SpeechKit через сменный адаптер.
+  - Распознавание речи (STT): сейчас Deepgram/mock; Yandex SpeechKit — целевой сменный адаптер.
 - **Redis и Kafka не нужны** (§6). VM 2 vCPU / 4 ГБ хватает — проверено замерами (§10).
-- **Модели:** любой OpenAI-совместимый API, смена модели строчкой в `.env`. Основной провайдер — Yandex AI Studio.
+- **Модели:** Chat Completions через настраиваемый HTTP-адаптер; сейчас DeepSeek/mock, Yandex — целевой провайдер финала с отдельной проверкой совместимости.
 - **Фундамент качества строим сразу, а не «потом»:** хуки, покрытие ≥80%, скиллы агентов, cleaner. Это делают агенты параллельно с продуктовой работой, и это окупается на всём хакатоне.
 
 ## 1. Глоссарий
@@ -38,7 +38,7 @@
 | **Вопрос (question)** | То, что модель не поняла или где источники противоречат друг другу. Его можно ответить, проигнорировать (тогда действует предложенное допущение) или он закроется сам после нового источника |
 | **Прогон (run)** | Один проход модели по всем источникам проекта: анализ → вопросы → (сборка схемы) |
 | **IR (промежуточное представление)** | Наш JSON-формат процесса, который возвращает LLM. Тот самый «свой enriched формат» из обсуждения команды |
-| **ProcessGraph** | Внутренний «плоский» граф процесса: узлы + стрелки + дорожки. В него компилируется IR и из него собирается XML |
+| **GraphIR / ProcessGraph** | Типизированный плоский граф: узлы + стрелки + дорожки. IR v1 сразу представляет этот граф; из него код собирает XML |
 | **Structured output** | Режим, в котором модель обязана вернуть JSON по заданной схеме |
 | **Repair loop** | Валидатор нашёл ошибку → ошибка уходит в модель текстом → модель исправляет. Обычно 2–3 круга |
 | **STT (speech-to-text)** | Распознавание речи: голосовая заметка → текст |
@@ -167,7 +167,7 @@ flowchart LR
     U["Аналитик<br/>(браузер, микрофон)"] --> FE["Frontend<br/>React + bpmn-js"]
     FE -->|"REST + SSE /api/v1"| BE["Backend<br/>FastAPI + JSON/Pydantic"]
     BE -->|"OpenAI-compatible API"| LLM[("LLM<br/>Yandex AI Studio / Cloud.ru / vLLM")]
-    BE -->|"STT API"| STT[("Yandex SpeechKit<br/>(сменный адаптер)")]
+    BE -->|"STT API"| STT[("Deepgram / mock<br/>SpeechKit — целевой адаптер")]
     BE -->|"HTTP /layout, /lint"| BT["bpmn-tools<br/>Node: bpmn-auto-layout + bpmnlint"]
     BE --> DB[("Postgres<br/>проекты, источники, вопросы,<br/>прогоны, версии, логи LLM")]
     BE --> FS[("Volume /data/uploads<br/>исходные файлы и аудио")]
@@ -185,7 +185,7 @@ flowchart TB
         BE2 --> PG["postgres<br/>(volume)"]
         BE2 --> UP["uploads<br/>(volume)"]
     end
-    Dev["Разработчик"] -->|"scripts/deploy.sh по ssh:<br/>git pull → build → up → healthcheck → откат при сбое"| VM
+    Dev["Разработчик"] -->|"scripts/deploy.sh по ssh:<br/>архив SHA + backup → build → up → healthcheck → откат при сбое"| VM
     BE2 -->|"HTTPS"| YA["Yandex AI Studio + SpeechKit"]
 ```
 
@@ -210,11 +210,11 @@ sequenceDiagram
 
     FE->>API: POST /projects/{id}/runs {mode: analyze|build}
     API-->>FE: 202 {run_id} → подписка на SSE
-    API->>CB: источники + ответы + допущения + текущая схема (если правили)
-    CB-->>API: контекст с id источников (дайджесты для больших документов)
+    API->>CB: источники + все вопросы/ответы + текущая схема
+    CB-->>API: полный evidence snapshot + бюджет структуры
     API->>AN: контекст + список прежних вопросов
-    AN-->>API: участники, шаги, условия (с цитатами) + обновления вопросов + новые вопросы
-    API->>QR: проверить: id существуют, у «решено» есть цитата, которая реально есть в источнике
+    AN-->>API: предложения вопросов + отдельная смысловая проверка
+    API->>QR: проверить цитаты/переходы и актуальность снимка под lock/CAS
     QR->>DB: статусы вопросов, итог «решено / осталось / новые»
     alt mode = build
         API->>ST: анализ → GraphIR v1 (явные узлы/потоки)
@@ -584,8 +584,8 @@ STT_PROVIDER=yandex
 └── scripts/             # verify.sh, deploy.sh, llm_smoke.py, mr-report.sh
 ```
 
-- Отдельной папки `ai/` нет. Скиллы лежат в `.claude/skills/`, оттуда их находит Claude Code; другие агенты находят их через `AGENTS.md`. Скрипты прогонов — в `scripts/`, эталонные данные — в `evals/`.
-- **Промпты** — это код продукта, а не инструмент разработки. Они лежат в `backend/app/llm/prompts/`.
+- Отдельной папки `ai/` нет. Скиллы лежат в `.claude/skills/`, оттуда их находит Claude Code; другие агенты находят их через `AGENTS.md`. Скрипты прогонов — в `scripts/` и `backend/scripts/`, записанные данные — в `backend/app/fixtures/`. Общий каталог `evals/` пока не реализован.
+- **Промпты** — код продукта: `backend/app/llm/question_analysis.py`, `graph_generation.py`, `openai_compatible.py`. Схемы ответов проверяются Pydantic; `fixtures/ir` хранит записанные тестовые графы.
 - **Авторизация приложения** — аккаунт email/пароль и серверная cookie-сессия; Caddy Basic Auth может дополнительно закрывать демо-контур. Изменяющие API-запросы из браузера требуют CSRF cookie и заголовок `X-CSRF-Token`.
 
 ## 9. Качество без CI

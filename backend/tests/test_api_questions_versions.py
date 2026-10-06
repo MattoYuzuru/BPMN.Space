@@ -165,3 +165,20 @@ def test_save_manual_diagram_errors(client: TestClient) -> None:
         f"{API}/projects/{MISSING}/diagram", json={"xml": "<a/>", "base_version_id": None}
     )
     assert missing.status_code == 404
+
+
+def test_identical_diagram_save_does_not_create_version(client: TestClient) -> None:
+    versions = client.get(f"{API}/projects/{DEMO}/versions").json()
+    head = versions[0]
+    xml = client.get(f"{API}/versions/{head['id']}").json()["xml"]
+    for _ in range(3):
+        response = client.put(
+            f"{API}/projects/{DEMO}/diagram", json={"xml": xml, "base_version_id": head["id"]}
+        )
+        assert response.status_code == 201
+        assert response.json() == head
+    assert client.get(f"{API}/projects/{DEMO}/versions").json() == versions
+    stale = client.put(
+        f"{API}/projects/{DEMO}/diagram", json={"xml": xml, "base_version_id": versions[1]["id"]}
+    )
+    assert stale.status_code == 409

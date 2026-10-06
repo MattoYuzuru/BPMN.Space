@@ -230,7 +230,10 @@ def test_manual_save_rejects_stale_base_without_creating_a_version(client: TestC
     initial = client.get(f"{API}/projects/{project_id}").json()["latest_version"]
     saved = client.put(
         f"{API}/projects/{project_id}/diagram",
-        json={"xml": read_bpmn("tp861_v2"), "base_version_id": initial["id"]},
+        json={
+            "xml": read_bpmn("tp861_v2").replace("Провести выездной осмотр", "Осмотр"),
+            "base_version_id": initial["id"],
+        },
     )
     assert saved.status_code == 201, saved.text
     stale = client.put(

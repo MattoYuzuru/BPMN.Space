@@ -16,6 +16,7 @@ from app.services.errors import (
     NotFoundError,
     PayloadTooLargeError,
     ServiceError,
+    StaleVersionError,
     UnauthorizedError,
     UnavailableError,
     UnsupportedMediaError,
@@ -71,6 +72,18 @@ def install_error_handlers(app: FastAPI) -> None:
     async def service_error(_: Request, error: Exception) -> JSONResponse:
         assert isinstance(error, ServiceError)  # noqa: S101 — регистрируется только для ServiceError
         status = next((code for cls, code in _STATUS.items() if isinstance(error, cls)), 400)
+        if isinstance(error, StaleVersionError):
+            return JSONResponse(
+                {
+                    "detail": error.message,
+                    "code": "stale_version",
+                    "head_version_id": str(error.head_version_id)
+                    if error.head_version_id
+                    else None,
+                    "head_version_number": error.head_version_number,
+                },
+                status_code=status,
+            )
         return JSONResponse({"detail": error.message}, status_code=status)
 
     async def request_validation(_: Request, error: Exception) -> JSONResponse:

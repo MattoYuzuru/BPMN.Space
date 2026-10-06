@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Header, Request, status
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from app.api.access import ResourceKind, ensure_project_access, ensure_resource_access
-from app.api.auth import OptionalUserDep
+from app.api.auth import OptionalUserDep, OptionalUserStreamDep
 from app.api.deps import ContainerDep
 from app.api.ratelimit import limit_expensive
 from app.api.schemas.common import ApiModel, errors
@@ -72,6 +72,20 @@ async def get_run(
     return Run.of(await container.runs.get(run_id))
 
 
+@router.post("/runs/{run_id}/cancel", responses=errors(401, 403, 404, 422))
+async def cancel_run(
+    run_id: UUID,
+    request: Request,
+    container: ContainerDep,
+    user: OptionalUserDep,
+) -> Run:
+    """Остановить общий прогон проекта. Доступно владельцу и редактору; viewer — только чтение."""
+    await ensure_resource_access(
+        request, container, run_id, user, resource=ResourceKind.RUN, write=True
+    )
+    return Run.of(await container.runs.cancel(run_id))
+
+
 def _event_data(event: DomainRunEvent) -> ApiModel:
     payload = event.payload
     match event.kind:
@@ -108,7 +122,7 @@ async def run_events(
     run_id: UUID,
     request: Request,
     container: ContainerDep,
-    user: OptionalUserDep,
+    user: OptionalUserStreamDep,
     last_event_id: Annotated[str | None, Header(description="Продолжить после события")] = None,
 ) -> EventSourceResponse:
     """События прогона: `stage`, `question`, `summary`, `version`, `error`, `done`.

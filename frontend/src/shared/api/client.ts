@@ -21,11 +21,20 @@ export class ApiError extends Error {
   readonly retryAfter?: number
   /** Сырое тело `detail`: у ошибок проверки полей это массив с путями полей. */
   readonly detail?: unknown
+  /** Текущая голова версии при конфликте конкурентного сохранения. */
+  readonly headVersionId?: string | null
+  readonly headVersionNumber?: number | null
 
   constructor(
     status: number,
     message: string,
-    extra: { code?: string; retryAfter?: number; detail?: unknown } = {},
+    extra: {
+      code?: string
+      retryAfter?: number
+      detail?: unknown
+      headVersionId?: string | null
+      headVersionNumber?: number | null
+    } = {},
   ) {
     super(message)
     this.name = 'ApiError'
@@ -33,6 +42,8 @@ export class ApiError extends Error {
     this.code = extra.code
     this.retryAfter = extra.retryAfter
     this.detail = extra.detail
+    this.headVersionId = extra.headVersionId
+    this.headVersionNumber = extra.headVersionNumber
   }
 }
 
@@ -61,6 +72,9 @@ const isErrorCode = (value: string) => /^[A-Z][A-Z0-9_]+$/.test(value)
 /** Машинный код из `detail`: строка `LOGIN_BAD_CREDENTIALS` или объект `{code: …}`. */
 function codeOf(body: unknown): string | undefined {
   if (!body || typeof body !== 'object' || !('detail' in body)) return undefined
+  if ('code' in body && typeof (body as { code?: unknown }).code === 'string') {
+    return (body as { code: string }).code
+  }
   const detail = (body as { detail: unknown }).detail
   if (typeof detail === 'string') return isErrorCode(detail) ? detail : undefined
   if (detail && typeof detail === 'object' && 'code' in detail) {
@@ -81,6 +95,14 @@ function apiErrorFrom(response: Response, body: unknown): ApiError {
     code: codeOf(body),
     retryAfter: retryAfterOf(response.headers.get('Retry-After')),
     detail: body && typeof body === 'object' && 'detail' in body ? body.detail : undefined,
+    headVersionId:
+      body && typeof body === 'object' && 'head_version_id' in body
+        ? (body as { head_version_id: string | null }).head_version_id
+        : undefined,
+    headVersionNumber:
+      body && typeof body === 'object' && 'head_version_number' in body
+        ? (body as { head_version_number: number | null }).head_version_number
+        : undefined,
   })
 }
 

@@ -26,6 +26,7 @@ from app.llm.mock import MockPipeline
 from app.services.access import AccessService
 from app.services.assistant import AssistantModel, AssistantService
 from app.services.catalog import ExampleService, TranscriptionService
+from app.services.collaboration import RealtimeHub
 from app.services.common import Runtime
 from app.services.onboarding import OnboardingService
 from app.services.projects import ProjectService
@@ -66,6 +67,7 @@ class Container:
     sharing: SharingService
     onboarding: OnboardingService
     samples: SampleService
+    realtime: RealtimeHub
 
 
 def build_container(
@@ -75,7 +77,12 @@ def build_container(
     runtime = runtime or Runtime()
 
     if database is None and settings.database_url:
-        database = Database(settings.database_url)
+        database = Database(
+            settings.database_url,
+            pool_size=settings.database_pool_size,
+            max_overflow=settings.database_max_overflow,
+            pool_timeout=settings.database_pool_timeout_sec,
+        )
     if database:
         repos = database.store.repositories()
         storage = LocalFileStorage(settings.upload_dir)
@@ -93,6 +100,7 @@ def build_container(
         repos = store.repositories()
         storage = InMemoryFileStorage()
     access = AccessService(repos.access, runtime=runtime)
+    realtime = RealtimeHub()
     spawner = AsyncioTaskSpawner()
     assistant_model: AssistantModel | None = None
     # TODO(real): #6 HTTP-клиент к bpmn-tools (раскладка и bpmnlint) вместо MockBpmnTools.
@@ -182,6 +190,7 @@ def build_container(
             context_budget_chars=settings.llm_context_budget_chars,
             deadline_sec=settings.run_deadline_sec,
             progress=onboarding,
+            broadcast=realtime.publish,
         ),
         versions=VersionService(
             repos,
@@ -198,4 +207,5 @@ def build_container(
         sharing=SharingService(access, runtime=runtime),
         onboarding=onboarding,
         samples=SampleService(sources, samples=SAMPLES),
+        realtime=realtime,
     )

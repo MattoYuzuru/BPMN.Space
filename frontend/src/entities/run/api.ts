@@ -21,6 +21,13 @@ export async function fetchRun(runId: string) {
   return unwrap(await api.GET('/api/v1/runs/{run_id}', { params: { path: { run_id: runId } } }))
 }
 
+/** Отменить прогон проекта; остальные редакторы получают завершение по SSE и WebSocket. */
+export async function cancelRun(runId: string) {
+  return unwrap(
+    await api.POST('/api/v1/runs/{run_id}/cancel', { params: { path: { run_id: runId } } }),
+  )
+}
+
 /**
  * Запуск прогона. Сразу кладём прогон в проект (active_run, статус) и в стор — панель хода
  * открывается без ожидания следующего запроса, а SSE-подписка стартует по active_run.

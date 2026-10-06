@@ -29,6 +29,7 @@ export function SharedWorkspace({
       project={shared.detail}
       versions={versions}
       readOnly
+      collaborationShareToken={token}
       commands={false}
       header={<SharedHeader loginRedirect={`/share/${token}`} openProject={openProject} />}
       search={search}

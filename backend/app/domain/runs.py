@@ -53,6 +53,7 @@ STAGE_LABELS: dict[RunStage, str] = {
 QUEUED_LABEL = "В очереди"
 SUCCEEDED_LABEL = "Готово"
 FAILED_LABEL = "Ошибка"
+CANCELLED_LABEL = "Остановлено"
 
 _ANALYZE_STAGES = (RunStage.READING_SOURCES, RunStage.EXTRACTING, RunStage.RECONCILING)
 _BUILD_STAGES = (
@@ -81,6 +82,8 @@ def stage_label(status: RunStatus, stage: RunStage | None) -> str:
         return SUCCEEDED_LABEL
     if status is RunStatus.FAILED:
         return FAILED_LABEL
+    if status is RunStatus.CANCELLED:
+        return CANCELLED_LABEL
     if status is RunStatus.QUEUED or stage is None:
         return QUEUED_LABEL
     return STAGE_LABELS[stage]

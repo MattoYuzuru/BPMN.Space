@@ -13,6 +13,11 @@ class Settings(BaseSettings):
 
     app_env: str = "dev"
     database_url: str | None = None
+    # One API worker: bounded pool sized for ordinary request bursts, with a short wait so
+    # exhausted capacity fails visibly instead of making the UI appear frozen for 30 seconds.
+    database_pool_size: int = 10
+    database_max_overflow: int = 10
+    database_pool_timeout_sec: float = 5.0
     upload_dir: str = "/data/uploads"
     api_prefix: str = "/api/v1"
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:8080"]

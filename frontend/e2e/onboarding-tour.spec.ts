@@ -392,14 +392,14 @@ test('fail-early: «Повторить» запускает прогон сно�
   })
   await page.goto(`/projects/${projectId}`)
   await expect(coach(page, 'Постройте схему')).toBeVisible()
-  await page.getByRole('banner').getByRole('button', { name: 'Построить схему' }).click()
-
   const runStarts: string[] = []
   page.on('request', (request) => {
     if (request.method() === 'POST' && request.url().endsWith(`/projects/${projectId}/runs`)) {
       runStarts.push(request.url())
     }
   })
+  await page.getByRole('banner').getByRole('button', { name: 'Построить схему' }).click()
+
   const failed = coach(page, 'Прогон не удался')
   await expect(failed).toBeVisible({ timeout: 60_000 })
   expect(runStarts).toHaveLength(1)

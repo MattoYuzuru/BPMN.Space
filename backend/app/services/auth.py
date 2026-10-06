@@ -8,7 +8,7 @@ HTTP-маршруты и схемы живут в `app/api/auth.py`; здесь 
 
 from base64 import urlsafe_b64encode
 from collections.abc import AsyncGenerator
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Any
 from uuid import UUID
@@ -109,3 +109,28 @@ def build_fastapi_users(*, cookie_secure: bool) -> tuple[FastAPIUsers[UserRow, U
 _users, _ = build_fastapi_users(cookie_secure=False)
 optional_user = _users.current_user(active=True, optional=True)
 required_user = _users.current_user(active=True)
+
+
+async def stream_user(request: Request) -> UserRow | None:
+    """Проверить cookie для SSE в короткой сессии, закрываемой до начала потока."""
+    if not request.app.state.auth_enabled:
+        return None
+    token = request.cookies.get(SESSION_COOKIE)
+    if token is None:
+        return None
+    database = request.app.state.container.database
+    if database is None:
+        raise UnavailableError("Для учётных записей требуется PostgreSQL")
+
+    max_age = datetime.now(UTC) - timedelta(seconds=SESSION_MAX_AGE)
+    async with database.sessions() as session:
+        access_token = await HashedAccessTokenDatabase(session, AccessTokenRow).get_by_token(
+            token, max_age
+        )
+        if access_token is None:
+            return None
+        user = await session.get(UserRow, access_token.user_id)
+        if user is None or not user.is_active:
+            return None
+        session.expunge(user)
+        return user

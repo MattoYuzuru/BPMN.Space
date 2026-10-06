@@ -115,7 +115,10 @@ def test_versions_list_detail_and_download(client: TestClient) -> None:
 
 def test_save_manual_diagram(client: TestClient) -> None:
     xml = read_bpmn("tp861_v2").replace("Провести выездной осмотр", "Осмотреть установку")
-    response = client.put(f"{API}/projects/{DEMO}/diagram", json={"xml": xml})
+    head = client.get(f"{API}/projects/{DEMO}").json()["latest_version"]["id"]
+    response = client.put(
+        f"{API}/projects/{DEMO}/diagram", json={"xml": xml, "base_version_id": head}
+    )
     assert response.status_code == 201
     version = response.json()
     assert version["origin"] == "manual"
@@ -132,10 +135,15 @@ def test_save_manual_diagram(client: TestClient) -> None:
 
 
 def test_save_manual_diagram_errors(client: TestClient) -> None:
-    broken = client.put(f"{API}/projects/{DEMO}/diagram", json={"xml": "<bpmn:definitions"})
+    broken = client.put(
+        f"{API}/projects/{DEMO}/diagram",
+        json={"xml": "<bpmn:definitions", "base_version_id": None},
+    )
     assert broken.status_code == 422
     assert broken.json()["detail"].startswith("XML повреждён")
-    not_bpmn = client.put(f"{API}/projects/{DEMO}/diagram", json={"xml": "<svg/>"})
+    not_bpmn = client.put(
+        f"{API}/projects/{DEMO}/diagram", json={"xml": "<svg/>", "base_version_id": None}
+    )
     assert not_bpmn.json() == {
         "detail": "Это не BPMN 2.0: корневой элемент должен быть bpmn:definitions"
     }
@@ -143,10 +151,16 @@ def test_save_manual_diagram_errors(client: TestClient) -> None:
         '<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "aaaa">]>'
         '<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">&a;</definitions>'
     )
-    entity = client.put(f"{API}/projects/{DEMO}/diagram", json={"xml": bomb})
+    entity = client.put(
+        f"{API}/projects/{DEMO}/diagram", json={"xml": bomb, "base_version_id": None}
+    )
     assert entity.status_code == 422
     assert "запрещённые" in entity.json()["detail"]
-    blank = client.put(f"{API}/projects/{DEMO}/diagram", json={"xml": "   "})
+    blank = client.put(
+        f"{API}/projects/{DEMO}/diagram", json={"xml": "   ", "base_version_id": None}
+    )
     assert blank.json() == {"detail": "Схема пустая"}
-    missing = client.put(f"{API}/projects/{MISSING}/diagram", json={"xml": "<a/>"})
+    missing = client.put(
+        f"{API}/projects/{MISSING}/diagram", json={"xml": "<a/>", "base_version_id": None}
+    )
     assert missing.status_code == 404

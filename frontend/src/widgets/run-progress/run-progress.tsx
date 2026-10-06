@@ -1,10 +1,18 @@
+import { useMutation } from '@tanstack/react-query'
 import { AnimatePresence, m } from 'motion/react'
 import { useEffect, useState } from 'react'
-import { RUN_MODE_LABEL, type RunView, runSteps, useRunStore, useRunView } from '@/entities/run'
+import {
+  cancelRun,
+  RUN_MODE_LABEL,
+  type RunView,
+  runSteps,
+  useRunStore,
+  useRunView,
+} from '@/entities/run'
 import { formatDuration } from '@/shared/lib/format'
 import { floatingPanel } from '@/shared/lib/motion'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
-import { Card, FlowLine, Icon, IconButton, Stepper } from '@/shared/ui'
+import { Button, Card, FlowLine, Icon, IconButton, Stepper, toast } from '@/shared/ui'
 import { SummaryChips } from './summary-chips'
 
 /** Сколько итог прогона остаётся на экране после завершения. */
@@ -14,10 +22,20 @@ const SUMMARY_VISIBLE_MS = 6000
  * Ход прогона: плавающая карточка над схемой со Stepper этапов из SSE и линией тока.
  * После завершения показывает итог (решено, осталось, новые) и сворачивается сама.
  */
-export function RunProgress({ projectId }: { projectId: string }) {
+export function RunProgress({
+  projectId,
+  canCancel = true,
+}: {
+  projectId: string
+  canCancel?: boolean
+}) {
   const view = useRunView(projectId)
   const expanded = useRunStore((state) => state.expanded[projectId] ?? false)
   const setExpanded = useRunStore((state) => state.setExpanded)
+  const cancel = useMutation({
+    mutationFn: cancelRun,
+    onError: () => toast.error('Не удалось отменить общий прогон'),
+  })
   const finished = view && view.status !== 'running'
 
   useEffect(() => {
@@ -37,18 +55,37 @@ export function RunProgress({ projectId }: { projectId: string }) {
           exit="exit"
           className="pointer-events-auto w-80"
         >
-          <RunCard view={view} onClose={() => setExpanded(projectId, false)} />
+          <RunCard
+            view={view}
+            onClose={() => setExpanded(projectId, false)}
+            onCancel={() => cancel.mutate(view.runId)}
+            canCancel={canCancel}
+            cancelling={cancel.isPending}
+          />
         </m.div>
       )}
     </AnimatePresence>
   )
 }
 
-function RunCard({ view, onClose }: { view: RunView; onClose: () => void }) {
+function RunCard({
+  view,
+  onClose,
+  onCancel,
+  canCancel,
+  cancelling,
+}: {
+  view: RunView
+  onClose: () => void
+  onCancel: () => void
+  canCancel: boolean
+  cancelling: boolean
+}) {
   const [clock, setClock] = useState(Date.now())
   const labels = RUN_MODE_LABEL[view.mode]
   const running = view.status === 'running'
   const failed = view.status === 'failed'
+  const cancelled = view.status === 'cancelled'
   useEffect(() => {
     if (!running) return
     const timer = window.setInterval(() => setClock(Date.now()), 1000)
@@ -84,13 +121,31 @@ function RunCard({ view, onClose }: { view: RunView; onClose: () => void }) {
         </span>
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="type-subheading text-fg">
-            {failed ? 'Прогон остановлен' : running ? labels.title : labels.done}
+            {cancelled
+              ? 'Прогон отменён'
+              : failed
+                ? 'Прогон остановлен'
+                : running
+                  ? labels.title
+                  : labels.done}
           </span>
           <span className="type-caption text-fg-subtle" data-numeric role="timer" aria-live="off">
             {running ? `Прошло ${formatDuration(elapsed)}` : formatDuration(elapsed)}
           </span>
         </div>
-        <IconButton icon="x" size="sm" label="Скрыть" onClick={onClose} />
+        {running && canCancel && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-danger-fg"
+            onClick={onCancel}
+            disabled={cancelling}
+            loading={cancelling}
+          >
+            {cancelling ? 'Отменяю…' : 'Отменить прогон'}
+          </Button>
+        )}
+        {!running && <IconButton icon="x" size="sm" label="Скрыть" onClick={onClose} />}
       </div>
       <div className="px-4 pb-4">
         {running || failed ? (
@@ -100,9 +155,12 @@ function RunCard({ view, onClose }: { view: RunView; onClose: () => void }) {
           </>
         ) : (
           <div className="flex flex-col gap-3 animate-fade-in">
+            {cancelled && (
+              <p className="type-caption text-fg-muted">Остановлено участником проекта.</p>
+            )}
             {view.summary && <SummaryChips summary={view.summary} />}
             <RunWarnings warnings={view.warnings} />
-            {view.mode === 'build' && (
+            {!cancelled && view.mode === 'build' && (
               <span className="flex items-center gap-1.5 type-caption text-fg-muted">
                 <Icon name="diagram" size={14} />
                 Новая версия схемы уже на холсте

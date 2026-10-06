@@ -55,3 +55,10 @@ class AccessService:
         if is_expired(link, self._rt.clock()):
             raise GoneError("Срок действия ссылки истёк")
         return link
+
+    async def active_link_by_id(self, link_id: UUID) -> ShareLink:
+        """Перепроверить доступ уже открытой гостевой realtime-сессии после отзыва ссылки."""
+        link = await self.repo.get_share_link(link_id)
+        if link is None or link.revoked_at is not None or is_expired(link, self._rt.clock()):
+            raise NotFoundError("Ссылка не найдена или отключена")
+        return link

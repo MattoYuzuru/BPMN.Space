@@ -28,6 +28,7 @@ from app.domain.models import (
     Source,
     SourceKind,
     SourceStatus,
+    Version,
     VersionOrigin,
 )
 from app.fixtures import read_bpmn
@@ -56,7 +57,7 @@ from app.llm.mock import MockPipeline
 from app.main import create_app
 from app.services.access import AccessService, ProjectRole
 from app.services.common import Runtime
-from app.services.errors import ConflictError, NotFoundError
+from app.services.errors import ConflictError, NotFoundError, StaleVersionError
 from app.services.projects import ProjectService
 from app.services.runs import RunService
 from app.services.sharing import SharingService
@@ -511,7 +512,19 @@ async def test_concurrent_versions_get_consecutive_numbers(sql_store) -> None:
     )
 
     async def manual() -> int:
-        return (await service.save_manual(project.id, xml=xml)).number
+        while True:
+            latest = await repos.versions.latest(project.id)
+            try:
+                return (
+                    await service.save_manual(
+                        project.id,
+                        xml=xml,
+                        base_version_id=latest.id if latest else None,
+                    )
+                ).number
+            except StaleVersionError:
+                # A generated version may win between reading the head and acquiring the lock.
+                continue
 
     async def generated() -> int:
         version = await add_version(
@@ -531,6 +544,39 @@ async def test_concurrent_versions_get_consecutive_numbers(sql_store) -> None:
     latest = await repos.versions.latest(project.id)
     assert latest is not None
     assert latest.number == 10
+
+
+@pytest.mark.asyncio
+async def test_concurrent_manual_saves_from_same_head_have_one_winner(sql_store) -> None:
+    store, _ = sql_store
+    repos = store.repositories()
+    project = await _make_project(repos)
+    xml = read_bpmn("tp861_v2")
+    runtime = Runtime()
+    initial = await add_version(
+        repos,
+        runtime,
+        project_id=project.id,
+        xml=xml,
+        origin=VersionOrigin.GENERATED,
+        lint=[],
+        trace={},
+    )
+    service = VersionService(
+        repos, bpmn_tools=MockBpmnTools(), runtime=runtime, max_diagram_bytes=5 * 1024 * 1024
+    )
+
+    async def save() -> Version | StaleVersionError:
+        try:
+            return await service.save_manual(project.id, xml=xml, base_version_id=initial.id)
+        except StaleVersionError as error:
+            return error
+
+    results = await asyncio.gather(save(), save())
+    assert sum(isinstance(result, StaleVersionError) for result in results) == 1
+    latest = await repos.versions.latest(project.id)
+    assert latest is not None
+    assert latest.number == 2
 
 
 @pytest.mark.asyncio

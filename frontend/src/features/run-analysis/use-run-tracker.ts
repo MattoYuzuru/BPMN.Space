@@ -126,7 +126,13 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
           poller = setInterval(() => {
             void fetchRun(runId)
               .then((run) => {
-                if (finished || (run.status !== 'succeeded' && run.status !== 'failed')) return
+                if (
+                  finished ||
+                  (run.status !== 'succeeded' &&
+                    run.status !== 'failed' &&
+                    run.status !== 'cancelled')
+                )
+                  return
                 const last = useRunStore.getState().views[projectId]?.lastEventId ?? 0
                 apply(projectId, { type: 'done', id: last + 1, data: { run } })
                 finish(run)

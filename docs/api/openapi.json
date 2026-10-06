@@ -231,8 +231,92 @@
         "title": "ChecklistUpdate",
         "type": "object"
       },
+      "CollaborationTicket": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "ticket": {
+            "title": "Ticket",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticket",
+          "expires_at"
+        ],
+        "title": "CollaborationTicket",
+        "type": "object"
+      },
+      "DiagramConflictResponse": {
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "const": "stale_version",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Причина конфликта, если сохранение основано на старой версии",
+            "title": "Code"
+          },
+          "detail": {
+            "description": "Сообщение об ошибке для пользователя, на русском",
+            "title": "Detail",
+            "type": "string"
+          },
+          "head_version_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Текущая версия проекта для синхронизации",
+            "title": "Head Version Id"
+          },
+          "head_version_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Номер текущей версии проекта",
+            "title": "Head Version Number"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "DiagramConflictResponse",
+        "type": "object"
+      },
       "DiagramSave": {
         "properties": {
+          "base_version_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Версия, от которой сделана правка; null только до первой версии",
+            "title": "Base Version Id"
+          },
           "xml": {
             "description": "BPMN 2.0 XML из bpmn-js (`saveXML`)",
             "minLength": 1,
@@ -241,7 +325,8 @@
           }
         },
         "required": [
-          "xml"
+          "xml",
+          "base_version_id"
         ],
         "title": "DiagramSave",
         "type": "object"
@@ -1377,7 +1462,8 @@
           "queued",
           "running",
           "succeeded",
-          "failed"
+          "failed",
+          "cancelled"
         ],
         "title": "RunStatus",
         "type": "string"
@@ -3813,6 +3899,94 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/collaboration-ticket": {
+      "post": {
+        "operationId": "issue_project_ticket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationTicket"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Слишком много запросов; повторите через `Retry-After` секунд"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Issue Project Ticket",
+        "tags": [
+          "collaboration"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/diagram": {
       "put": {
         "description": "Сохранить правку из bpmn-js как новую версию `manual`.\n\nПока по проекту идёт прогон — 409: его версия перекрыла бы правку.",
@@ -3884,11 +4058,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/DiagramConflictResponse"
                 }
               }
             },
-            "description": "Конфликт состояния"
+            "description": "Сборка уже выполняется или схема сохранена другим участником"
           },
           "413": {
             "content": {
@@ -4136,11 +4310,6 @@
             "description": "Некорректные данные"
           }
         },
-        "security": [
-          {
-            "APIKeyCookie": []
-          }
-        ],
         "summary": "Project Presence",
         "tags": [
           "presence"
@@ -5319,6 +5488,85 @@
         ]
       }
     },
+    "/api/v1/runs/{run_id}/cancel": {
+      "post": {
+        "description": "Остановить общий прогон проекта. Доступно владельцу и редактору; viewer — только чтение.",
+        "operationId": "cancel_run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Cancel Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
     "/api/v1/runs/{run_id}/events": {
       "get": {
         "description": "События прогона: `stage`, `question`, `summary`, `version`, `error`, `done`.\nСначала приходит вся история прогона, затем новые события; поток закрывается после `done`.",
@@ -5395,11 +5643,6 @@
             "description": "Некорректные данные"
           }
         },
-        "security": [
-          {
-            "APIKeyCookie": []
-          }
-        ],
         "summary": "Run Events",
         "tags": [
           "runs"
@@ -5585,6 +5828,103 @@
         "summary": "Accept Share Link",
         "tags": [
           "sharing"
+        ]
+      }
+    },
+    "/api/v1/shares/{token}/collaboration-ticket": {
+      "post": {
+        "operationId": "issue_share_ticket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationTicket"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Срок действия ссылки истёк"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Слишком много запросов; повторите через `Retry-After` секунд"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Issue Share Ticket",
+        "tags": [
+          "collaboration"
         ]
       }
     },

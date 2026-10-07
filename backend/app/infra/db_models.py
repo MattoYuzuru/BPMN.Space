@@ -327,3 +327,13 @@ Index(
     unique=True,
     postgresql_where=text("status IN ('queued', 'running')"),
 )
+
+
+class DeletedProjectAccessRow(Base):
+    """Короткая квитанция удаления; содержимого проекта и идентификаторов людей нет."""
+
+    __tablename__ = "deleted_project_access"
+    key_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )

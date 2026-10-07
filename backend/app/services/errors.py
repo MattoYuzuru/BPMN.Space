@@ -52,6 +52,13 @@ class GoneError(ServiceError):
     """410: объект существовал, но больше недоступен (истёкшая ссылка)."""
 
 
+class DeletedProjectError(GoneError):
+    """410: квитанция подтверждает, что владелец удалил доступный ранее проект."""
+
+    def __init__(self) -> None:
+        super().__init__("Автор удалил проект")
+
+
 class ForbiddenError(ServiceError):
     """403: роль пользователя не позволяет действие."""
 

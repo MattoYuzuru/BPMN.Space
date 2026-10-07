@@ -15,7 +15,7 @@ from app.domain.onboarding import ChecklistItem
 router = APIRouter(tags=["versions"])
 
 
-@router.get("/projects/{project_id}/versions", responses=errors(401, 404, 422))
+@router.get("/projects/{project_id}/versions", responses=errors(401, 404, 410, 422))
 async def list_versions(
     project_id: UUID,
     request: Request,
@@ -27,7 +27,7 @@ async def list_versions(
     return [Version.model_validate(v) for v in await container.versions.list(project_id)]
 
 
-@router.get("/versions/{version_id}", responses=errors(401, 404, 422))
+@router.get("/versions/{version_id}", responses=errors(401, 404, 410, 422))
 async def get_version(
     version_id: UUID,
     request: Request,
@@ -45,7 +45,7 @@ async def get_version(
     response_class=Response,
     responses={
         200: {"content": {"application/xml": {}}, "description": "BPMN 2.0 XML файлом"},
-        **errors(401, 404, 422),
+        **errors(401, 404, 410, 422),
     },
 )
 async def download_version(
@@ -67,7 +67,7 @@ async def download_version(
     "/projects/{project_id}/diagram",
     status_code=status.HTTP_201_CREATED,
     responses={
-        **errors(401, 403, 404, 413, 422, 503),
+        **errors(401, 403, 404, 410, 413, 422, 503),
         409: {
             "model": DiagramConflictResponse,
             "description": "Сборка уже выполняется или схема сохранена другим участником",

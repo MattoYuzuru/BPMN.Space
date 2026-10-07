@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Any, cast
 from uuid import UUID
@@ -13,7 +13,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import defer
 
-from app.domain.access import ProjectScope
+from app.config import DELETED_PROJECT_NOTICE_DAYS
+from app.domain.access import ProjectScope, project_deletion_key, share_deletion_key
 from app.domain.models import (
     Answer,
     AssumptionMark,
@@ -42,10 +43,12 @@ from app.domain.models import (
 from app.domain.questions import normalize
 from app.domain.runs import ACTIVE_STATUSES
 from app.infra.db_models import (
+    DeletedProjectAccessRow,
     DiagramVersionRow,
     LlmCallRow,
     ProjectMemberRow,
     ProjectRow,
+    ProjectShareLinkRow,
     QuestionRow,
     RunRow,
     SourceRow,
@@ -256,6 +259,40 @@ class SqlProjectRepository:
     async def delete(self, project_id: UUID) -> None:
         # Источники, вопросы, прогоны, версии и вызовы модели удаляет сама БД (ON DELETE CASCADE).
         async with self.sessions.begin() as session:
+            now = datetime.now(UTC)
+            owner = await session.scalar(
+                select(ProjectRow.owner_id).where(ProjectRow.id == project_id)
+            )
+            members = list(
+                await session.scalars(
+                    select(ProjectMemberRow.user_id).where(
+                        ProjectMemberRow.project_id == project_id
+                    )
+                )
+            )
+            if owner is not None:
+                members.append(owner)
+            keys = {project_deletion_key(project_id, user_id) for user_id in members}
+            links = await session.scalars(
+                select(ProjectShareLinkRow).where(
+                    ProjectShareLinkRow.project_id == project_id,
+                    ProjectShareLinkRow.revoked_at.is_(None),
+                    or_(
+                        ProjectShareLinkRow.expires_at.is_(None),
+                        ProjectShareLinkRow.expires_at > now,
+                    ),
+                )
+            )
+            keys.update(share_deletion_key(link.token_hash) for link in links)
+            await session.execute(
+                delete(DeletedProjectAccessRow).where(DeletedProjectAccessRow.expires_at <= now)
+            )
+            session.add_all(
+                DeletedProjectAccessRow(
+                    key_hash=key, expires_at=now + timedelta(days=DELETED_PROJECT_NOTICE_DAYS)
+                )
+                for key in keys
+            )
             await session.execute(delete(ProjectRow).where(ProjectRow.id == project_id))
 
     def _filters(self, query: str | None) -> list[Any]:

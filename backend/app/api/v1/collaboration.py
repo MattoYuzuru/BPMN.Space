@@ -92,7 +92,7 @@ class Ping(BaseModel):
 @router.post(
     "/projects/{project_id}/collaboration-ticket",
     response_model=CollaborationTicket,
-    responses=errors(401, 403, 404, 422, 429),
+    responses=errors(401, 403, 404, 410, 422, 429),
 )
 async def issue_project_ticket(
     project_id: UUID,

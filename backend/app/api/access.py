@@ -7,7 +7,13 @@ from fastapi import Request
 from app.container import Container
 from app.domain.access import ProjectRole, ResourceKind, ShareLink
 from app.services.auth import UserRow, stream_user
-from app.services.errors import ForbiddenError, NotFoundError, UnauthorizedError
+from app.services.errors import (
+    DeletedProjectError,
+    ForbiddenError,
+    GoneError,
+    NotFoundError,
+    UnauthorizedError,
+)
 
 __all__ = [
     "ProjectRole",
@@ -43,6 +49,8 @@ async def ensure_project_access(
     assert user_id is not None  # noqa: S101 — require_account пропускает гостя только без auth
     role = await container.access.project_role(project_id, user_id)
     if role is None:
+        if await container.access.project_was_deleted(project_id, user_id):
+            raise DeletedProjectError()
         raise NotFoundError("Проект не найден")
     if write and role is ProjectRole.VIEWER:
         raise ForbiddenError("Для изменения проекта нужны права редактора")
@@ -94,6 +102,6 @@ async def has_stream_project_access(
         return False
     try:
         await ensure_project_access(request, container, project_id, current, write=False)
-    except (NotFoundError, ForbiddenError, UnauthorizedError):
+    except (NotFoundError, GoneError, ForbiddenError, UnauthorizedError):
         return False
     return True

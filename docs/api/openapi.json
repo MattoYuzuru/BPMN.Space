@@ -422,6 +422,33 @@
         "title": "Example",
         "type": "object"
       },
+      "GoneErrorResponse": {
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "const": "PROJECT_DELETED",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "PROJECT_DELETED — автор удалил ранее доступный проект",
+            "title": "Code"
+          },
+          "detail": {
+            "description": "Сообщение об ошибке для пользователя, на русском",
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "GoneErrorResponse",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -3090,6 +3117,16 @@
             },
             "description": "Не найдено"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -3149,6 +3186,16 @@
               }
             },
             "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "422": {
             "content": {
@@ -3216,6 +3263,16 @@
               }
             },
             "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "422": {
             "content": {
@@ -3294,6 +3351,16 @@
             },
             "description": "Конфликт состояния"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -3350,6 +3417,16 @@
               }
             },
             "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
           }
         },
         "security": [
@@ -3571,6 +3648,16 @@
             },
             "description": "Не найдено"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -3595,6 +3682,7 @@
     },
     "/api/v1/projects/{project_id}": {
       "delete": {
+        "description": "Владелец удаляет проект для всех; viewer/editor удаляет только своё членство.",
         "operationId": "delete_project",
         "parameters": [
           {
@@ -3651,6 +3739,16 @@
               }
             },
             "description": "Конфликт состояния"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "422": {
             "content": {
@@ -3718,6 +3816,16 @@
               }
             },
             "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "422": {
             "content": {
@@ -3804,6 +3912,16 @@
               }
             },
             "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "422": {
             "content": {
@@ -3892,6 +4010,16 @@
               }
             },
             "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "422": {
             "content": {
@@ -4000,6 +4128,16 @@
               }
             },
             "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "422": {
             "content": {
@@ -4110,6 +4248,16 @@
             },
             "description": "Сборка уже выполняется или схема сохранена другим участником"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
           "413": {
             "content": {
               "application/json": {
@@ -4212,6 +4360,16 @@
             },
             "description": "Не найдено"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -4293,6 +4451,16 @@
             },
             "description": "Не найдено"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -4310,6 +4478,88 @@
           }
         ],
         "summary": "Remove Project Member",
+        "tags": [
+          "sharing"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/membership": {
+      "delete": {
+        "description": "Выйти из общего проекта; данные владельца и остальных участников сохраняются.",
+        "operationId": "leave_project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Leave Project",
         "tags": [
           "sharing"
         ]
@@ -4354,6 +4604,16 @@
               }
             },
             "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "422": {
             "content": {
@@ -4437,6 +4697,16 @@
               }
             },
             "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "422": {
             "content": {
@@ -4537,6 +4807,16 @@
             },
             "description": "Конфликт состояния"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -4629,6 +4909,16 @@
             },
             "description": "Не найдено"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -4716,6 +5006,16 @@
             },
             "description": "Не найдено"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -4796,6 +5096,16 @@
               }
             },
             "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "422": {
             "content": {
@@ -4885,6 +5195,16 @@
               }
             },
             "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "413": {
             "content": {
@@ -5005,6 +5325,16 @@
             },
             "description": "Не найдено"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -5104,6 +5434,16 @@
             },
             "description": "Не найдено"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -5176,6 +5516,16 @@
               }
             },
             "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "422": {
             "content": {
@@ -5276,6 +5626,16 @@
             },
             "description": "Конфликт состояния"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -5364,6 +5724,16 @@
               }
             },
             "description": "Конфликт состояния"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "422": {
             "content": {
@@ -5454,6 +5824,16 @@
             },
             "description": "Конфликт состояния"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -5521,6 +5901,16 @@
               }
             },
             "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "422": {
             "content": {
@@ -5600,6 +5990,16 @@
               }
             },
             "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "422": {
             "content": {
@@ -5687,6 +6087,16 @@
               }
             },
             "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "422": {
             "content": {
@@ -5782,11 +6192,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/GoneErrorResponse"
                 }
               }
             },
-            "description": "Срок действия ссылки истёк"
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "422": {
             "content": {
@@ -5859,11 +6269,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/GoneErrorResponse"
                 }
               }
             },
-            "description": "Срок действия ссылки истёк"
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "422": {
             "content": {
@@ -5946,11 +6356,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/GoneErrorResponse"
                 }
               }
             },
-            "description": "Срок действия ссылки истёк"
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "422": {
             "content": {
@@ -6039,11 +6449,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/GoneErrorResponse"
                 }
               }
             },
-            "description": "Срок действия ссылки истёк"
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "422": {
             "content": {
@@ -6116,6 +6526,16 @@
               }
             },
             "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "422": {
             "content": {
@@ -6203,6 +6623,16 @@
               }
             },
             "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "422": {
             "content": {
@@ -6360,6 +6790,16 @@
             },
             "description": "Не найдено"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -6424,6 +6864,16 @@
               }
             },
             "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
           },
           "422": {
             "content": {

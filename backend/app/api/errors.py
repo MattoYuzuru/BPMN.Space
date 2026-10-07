@@ -10,6 +10,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.services.errors import (
     ConflictError,
+    DeletedProjectError,
     ForbiddenError,
     GoneError,
     InvalidInputError,
@@ -84,6 +85,10 @@ def install_error_handlers(app: FastAPI) -> None:
                     "head_version_number": error.head_version_number,
                 },
                 status_code=status,
+            )
+        if isinstance(error, DeletedProjectError):
+            return JSONResponse(
+                {"detail": error.message, "code": "PROJECT_DELETED"}, status_code=status
             )
         if isinstance(error, SpeechNotRecognizedError):
             return JSONResponse({"detail": error.message, "code": "NO_SPEECH"}, status_code=status)

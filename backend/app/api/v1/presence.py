@@ -34,7 +34,7 @@ class PresenceSnapshot(BaseModel):
     response_class=EventSourceResponse,
     responses={
         200: {"description": "Снимки присутствия в SSE-событиях `presence`"},
-        **errors(401, 404, 422),
+        **errors(401, 404, 410, 422),
     },
 )
 async def project_presence(

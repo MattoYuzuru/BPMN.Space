@@ -15,11 +15,11 @@ from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from alembic.script.revision import ResolutionError
 from alembic.util.exc import CommandError
-from sqlalchemy import event, select, update
+from sqlalchemy import delete, event, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from app.domain.models import RunStatus
-from app.infra.db_models import Base, ProjectRow, RunRow
+from app.infra.db_models import Base, DeletedProjectAccessRow, ProjectRow, RunRow
 from app.infra.repositories.sql import SqlStore
 
 logger = logging.getLogger(__name__)
@@ -110,6 +110,11 @@ class Database:
             await connection.run_sync(migrate)
         recoverable: list[UUID] = []
         async with self.sessions.begin() as session:
+            await session.execute(
+                delete(DeletedProjectAccessRow).where(
+                    DeletedProjectAccessRow.expires_at <= datetime.now(UTC)
+                )
+            )
             rows = (
                 await session.scalars(
                     select(RunRow)

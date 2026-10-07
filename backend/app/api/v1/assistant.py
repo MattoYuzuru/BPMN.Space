@@ -19,7 +19,7 @@ router = APIRouter(tags=["assistant"])
     "/projects/{project_id}/assistant",
     response_model=AssistantResponse,
     dependencies=[Depends(limit_expensive)],
-    responses=errors(401, 403, 404, 422, 429, 502, 503),
+    responses=errors(401, 403, 404, 410, 422, 429, 502, 503),
 )
 async def ask_assistant(
     project_id: UUID,

@@ -1,6 +1,6 @@
 """SQL-реализация доступа: роли, участники проекта и ссылки-приглашения."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import case, delete, select
@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from app.domain.access import ProjectMember, ProjectRole, ResourceKind, ShareLink
 from app.infra.db_models import (
+    DeletedProjectAccessRow,
     DiagramVersionRow,
     ProjectMemberRow,
     ProjectRow,
@@ -17,6 +18,7 @@ from app.infra.db_models import (
     SourceRow,
     UserRow,
 )
+from app.infra.repositories.base import AccessLinkUnavailableError, AccessProjectMissingError
 from app.infra.repositories.session import SessionFactory
 
 users = UserRow.__table__  # `email` и `id` у FastAPI Users объявлены без Mapped-типов
@@ -99,6 +101,11 @@ class SqlAccessRepository:
                 select(row_type.project_id).where(row_type.id == resource_id)
             )
 
+    async def deleted_access(self, key_hash: str) -> bool:
+        async with self.sessions() as session:
+            row = await session.get(DeletedProjectAccessRow, key_hash)
+            return row is not None and row.expires_at > datetime.now(UTC)
+
     async def find_share_link(self, token_hash: str) -> ShareLink | None:
         async with self.sessions() as session:
             row = await session.scalar(
@@ -113,6 +120,11 @@ class SqlAccessRepository:
 
     async def add_share_link(self, link: ShareLink) -> None:
         async with self.sessions.begin() as session:
+            project = await session.scalar(
+                select(ProjectRow).where(ProjectRow.id == link.project_id).with_for_update()
+            )
+            if project is None:
+                raise AccessProjectMissingError
             session.add(
                 ProjectShareLinkRow(
                     id=link.id,
@@ -138,6 +150,9 @@ class SqlAccessRepository:
         self, project_id: UUID, link_id: UUID, revoked_at: datetime
     ) -> bool:
         async with self.sessions.begin() as session:
+            await session.scalar(
+                select(ProjectRow).where(ProjectRow.id == project_id).with_for_update()
+            )
             row = await session.scalar(
                 select(ProjectShareLinkRow).where(
                     ProjectShareLinkRow.id == link_id,
@@ -169,6 +184,12 @@ class SqlAccessRepository:
 
     async def remove_member(self, project_id: UUID, user_id: UUID) -> bool:
         async with self.sessions.begin() as session:
+            # Общая блокировка с удалением проекта и принятием приглашения.
+            project = await session.scalar(
+                select(ProjectRow).where(ProjectRow.id == project_id).with_for_update()
+            )
+            if project is None:
+                return False
             result = await session.execute(
                 delete(ProjectMemberRow)
                 .where(
@@ -180,9 +201,28 @@ class SqlAccessRepository:
             return result.scalar_one_or_none() is not None
 
     async def add_member(
-        self, project_id: UUID, user_id: UUID, role: ProjectRole, added_at: datetime
+        self,
+        project_id: UUID,
+        user_id: UUID,
+        role: ProjectRole,
+        added_at: datetime,
+        *,
+        link_id: UUID | None = None,
     ) -> None:
         async with self.sessions.begin() as session:
+            project = await session.scalar(
+                select(ProjectRow).where(ProjectRow.id == project_id).with_for_update()
+            )
+            if project is None:
+                raise AccessProjectMissingError
+            if link_id is not None:
+                link = await session.get(ProjectShareLinkRow, link_id)
+                if link is None or link.project_id != project_id or link.revoked_at is not None:
+                    raise AccessLinkUnavailableError(expired=False)
+                if link.expires_at is not None and link.expires_at <= datetime.now(UTC):
+                    raise AccessLinkUnavailableError(expired=True)
+            if project.owner_id == user_id:
+                return
             await session.execute(
                 insert(ProjectMemberRow)
                 .values(

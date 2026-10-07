@@ -6,6 +6,8 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _MB = 1024 * 1024
+# Квитанции удаления доступны 30 дней; содержимое проектов удаляется сразу.
+DELETED_PROJECT_NOTICE_DAYS = 30
 
 
 class Settings(BaseSettings):
@@ -46,7 +48,7 @@ class Settings(BaseSettings):
     # не начинаются, прогон завершается ошибкой, а не висит.
     run_deadline_sec: float = 600.0
     # Анализ: бюджет одного запроса целиком, включая schema; полные источники идут порциями.
-    # Построение: суммарный бюджет fitted sources, обрезка отмечается в warnings.
+    # Построение: бюджет оснований после порционного извлечения; переполнение — явный отказ.
     llm_context_budget_chars: int = 120_000
 
     # --- Ограничения загрузок ---
@@ -82,6 +84,7 @@ class Settings(BaseSettings):
     llm_model: str | None = None
     llm_timeout_sec: float = 120.0
     llm_json_mode: bool = True
+    llm_semantic_review: bool = True
     # Настраивается под ограничения провайдера; незавершённый length-ответ не применяется.
     llm_json_max_tokens: int = Field(default=16384, ge=256, le=131_072)
     # Температура для JSON-ответов (анализ, сборка). Дефолт провайдера (DeepSeek — 1.0)

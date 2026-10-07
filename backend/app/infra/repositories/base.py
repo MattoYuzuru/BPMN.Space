@@ -31,6 +31,17 @@ from app.domain.onboarding import (
 type PageKey = tuple[datetime, UUID]
 
 
+class AccessLinkUnavailableError(Exception):
+    """Приглашение отозвано или истекло до фиксации членства."""
+
+    def __init__(self, *, expired: bool) -> None:
+        self.expired = expired
+
+
+class AccessProjectMissingError(Exception):
+    """Проект удалён между проверкой ссылки и изменением состава участников."""
+
+
 class ActiveRunConflictError(Exception):
     """В БД уже есть активный прогон этого проекта (гарантия уникального индекса)."""
 
@@ -192,6 +203,7 @@ class AccessRepository(Protocol):
         ...
 
     async def resource_project_id(self, kind: ResourceKind, resource_id: UUID) -> UUID | None: ...
+    async def deleted_access(self, key_hash: str) -> bool: ...
     async def find_share_link(self, token_hash: str) -> ShareLink | None: ...
     async def get_share_link(self, link_id: UUID) -> ShareLink | None: ...
     async def add_share_link(self, link: ShareLink) -> None: ...
@@ -205,7 +217,13 @@ class AccessRepository(Protocol):
     async def remove_member(self, project_id: UUID, user_id: UUID) -> bool: ...
 
     async def add_member(
-        self, project_id: UUID, user_id: UUID, role: ProjectRole, added_at: datetime
+        self,
+        project_id: UUID,
+        user_id: UUID,
+        role: ProjectRole,
+        added_at: datetime,
+        *,
+        link_id: UUID | None = None,
     ) -> None: ...
 
 

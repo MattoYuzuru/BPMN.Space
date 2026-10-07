@@ -26,6 +26,7 @@ from app.llm.base import (
     record_usage,
     remaining_sec,
 )
+from app.llm.evidence_context import prepare_evidence_context
 from app.llm.graph_generation import generate_graph
 from app.llm.question_analysis import QuestionAnalyzer
 
@@ -40,6 +41,8 @@ logger = logging.getLogger(__name__)
 class OpenAICompatiblePipeline:
     """Универсальный Chat Completions адаптер; XML по-прежнему строит код проекта."""
 
+    uses_complete_evidence = True
+
     def __init__(
         self,
         *,
@@ -48,6 +51,7 @@ class OpenAICompatiblePipeline:
         base_url: str = "https://api.deepseek.com",
         timeout_sec: float = 120,
         json_mode: bool = True,
+        semantic_review: bool = False,
         json_max_tokens: int = 8192,
         max_retries: int = 3,
         retry_base_sec: float = 1.0,
@@ -72,6 +76,7 @@ class OpenAICompatiblePipeline:
             raise ValueError("HTTP разрешён только для локального совместимого провайдера")
         self._timeout_sec = timeout_sec
         self._json_mode = json_mode
+        self._semantic_review = semantic_review
         if isinstance(json_max_tokens, bool) or json_max_tokens < 1:
             raise ValueError("Лимит JSON-ответа должен быть положительным числом токенов")
         self._json_max_tokens = json_max_tokens
@@ -121,7 +126,14 @@ class OpenAICompatiblePipeline:
             return await self._complete_async(system, prompt, json_mode=True)
 
         try:
-            return await generate_graph(context, analysis, complete, _verified_quote)
+            context = await prepare_evidence_context(context, complete)
+            return await generate_graph(
+                context,
+                analysis,
+                complete,
+                _verified_quote,
+                semantic_review=self._semantic_review,
+            )
         except RuntimeError as error:
             raise PipelineError(str(error)) from error
 

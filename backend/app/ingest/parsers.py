@@ -160,11 +160,13 @@ def _pdf_text(data: bytes, *, max_pages: int, max_chars: int, deadline: float) -
             )
         pages: list[str] = []
         chars = 0
+        unreadable: list[int] = []
         for page_number, page in enumerate(reader.pages, start=1):
             if time.monotonic() > deadline:
                 raise DocumentParseError(_TIMEOUT_MESSAGE)
             text = (page.extract_text() or "").strip()
             if not text:
+                unreadable.append(page_number)
                 continue
             chars += len(text)
             if chars > max_chars:
@@ -183,6 +185,13 @@ def _pdf_text(data: bytes, *, max_pages: int, max_chars: int, deadline: float) -
         raise DocumentParseError(
             "В PDF не найден текстовый слой. Возможно, это скан — распознайте его "
             "или вставьте текст вручную"
+        )
+    if unreadable:
+        numbers = ", ".join(map(str, unreadable[:20]))
+        raise DocumentParseError(
+            f"PDF прочитан не полностью: нет текстового слоя на страницах {numbers}. "
+            "Возможно, это сканы или пустые страницы. Выполните OCR или удалите пустые "
+            "страницы и загрузите файл снова — неполный документ не используется для построения"
         )
     return "\n\n".join(pages)
 

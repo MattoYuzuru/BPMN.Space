@@ -20,7 +20,6 @@ from app.api.schemas.projects import (
 )
 from app.domain.access import ProjectScope
 from app.domain.onboarding import ChecklistItem
-from app.services.errors import ForbiddenError
 
 router = APIRouter(tags=["projects"])
 
@@ -80,7 +79,9 @@ async def create_project(
 
 
 @router.post(
-    "/projects/from-example", status_code=status.HTTP_201_CREATED, responses=errors(401, 404, 422)
+    "/projects/from-example",
+    status_code=status.HTTP_201_CREATED,
+    responses=errors(401, 404, 410, 422),
 )
 async def create_project_from_example(
     body: ProjectFromExample,
@@ -95,7 +96,7 @@ async def create_project_from_example(
     return Project.of(view, ProjectRole.OWNER)
 
 
-@router.get("/projects/{project_id}", responses=errors(401, 404, 422))
+@router.get("/projects/{project_id}", responses=errors(401, 404, 410, 422))
 async def get_project(
     project_id: UUID,
     request: Request,
@@ -107,7 +108,7 @@ async def get_project(
     return ProjectDetail.of_detail(await container.projects.detail(project_id), role)
 
 
-@router.patch("/projects/{project_id}", responses=errors(401, 403, 404, 422))
+@router.patch("/projects/{project_id}", responses=errors(401, 403, 404, 410, 422))
 async def update_project(
     project_id: UUID,
     body: ProjectUpdate,
@@ -125,7 +126,7 @@ async def update_project(
 @router.delete(
     "/projects/{project_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    responses=errors(401, 403, 404, 409, 422),
+    responses=errors(401, 403, 404, 409, 410, 422),
 )
 async def delete_project(
     project_id: UUID,
@@ -133,10 +134,14 @@ async def delete_project(
     container: ContainerDep,
     user: OptionalUserDep,
 ) -> Response:
-    role = await ensure_project_access(request, container, project_id, user, write=True)
-    if role is not ProjectRole.OWNER:
-        raise ForbiddenError("Удалить проект может только владелец")
-    await container.projects.delete(project_id)
+    """Владелец удаляет проект для всех; viewer/editor удаляет только своё членство."""
+    role = await ensure_project_access(request, container, project_id, user, write=False)
+    if role is ProjectRole.OWNER:
+        await container.projects.delete(project_id)
+    else:
+        user_id = require_account(request, user)
+        assert user_id is not None  # noqa: S101 — без auth роль всегда owner
+        await container.sharing.leave_project(project_id, user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

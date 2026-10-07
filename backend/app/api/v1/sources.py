@@ -38,7 +38,7 @@ router = APIRouter(tags=["sources"])
 @router.post(
     "/projects/{project_id}/sources/text",
     status_code=status.HTTP_201_CREATED,
-    responses=errors(401, 403, 404, 422),
+    responses=errors(401, 403, 404, 410, 422),
 )
 async def create_text_source(
     project_id: UUID,
@@ -69,7 +69,7 @@ async def create_text_source(
     "/projects/{project_id}/sources/file",
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(limit_expensive)],
-    responses=errors(401, 403, 404, 413, 415, 422, 429),
+    responses=errors(401, 403, 404, 410, 413, 415, 422, 429),
 )
 async def create_file_source(  # noqa: PLR0917 - multipart form fields are separate parameters
     project_id: UUID,
@@ -101,7 +101,7 @@ async def create_file_source(  # noqa: PLR0917 - multipart form fields are separ
     "/projects/{project_id}/sources/sample",
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(limit_expensive)],
-    responses=errors(401, 403, 404, 422, 429),
+    responses=errors(401, 403, 404, 410, 422, 429),
 )
 async def create_sample_source(  # noqa: PLR0917 - FastAPI binds each parameter independently
     project_id: UUID,
@@ -126,7 +126,7 @@ async def create_sample_source(  # noqa: PLR0917 - FastAPI binds each parameter 
     return Source.model_validate(source)
 
 
-@router.patch("/sources/{source_id}", responses=errors(401, 403, 404, 422))
+@router.patch("/sources/{source_id}", responses=errors(401, 403, 404, 410, 422))
 async def update_source(
     source_id: UUID,
     body: SourceUpdate,
@@ -151,7 +151,7 @@ async def update_source(
 @router.delete(
     "/sources/{source_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    responses=errors(401, 403, 404, 422),
+    responses=errors(401, 403, 404, 410, 422),
 )
 async def delete_source(
     source_id: UUID,

@@ -238,7 +238,11 @@ def test_websocket_ready_reads_head_after_joining_room(client: TestClient, monke
 
     async def save_before_join(room_id, principal):
         saved = await container.versions.save_manual(
-            room_id, xml=read_bpmn("tp861_v2"), base_version_id=UUID(initial["id"])
+            room_id,
+            xml=read_bpmn("tp861_v2").replace(
+                "Провести выездной осмотр", "Осмотр перед подключением"
+            ),
+            base_version_id=UUID(initial["id"]),
         )
         saved_ids.append(str(saved.id))
         await container.realtime.publish(
@@ -253,10 +257,10 @@ def test_websocket_ready_reads_head_after_joining_room(client: TestClient, monke
         subprotocols=["bpmn.collaboration.v1", f"bpmn.ticket.{ticket}"],
     ) as socket:
         ready = socket.receive_json()
-        assert ready["head_version_id"] == saved_ids[0]
-        assert ready["head_version_number"] == initial["number"] + 1
         socket.receive_json()
         socket.close()
+        assert ready["head_version_id"] == saved_ids[0]
+        assert ready["head_version_number"] == initial["number"] + 1
 
 
 def test_websocket_binary_message_closes_cleanly(client: TestClient) -> None:

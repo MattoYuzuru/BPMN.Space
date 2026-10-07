@@ -64,7 +64,7 @@ export function useSaveDiagram(projectId: string) {
           body: { xml, base_version_id: baseVersionId },
         }),
       ),
-    onSuccess: (version: Version, { xml }) => {
+    onSuccess: (version: Version, { xml, baseVersionId }) => {
       client.setQueryData<VersionDetail>(versionKeys.detail(version.id), { ...version, xml })
       client.setQueryData<ProjectDetail>(
         projectKeys.detail(projectId),
@@ -72,7 +72,12 @@ export function useSaveDiagram(projectId: string) {
           project && {
             ...project,
             latest_version: version,
-            counts: { ...project.counts, versions: project.counts.versions + 1 },
+            counts: {
+              ...project.counts,
+              versions:
+                project.counts.versions +
+                (version.id === baseVersionId || version.id === project.latest_version?.id ? 0 : 1),
+            },
           },
       )
       client.setQueryData<Version[]>(versionKeys.list(projectId), (list) =>

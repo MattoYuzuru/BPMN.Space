@@ -242,6 +242,12 @@ export class DiagramController {
     })
 
     const eventBus = this.service<EventBus>('eventBus')
+    // Ручное действие важнее плавной навигации. Следующий кадр камеры иначе завершит
+    // только что открытое редактирование подписи через canvas.viewbox.changing.
+    eventBus.on(['element.mousedown', 'drag.init', 'directEditing.activate'], 2000, () => {
+      this.stopAnimation?.()
+      this.stopAnimation = undefined
+    })
     eventBus.on('commandStack.changed', (event: { trigger?: string }) => {
       if (!this.readOnly && !this.importing) this.changes.notify(event.trigger)
     })

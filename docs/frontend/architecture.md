@@ -154,5 +154,10 @@ src/
 ## Проверки
 
 - `npm run --workspace frontend test` — Vitest: редьюсер и поток SSE (поддельный EventSource), оптимистичные обновления с откатом, порог прокрутки, цитаты в источниках, дифф элементов схемы, переходы вопросов, уровень сигнала, форматирование.
-- `make e2e` — Playwright против Docker-стека. Против dev-сервера: `make dev-backend` с `MOCK_DELAY_SCALE=0.2`, vite на своём порту и `E2E_BASE_URL=http://localhost:<порт> npm run --workspace frontend e2e -- --project=e2e`. Микрофон поддельный (`--use-fake-device-for-media-stream`).
+- `make e2e` — Playwright против Docker-стека. Общие сценарии по умолчанию идут одним
+  worker: разделяют состояние входа и лимит запросов стенда. Тесты совместной работы
+  создают несколько одновременных вкладок внутри своего сценария. Против dev-сервера:
+  `make dev-backend` с `MOCK_DELAY_SCALE=0.2`, vite на своём порту и
+  `E2E_BASE_URL=http://localhost:<порт> npm run --workspace frontend e2e -- --project=e2e`.
+  Микрофон поддельный (`--use-fake-device-for-media-stream`).
 - `make screenshots` — 16 кадров в `reports/screenshots/` (1600×1000, 2×) на свежем mock-бэкенде с `MOCK_DELAY_SCALE=1`: кадр хода прогона снимается посреди анализа.

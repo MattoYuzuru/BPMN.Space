@@ -189,7 +189,10 @@ async def test_version_history_records_actual_author(stack: Stack) -> None:
 
     manual = await owner.put(
         f"/projects/{project_id}/diagram",
-        json={"xml": finished["xml"], "base_version_id": finished["version"]},
+        json={
+            "xml": finished["xml"].replace('name="', 'name="Правка ', 1),
+            "base_version_id": finished["version"],
+        },
     )
     assert manual.status_code == 201, manual.text
     assert manual.json()["actor_email"] == owner.email

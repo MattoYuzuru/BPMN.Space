@@ -1,5 +1,6 @@
 """SQLAlchemy-репозитории PostgreSQL, сохраняющие публичные dataclass-ы domain."""
 
+import asyncio
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import datetime
@@ -10,6 +11,7 @@ from uuid import UUID
 from sqlalchemy import CursorResult, and_, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import defer
 
 from app.domain.access import ProjectScope
 from app.domain.models import (
@@ -52,6 +54,13 @@ from app.infra.repositories.access_sql import SqlAccessRepository
 from app.infra.repositories.base import ActiveRunConflictError, PageKey, Repositories
 from app.infra.repositories.onboarding_sql import SqlOnboardingRepository
 from app.infra.repositories.session import BoundSessions, SessionFactory
+from app.infra.version_codec import (
+    MAX_DEPTH,
+    MAX_MAINTENANCE_BATCH,
+    VersionStorageError,
+    pack_xml,
+    unpack_xml,
+)
 
 
 def _quote(value: dict[str, Any] | None) -> Quote | None:
@@ -143,7 +152,7 @@ def _run(row: RunRow) -> Run:
     )
 
 
-def _version(row: DiagramVersionRow) -> Version:
+def _version(row: DiagramVersionRow, xml: str) -> Version:
     report_json = row.report
     report = Report(
         xsd_valid=report_json["xsd_valid"],
@@ -175,7 +184,7 @@ def _version(row: DiagramVersionRow) -> Version:
         number=row.number,
         origin=VersionOrigin(row.origin),
         created_at=row.created_at,
-        xml=row.bpmn_xml,
+        xml=xml,
         diff=VersionDiff(**row.diff),
         report=report,
         trace=trace,
@@ -635,23 +644,158 @@ class SqlVersionRepository:
 
     async def add(self, version: Version) -> None:
         async with self.sessions.begin() as session:
-            session.add(self._row(version))
+            row = self._row(version)
+            await self._pack_row(session, row)
+            session.add(row)
+
+    @staticmethod
+    def _decode_chain(rows: list[DiagramVersionRow], target: DiagramVersionRow) -> str:
+        by_id = {row.id: row for row in rows}
+        chain = [target]
+        while chain[-1].base_version_id is not None:
+            child = chain[-1]
+            base = by_id.get(child.base_version_id) if child.base_version_id is not None else None
+            if (
+                base is None
+                or base.project_id != target.project_id
+                or base.number != child.number - 1
+                or base.storage_depth != child.storage_depth - 1
+                or len(chain) > MAX_DEPTH
+            ):
+                raise VersionStorageError("Цепочка версий повреждена")
+            chain.append(base)
+        xml: str | None = None
+        for row in reversed(chain):
+            if row.bpmn_xml is not None:
+                if xml is not None:
+                    raise VersionStorageError("Некорректная база старого снимка")
+                xml = row.bpmn_xml
+            elif row.packed_xml is not None and row.xml_sha256 is not None:
+                xml = unpack_xml(row.packed_xml, row.xml_sha256, previous=xml)
+            else:
+                raise VersionStorageError("У версии отсутствуют данные XML")
+        if xml is None:
+            raise VersionStorageError("Пустая цепочка версий")
+        return xml
+
+    async def _xml(self, session: AsyncSession, row: DiagramVersionRow) -> str:
+        rows = [row]
+        if row.base_version_id is not None:
+            rows = list(
+                await session.scalars(
+                    select(DiagramVersionRow).where(
+                        DiagramVersionRow.project_id == row.project_id,
+                        DiagramVersionRow.number.between(
+                            row.number - row.storage_depth, row.number
+                        ),
+                    )
+                )
+            )
+        return await asyncio.to_thread(self._decode_chain, rows, row)
+
+    async def _pack_row(
+        self, session: AsyncSession, row: DiagramVersionRow, *, force_snapshot: bool = False
+    ) -> None:
+        previous = None
+        if row.origin == VersionOrigin.MANUAL.value and not force_snapshot:
+            previous = await session.scalar(
+                select(DiagramVersionRow).where(
+                    DiagramVersionRow.project_id == row.project_id,
+                    DiagramVersionRow.number == row.number - 1,
+                )
+            )
+        old_xml = await self._xml(session, previous) if previous else None
+        if row.bpmn_xml is None:
+            raise VersionStorageError("Нельзя сжать версию без исходного XML")
+        packed = await asyncio.to_thread(
+            pack_xml,
+            row.bpmn_xml,
+            old_xml,
+            previous_depth=previous.storage_depth if previous else 0,
+        )
+        row.packed_xml = packed.payload
+        row.xml_sha256 = packed.sha256
+        row.storage_depth = packed.depth
+        row.base_version_id = previous.id if previous and packed.depth else None
+        row.bpmn_xml = None
+
+    async def maintain_batch(
+        self, project_id: UUID, *, restore: bool = False, limit: int = 100
+    ) -> int:
+        """Перевести старые записи или восстановить XML; одна ограниченная транзакция.
+
+        Та же блокировка проекта, что у save/build. Повторный запуск безопасен.
+        """
+        if not 1 <= limit <= MAX_MAINTENANCE_BATCH:
+            raise ValueError("Размер пакета должен быть от 1 до 1000")
+        async with self.sessions.begin() as session:
+            project = await session.scalar(
+                select(ProjectRow).where(ProjectRow.id == project_id).with_for_update()
+            )
+            if project is None:
+                return 0
+            condition = (
+                DiagramVersionRow.packed_xml.is_not(None)
+                if restore
+                else DiagramVersionRow.bpmn_xml.is_not(None)
+            )
+            rows = list(
+                await session.scalars(
+                    select(DiagramVersionRow)
+                    .where(
+                        DiagramVersionRow.project_id == project_id,
+                        condition,
+                    )
+                    .order_by(
+                        DiagramVersionRow.number.desc() if restore else DiagramVersionRow.number
+                    )
+                    .limit(limit)
+                )
+            )
+            for row in rows:
+                if restore:
+                    row.bpmn_xml = await self._xml(session, row)
+                    row.packed_xml = None
+                    row.xml_sha256 = None
+                    row.base_version_id = None
+                    row.storage_depth = 0
+                else:
+                    referenced = await session.scalar(
+                        select(DiagramVersionRow.id)
+                        .where(DiagramVersionRow.base_version_id == row.id)
+                        .limit(1)
+                    )
+                    await self._pack_row(session, row, force_snapshot=referenced is not None)
+                await session.flush()
+            return len(rows)
 
     async def get(self, version_id: UUID) -> Version | None:
         async with self.sessions() as session:
             row = await session.get(DiagramVersionRow, version_id)
-            return _version(row) if row else None
+            return _version(row, await self._xml(session, row)) if row else None
 
-    async def list_by_project(self, project_id: UUID) -> list[Version]:
+    async def list_by_project(self, project_id: UUID, *, include_xml: bool = True) -> list[Version]:
         async with self.sessions() as session:
             rows = (
                 await session.scalars(
                     select(DiagramVersionRow)
+                    .options(
+                        *(
+                            []
+                            if include_xml
+                            else [
+                                defer(DiagramVersionRow.bpmn_xml, raiseload=True),
+                                defer(DiagramVersionRow.packed_xml, raiseload=True),
+                            ]
+                        )
+                    )
                     .where(DiagramVersionRow.project_id == project_id)
                     .order_by(DiagramVersionRow.number.desc())
                 )
             ).all()
-            return [_version(row) for row in rows]
+            return [
+                _version(row, await self._xml(session, row) if include_xml else "") for row in rows
+            ]
 
     async def latest(self, project_id: UUID) -> Version | None:
         async with self.sessions() as session:
@@ -661,7 +805,7 @@ class SqlVersionRepository:
                 .order_by(DiagramVersionRow.number.desc())
                 .limit(1)
             )
-            return _version(row) if row else None
+            return _version(row, await self._xml(session, row)) if row else None
 
 
 class SqlLlmCallRepository:

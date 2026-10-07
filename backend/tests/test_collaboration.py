@@ -1,11 +1,14 @@
 """Проверки протокола live-комнаты и контроля конфликтующих сохранений."""
 
 from datetime import UTC, datetime, timedelta
-from typing import get_args, get_type_hints
+from typing import cast, get_args, get_type_hints
 from uuid import UUID
 
+import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
+from starlette.websockets import WebSocketDisconnect
 
 from app.api.v1.collaboration import PresenceUpdate
 from app.api.v1.presence import project_presence
@@ -223,6 +226,52 @@ def test_stale_version_error_contains_current_head() -> None:
     error = StaleVersionError(head, 4)
     assert error.head_version_id == head
     assert error.head_version_number == 4
+
+
+def test_websocket_ready_reads_head_after_joining_room(client: TestClient, monkeypatch) -> None:
+    """Версия, сохранённая между началом handshake и join, попадает в ready."""
+    project_id = DEMO_PROJECT_ID
+    container = cast(FastAPI, client.app).state.container
+    initial = client.get(f"{API}/projects/{project_id}").json()["latest_version"]
+    join = container.realtime.join
+    saved_ids = []
+
+    async def save_before_join(room_id, principal):
+        saved = await container.versions.save_manual(
+            room_id, xml=read_bpmn("tp861_v2"), base_version_id=UUID(initial["id"])
+        )
+        saved_ids.append(str(saved.id))
+        await container.realtime.publish(
+            room_id, {"type": "diagram.version", "version_id": str(saved.id)}
+        )
+        return await join(room_id, principal)
+
+    monkeypatch.setattr(container.realtime, "join", save_before_join)
+    ticket = client.post(f"{API}/projects/{project_id}/collaboration-ticket").json()["ticket"]
+    with client.websocket_connect(
+        f"{API}/projects/{project_id}/collaboration/ws",
+        subprotocols=["bpmn.collaboration.v1", f"bpmn.ticket.{ticket}"],
+    ) as socket:
+        ready = socket.receive_json()
+        assert ready["head_version_id"] == saved_ids[0]
+        assert ready["head_version_number"] == initial["number"] + 1
+        socket.receive_json()
+        socket.close()
+
+
+def test_websocket_binary_message_closes_cleanly(client: TestClient) -> None:
+    project_id = str(DEMO_PROJECT_ID)
+    ticket = client.post(f"{API}/projects/{project_id}/collaboration-ticket").json()["ticket"]
+    with client.websocket_connect(
+        f"{API}/projects/{project_id}/collaboration/ws",
+        subprotocols=["bpmn.collaboration.v1", f"bpmn.ticket.{ticket}"],
+    ) as socket:
+        socket.receive_json()
+        socket.receive_json()
+        socket.send_bytes(b"unsupported binary frame")
+        with pytest.raises(WebSocketDisconnect) as error:
+            socket.receive_json()
+        assert error.value.code == 1003
 
 
 def test_manual_save_rejects_stale_base_without_creating_a_version(client: TestClient) -> None:

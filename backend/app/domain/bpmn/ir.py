@@ -291,6 +291,12 @@ def _and_region(
         if any(region & previous for previous in branches):
             errors.append(
                 f"{path}: параллельные ветви сливаются до указанного join/раздельных ends"
+                + (
+                    "; у fork отсутствует join_id — укажи id соответствующего AND join, "
+                    "если ветви должны синхронизироваться"
+                    if not node.join_id
+                    else ""
+                )
             )
         branches.append(region)
         if join:

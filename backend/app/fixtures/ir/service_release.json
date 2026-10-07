@@ -1,0 +1,864 @@
+{
+  "schema_version": 1,
+  "title": "Проверка и выпуск обновления цифрового сервиса",
+  "lanes": [
+    {
+      "id": "Lane_1",
+      "name": "Координатор выпуска",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Координатор выпуска"
+      }
+    },
+    {
+      "id": "Lane_2",
+      "name": "Разработка",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Разработка"
+      }
+    },
+    {
+      "id": "Lane_3",
+      "name": "Тестирование",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Тестирование"
+      }
+    },
+    {
+      "id": "Lane_4",
+      "name": "Эксплуатация",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Эксплуатация"
+      }
+    },
+    {
+      "id": "Lane_5",
+      "name": "Информационная безопасность",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Информационная безопасность"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "Start_1",
+      "type": "start",
+      "name": "Согласован состав выпуска",
+      "lane": "Lane_1",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Согласован состав выпуска"
+      }
+    },
+    {
+      "id": "Task_2",
+      "type": "task",
+      "name": "Зарегистрировать версию и критерии приёмки",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Зарегистрировать версию и критерии приёмки"
+      }
+    },
+    {
+      "id": "Task_3",
+      "type": "task",
+      "name": "Проверить совместимость данных и план отката",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Проверить совместимость данных и план отката"
+      }
+    },
+    {
+      "id": "And_4",
+      "type": "and",
+      "name": "Подготовить кандидат выпуска",
+      "lane": "Lane_1",
+      "direction": "split",
+      "join_id": "And_5",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Подготовить кандидат выпуска"
+      }
+    },
+    {
+      "id": "And_5",
+      "type": "and",
+      "name": "Все ветви завершены",
+      "lane": "Lane_1",
+      "direction": "join",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Все ветви завершены"
+      }
+    },
+    {
+      "id": "Task_6",
+      "type": "task",
+      "name": "Собрать артефакт и зафиксировать контрольную сумму",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Собрать артефакт и зафиксировать контрольную сумму"
+      }
+    },
+    {
+      "id": "Task_7",
+      "type": "task",
+      "name": "Развернуть кандидат в изолированной среде",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Развернуть кандидат в изолированной среде"
+      }
+    },
+    {
+      "id": "Task_8",
+      "type": "task",
+      "name": "Подготовить обратимые миграции и проверку целостности",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Подготовить обратимые миграции и проверку целостности"
+      }
+    },
+    {
+      "id": "Task_9",
+      "type": "task",
+      "name": "Создать проверенную резервную копию тестовых данных",
+      "lane": "Lane_4",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Создать проверенную резервную копию тестовых данных"
+      }
+    },
+    {
+      "id": "Task_10",
+      "type": "task",
+      "name": "Проверить зависимости и изменения границ доступа",
+      "lane": "Lane_5",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Проверить зависимости и изменения границ доступа"
+      }
+    },
+    {
+      "id": "Task_11",
+      "type": "task",
+      "name": "Подтвердить отсутствие блокирующих уязвимостей",
+      "lane": "Lane_5",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Подтвердить отсутствие блокирующих уязвимостей"
+      }
+    },
+    {
+      "id": "And_12",
+      "type": "and",
+      "name": "Проверить кандидат",
+      "lane": "Lane_1",
+      "direction": "split",
+      "join_id": "And_13",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Проверить кандидат"
+      }
+    },
+    {
+      "id": "And_13",
+      "type": "and",
+      "name": "Все ветви завершены",
+      "lane": "Lane_1",
+      "direction": "join",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Все ветви завершены"
+      }
+    },
+    {
+      "id": "Task_14",
+      "type": "task",
+      "name": "Провести сценарии приёмки и регрессионные проверки",
+      "lane": "Lane_3",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Провести сценарии приёмки и регрессионные проверки"
+      }
+    },
+    {
+      "id": "Task_15",
+      "type": "task",
+      "name": "Проверить роли пользователей и обработку ошибок",
+      "lane": "Lane_3",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Проверить роли пользователей и обработку ошибок"
+      }
+    },
+    {
+      "id": "Task_16",
+      "type": "task",
+      "name": "Проверить метрики, журналы и срабатывание оповещений",
+      "lane": "Lane_4",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Проверить метрики, журналы и срабатывание оповещений"
+      }
+    },
+    {
+      "id": "Task_17",
+      "type": "task",
+      "name": "Проверить восстановление из резервной копии",
+      "lane": "Lane_4",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Проверить восстановление из резервной копии"
+      }
+    },
+    {
+      "id": "Task_18",
+      "type": "task",
+      "name": "Измерить время ответа на согласованном профиле нагрузки",
+      "lane": "Lane_3",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Измерить время ответа на согласованном профиле нагрузки"
+      }
+    },
+    {
+      "id": "Task_19",
+      "type": "task",
+      "name": "Проверить лимиты ресурсов и устойчивость соединений",
+      "lane": "Lane_4",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Проверить лимиты ресурсов и устойчивость соединений"
+      }
+    },
+    {
+      "id": "Xor_20",
+      "type": "xor",
+      "name": "Повторная проверка",
+      "lane": "Lane_1",
+      "direction": "join",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Повторная проверка"
+      }
+    },
+    {
+      "id": "Task_21",
+      "type": "task",
+      "name": "Проверить все результаты испытаний по критериям выпуска",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Проверить все результаты испытаний по критериям выпуска"
+      }
+    },
+    {
+      "id": "Xor_22",
+      "type": "xor",
+      "name": "Проверка пройдена?",
+      "lane": "Lane_1",
+      "direction": "split",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Проверка пройдена?"
+      }
+    },
+    {
+      "id": "Task_23",
+      "type": "task",
+      "name": "Исправить блокирующие дефекты и повторить затронутые проверки",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Исправить блокирующие дефекты и повторить затронутые проверки"
+      }
+    },
+    {
+      "id": "Task_24",
+      "type": "task",
+      "name": "Подписать разрешение на выпуск",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Подписать разрешение на выпуск"
+      }
+    },
+    {
+      "id": "Task_25",
+      "type": "task",
+      "name": "Подтвердить окно работ и готовность дежурной смены",
+      "lane": "Lane_4",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Подтвердить окно работ и готовность дежурной смены"
+      }
+    },
+    {
+      "id": "Xor_26",
+      "type": "xor",
+      "name": "Нужна миграция данных?",
+      "lane": "Lane_1",
+      "direction": "split",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Нужна миграция данных?"
+      }
+    },
+    {
+      "id": "Xor_27",
+      "type": "xor",
+      "name": "Вариант выбран",
+      "lane": "Lane_1",
+      "direction": "join",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Вариант выбран"
+      }
+    },
+    {
+      "id": "Task_28",
+      "type": "task",
+      "name": "Создать резервную копию перед изменением данных",
+      "lane": "Lane_4",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Создать резервную копию перед изменением данных"
+      }
+    },
+    {
+      "id": "Task_29",
+      "type": "task",
+      "name": "Применить миграцию и проверить целостность",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Применить миграцию и проверить целостность"
+      }
+    },
+    {
+      "id": "Task_30",
+      "type": "task",
+      "name": "Зафиксировать совместимость текущей схемы данных",
+      "lane": "Lane_4",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Зафиксировать совместимость текущей схемы данных"
+      }
+    },
+    {
+      "id": "Task_31",
+      "type": "task",
+      "name": "Развернуть обновление на ограниченной доле трафика",
+      "lane": "Lane_4",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Развернуть обновление на ограниченной доле трафика"
+      }
+    },
+    {
+      "id": "And_32",
+      "type": "and",
+      "name": "Проверить выпуск на реальном трафике",
+      "lane": "Lane_1",
+      "direction": "split",
+      "join_id": "And_33",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Проверить выпуск на реальном трафике"
+      }
+    },
+    {
+      "id": "And_33",
+      "type": "and",
+      "name": "Все ветви завершены",
+      "lane": "Lane_1",
+      "direction": "join",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Все ветви завершены"
+      }
+    },
+    {
+      "id": "Task_34",
+      "type": "task",
+      "name": "Выполнить контрольные пользовательские сценарии",
+      "lane": "Lane_3",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Выполнить контрольные пользовательские сценарии"
+      }
+    },
+    {
+      "id": "Task_35",
+      "type": "task",
+      "name": "Проверить бизнес-результаты и отсутствие потери данных",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Проверить бизнес-результаты и отсутствие потери данных"
+      }
+    },
+    {
+      "id": "Task_36",
+      "type": "task",
+      "name": "Сверить ошибки и задержки с критериями успешного выпуска",
+      "lane": "Lane_4",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Сверить ошибки и задержки с критериями успешного выпуска"
+      }
+    },
+    {
+      "id": "Task_37",
+      "type": "task",
+      "name": "Проверить журнал безопасности после изменения",
+      "lane": "Lane_5",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Проверить журнал безопасности после изменения"
+      }
+    },
+    {
+      "id": "Xor_38",
+      "type": "xor",
+      "name": "Критерии выпуска соблюдены?",
+      "lane": "Lane_1",
+      "direction": "split",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Критерии выпуска соблюдены?"
+      }
+    },
+    {
+      "id": "Task_39",
+      "type": "task",
+      "name": "Вернуть прежнюю версию и восстановить совместимое состояние данных",
+      "lane": "Lane_4",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Вернуть прежнюю версию и восстановить совместимое состояние данных"
+      }
+    },
+    {
+      "id": "Task_40",
+      "type": "task",
+      "name": "Зафиксировать причину отката и план исправления",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Зафиксировать причину отката и план исправления"
+      }
+    },
+    {
+      "id": "End_41",
+      "type": "end",
+      "name": "Выпуск отменён, прежняя версия восстановлена",
+      "lane": "Lane_1",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Выпуск отменён, прежняя версия восстановлена"
+      }
+    },
+    {
+      "id": "Task_42",
+      "type": "task",
+      "name": "Распространить обновление на весь трафик",
+      "lane": "Lane_4",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Распространить обновление на весь трафик"
+      }
+    },
+    {
+      "id": "Task_43",
+      "type": "task",
+      "name": "Передать подтверждения выпуска и инструкции поддержки",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Передать подтверждения выпуска и инструкции поддержки"
+      }
+    },
+    {
+      "id": "End_44",
+      "type": "end",
+      "name": "Обновление выпущено и передано в сопровождение",
+      "lane": "Lane_1",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Обновление выпущено и передано в сопровождение"
+      }
+    }
+  ],
+  "flows": [
+    {
+      "id": "Flow_1",
+      "source_id": "Start_1",
+      "target_id": "Task_2",
+      "name": ""
+    },
+    {
+      "id": "Flow_2",
+      "source_id": "Task_2",
+      "target_id": "Task_3",
+      "name": ""
+    },
+    {
+      "id": "Flow_3",
+      "source_id": "Task_3",
+      "target_id": "And_4",
+      "name": ""
+    },
+    {
+      "id": "Flow_4",
+      "source_id": "And_4",
+      "target_id": "Task_6",
+      "name": ""
+    },
+    {
+      "id": "Flow_5",
+      "source_id": "Task_6",
+      "target_id": "Task_7",
+      "name": ""
+    },
+    {
+      "id": "Flow_6",
+      "source_id": "Task_7",
+      "target_id": "And_5",
+      "name": ""
+    },
+    {
+      "id": "Flow_7",
+      "source_id": "And_4",
+      "target_id": "Task_8",
+      "name": ""
+    },
+    {
+      "id": "Flow_8",
+      "source_id": "Task_8",
+      "target_id": "Task_9",
+      "name": ""
+    },
+    {
+      "id": "Flow_9",
+      "source_id": "Task_9",
+      "target_id": "And_5",
+      "name": ""
+    },
+    {
+      "id": "Flow_10",
+      "source_id": "And_4",
+      "target_id": "Task_10",
+      "name": ""
+    },
+    {
+      "id": "Flow_11",
+      "source_id": "Task_10",
+      "target_id": "Task_11",
+      "name": ""
+    },
+    {
+      "id": "Flow_12",
+      "source_id": "Task_11",
+      "target_id": "And_5",
+      "name": ""
+    },
+    {
+      "id": "Flow_13",
+      "source_id": "And_5",
+      "target_id": "And_12",
+      "name": ""
+    },
+    {
+      "id": "Flow_14",
+      "source_id": "And_12",
+      "target_id": "Task_14",
+      "name": ""
+    },
+    {
+      "id": "Flow_15",
+      "source_id": "Task_14",
+      "target_id": "Task_15",
+      "name": ""
+    },
+    {
+      "id": "Flow_16",
+      "source_id": "Task_15",
+      "target_id": "And_13",
+      "name": ""
+    },
+    {
+      "id": "Flow_17",
+      "source_id": "And_12",
+      "target_id": "Task_16",
+      "name": ""
+    },
+    {
+      "id": "Flow_18",
+      "source_id": "Task_16",
+      "target_id": "Task_17",
+      "name": ""
+    },
+    {
+      "id": "Flow_19",
+      "source_id": "Task_17",
+      "target_id": "And_13",
+      "name": ""
+    },
+    {
+      "id": "Flow_20",
+      "source_id": "And_12",
+      "target_id": "Task_18",
+      "name": ""
+    },
+    {
+      "id": "Flow_21",
+      "source_id": "Task_18",
+      "target_id": "Task_19",
+      "name": ""
+    },
+    {
+      "id": "Flow_22",
+      "source_id": "Task_19",
+      "target_id": "And_13",
+      "name": ""
+    },
+    {
+      "id": "Flow_23",
+      "source_id": "And_13",
+      "target_id": "Xor_20",
+      "name": ""
+    },
+    {
+      "id": "Flow_24",
+      "source_id": "Xor_20",
+      "target_id": "Task_21",
+      "name": ""
+    },
+    {
+      "id": "Flow_25",
+      "source_id": "Task_21",
+      "target_id": "Xor_22",
+      "name": ""
+    },
+    {
+      "id": "Flow_26",
+      "source_id": "Xor_22",
+      "target_id": "Task_23",
+      "name": "Нет",
+      "condition": "проверка не пройдена",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "проверка не пройдена"
+      }
+    },
+    {
+      "id": "Flow_27",
+      "source_id": "Task_23",
+      "target_id": "Xor_20",
+      "name": ""
+    },
+    {
+      "id": "Flow_28",
+      "source_id": "Xor_22",
+      "target_id": "Task_24",
+      "name": "Да",
+      "condition": "проверка пройдена",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "проверка пройдена"
+      }
+    },
+    {
+      "id": "Flow_29",
+      "source_id": "Task_24",
+      "target_id": "Task_25",
+      "name": ""
+    },
+    {
+      "id": "Flow_30",
+      "source_id": "Task_25",
+      "target_id": "Xor_26",
+      "name": ""
+    },
+    {
+      "id": "Flow_31",
+      "source_id": "Xor_26",
+      "target_id": "Task_28",
+      "name": "Миграция нужна",
+      "condition": "Миграция нужна",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Миграция нужна"
+      }
+    },
+    {
+      "id": "Flow_32",
+      "source_id": "Task_28",
+      "target_id": "Task_29",
+      "name": ""
+    },
+    {
+      "id": "Flow_33",
+      "source_id": "Task_29",
+      "target_id": "Xor_27",
+      "name": ""
+    },
+    {
+      "id": "Flow_34",
+      "source_id": "Xor_26",
+      "target_id": "Task_30",
+      "name": "Миграция не нужна",
+      "condition": "Миграция не нужна",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "Миграция не нужна"
+      }
+    },
+    {
+      "id": "Flow_35",
+      "source_id": "Task_30",
+      "target_id": "Xor_27",
+      "name": ""
+    },
+    {
+      "id": "Flow_36",
+      "source_id": "Xor_27",
+      "target_id": "Task_31",
+      "name": ""
+    },
+    {
+      "id": "Flow_37",
+      "source_id": "Task_31",
+      "target_id": "And_32",
+      "name": ""
+    },
+    {
+      "id": "Flow_38",
+      "source_id": "And_32",
+      "target_id": "Task_34",
+      "name": ""
+    },
+    {
+      "id": "Flow_39",
+      "source_id": "Task_34",
+      "target_id": "Task_35",
+      "name": ""
+    },
+    {
+      "id": "Flow_40",
+      "source_id": "Task_35",
+      "target_id": "And_33",
+      "name": ""
+    },
+    {
+      "id": "Flow_41",
+      "source_id": "And_32",
+      "target_id": "Task_36",
+      "name": ""
+    },
+    {
+      "id": "Flow_42",
+      "source_id": "Task_36",
+      "target_id": "Task_37",
+      "name": ""
+    },
+    {
+      "id": "Flow_43",
+      "source_id": "Task_37",
+      "target_id": "And_33",
+      "name": ""
+    },
+    {
+      "id": "Flow_44",
+      "source_id": "And_33",
+      "target_id": "Xor_38",
+      "name": ""
+    },
+    {
+      "id": "Flow_45",
+      "source_id": "Xor_38",
+      "target_id": "Task_39",
+      "name": "Нет",
+      "condition": "критерии выпуска нарушены",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "критерии выпуска нарушены"
+      }
+    },
+    {
+      "id": "Flow_46",
+      "source_id": "Task_39",
+      "target_id": "Task_40",
+      "name": ""
+    },
+    {
+      "id": "Flow_47",
+      "source_id": "Task_40",
+      "target_id": "End_41",
+      "name": ""
+    },
+    {
+      "id": "Flow_48",
+      "source_id": "Xor_38",
+      "target_id": "Task_42",
+      "name": "Да",
+      "condition": "критерии выпуска соблюдены",
+      "source": {
+        "source_id": "ed987ee9-2c3c-5354-9f07-0fa479b6b273",
+        "quote": "критерии выпуска соблюдены"
+      }
+    },
+    {
+      "id": "Flow_49",
+      "source_id": "Task_42",
+      "target_id": "Task_43",
+      "name": ""
+    },
+    {
+      "id": "Flow_50",
+      "source_id": "Task_43",
+      "target_id": "End_44",
+      "name": ""
+    }
+  ]
+}

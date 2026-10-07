@@ -133,3 +133,61 @@ describe('запись голоса', () => {
     })
   })
 })
+
+it('поздняя остановка отменённой записи не закрывает новую запись', async () => {
+  const tracks: { stop: ReturnType<typeof vi.fn> }[] = []
+  const recorders: FakeRecorder[] = []
+  class FakeRecorder {
+    static isTypeSupported() {
+      return true
+    }
+    state = 'inactive'
+    mimeType = 'audio/webm'
+    onstop: (() => void) | null = null
+    ondataavailable: ((event: { data: Blob }) => void) | null = null
+    constructor() {
+      recorders.push(this)
+    }
+    start() {
+      this.state = 'recording'
+    }
+    stop() {
+      this.state = 'inactive'
+    }
+  }
+  class FakeAudioContext {
+    close = vi.fn(async () => undefined)
+    createAnalyser() {
+      return { fftSize: 1024, smoothingTimeConstant: 0.6, getByteTimeDomainData: vi.fn() }
+    }
+    createMediaStreamSource() {
+      return { connect: vi.fn() }
+    }
+  }
+  vi.stubGlobal('MediaRecorder', FakeRecorder)
+  vi.stubGlobal('AudioContext', FakeAudioContext)
+  Object.defineProperty(navigator, 'mediaDevices', {
+    configurable: true,
+    value: {
+      getUserMedia: async () => {
+        const track = { stop: vi.fn() }
+        tracks.push(track)
+        return { getTracks: () => [track] } as unknown as MediaStream
+      },
+    },
+  })
+  try {
+    const { result, unmount } = renderHook(() => useVoiceRecorder())
+    await act(() => result.current.start())
+    act(() => result.current.cancel())
+    expect(tracks[0]?.stop).toHaveBeenCalledOnce()
+    await act(() => result.current.start())
+    act(() => recorders[0]?.onstop?.())
+    expect(result.current.state.status).toBe('recording')
+    expect(tracks[1]?.stop).not.toHaveBeenCalled()
+    unmount()
+    expect(tracks[1]?.stop).toHaveBeenCalledOnce()
+  } finally {
+    vi.unstubAllGlobals()
+  }
+})

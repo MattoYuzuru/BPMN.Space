@@ -124,6 +124,16 @@ class Database:
         """Идемпотентно добавляет демонстрационные проекты, не затирая пользовательские данные."""
         data = build_seed()
         repos = self.store.repositories()
+        # Закрываем только известные общие примеры прежнего каталога. История и личные копии
+        # остаются в БД; проект с владельцем не меняет ни видимость, ни содержимое.
+        retired = getattr(data, "retired_project_ids", ())
+        if retired:
+            async with self.sessions.begin() as session:
+                await session.execute(
+                    update(ProjectRow)
+                    .where(ProjectRow.id.in_(retired), ProjectRow.owner_id.is_(None))
+                    .values(public_read_only=False)
+                )
         for project in data.projects:
             if await repos.projects.get(project.id) is not None:
                 # Демо-проект открыт на чтение всем вошедшим; чужие проекты (без сида) не трогаем.
@@ -134,24 +144,27 @@ class Database:
                         .values(public_read_only=True)
                     )
                 continue
-            await repos.projects.add(project, public=True)
-            for source in data.sources:
-                if source.project_id == project.id:
-                    await repos.sources.add(source)
-            project_runs = [run for run in data.runs if run.project_id == project.id]
-            for run in project_runs:
-                # `runs.version_id` и `diagram_versions.run_id` образуют взаимную связь.
-                # Сначала создаём прогон без обратной ссылки, затем версию и обновляем прогон.
-                await repos.runs.add(replace(run, version_id=None))
-            for question in data.questions:
-                if question.project_id == project.id:
-                    await repos.questions.add(question)
-            for version in data.versions:
-                if version.project_id == project.id:
-                    await repos.versions.add(version)
-            for run in project_runs:
-                if run.version_id is not None:
-                    await repos.runs.update(run)
+            # Проект с источниками и историей создаётся целиком: сбой не оставляет
+            # частичный каталог, который следующий startup принял бы за готовый.
+            async with repos.atomic() as tx:
+                await tx.projects.add(project, public=True)
+                for source in data.sources:
+                    if source.project_id == project.id:
+                        await tx.sources.add(source)
+                project_runs = [run for run in data.runs if run.project_id == project.id]
+                for run in project_runs:
+                    # `runs.version_id` и `diagram_versions.run_id` образуют взаимную связь.
+                    # Сначала создаём прогон без обратной ссылки, затем версию и обновляем прогон.
+                    await tx.runs.add(replace(run, version_id=None))
+                for question in data.questions:
+                    if question.project_id == project.id:
+                        await tx.questions.add(question)
+                for version in data.versions:
+                    if version.project_id == project.id:
+                        await tx.versions.add(version)
+                for run in project_runs:
+                    if run.version_id is not None:
+                        await tx.runs.update(run)
 
     async def check(self) -> None:
         async with self.engine.connect() as connection:

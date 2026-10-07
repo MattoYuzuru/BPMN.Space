@@ -530,16 +530,23 @@ erDiagram
 
 ## 7. Модели
 
-Все провайдеры OpenAI-совместимы. Смена модели — это `.env`:
+Рабочий адаптер использует OpenAI-compatible Chat Completions; совместимость конкретного
+провайдера проверяется отдельно. Фактическая конфигурация — `backend/app/config.py` и
+`.env.example`, инструкции — [подключение провайдеров](../backend/подключение-провайдеров.md).
+Пример для текущего DeepSeek (ключи остаются в `.env`):
 
 ```env
-LLM_BASE_URL=https://ai.api.cloud.yandex.net/v1
+LLM_PROVIDER=deepseek
+LLM_BASE_URL=https://api.deepseek.com
 LLM_API_KEY=...
-LLM_PROJECT=<folder_id>
-LLM_MODEL=gpt://<folder_id>/qwen3.6-35b-a3b/latest   # точный формат URI проверяет llm_smoke.py
-LLM_OUTPUT_MODE=native        # native (json_schema) | prompted (JSON в тексте)
-STT_PROVIDER=yandex
+LLM_MODEL=deepseek-flash
+LLM_JSON_MODE=true
+STT_PROVIDER=deepgram
+DEEPGRAM_API_KEY=...
 ```
+
+`LLM_PROJECT`, `LLM_OUTPUT_MODE`, `llm_smoke.py` и STT-провайдер `yandex` не реализованы.
+Ниже — архитектурные кандидаты для следующей стадии, а не перечень проверенных интеграций.
 
 | Провайдер | Модели | Комментарий |
 |---|---|---|
@@ -712,9 +719,10 @@ CPU: прогон почти всё время ждёт ответа API мод�
 Актуализация на 6 октября: источники, аккаунты/шаринг, история версий и трассировка уже работают;
 WebSocket-комната с курсорами и защитой конфликтных сохранений принята в `main` (RFC-0002).
 Воспроизведение BPMN реализовано в #16 и проверено браузерными сценариями; его семантика и отдельное предложение по бизнес-времени —
-[RFC-0003](0003-process-playback-and-timing.md). Первая очередь #18–#23 добавляет runtime XSD, сверку вопросов, граф IR v1 (XOR/AND/циклы),
+[RFC-0003](0003-process-playback-and-timing.md). Первая очередь #18–#23 реализует runtime XSD, сверку вопросов, граф IR v1 (XOR/AND/циклы),
 приоритет ручных правок и Node layout/lint; точные гарантии — [generation-quality](../backend/generation-quality.md).
 Полный BPMN за пределами этого поднабора, общий eval и календарные длительности ещё не реализованы.
 Дальнейший backlog — #17 и #24–#34.
+Сверка на 7 октября и порядок дальнейших работ — [приоритеты развития](../research/product-priorities-2026-10.md).
 
 **Фаза 2 — до 3 ноября (финал):** перевод на модели Яндекса, история «как встроить в ИИ-платформу Интер РАО» (OpenAPI, Docker-образ, конфиг провайдера), питч.

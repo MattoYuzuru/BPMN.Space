@@ -113,148 +113,148 @@
   <bpmndi:BPMNDiagram id="BPMNDiagram_Collaboration_work_permit">
     <bpmndi:BPMNPlane id="BPMNPlane_Collaboration_work_permit" bpmnElement="Collaboration_work_permit">
       <bpmndi:BPMNShape id="BPMNShape_Participant_work_permit" bpmnElement="Participant_work_permit" isHorizontal="true">
-        <dc:Bounds x="80" y="80" width="2282" height="1040" />
+        <dc:Bounds x="128" y="80" width="3651.2000000000003" height="1040" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Lane_Issuer" bpmnElement="Lane_Issuer" isHorizontal="true">
-        <dc:Bounds x="110" y="80" width="2252" height="240" />
+        <dc:Bounds x="176" y="80" width="3603.2000000000003" height="240" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Lane_Admitter" bpmnElement="Lane_Admitter" isHorizontal="true">
-        <dc:Bounds x="110" y="320" width="2252" height="400" />
+        <dc:Bounds x="176" y="320" width="3603.2000000000003" height="400" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Lane_Foreman" bpmnElement="Lane_Foreman" isHorizontal="true">
-        <dc:Bounds x="110" y="720" width="2252" height="400" />
+        <dc:Bounds x="176" y="720" width="3603.2000000000003" height="400" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_StartEvent_Need" bpmnElement="StartEvent_Need">
-        <dc:Bounds x="150" y="182" width="36" height="36" />
+        <dc:Bounds x="250.8" y="182" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="124" y="223" width="88" height="42" />
+          <dc:Bounds x="224.8" y="223" width="88" height="42" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_IssuePermit" bpmnElement="Task_IssuePermit">
-        <dc:Bounds x="286" y="160" width="100" height="80" />
+        <dc:Bounds x="457.6" y="160" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Gateway_PrepFork" bpmnElement="Gateway_PrepFork" isMarkerVisible="true">
-        <dc:Bounds x="486" y="415" width="50" height="50" />
+        <dc:Bounds x="792.6" y="415" width="50" height="50" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_Disconnect" bpmnElement="Task_Disconnect">
-        <dc:Bounds x="636" y="400" width="100" height="80" />
+        <dc:Bounds x="1017.6000000000001" y="400" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_CheckCrew" bpmnElement="Task_CheckCrew">
-        <dc:Bounds x="636" y="960" width="100" height="80" />
+        <dc:Bounds x="1017.6000000000001" y="960" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Gateway_PrepJoin" bpmnElement="Gateway_PrepJoin" isMarkerVisible="true">
-        <dc:Bounds x="836" y="415" width="50" height="50" />
+        <dc:Bounds x="1352.6000000000001" y="415" width="50" height="50" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Gateway_CheckMerge" bpmnElement="Gateway_CheckMerge" isMarkerVisible="true">
-        <dc:Bounds x="986" y="415" width="50" height="50" />
+        <dc:Bounds x="1592.6000000000001" y="415" width="50" height="50" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_CheckWorkplace" bpmnElement="Task_CheckWorkplace">
-        <dc:Bounds x="1136" y="400" width="100" height="80" />
+        <dc:Bounds x="1817.6000000000001" y="400" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Gateway_WorkplaceReady" bpmnElement="Gateway_WorkplaceReady" isMarkerVisible="true">
-        <dc:Bounds x="1336" y="415" width="50" height="50" />
+        <dc:Bounds x="2152.6" y="415" width="50" height="50" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="1335" y="368" width="53" height="42" />
+          <dc:Bounds x="2151.9" y="368" width="53" height="42" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_FixRemarks" bpmnElement="Task_FixRemarks">
-        <dc:Bounds x="1486" y="560" width="100" height="80" />
+        <dc:Bounds x="2377.6000000000004" y="560" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_Briefing" bpmnElement="Task_Briefing">
-        <dc:Bounds x="1486" y="400" width="100" height="80" />
+        <dc:Bounds x="2377.6000000000004" y="400" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_DoWork" bpmnElement="Task_DoWork">
-        <dc:Bounds x="1686" y="800" width="100" height="80" />
+        <dc:Bounds x="2697.6000000000004" y="800" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_ClearWorkplace" bpmnElement="Task_ClearWorkplace">
-        <dc:Bounds x="1886" y="800" width="100" height="80" />
+        <dc:Bounds x="3017.6000000000004" y="800" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_ClosePermit" bpmnElement="Task_ClosePermit">
-        <dc:Bounds x="2086" y="400" width="100" height="80" />
+        <dc:Bounds x="3337.6000000000004" y="400" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_EndEvent_Closed" bpmnElement="EndEvent_Closed">
-        <dc:Bounds x="2286" y="422" width="36" height="36" />
+        <dc:Bounds x="3668.4" y="422" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="2262" y="463" width="85" height="14" />
+          <dc:Bounds x="3644.7000000000003" y="463" width="85" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_Need_IssuePermit" bpmnElement="Flow_Need_IssuePermit">
-        <di:waypoint x="186" y="200" />
-        <di:waypoint x="286" y="200" />
+        <di:waypoint x="286.8" y="200" />
+        <di:waypoint x="457.6" y="200" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_IssuePermit_PrepFork" bpmnElement="Flow_IssuePermit_PrepFork">
-        <di:waypoint x="386" y="200" />
-        <di:waypoint x="511" y="200" />
-        <di:waypoint x="511" y="415" />
+        <di:waypoint x="617.6" y="200" />
+        <di:waypoint x="817.6" y="200" />
+        <di:waypoint x="817.6" y="415" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_PrepFork_Disconnect" bpmnElement="Flow_PrepFork_Disconnect">
-        <di:waypoint x="536" y="440" />
-        <di:waypoint x="636" y="440" />
+        <di:waypoint x="842.6" y="440" />
+        <di:waypoint x="1017.6000000000001" y="440" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_Disconnect_PrepJoin" bpmnElement="Flow_Disconnect_PrepJoin">
-        <di:waypoint x="736" y="440" />
-        <di:waypoint x="836" y="440" />
+        <di:waypoint x="1177.6000000000001" y="440" />
+        <di:waypoint x="1352.6000000000001" y="440" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_PrepJoin_CheckMerge" bpmnElement="Flow_PrepJoin_CheckMerge">
-        <di:waypoint x="886" y="440" />
-        <di:waypoint x="986" y="440" />
+        <di:waypoint x="1402.6000000000001" y="440" />
+        <di:waypoint x="1592.6000000000001" y="440" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_CheckMerge_CheckWorkplace" bpmnElement="Flow_CheckMerge_CheckWorkplace">
-        <di:waypoint x="1036" y="440" />
-        <di:waypoint x="1136" y="440" />
+        <di:waypoint x="1642.6000000000001" y="440" />
+        <di:waypoint x="1817.6000000000001" y="440" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_CheckWorkplace_WorkplaceReady" bpmnElement="Flow_CheckWorkplace_WorkplaceReady">
-        <di:waypoint x="1236" y="440" />
-        <di:waypoint x="1336" y="440" />
+        <di:waypoint x="1977.6000000000001" y="440" />
+        <di:waypoint x="2152.6" y="440" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_WorkplaceReady_Briefing" bpmnElement="Flow_WorkplaceReady_Briefing">
-        <di:waypoint x="1386" y="440" />
-        <di:waypoint x="1486" y="440" />
+        <di:waypoint x="2202.6" y="440" />
+        <di:waypoint x="2377.6000000000004" y="440" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="1427" y="418" width="18" height="14" />
+          <dc:Bounds x="2288.6" y="418" width="18" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_Briefing_DoWork" bpmnElement="Flow_Briefing_DoWork">
-        <di:waypoint x="1586" y="440" />
-        <di:waypoint x="1736" y="440" />
-        <di:waypoint x="1736" y="800" />
+        <di:waypoint x="2537.6000000000004" y="440" />
+        <di:waypoint x="2777.6000000000004" y="440" />
+        <di:waypoint x="2777.6000000000004" y="800" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_DoWork_ClearWorkplace" bpmnElement="Flow_DoWork_ClearWorkplace">
-        <di:waypoint x="1786" y="840" />
-        <di:waypoint x="1886" y="840" />
+        <di:waypoint x="2857.6000000000004" y="840" />
+        <di:waypoint x="3017.6000000000004" y="840" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_ClearWorkplace_ClosePermit" bpmnElement="Flow_ClearWorkplace_ClosePermit">
-        <di:waypoint x="1986" y="840" />
-        <di:waypoint x="2136" y="840" />
-        <di:waypoint x="2136" y="480" />
+        <di:waypoint x="3177.6000000000004" y="840" />
+        <di:waypoint x="3417.6000000000004" y="840" />
+        <di:waypoint x="3417.6000000000004" y="480" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_ClosePermit_Closed" bpmnElement="Flow_ClosePermit_Closed">
-        <di:waypoint x="2186" y="440" />
-        <di:waypoint x="2286" y="440" />
+        <di:waypoint x="3497.6000000000004" y="440" />
+        <di:waypoint x="3668.4" y="440" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_PrepFork_CheckCrew" bpmnElement="Flow_PrepFork_CheckCrew">
-        <di:waypoint x="511" y="465" />
-        <di:waypoint x="511" y="1000" />
-        <di:waypoint x="636" y="1000" />
+        <di:waypoint x="817.6" y="465" />
+        <di:waypoint x="817.6" y="1000" />
+        <di:waypoint x="1017.6000000000001" y="1000" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_WorkplaceReady_FixRemarks" bpmnElement="Flow_WorkplaceReady_FixRemarks">
-        <di:waypoint x="1361" y="465" />
-        <di:waypoint x="1361" y="600" />
-        <di:waypoint x="1486" y="600" />
+        <di:waypoint x="2177.6" y="465" />
+        <di:waypoint x="2177.6" y="600" />
+        <di:waypoint x="2377.6000000000004" y="600" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="1366" y="526" width="25" height="14" />
+          <dc:Bounds x="2193.1" y="526" width="25" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_CheckCrew_PrepJoin" bpmnElement="Flow_CheckCrew_PrepJoin">
-        <di:waypoint x="736" y="1000" />
-        <di:waypoint x="861" y="1000" />
-        <di:waypoint x="861" y="465" />
+        <di:waypoint x="1177.6000000000001" y="1000" />
+        <di:waypoint x="1377.6000000000001" y="1000" />
+        <di:waypoint x="1377.6000000000001" y="465" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_FixRemarks_CheckMerge" bpmnElement="Flow_FixRemarks_CheckMerge">
-        <di:waypoint x="1536" y="640" />
-        <di:waypoint x="1536" y="660" />
-        <di:waypoint x="1011" y="660" />
-        <di:waypoint x="1011" y="465" />
+        <di:waypoint x="2457.6000000000004" y="640" />
+        <di:waypoint x="2457.6000000000004" y="660" />
+        <di:waypoint x="1617.6000000000001" y="660" />
+        <di:waypoint x="1617.6000000000001" y="465" />
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>

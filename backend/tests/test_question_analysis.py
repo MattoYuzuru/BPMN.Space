@@ -602,6 +602,51 @@ async def test_tiny_context_budget_fails_before_any_model_request() -> None:
     assert provider.requests == []
 
 
+async def test_missing_question_assessment_is_repaired_before_applying_updates() -> None:
+    attempts = 0
+
+    def analyze(payload):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return {"complete": True, "question_updates": [], "new_questions": []}
+        return _analysis(payload)
+
+    provider = RecordedProvider(analyze)
+    result = await provider.pipeline().analyze(_context([_source("Регламент")], [_question()]))
+    assert attempts == 2
+    assert "Q-1" in provider.requests[1]["repair"]
+    assert result.audit["model_calls"] == 2
+    assert result.question_updates == []
+
+
+async def test_missing_verification_decision_is_repaired_without_accepting_partial_results() -> (
+    None
+):
+    source = _source("Кто оформляет акт, пока не определено.")
+    attempts = 0
+
+    def verify(payload):
+        nonlocal attempts
+        attempts += 1
+        return {
+            "complete": True,
+            "decisions": []
+            if attempts == 1
+            else [
+                {"id": item["id"], "valid": True, "reason": "В источнике отсутствует исполнитель"}
+                for item in payload["proposals"]
+            ],
+        }
+
+    provider = RecordedProvider(lambda p: _analysis(p, new=[_candidate(source)]), verify)
+    result = await provider.pipeline().analyze(_context([source]))
+    assert attempts == 2
+    assert "N-1" in provider.requests[2]["repair"]
+    assert len(result.new_questions) == 1
+    assert result.audit["model_calls"] == 3
+
+
 @pytest.mark.parametrize(
     ("same_as", "relation"),
     [("Q-999", "duplicate"), ("N-1", "duplicate"), (None, "duplicate"), ("Q-1", "new")],
@@ -874,3 +919,31 @@ async def test_memory_cas_rejects_same_status_with_newer_answer() -> None:
         stale, expected_status=QuestionStatus.ANSWERED, expected_updated_at=NOW
     )
     assert await container.repos.questions.get(question.id) == updated
+
+
+async def test_known_source_fact_without_question_link_is_repaired_and_stays_rejected() -> None:
+    source = _source("Акт оформляет инженер.")
+    attempts = 0
+
+    def verify(payload):
+        nonlocal attempts
+        attempts += 1
+        return {
+            "complete": True,
+            "decisions": [
+                {
+                    "id": item["id"],
+                    "valid": False,
+                    "reason": "Исполнитель прямо указан в источнике",
+                    "relation": "known_fact" if attempts == 1 else "new",
+                    "same_as": None,
+                }
+                for item in payload["proposals"]
+            ],
+        }
+
+    provider = RecordedProvider(lambda p: _analysis(p, new=[_candidate(source)]), verify)
+    result = await provider.pipeline().analyze(_context([source]))
+    assert attempts == 2
+    assert result.new_questions == []
+    assert result.audit["model_calls"] == 3

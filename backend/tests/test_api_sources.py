@@ -1,11 +1,14 @@
 """Источники: текст и голос, файлы всех форматов, правка, выключение, удаление; расшифровка."""
 
 from pathlib import Path
+from unittest.mock import AsyncMock
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.container import Container
 from app.infra.seed import seed_id
+from app.ingest.stt import NoSpeechError, Transcript
 from tests.conftest import API, DEMO, add_text, create_project
 
 EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
@@ -203,3 +206,23 @@ def test_transcription(client: TestClient) -> None:
     empty = client.post(f"{API}/transcriptions", files={"file": ("a.ogg", b"", "audio/ogg")})
     assert empty.status_code == 422
     assert client.post(f"{API}/transcriptions").status_code == 422
+
+
+@pytest.mark.parametrize("provider_raises", [True, False])
+def test_silent_transcription_returns_recoverable_error(
+    client: TestClient, container: Container, provider_raises: bool
+) -> None:
+    provider = AsyncMock()
+    if provider_raises:
+        provider.transcribe.side_effect = NoSpeechError
+    else:
+        provider.transcribe.return_value = Transcript(text="  ", duration_sec=2)
+    container.transcriptions._stt = provider
+    response = client.post(
+        f"{API}/transcriptions", files={"file": ("silence.webm", b"audio", "audio/webm")}
+    )
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": "Не удалось распознать речь. Попробуйте записать ещё раз.",
+        "code": "NO_SPEECH",
+    }

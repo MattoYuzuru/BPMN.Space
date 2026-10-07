@@ -56,6 +56,7 @@ export function DiagramPanel() {
   const lastSaved = useRef<string | null>(null)
   const headVersionRef = useRef<string | null>(latest?.id ?? null)
   const draftXmlRef = useRef<string | null>(null)
+  const draftEpochRef = useRef(0)
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const canvasBoundsRef = useRef<HTMLDivElement>(null)
   const [viewportRevision, setViewportRevision] = useState(0)
@@ -63,15 +64,28 @@ export function DiagramPanel() {
   const selectionRef = useRef<string[]>(selection)
   selectionRef.current = selection
   const [remoteUpdate, setRemoteUpdate] = useState<{ id?: string; number?: number } | null>(null)
+  const remoteUpdateRef = useRef(remoteUpdate)
+  remoteUpdateRef.current = remoteUpdate
+  const markRemoteUpdate = useCallback((update: { id?: string; number?: number } | null) => {
+    remoteUpdateRef.current = update
+    setRemoteUpdate(update)
+  }, [])
   const collaboration = useProjectCollaboration(project.id, collaborationShareToken, isLatest)
 
   const enqueueSave = useCallback(
     (xml: string) => {
       draftXmlRef.current = xml
+      const epoch = draftEpochRef.current
       saveQueueRef.current = saveQueueRef.current
         .catch(() => undefined)
         .then(async () => {
-          if (xml === lastSaved.current || remoteUpdate) return
+          if (
+            epoch !== draftEpochRef.current ||
+            xml === lastSaved.current ||
+            remoteUpdateRef.current
+          ) {
+            return
+          }
           try {
             const version = await save.mutateAsync({
               xml,
@@ -82,7 +96,7 @@ export function DiagramPanel() {
             if (draftXmlRef.current === xml) draftXmlRef.current = null
           } catch (error) {
             if (error instanceof ApiError && error.code === 'stale_version') {
-              setRemoteUpdate({
+              markRemoteUpdate({
                 id: error.headVersionId ?? undefined,
                 number: error.headVersionNumber ?? undefined,
               })
@@ -90,13 +104,14 @@ export function DiagramPanel() {
           }
         })
     },
-    [remoteUpdate, save],
+    [markRemoteUpdate, save],
   )
   const debouncedSave = useDebouncedCallback((xml: string) => {
     enqueueSave(xml)
   }, SAVE_DEBOUNCE_MS)
 
-  const xml = version.data?.xml ?? ''
+  // Инвалидация проекта из другого канала не должна импортировать серверный XML поверх черновика.
+  const xml = (isLatest && draftXmlRef.current ? draftXmlRef.current : version.data?.xml) ?? ''
   const loadedVersion = version.data
   useEffect(() => {
     if (loadedVersion && !draftXmlRef.current) {
@@ -116,18 +131,14 @@ export function DiagramPanel() {
           : event.type === 'run.changed' && event.status === 'succeeded'
             ? event.version_id
             : undefined
-    if (typeof eventVersionId !== 'string' || eventVersionId === latest?.id) return
-    const local = collaboration.presence
-      .getSnapshot()
-      .find((participant) => participant.session_id === collaboration.localSessionId)
-    const ownEvent =
-      event.type !== 'ready' &&
-      (event.actor === local?.display_name || (!event.actor && !local?.user_id))
-    if (ownEvent) return
-    if (draftXmlRef.current || save.isPending) {
+    if (typeof eventVersionId !== 'string' || eventVersionId === headVersionRef.current) return
+    // Событие собственного сохранения может обогнать HTTP-ответ. После ответа сравним точный id;
+    // одинаковый actor не различает вкладки одного аккаунта и локальные вкладки без авторизации.
+    if (save.isPending) return
+    if (draftXmlRef.current) {
       const id = eventVersionId
       if (remoteUpdate?.id !== id) {
-        setRemoteUpdate({
+        markRemoteUpdate({
           id,
           number:
             typeof event.number === 'number'
@@ -143,9 +154,7 @@ export function DiagramPanel() {
     void queryClient.invalidateQueries({ queryKey: versionKeys.list(project.id) })
   }, [
     collaboration.event,
-    collaboration.localSessionId,
-    collaboration.presence,
-    latest?.id,
+    markRemoteUpdate,
     project.id,
     queryClient,
     remoteUpdate?.id,
@@ -269,11 +278,13 @@ export function DiagramPanel() {
   }, [project.title])
   const loadRemoteVersion = useCallback(() => {
     downloadDraft()
-    setRemoteUpdate(null)
+    debouncedSave.cancel()
+    draftEpochRef.current += 1
+    markRemoteUpdate(null)
     draftXmlRef.current = null
     void queryClient.invalidateQueries({ queryKey: projectKeys.detail(project.id) })
     void queryClient.invalidateQueries({ queryKey: versionKeys.list(project.id) })
-  }, [downloadDraft, project.id, queryClient])
+  }, [debouncedSave.cancel, downloadDraft, markRemoteUpdate, project.id, queryClient])
 
   const elements = useMemo(() => diagramElements(xml), [xml])
 
@@ -396,7 +407,7 @@ export function DiagramPanel() {
             collaboration.sendPresence({ cursor: null, selection, activity: 'idle' })
           }
         >
-          {versionId && version.isPending ? (
+          {versionId && version.isPending && !draftXmlRef.current ? (
             <CanvasSkeleton />
           ) : (
             <LazyDiagramEditor

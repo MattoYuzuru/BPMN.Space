@@ -20,6 +20,7 @@ from fastapi_users.authentication.strategy.db import AccessTokenDatabase, Databa
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 from fastapi_users_db_sqlalchemy.access_token import SQLAlchemyAccessTokenDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import HTTPConnection
 
 from app.infra.db_models import AccessTokenRow, UserRow
 from app.services.errors import UnavailableError
@@ -111,8 +112,8 @@ optional_user = _users.current_user(active=True, optional=True)
 required_user = _users.current_user(active=True)
 
 
-async def stream_user(request: Request) -> UserRow | None:
-    """Проверить cookie для SSE в короткой сессии, закрываемой до начала потока."""
+async def stream_user(request: HTTPConnection) -> UserRow | None:
+    """Проверить cookie HTTP/WS в короткой сессии, не удерживая соединение на время потока."""
     if not request.app.state.auth_enabled:
         return None
     token = request.cookies.get(SESSION_COOKIE)

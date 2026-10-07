@@ -1,25 +1,20 @@
-"""Детерминированный сид демо-данных для in-memory и PostgreSQL хранилищ.
+"""Детерминированные общие демо-проекты: два коротких учебных и три комплексных.
 
-- Главный проект «Технологическое присоединение к электросетям» (ПП РФ № 861): три источника
-  (регламент, голосовая заметка, «Финансы проекта.docx»), шесть вопросов во всех статусах,
-  две версии схемы. Следующий анализ решит два вопроса и задаст новый, сборка даст v3.
-- 40 проектов для бесконечной прокрутки: 4 с собственными схемами (вывод в ремонт,
-  наряд-допуск, закупка по 223-ФЗ, договор энергоснабжения) и 36 типовых.
-
-Всё детерминировано: id — uuid5 от ключа, случайность — `random.Random(SEED)`, даты отсчитываются
-от `BASE_TIME`. Поэтому id демо-проекта стабилен между перезапусками (`DEMO_PROJECT_ID`).
-PostgreSQL заполняется идемпотентным демо-сидом при старте приложения.
+ТП сохраняет исторический сценарий анализа с вопросами и тремя версиями. Наряд-допуск
+показывает AND и цикл. Подробные сценарии энергетики, логистики и выпуска сервиса содержат
+44–49 узлов и подтверждённые текстами переходы. Графы записаны как фикстуры, без живой LLM.
+UUID общих проектов стабильны. Старые демонстрационные UUID скрываются при startup seed;
+пользовательские проекты и копии не перезаписываются.
 """
 
-import random
-from collections.abc import Iterable, Mapping, Sequence
+import json
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid5
 
 from app.domain.analysis import ContextSource
 from app.domain.bpmn.document import parse_bpmn
-from app.domain.bpmn.linear import LinearStep, build_linear_diagram
 from app.domain.bpmn.lint import lint_document
 from app.domain.models import (
     Answer,
@@ -39,15 +34,13 @@ from app.domain.models import (
 from app.domain.questions import find_source_with_quote, run_summary
 from app.domain.runs import stages_for
 from app.domain.versions import build_version
+from app.fixtures import FIXTURES_DIR, read_bpmn, read_text
 from app.fixtures import playbook as pb
-from app.fixtures import read_bpmn, read_text
 from app.fixtures.catalog import TOPICS
-from app.fixtures.generic import generic_questions, meeting_note, regulation_text
-from app.fixtures.types import DiagramRule, QuestionRule, Topic
+from app.fixtures.complex_examples import COMPLEX_EXAMPLES
+from app.fixtures.types import DiagramRule, QuestionRule
 
-SEED = 861
 NAMESPACE = UUID("6f0c2d4e-8a51-4c1e-9b7a-0d3e5f861000")
-BASE_TIME = datetime(2026, 10, 1, 6, 0, tzinfo=UTC)
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
@@ -65,6 +58,7 @@ class SeedData:
     questions: list[Question] = field(default_factory=list[Question])
     runs: list[Run] = field(default_factory=list[Run])
     versions: list[Version] = field(default_factory=list[Version])
+    retired_project_ids: tuple[UUID, ...] = ()
 
 
 class _ProjectBuilder:
@@ -280,30 +274,8 @@ def _seed_demo(data: SeedData) -> None:
     )
 
 
-def _seed_rich(data: SeedData) -> None:
-    """Четыре проекта с собственными схемами из фикстур."""
-    p = _ProjectBuilder(
-        data,
-        "repair-outage",
-        "Вывод линии 110 кВ в плановый ремонт",
-        "Диспетчерская заявка собственника и согласование с диспетчерским центром.",
-        _at(15, 9),
-    )
-    p.source(
-        "regulation",
-        SourceKind.TEXT,
-        "Порядок вывода в ремонт",
-        read_text("repair_outage.md"),
-        _at(15, 9, 5),
-    )
-    run = p.run("1", RunMode.ANALYZE, _at(15, 9, 10))
-    _, refusal, _ = (p.ask(rule, run) for rule in pb.REPAIR_QUESTIONS)
-    p.finish_run(run)
-    p.ignore(refusal, _at(16, 11))
-    build = p.run("2", RunMode.BUILD, _at(16, 11, 5))
-    p.finish_run(build)
-    p.version(read_bpmn("repair_outage"), build, pb.REPAIR_DIAGRAM.trace)
-
+def _seed_permit(data: SeedData) -> None:
+    """Короткий сценарий: параллельная подготовка и цикл устранения замечаний."""
     p = _ProjectBuilder(
         data,
         "work-permit",
@@ -328,185 +300,60 @@ def _seed_rich(data: SeedData) -> None:
     p.finish_run(build, resolved=1)
     p.version(read_bpmn("work_permit"), build, pb.PERMIT_DIAGRAM.trace)
 
-    p = _ProjectBuilder(
-        data,
-        "procurement-223",
-        "Закупка по 223-ФЗ: запрос котировок",
-        "Закупка материалов для ремонтной программы способом запроса котировок.",
-        _at(18, 10),
-    )
-    p.source(
-        "regulation",
-        SourceKind.FILE,
-        "Положение о закупке (выдержка).pdf",
-        read_text("procurement_223.md"),
-        _at(18, 10, 5),
-        file_name="Положение о закупке (выдержка).pdf",
-        mime="application/pdf",
-        size_bytes=48_213,
-    )
-    run = p.run("1", RunMode.ANALYZE, _at(18, 10, 10))
-    _, plan = (p.ask(rule, run) for rule in pb.PROCUREMENT_QUESTIONS)
-    p.finish_run(run)
-    build = p.run("2", RunMode.BUILD, _at(18, 10, 20))
-    p.finish_run(build)
-    p.version(read_bpmn("procurement_223"), build, pb.PROCUREMENT_DIAGRAM.trace)
-    p.answer(plan, pb.PROCUREMENT_ANSWER_PLAN, _at(19, 7, 30))
 
-    p = _ProjectBuilder(
-        data,
-        "supply-contract",
-        "Заключение договора энергоснабжения с юрлицом",
-        "Заявление потребителя, проверка документов и запрос сведений у сетевой организации.",
-        _at(5, 8),
-    )
-    p.source(
-        "regulation",
-        SourceKind.TEXT,
-        "Порядок заключения договора",
-        read_text("supply_contract.md"),
-        _at(5, 8, 5),
-    )
-    run = p.run("1", RunMode.ANALYZE, _at(5, 8, 10))
-    grid, package = (p.ask(rule, run) for rule in pb.SUPPLY_QUESTIONS)
-    p.finish_run(run)
-    p.source(
-        "lawyer-call",
-        SourceKind.VOICE,
-        "Звонок юристу гарантирующего поставщика",
-        pb.SUPPLY_NOTE,
-        _at(6, 12),
-        duration_sec=38.0,
-        mime="audio/webm",
-    )
-    p.ignore(grid, _at(6, 12, 30))
-    build = p.run("2", RunMode.BUILD, _at(6, 12, 40))
-    p.resolve(package, pb.SUPPLY_RESOLUTIONS[0].evidence, build.started_at)
-    p.finish_run(build, resolved=1)
-    p.version(read_bpmn("supply_contract"), build, pb.SUPPLY_DIAGRAM.trace)
-
-
-_FILE_KINDS = (
-    ("pdf", "application/pdf"),
-    ("docx", DOCX_MIME),
-)
-
-
-def _linear(topic: Topic, steps: Sequence[tuple[str, str]]) -> str:
-    return build_linear_diagram(
-        process_name=topic.title,
-        steps=[LinearStep(name=task, lane=role) for role, task in steps],
-        key=topic.key.replace("-", "_"),
-    )
-
-
-def _settle_questions(
-    p: _ProjectBuilder,
-    questions: Sequence[tuple[Question, str]],
-    *,
-    ready: bool,
-    at: datetime,
-    rng: random.Random,
-) -> datetime:
-    """Статусы вопросов типового проекта: у «готового» нет открытых, у остальных Q-1 открыт."""
-    at += timedelta(hours=rng.randint(2, 48))
-    for number, (question, answer_text) in enumerate(questions):
-        if not ready and number == 0:
-            continue
-        roll = rng.random()
-        if roll < 0.45:  # noqa: PLR2004
-            p.ignore(question, at)
-        elif roll < 0.8 or ready:  # noqa: PLR2004
-            p.answer(question, answer_text, at)
-            p.resolve(question, answer_text, at + timedelta(minutes=30))
-        else:
-            p.answer(question, answer_text, at)
-    return at
-
-
-def _seed_topic(data: SeedData, index: int, topic: Topic, rng: random.Random) -> None:
-    created = BASE_TIME - timedelta(days=rng.randint(3, 80), hours=rng.randint(0, 9))
-    p = _ProjectBuilder(data, topic.key, topic.title, topic.description, created)
-    if index % 6 == 0:
-        return  # пустой проект: источников ещё нет
-
-    at = created + timedelta(minutes=rng.randint(5, 50))
-    text = regulation_text(topic)
-    if rng.random() < 0.5:  # noqa: PLR2004
-        p.source("regulation", SourceKind.TEXT, f"Регламент: {topic.title}", text, at)
-    else:
-        extension, mime = rng.choice(_FILE_KINDS)
-        name = f"Регламент — {topic.title}.{extension}"
+def _seed_complex(data: SeedData) -> None:
+    for index, example in enumerate(COMPLEX_EXAMPLES):
+        at = _at(20 - index, 8)
+        p = _ProjectBuilder(data, example.key, example.title, example.description, at)
         p.source(
             "regulation",
-            SourceKind.FILE,
-            name,
-            text,
-            at,
-            file_name=name,
-            mime=mime,
-            size_bytes=len(text.encode()) * rng.randint(9, 30),
-        )
-    if index == 7:  # noqa: PLR2004 — один проект показывает источник, который не удалось разобрать
-        p.source(
-            "scan",
-            SourceKind.FILE,
-            "Скан приказа.pdf",
-            "",
-            at + timedelta(minutes=3),
-            status=SourceStatus.FAILED,
-            error="Не удалось извлечь текст: в PDF нет текстового слоя",
-            file_name="Скан приказа.pdf",
-            mime="application/pdf",
-            size_bytes=2_418_112,
-        )
-    if index == 9:  # noqa: PLR2004 — один проект показывает выключенный источник
-        p.source(
-            "old",
             SourceKind.TEXT,
-            "Старая редакция регламента",
-            text.replace("Порядок действий:", "Порядок действий (редакция 2023 года):"),
-            at - timedelta(days=30),
-            active=False,
+            "Подробный порядок процесса",
+            read_text(f"{example.fixture}.md"),
+            at + timedelta(minutes=5),
         )
-    if rng.random() < 0.4:  # noqa: PLR2004
-        at += timedelta(hours=rng.randint(1, 30))
+        graph = json.loads((FIXTURES_DIR / "ir" / f"{example.fixture}.json").read_text())
+        trace = {node["id"]: node["name"] for node in graph["nodes"] if node["type"] == "task"}
         p.source(
-            "note",
-            SourceKind.VOICE,
-            "Заметка после разговора",
-            meeting_note(topic),
-            at,
-            duration_sec=float(rng.randint(25, 160)),
-            mime="audio/webm",
+            "decisions",
+            SourceKind.TEXT,
+            "Правила ветвления и завершения",
+            "Условия выбора и роли зафиксированы в подробном порядке. "
+            "Все ветви AND обязательны; XOR выполняет ровно один выбранный исход. "
+            "Повторная проверка продолжается после исправления замечаний. "
+            "Завершённый случай не открывается повторно: новый случай создаёт новый экземпляр.",
+            at + timedelta(minutes=7),
         )
-
-    ready = rng.random() < 0.5  # noqa: PLR2004
-    at += timedelta(minutes=rng.randint(5, 90))
-    run = p.run("1", RunMode.ANALYZE, at)
-    tasks = [task for _, task in topic.steps]
-    generic = generic_questions(tasks)[: rng.randint(2, 4)]
-    questions = [(p.ask(item.rule, run), item.answer) for item in generic]
-    p.finish_run(run)
-
-    at = _settle_questions(p, questions, ready=ready, at=at, rng=rng)
-
-    if ready or rng.random() < 0.5:  # noqa: PLR2004
-        versions = rng.randint(1, 2) if ready else 1
-        for number in range(versions):
-            at += timedelta(hours=rng.randint(1, 20))
-            build = p.run(f"build-{number + 1}", RunMode.BUILD, at)
-            p.finish_run(build)
-            steps = topic.steps if number == versions - 1 else topic.steps[:-1]
-            trace = {f"Task_{i}": task for i, (_, task) in enumerate(steps, start=1)}
-            p.version(_linear(topic, steps), build, trace)
+        p.source(
+            "handover",
+            SourceKind.TEXT,
+            "Памятка исполнителям",
+            "Каждый исполнитель сохраняет подтверждения в карточке случая. "
+            "Заместителя назначает руководитель роли; при его отсутствии этап ожидает назначения. "
+            "Скорость экранного воспроизведения не задаёт длительность бизнес-операций. "
+            "Это вымышленный учебный сценарий, а не нормативный регламент.",
+            at + timedelta(minutes=9),
+        )
+        build = p.run("1", RunMode.BUILD, at + timedelta(minutes=10))
+        build.ir = graph
+        p.finish_run(build)
+        p.version(read_bpmn(example.fixture), build, trace)
 
 
 def build_seed() -> SeedData:
-    data = SeedData()
-    rng = random.Random(SEED)  # noqa: S311 — детерминированные демо-данные, не криптография
+    """Пять общих примеров; прежние встроенные UUID скрываются без удаления истории."""
+    data = SeedData(
+        retired_project_ids=tuple(
+            seed_id(f"project/{key}")
+            for key in (
+                "repair-outage",
+                "procurement-223",
+                "supply-contract",
+                *(topic.key for topic in TOPICS),
+            )
+        )
+    )
     _seed_demo(data)
-    _seed_rich(data)
-    for index, topic in enumerate(TOPICS):
-        _seed_topic(data, index, topic, rng)
+    _seed_permit(data)
+    _seed_complex(data)
     return data

@@ -1,0 +1,781 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_IR" targetNamespace="https://bpmn.space/ir/1" exporter="Архитектор BPMN">
+  <bpmn:collaboration id="Collaboration_1">
+    <bpmn:participant id="Participant_1" name="Восстановление энергоснабжения после технологического нарушения" processRef="Process_1" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_1" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_IR">
+      <bpmn:lane id="Lane_1" name="Диспетчер">
+        <bpmn:flowNodeRef>And_10</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>And_25</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>And_26</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>And_38</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>And_39</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>And_9</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Start_1</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_15</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_17</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_2</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_21</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_23</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_30</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_40</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_41</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_43</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_7</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Xor_19</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Xor_20</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Xor_4</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Xor_5</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_2" name="Оперативный персонал">
+        <bpmn:flowNodeRef>Task_11</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_12</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_22</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_3</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_31</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_33</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_37</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_6</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_8</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Xor_32</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Xor_34</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_3" name="Ремонтная служба">
+        <bpmn:flowNodeRef>Task_13</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_14</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_27</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_28</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_29</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_35</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_4" name="Служба учёта">
+        <bpmn:flowNodeRef>Task_16</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_24</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_42</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_5" name="Руководитель работ">
+        <bpmn:flowNodeRef>End_45</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_18</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_36</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_44</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:parallelGateway id="And_10" name="Все ветви завершены" gatewayDirection="Converging">
+      <bpmn:incoming>Flow_12</bpmn:incoming>
+      <bpmn:incoming>Flow_15</bpmn:incoming>
+      <bpmn:incoming>Flow_19</bpmn:incoming>
+      <bpmn:outgoing>Flow_20</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:parallelGateway id="And_25" name="Выполнить ремонт и подготовку ввода" gatewayDirection="Diverging">
+      <bpmn:incoming>Flow_28</bpmn:incoming>
+      <bpmn:outgoing>Flow_29</bpmn:outgoing>
+      <bpmn:outgoing>Flow_33</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:parallelGateway id="And_26" name="Все ветви завершены" gatewayDirection="Converging">
+      <bpmn:incoming>Flow_32</bpmn:incoming>
+      <bpmn:incoming>Flow_35</bpmn:incoming>
+      <bpmn:outgoing>Flow_36</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:parallelGateway id="And_38" name="Подтвердить восстановление" gatewayDirection="Diverging">
+      <bpmn:incoming>Flow_43</bpmn:incoming>
+      <bpmn:outgoing>Flow_44</bpmn:outgoing>
+      <bpmn:outgoing>Flow_47</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:parallelGateway id="And_39" name="Все ветви завершены" gatewayDirection="Converging">
+      <bpmn:incoming>Flow_46</bpmn:incoming>
+      <bpmn:incoming>Flow_49</bpmn:incoming>
+      <bpmn:outgoing>Flow_50</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:parallelGateway id="And_9" name="Подготовить восстановление" gatewayDirection="Diverging">
+      <bpmn:incoming>Flow_9</bpmn:incoming>
+      <bpmn:outgoing>Flow_10</bpmn:outgoing>
+      <bpmn:outgoing>Flow_13</bpmn:outgoing>
+      <bpmn:outgoing>Flow_16</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:endEvent id="End_45" name="Энергоснабжение восстановлено и случай закрыт">
+      <bpmn:incoming>Flow_51</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:startEvent id="Start_1" name="Получено сообщение об отключении">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="Task_11" name="Осмотреть оборудование и измерить состояние изоляции">
+      <bpmn:incoming>Flow_10</bpmn:incoming>
+      <bpmn:outgoing>Flow_11</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_12" name="Установить место и характер повреждения">
+      <bpmn:incoming>Flow_11</bpmn:incoming>
+      <bpmn:outgoing>Flow_12</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_13" name="Собрать ремонтную бригаду и необходимый комплект запасных частей">
+      <bpmn:incoming>Flow_13</bpmn:incoming>
+      <bpmn:outgoing>Flow_14</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_14" name="Проверить доставку материалов и готовность инструмента">
+      <bpmn:incoming>Flow_14</bpmn:incoming>
+      <bpmn:outgoing>Flow_15</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_15" name="Уточнить список отключённых потребителей">
+      <bpmn:incoming>Flow_16</bpmn:incoming>
+      <bpmn:outgoing>Flow_17</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_16" name="Проверить показания и сообщения приборов учёта">
+      <bpmn:incoming>Flow_17</bpmn:incoming>
+      <bpmn:outgoing>Flow_18</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_17" name="Сообщить потребителям предварительный план восстановления">
+      <bpmn:incoming>Flow_18</bpmn:incoming>
+      <bpmn:outgoing>Flow_19</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_18" name="Утвердить программу восстановительных работ">
+      <bpmn:incoming>Flow_20</bpmn:incoming>
+      <bpmn:outgoing>Flow_21</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_2" name="Зарегистрировать нарушение и затронутые объекты">
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_21" name="Согласовать схему временного резервного питания">
+      <bpmn:incoming>Flow_22</bpmn:incoming>
+      <bpmn:outgoing>Flow_23</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_22" name="Выполнить переключения и подать резервное питание">
+      <bpmn:incoming>Flow_23</bpmn:incoming>
+      <bpmn:outgoing>Flow_24</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_23" name="Подтвердить восстановление после ремонта основного участка">
+      <bpmn:incoming>Flow_25</bpmn:incoming>
+      <bpmn:outgoing>Flow_26</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_24" name="Зафиксировать состав потребителей без питания">
+      <bpmn:incoming>Flow_26</bpmn:incoming>
+      <bpmn:outgoing>Flow_27</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_27" name="Заменить повреждённые элементы оборудования">
+      <bpmn:incoming>Flow_29</bpmn:incoming>
+      <bpmn:outgoing>Flow_30</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_28" name="Выполнить контроль качества ремонтных соединений">
+      <bpmn:incoming>Flow_30</bpmn:incoming>
+      <bpmn:outgoing>Flow_31</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_29" name="Передать акт завершения ремонта">
+      <bpmn:incoming>Flow_31</bpmn:incoming>
+      <bpmn:outgoing>Flow_32</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_3" name="Оценить безопасность и границы отключения">
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+      <bpmn:outgoing>Flow_3</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_30" name="Согласовать режим и порядок обратных переключений">
+      <bpmn:incoming>Flow_33</bpmn:incoming>
+      <bpmn:outgoing>Flow_34</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_31" name="Подготовить бланк переключений для ввода оборудования">
+      <bpmn:incoming>Flow_34</bpmn:incoming>
+      <bpmn:outgoing>Flow_35</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_33" name="Проверить протоколы испытаний и готовность оборудования">
+      <bpmn:incoming>Flow_37</bpmn:incoming>
+      <bpmn:outgoing>Flow_38</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_35" name="Устранить замечания испытаний и повторить измерения">
+      <bpmn:incoming>Flow_39</bpmn:incoming>
+      <bpmn:outgoing>Flow_40</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_36" name="Разрешить ввод отремонтированного участка">
+      <bpmn:incoming>Flow_41</bpmn:incoming>
+      <bpmn:outgoing>Flow_42</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_37" name="Выполнить обратные переключения и восстановить штатное питание">
+      <bpmn:incoming>Flow_42</bpmn:incoming>
+      <bpmn:outgoing>Flow_43</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_40" name="Проверить устойчивость режима и загрузку оборудования">
+      <bpmn:incoming>Flow_44</bpmn:incoming>
+      <bpmn:outgoing>Flow_45</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_41" name="Закрыть диспетчерскую заявку">
+      <bpmn:incoming>Flow_45</bpmn:incoming>
+      <bpmn:outgoing>Flow_46</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_42" name="Сверить восстановление связи со всеми приборами учёта">
+      <bpmn:incoming>Flow_47</bpmn:incoming>
+      <bpmn:outgoing>Flow_48</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_43" name="Отправить потребителям сообщение о восстановлении питания">
+      <bpmn:incoming>Flow_48</bpmn:incoming>
+      <bpmn:outgoing>Flow_49</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_44" name="Подготовить отчёт о причинах и предотвращающих мероприятиях">
+      <bpmn:incoming>Flow_50</bpmn:incoming>
+      <bpmn:outgoing>Flow_51</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_6" name="Оградить опасную зону и отключить повреждённый участок">
+      <bpmn:incoming>Flow_4</bpmn:incoming>
+      <bpmn:outgoing>Flow_5</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_7" name="Уведомить экстренные службы и получить разрешение продолжить">
+      <bpmn:incoming>Flow_5</bpmn:incoming>
+      <bpmn:outgoing>Flow_6</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_8" name="Подтвердить безопасный доступ к оборудованию">
+      <bpmn:incoming>Flow_7</bpmn:incoming>
+      <bpmn:outgoing>Flow_8</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Xor_19" name="Возможно резервное питание?" gatewayDirection="Diverging">
+      <bpmn:incoming>Flow_21</bpmn:incoming>
+      <bpmn:outgoing>Flow_22</bpmn:outgoing>
+      <bpmn:outgoing>Flow_25</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:exclusiveGateway id="Xor_20" name="Вариант выбран" gatewayDirection="Converging">
+      <bpmn:incoming>Flow_24</bpmn:incoming>
+      <bpmn:incoming>Flow_27</bpmn:incoming>
+      <bpmn:outgoing>Flow_28</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:exclusiveGateway id="Xor_32" name="Повторная проверка" gatewayDirection="Converging">
+      <bpmn:incoming>Flow_36</bpmn:incoming>
+      <bpmn:incoming>Flow_40</bpmn:incoming>
+      <bpmn:outgoing>Flow_37</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:exclusiveGateway id="Xor_34" name="Проверка пройдена?" gatewayDirection="Diverging">
+      <bpmn:incoming>Flow_38</bpmn:incoming>
+      <bpmn:outgoing>Flow_39</bpmn:outgoing>
+      <bpmn:outgoing>Flow_41</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:exclusiveGateway id="Xor_4" name="Есть непосредственная опасность?" gatewayDirection="Diverging">
+      <bpmn:incoming>Flow_3</bpmn:incoming>
+      <bpmn:outgoing>Flow_4</bpmn:outgoing>
+      <bpmn:outgoing>Flow_7</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:exclusiveGateway id="Xor_5" name="Вариант выбран" gatewayDirection="Converging">
+      <bpmn:incoming>Flow_6</bpmn:incoming>
+      <bpmn:incoming>Flow_8</bpmn:incoming>
+      <bpmn:outgoing>Flow_9</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="Start_1" targetRef="Task_2" />
+    <bpmn:sequenceFlow id="Flow_10" sourceRef="And_9" targetRef="Task_11" />
+    <bpmn:sequenceFlow id="Flow_11" sourceRef="Task_11" targetRef="Task_12" />
+    <bpmn:sequenceFlow id="Flow_12" sourceRef="Task_12" targetRef="And_10" />
+    <bpmn:sequenceFlow id="Flow_13" sourceRef="And_9" targetRef="Task_13" />
+    <bpmn:sequenceFlow id="Flow_14" sourceRef="Task_13" targetRef="Task_14" />
+    <bpmn:sequenceFlow id="Flow_15" sourceRef="Task_14" targetRef="And_10" />
+    <bpmn:sequenceFlow id="Flow_16" sourceRef="And_9" targetRef="Task_15" />
+    <bpmn:sequenceFlow id="Flow_17" sourceRef="Task_15" targetRef="Task_16" />
+    <bpmn:sequenceFlow id="Flow_18" sourceRef="Task_16" targetRef="Task_17" />
+    <bpmn:sequenceFlow id="Flow_19" sourceRef="Task_17" targetRef="And_10" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_2" targetRef="Task_3" />
+    <bpmn:sequenceFlow id="Flow_20" sourceRef="And_10" targetRef="Task_18" />
+    <bpmn:sequenceFlow id="Flow_21" sourceRef="Task_18" targetRef="Xor_19" />
+    <bpmn:sequenceFlow id="Flow_22" name="Резерв доступен" sourceRef="Xor_19" targetRef="Task_21">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">Резерв доступен</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_23" sourceRef="Task_21" targetRef="Task_22" />
+    <bpmn:sequenceFlow id="Flow_24" sourceRef="Task_22" targetRef="Xor_20" />
+    <bpmn:sequenceFlow id="Flow_25" name="Резерв недоступен" sourceRef="Xor_19" targetRef="Task_23">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">Резерв недоступен</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_26" sourceRef="Task_23" targetRef="Task_24" />
+    <bpmn:sequenceFlow id="Flow_27" sourceRef="Task_24" targetRef="Xor_20" />
+    <bpmn:sequenceFlow id="Flow_28" sourceRef="Xor_20" targetRef="And_25" />
+    <bpmn:sequenceFlow id="Flow_29" sourceRef="And_25" targetRef="Task_27" />
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="Task_3" targetRef="Xor_4" />
+    <bpmn:sequenceFlow id="Flow_30" sourceRef="Task_27" targetRef="Task_28" />
+    <bpmn:sequenceFlow id="Flow_31" sourceRef="Task_28" targetRef="Task_29" />
+    <bpmn:sequenceFlow id="Flow_32" sourceRef="Task_29" targetRef="And_26" />
+    <bpmn:sequenceFlow id="Flow_33" sourceRef="And_25" targetRef="Task_30" />
+    <bpmn:sequenceFlow id="Flow_34" sourceRef="Task_30" targetRef="Task_31" />
+    <bpmn:sequenceFlow id="Flow_35" sourceRef="Task_31" targetRef="And_26" />
+    <bpmn:sequenceFlow id="Flow_36" sourceRef="And_26" targetRef="Xor_32" />
+    <bpmn:sequenceFlow id="Flow_37" sourceRef="Xor_32" targetRef="Task_33" />
+    <bpmn:sequenceFlow id="Flow_38" sourceRef="Task_33" targetRef="Xor_34" />
+    <bpmn:sequenceFlow id="Flow_39" name="Нет" sourceRef="Xor_34" targetRef="Task_35">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">проверка не пройдена</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_4" name="Опасность есть" sourceRef="Xor_4" targetRef="Task_6">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">Опасность есть</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_40" sourceRef="Task_35" targetRef="Xor_32" />
+    <bpmn:sequenceFlow id="Flow_41" name="Да" sourceRef="Xor_34" targetRef="Task_36">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">проверка пройдена</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_42" sourceRef="Task_36" targetRef="Task_37" />
+    <bpmn:sequenceFlow id="Flow_43" sourceRef="Task_37" targetRef="And_38" />
+    <bpmn:sequenceFlow id="Flow_44" sourceRef="And_38" targetRef="Task_40" />
+    <bpmn:sequenceFlow id="Flow_45" sourceRef="Task_40" targetRef="Task_41" />
+    <bpmn:sequenceFlow id="Flow_46" sourceRef="Task_41" targetRef="And_39" />
+    <bpmn:sequenceFlow id="Flow_47" sourceRef="And_38" targetRef="Task_42" />
+    <bpmn:sequenceFlow id="Flow_48" sourceRef="Task_42" targetRef="Task_43" />
+    <bpmn:sequenceFlow id="Flow_49" sourceRef="Task_43" targetRef="And_39" />
+    <bpmn:sequenceFlow id="Flow_5" sourceRef="Task_6" targetRef="Task_7" />
+    <bpmn:sequenceFlow id="Flow_50" sourceRef="And_39" targetRef="Task_44" />
+    <bpmn:sequenceFlow id="Flow_51" sourceRef="Task_44" targetRef="End_45" />
+    <bpmn:sequenceFlow id="Flow_6" sourceRef="Task_7" targetRef="Xor_5" />
+    <bpmn:sequenceFlow id="Flow_7" name="Опасности нет" sourceRef="Xor_4" targetRef="Task_8">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">Опасности нет</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_8" sourceRef="Task_8" targetRef="Xor_5" />
+    <bpmn:sequenceFlow id="Flow_9" sourceRef="Xor_5" targetRef="And_9" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_Collaboration_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_Collaboration_1" bpmnElement="Collaboration_1">
+      <bpmndi:BPMNShape id="BPMNShape_Participant_1" bpmnElement="Participant_1" isHorizontal="true">
+        <dc:Bounds x="128" y="103" width="9411.2" height="2575" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Lane_1" bpmnElement="Lane_1" isHorizontal="true">
+        <dc:Bounds x="176" y="103.00000000000006" width="9363.2" height="721" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Lane_2" bpmnElement="Lane_2" isHorizontal="true">
+        <dc:Bounds x="176" y="824" width="9363.2" height="515" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Lane_3" bpmnElement="Lane_3" isHorizontal="true">
+        <dc:Bounds x="176" y="1339" width="9363.2" height="515" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Lane_4" bpmnElement="Lane_4" isHorizontal="true">
+        <dc:Bounds x="176" y="1854" width="9363.2" height="515" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Lane_5" bpmnElement="Lane_5" isHorizontal="true">
+        <dc:Bounds x="176" y="2369" width="9363.2" height="309" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_And_10" bpmnElement="And_10" isMarkerVisible="true">
+        <dc:Bounds x="3432.6000000000004" y="438.50000000000006" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3322.5" y="449.50000000000006" width="67" height="28" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_And_25" bpmnElement="And_25" isMarkerVisible="true">
+        <dc:Bounds x="5112.6" y="438.50000000000006" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="5100.6" y="360.82500000000005" width="74" height="56" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_And_26" bpmnElement="And_26" isMarkerVisible="true">
+        <dc:Bounds x="6312.6" y="438.50000000000006" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="6304.900000000001" y="392.85" width="67" height="28" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_And_38" bpmnElement="And_38" isMarkerVisible="true">
+        <dc:Bounds x="7992.6" y="438.50000000000006" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="7973.6" y="376.83750000000003" width="88" height="42" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_And_39" bpmnElement="And_39" isMarkerVisible="true">
+        <dc:Bounds x="8872.6" y="438.50000000000006" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="8864.9" y="392.85" width="67" height="28" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_And_9" bpmnElement="And_9" isMarkerVisible="true">
+        <dc:Bounds x="2232.6" y="438.50000000000006" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2117.6" y="508.1625" width="88" height="42" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_End_45" bpmnElement="End_45">
+        <dc:Bounds x="9428.4" y="2505.5" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="9402.4" y="2563.175" width="88" height="70" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Start_1" bpmnElement="Start_1">
+        <dc:Bounds x="250.8" y="445.50000000000006" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="227.10000000000002" y="499.1500000000001" width="85" height="42" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_11" bpmnElement="Task_11">
+        <dc:Bounds x="2457.6000000000004" y="934.5000000000001" width="160" height="88" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_12" bpmnElement="Task_12">
+        <dc:Bounds x="2777.6000000000004" y="938.5000000000001" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_13" bpmnElement="Task_13">
+        <dc:Bounds x="2457.6000000000004" y="1648.0000000000002" width="160" height="103" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_14" bpmnElement="Task_14">
+        <dc:Bounds x="2777.6000000000004" y="1655.5000000000002" width="160" height="88" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_15" bpmnElement="Task_15">
+        <dc:Bounds x="2457.6000000000004" y="217.5" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_16" bpmnElement="Task_16">
+        <dc:Bounds x="2777.6000000000004" y="1964.5000000000002" width="160" height="88" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_17" bpmnElement="Task_17">
+        <dc:Bounds x="3097.6000000000004" y="206" width="160" height="103" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_18" bpmnElement="Task_18">
+        <dc:Bounds x="3657.6000000000004" y="2479.5" width="160" height="88" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_2" bpmnElement="Task_2">
+        <dc:Bounds x="457.6" y="423.50000000000006" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_21" bpmnElement="Task_21">
+        <dc:Bounds x="4217.6" y="423.50000000000006" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_22" bpmnElement="Task_22">
+        <dc:Bounds x="4537.6" y="934.5000000000001" width="160" height="88" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_23" bpmnElement="Task_23">
+        <dc:Bounds x="4217.6" y="625.5" width="160" height="88" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_24" bpmnElement="Task_24">
+        <dc:Bounds x="4537.6" y="2170.5" width="160" height="88" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_27" bpmnElement="Task_27">
+        <dc:Bounds x="5337.6" y="1449.5" width="160" height="88" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_28" bpmnElement="Task_28">
+        <dc:Bounds x="5657.6" y="1453.5" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_29" bpmnElement="Task_29">
+        <dc:Bounds x="5977.6" y="1453.5" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_3" bpmnElement="Task_3">
+        <dc:Bounds x="777.6" y="938.5000000000001" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_30" bpmnElement="Task_30">
+        <dc:Bounds x="5337.6" y="629.5" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_31" bpmnElement="Task_31">
+        <dc:Bounds x="5657.6" y="1144.5" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_33" bpmnElement="Task_33">
+        <dc:Bounds x="6777.6" y="927.0000000000001" width="160" height="103" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_35" bpmnElement="Task_35">
+        <dc:Bounds x="7337.6" y="1648.0000000000002" width="160" height="103" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_36" bpmnElement="Task_36">
+        <dc:Bounds x="7337.6" y="2483.5" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_37" bpmnElement="Task_37">
+        <dc:Bounds x="7657.6" y="934.5000000000001" width="160" height="88" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_40" bpmnElement="Task_40">
+        <dc:Bounds x="8217.6" y="419.50000000000006" width="160" height="88" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_41" bpmnElement="Task_41">
+        <dc:Bounds x="8537.6" y="423.50000000000006" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_42" bpmnElement="Task_42">
+        <dc:Bounds x="8217.6" y="2170.5" width="160" height="88" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_43" bpmnElement="Task_43">
+        <dc:Bounds x="8537.6" y="618" width="160" height="103" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_44" bpmnElement="Task_44">
+        <dc:Bounds x="9097.6" y="2479.5" width="160" height="88" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_6" bpmnElement="Task_6">
+        <dc:Bounds x="1337.6000000000001" y="934.5000000000001" width="160" height="88" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_7" bpmnElement="Task_7">
+        <dc:Bounds x="1657.6000000000001" y="412.00000000000006" width="160" height="103" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Task_8" bpmnElement="Task_8">
+        <dc:Bounds x="1337.6000000000001" y="1144.5" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Xor_19" bpmnElement="Xor_19" isMarkerVisible="true">
+        <dc:Bounds x="3992.6000000000004" y="438.50000000000006" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3984.9" y="376.83750000000003" width="67" height="42" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Xor_20" bpmnElement="Xor_20" isMarkerVisible="true">
+        <dc:Bounds x="4872.6" y="438.50000000000006" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="4871.900000000001" y="392.85" width="53" height="28" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Xor_32" bpmnElement="Xor_32" isMarkerVisible="true">
+        <dc:Bounds x="6552.6" y="953.5000000000001" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="6442.5" y="964.5000000000001" width="67" height="28" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Xor_34" bpmnElement="Xor_34" isMarkerVisible="true">
+        <dc:Bounds x="7112.6" y="953.5000000000001" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="7104.900000000001" y="907.85" width="67" height="28" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Xor_4" bpmnElement="Xor_4" isMarkerVisible="true">
+        <dc:Bounds x="1112.6000000000001" y="438.50000000000006" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1093.6000000000001" y="360.82500000000005" width="88" height="56" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_Xor_5" bpmnElement="Xor_5" isMarkerVisible="true">
+        <dc:Bounds x="1992.6000000000001" y="438.50000000000006" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1991.9" y="392.85" width="53" height="28" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_1" bpmnElement="Flow_1">
+        <di:waypoint x="286.8" y="463.50000000000006" />
+        <di:waypoint x="457.6" y="463.50000000000006" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_10" bpmnElement="Flow_10">
+        <di:waypoint x="2282.6" y="463.50000000000006" />
+        <di:waypoint x="2537.6000000000004" y="463.50000000000006" />
+        <di:waypoint x="2537.6000000000004" y="934.5000000000001" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_11" bpmnElement="Flow_11">
+        <di:waypoint x="2617.6000000000004" y="978.5000000000001" />
+        <di:waypoint x="2777.6000000000004" y="978.5000000000001" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_12" bpmnElement="Flow_12">
+        <di:waypoint x="2937.6000000000004" y="978.5000000000001" />
+        <di:waypoint x="3457.6000000000004" y="978.5000000000001" />
+        <di:waypoint x="3457.6000000000004" y="488.50000000000006" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_2" bpmnElement="Flow_2">
+        <di:waypoint x="617.6" y="463.50000000000006" />
+        <di:waypoint x="857.6" y="463.50000000000006" />
+        <di:waypoint x="857.6" y="938.5000000000001" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_20" bpmnElement="Flow_20">
+        <di:waypoint x="3482.6000000000004" y="463.50000000000006" />
+        <di:waypoint x="3737.6000000000004" y="463.50000000000006" />
+        <di:waypoint x="3737.6000000000004" y="2479.5" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_21" bpmnElement="Flow_21">
+        <di:waypoint x="3817.6000000000004" y="2523.5" />
+        <di:waypoint x="4017.6000000000004" y="2523.5" />
+        <di:waypoint x="4017.6000000000004" y="488.50000000000006" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_22" bpmnElement="Flow_22">
+        <di:waypoint x="4042.6000000000004" y="463.50000000000006" />
+        <di:waypoint x="4217.6" y="463.50000000000006" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="4091.6000000000004" y="473.96250000000003" width="60" height="28" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_23" bpmnElement="Flow_23">
+        <di:waypoint x="4377.6" y="463.50000000000006" />
+        <di:waypoint x="4617.6" y="463.50000000000006" />
+        <di:waypoint x="4617.6" y="934.5000000000001" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_24" bpmnElement="Flow_24">
+        <di:waypoint x="4697.6" y="978.5000000000001" />
+        <di:waypoint x="4897.6" y="978.5000000000001" />
+        <di:waypoint x="4897.6" y="488.50000000000006" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_28" bpmnElement="Flow_28">
+        <di:waypoint x="4922.6" y="463.50000000000006" />
+        <di:waypoint x="5112.6" y="463.50000000000006" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_29" bpmnElement="Flow_29">
+        <di:waypoint x="5137.6" y="488.50000000000006" />
+        <di:waypoint x="5137.6" y="1493.5" />
+        <di:waypoint x="5337.6" y="1493.5" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_3" bpmnElement="Flow_3">
+        <di:waypoint x="937.6" y="978.5000000000001" />
+        <di:waypoint x="1137.6000000000001" y="978.5000000000001" />
+        <di:waypoint x="1137.6000000000001" y="488.50000000000006" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_30" bpmnElement="Flow_30">
+        <di:waypoint x="5497.6" y="1493.5" />
+        <di:waypoint x="5657.6" y="1493.5" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_31" bpmnElement="Flow_31">
+        <di:waypoint x="5817.6" y="1493.5" />
+        <di:waypoint x="5977.6" y="1493.5" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_32" bpmnElement="Flow_32">
+        <di:waypoint x="6137.6" y="1493.5" />
+        <di:waypoint x="6337.6" y="1493.5" />
+        <di:waypoint x="6337.6" y="488.50000000000006" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_36" bpmnElement="Flow_36">
+        <di:waypoint x="6362.6" y="463.50000000000006" />
+        <di:waypoint x="6577.6" y="463.50000000000006" />
+        <di:waypoint x="6577.6" y="953.5000000000001" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_37" bpmnElement="Flow_37">
+        <di:waypoint x="6602.6" y="978.5000000000001" />
+        <di:waypoint x="6777.6" y="978.5000000000001" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_38" bpmnElement="Flow_38">
+        <di:waypoint x="6937.6" y="978.5000000000001" />
+        <di:waypoint x="7112.6" y="978.5000000000001" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_4" bpmnElement="Flow_4">
+        <di:waypoint x="1162.6000000000001" y="463.50000000000006" />
+        <di:waypoint x="1417.6000000000001" y="463.50000000000006" />
+        <di:waypoint x="1417.6000000000001" y="934.5000000000001" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1264.9" y="425.0375" width="67" height="28" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_41" bpmnElement="Flow_41">
+        <di:waypoint x="7137.6" y="1003.5000000000001" />
+        <di:waypoint x="7137.6" y="2523.5" />
+        <di:waypoint x="7337.6" y="2523.5" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="7152.6" y="2104.5" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_42" bpmnElement="Flow_42">
+        <di:waypoint x="7497.6" y="2523.5" />
+        <di:waypoint x="7737.6" y="2523.5" />
+        <di:waypoint x="7737.6" y="1022.5000000000001" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_43" bpmnElement="Flow_43">
+        <di:waypoint x="7817.6" y="978.5000000000001" />
+        <di:waypoint x="8017.6" y="978.5000000000001" />
+        <di:waypoint x="8017.6" y="488.50000000000006" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_44" bpmnElement="Flow_44">
+        <di:waypoint x="8042.6" y="463.50000000000006" />
+        <di:waypoint x="8217.6" y="463.50000000000006" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_45" bpmnElement="Flow_45">
+        <di:waypoint x="8377.6" y="463.50000000000006" />
+        <di:waypoint x="8537.6" y="463.50000000000006" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_46" bpmnElement="Flow_46">
+        <di:waypoint x="8697.6" y="463.50000000000006" />
+        <di:waypoint x="8872.6" y="463.50000000000006" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_5" bpmnElement="Flow_5">
+        <di:waypoint x="1497.6000000000001" y="978.5000000000001" />
+        <di:waypoint x="1737.6000000000001" y="978.5000000000001" />
+        <di:waypoint x="1737.6000000000001" y="515" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_50" bpmnElement="Flow_50">
+        <di:waypoint x="8922.6" y="463.50000000000006" />
+        <di:waypoint x="9177.6" y="463.50000000000006" />
+        <di:waypoint x="9177.6" y="2479.5" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_51" bpmnElement="Flow_51">
+        <di:waypoint x="9257.6" y="2523.5" />
+        <di:waypoint x="9428.4" y="2523.5" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_6" bpmnElement="Flow_6">
+        <di:waypoint x="1817.6000000000001" y="463.50000000000006" />
+        <di:waypoint x="1992.6000000000001" y="463.50000000000006" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_9" bpmnElement="Flow_9">
+        <di:waypoint x="2042.6000000000001" y="463.50000000000006" />
+        <di:waypoint x="2232.6" y="463.50000000000006" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_13" bpmnElement="Flow_13">
+        <di:waypoint x="2257.6" y="488.50000000000006" />
+        <di:waypoint x="2257.6" y="1699.5000000000002" />
+        <di:waypoint x="2457.6000000000004" y="1699.5000000000002" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_16" bpmnElement="Flow_16">
+        <di:waypoint x="2257.6" y="438.50000000000006" />
+        <di:waypoint x="2257.6" y="257.5" />
+        <di:waypoint x="2457.6000000000004" y="257.5" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_25" bpmnElement="Flow_25">
+        <di:waypoint x="4042.6000000000004" y="463.50000000000006" />
+        <di:waypoint x="4185.6" y="463.50000000000006" />
+        <di:waypoint x="4185.6" y="669.5" />
+        <di:waypoint x="4217.6" y="669.5" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="4215.8" y="552.5" width="74" height="28" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_33" bpmnElement="Flow_33">
+        <di:waypoint x="5137.6" y="488.50000000000006" />
+        <di:waypoint x="5137.6" y="669.5" />
+        <di:waypoint x="5337.6" y="669.5" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_39" bpmnElement="Flow_39">
+        <di:waypoint x="7137.6" y="1003.5000000000001" />
+        <di:waypoint x="7137.6" y="1699.5000000000002" />
+        <di:waypoint x="7337.6" y="1699.5000000000002" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="7225.1" y="1673.1875000000002" width="25" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_47" bpmnElement="Flow_47">
+        <di:waypoint x="8042.6" y="463.50000000000006" />
+        <di:waypoint x="8185.6" y="463.50000000000006" />
+        <di:waypoint x="8185.6" y="2214.5" />
+        <di:waypoint x="8217.6" y="2214.5" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_7" bpmnElement="Flow_7">
+        <di:waypoint x="1137.6000000000001" y="488.50000000000006" />
+        <di:waypoint x="1137.6000000000001" y="1184.5" />
+        <di:waypoint x="1337.6000000000001" y="1184.5" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1165.7" y="1067.5" width="67" height="28" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_14" bpmnElement="Flow_14">
+        <di:waypoint x="2617.6000000000004" y="1699.5000000000002" />
+        <di:waypoint x="2777.6000000000004" y="1699.5000000000002" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_15" bpmnElement="Flow_15">
+        <di:waypoint x="2937.6000000000004" y="1699.5000000000002" />
+        <di:waypoint x="3457.6000000000004" y="1699.5000000000002" />
+        <di:waypoint x="3457.6000000000004" y="488.50000000000006" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_17" bpmnElement="Flow_17">
+        <di:waypoint x="2617.6000000000004" y="257.5" />
+        <di:waypoint x="2745.6000000000004" y="257.5" />
+        <di:waypoint x="2745.6000000000004" y="2008.5000000000002" />
+        <di:waypoint x="2777.6000000000004" y="2008.5000000000002" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_18" bpmnElement="Flow_18">
+        <di:waypoint x="2937.6000000000004" y="2008.5000000000002" />
+        <di:waypoint x="3177.6000000000004" y="2008.5000000000002" />
+        <di:waypoint x="3177.6000000000004" y="309" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_19" bpmnElement="Flow_19">
+        <di:waypoint x="3257.6000000000004" y="257.5" />
+        <di:waypoint x="3457.6000000000004" y="257.5" />
+        <di:waypoint x="3457.6000000000004" y="438.50000000000006" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_26" bpmnElement="Flow_26">
+        <di:waypoint x="4297.6" y="713.5" />
+        <di:waypoint x="4297.6" y="2214.5" />
+        <di:waypoint x="4537.6" y="2214.5" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_27" bpmnElement="Flow_27">
+        <di:waypoint x="4697.6" y="2214.5" />
+        <di:waypoint x="4897.6" y="2214.5" />
+        <di:waypoint x="4897.6" y="488.50000000000006" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_34" bpmnElement="Flow_34">
+        <di:waypoint x="5497.6" y="669.5" />
+        <di:waypoint x="5737.6" y="669.5" />
+        <di:waypoint x="5737.6" y="1144.5" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_35" bpmnElement="Flow_35">
+        <di:waypoint x="5817.6" y="1184.5" />
+        <di:waypoint x="6337.6" y="1184.5" />
+        <di:waypoint x="6337.6" y="488.50000000000006" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_48" bpmnElement="Flow_48">
+        <di:waypoint x="8377.6" y="2214.5" />
+        <di:waypoint x="8617.6" y="2214.5" />
+        <di:waypoint x="8617.6" y="721" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_49" bpmnElement="Flow_49">
+        <di:waypoint x="8697.6" y="669.5" />
+        <di:waypoint x="8897.6" y="669.5" />
+        <di:waypoint x="8897.6" y="488.50000000000006" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_8" bpmnElement="Flow_8">
+        <di:waypoint x="1497.6000000000001" y="1184.5" />
+        <di:waypoint x="2017.6000000000001" y="1184.5" />
+        <di:waypoint x="2017.6000000000001" y="488.50000000000006" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_Flow_40" bpmnElement="Flow_40">
+        <di:waypoint x="7417.6" y="1751.0000000000002" />
+        <di:waypoint x="7417.6" y="1776.7500000000002" />
+        <di:waypoint x="6577.6" y="1776.7500000000002" />
+        <di:waypoint x="6577.6" y="1003.5000000000001" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

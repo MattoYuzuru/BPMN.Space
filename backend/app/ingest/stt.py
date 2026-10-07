@@ -25,6 +25,10 @@ class Transcript:
     language: str = "ru-RU"
 
 
+class NoSpeechError(Exception):
+    """Провайдер обработал запись, но не нашёл распознаваемой речи."""
+
+
 class SpeechToText(Protocol):
     async def transcribe(self, data: bytes, *, mime: str | None) -> Transcript: ...
 

@@ -6,8 +6,12 @@
 Все цитаты обязаны дословно встречаться в текстах `texts/` — это проверяет тест фикстур.
 """
 
+import json
+
 from app.domain.models import QuestionKind as K
 from app.domain.models import Severity as S  # noqa: N817
+from app.fixtures import FIXTURES_DIR
+from app.fixtures.complex_examples import COMPLEX_EXAMPLES
 from app.fixtures.types import DiagramRule, Playbook, QuestionRule, ResolutionRule
 
 # --- Технологическое присоединение (ПП РФ № 861) ----------------------------------------------
@@ -330,6 +334,22 @@ SUPPLY_DIAGRAM = DiagramRule(
     },
 )
 
+COMPLEX_DIAGRAMS = tuple(
+    DiagramRule(
+        fixture=example.fixture,
+        requires=(example.title,),
+        questions_complete=True,
+        trace={
+            node["id"]: node["name"]
+            for node in json.loads(
+                (FIXTURES_DIR / "ir" / f"{example.fixture}.json").read_text(encoding="utf-8")
+            )["nodes"]
+            if node["type"] == "task"
+        },
+    )
+    for example in COMPLEX_EXAMPLES
+)
+
 PLAYBOOK = Playbook(
     questions=(
         *TP_QUESTIONS,
@@ -345,6 +365,7 @@ PLAYBOOK = Playbook(
         PERMIT_DIAGRAM,
         PROCUREMENT_DIAGRAM,
         SUPPLY_DIAGRAM,
+        *COMPLEX_DIAGRAMS,
     ),
 )
 

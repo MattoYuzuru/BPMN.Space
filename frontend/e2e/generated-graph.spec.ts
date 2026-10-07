@@ -14,7 +14,17 @@ declare const window: Window & {
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const outputRoot = fileURLToPath(new URL('../../reports/tmp/generated-ir/', import.meta.url))
 let output: string
-const cases = ['xor', 'and', 'nested', 'loop', 'starts', 'parallel_ends'] as const
+const cases = [
+  'xor',
+  'and',
+  'nested',
+  'loop',
+  'starts',
+  'parallel_ends',
+  'energy_incident',
+  'logistics_order',
+  'service_release',
+] as const
 
 test.beforeAll(async ({ baseURL }, info) => {
   if (!baseURL) throw new Error('Не задан адрес canvas-стенда')
@@ -83,9 +93,43 @@ for (const scenario of cases) {
       () => window.__diagramEvents?.filter((event) => event.type === 'import').length === 2,
     )
     await page.evaluate(() => window.__diagram.fit())
+    await page.waitForTimeout(400)
+    const frame = await page.locator('.djs-container').boundingBox()
+    const viewport = await page.locator('.djs-container > svg > g.viewport').boundingBox()
+    expect(frame).not.toBeNull()
+    expect(viewport).not.toBeNull()
+    if (frame && viewport) {
+      expect(viewport.x).toBeGreaterThanOrEqual(frame.x)
+      expect(viewport.y).toBeGreaterThanOrEqual(frame.y)
+      expect(viewport.x + viewport.width).toBeLessThanOrEqual(frame.x + frame.width)
+      expect(viewport.y + viewport.height).toBeLessThanOrEqual(frame.y + frame.height)
+    }
     for (const node of ir.nodes) {
       await expect(page.locator(`.djs-shape[data-element-id="${node.id}"]`)).toBeVisible()
     }
+    const overflowing = await page.evaluate((nodes) => {
+      return nodes
+        .filter((node: { id: string; type: string }) => node.type === 'task')
+        .flatMap((node: { id: string }) => {
+          const visual = document.querySelector<SVGGElement>(
+            `.djs-shape[data-element-id="${node.id}"] .djs-visual`,
+          )
+          const text = visual?.querySelector<SVGTextElement>('text')
+          const rectangle = visual?.querySelector<SVGRectElement>('rect')
+          if (!text || !rectangle) return [node.id]
+          const label = text.getBBox()
+          const box = rectangle.getBBox()
+          return label.x < box.x - 1 ||
+            label.y < box.y - 1 ||
+            label.x + label.width > box.x + box.width + 1 ||
+            label.y + label.height > box.y + box.height + 1
+            ? [node.id]
+            : []
+        })
+    }, ir.nodes)
+    expect(overflowing, 'Полная подпись каждой задачи остаётся внутри её прямоугольника').toEqual(
+      [],
+    )
     const exported = await page.evaluate(() => window.__diagram.exportXml())
     const semantics = await page.evaluate(
       ([before, after]) => {
@@ -128,5 +172,8 @@ for (const scenario of cases) {
     await page.evaluate(() => window.__diagram.pauseSimulation())
     expect(await page.evaluate(() => window.__diagram.exportXml())).toBe(exported)
     expect(errors).toEqual([])
+    if (scenario.includes('_') && !scenario.startsWith('parallel')) {
+      await page.screenshot({ path: `${output}${scenario}-canvas.png` })
+    }
   })
 }

@@ -113,153 +113,153 @@
   <bpmndi:BPMNDiagram id="BPMNDiagram_Collaboration_supply_contract">
     <bpmndi:BPMNPlane id="BPMNPlane_Collaboration_supply_contract" bpmnElement="Collaboration_supply_contract">
       <bpmndi:BPMNShape id="BPMNShape_Participant_supply_contract" bpmnElement="Participant_supply_contract" isHorizontal="true">
-        <dc:Bounds x="80" y="80" width="2132" height="1200"/>
+        <dc:Bounds x="128" y="80" width="3411.2000000000003" height="1200"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Lane_Consumer" bpmnElement="Lane_Consumer" isHorizontal="true">
-        <dc:Bounds x="110" y="80" width="2102" height="400"/>
+        <dc:Bounds x="176" y="80" width="3363.2000000000003" height="400"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Lane_Supplier" bpmnElement="Lane_Supplier" isHorizontal="true">
-        <dc:Bounds x="110" y="480" width="2102" height="560"/>
+        <dc:Bounds x="176" y="480" width="3363.2000000000003" height="560"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Lane_Grid" bpmnElement="Lane_Grid" isHorizontal="true">
-        <dc:Bounds x="110" y="1040" width="2102" height="240"/>
+        <dc:Bounds x="176" y="1040" width="3363.2000000000003" height="240"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_StartEvent_Need" bpmnElement="StartEvent_Need">
-        <dc:Bounds x="150" y="182" width="36" height="36"/>
+        <dc:Bounds x="250.8" y="182" width="36" height="36"/>
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="148" y="223" width="81" height="28"/>
+          <dc:Bounds x="261.1" y="223" width="81" height="28"/>
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_Submit" bpmnElement="Task_Submit">
-        <dc:Bounds x="286" y="160" width="100" height="80"/>
+        <dc:Bounds x="457.6" y="160" width="160" height="80"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Gateway_CheckMerge" bpmnElement="Gateway_CheckMerge" isMarkerVisible="true">
-        <dc:Bounds x="486" y="575" width="50" height="50"/>
+        <dc:Bounds x="792.6" y="575" width="50" height="50"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_CheckDocs" bpmnElement="Task_CheckDocs">
-        <dc:Bounds x="636" y="560" width="100" height="80"/>
+        <dc:Bounds x="1017.6000000000001" y="560" width="160" height="80"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Gateway_DocsOk" bpmnElement="Gateway_DocsOk" isMarkerVisible="true">
-        <dc:Bounds x="836" y="575" width="50" height="50"/>
+        <dc:Bounds x="1352.6000000000001" y="575" width="50" height="50"/>
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="831" y="542" width="60" height="28"/>
+          <dc:Bounds x="1347.6000000000001" y="542" width="60" height="28"/>
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_RequestDocs" bpmnElement="Task_RequestDocs">
-        <dc:Bounds x="986" y="880" width="100" height="80"/>
+        <dc:Bounds x="1577.6000000000001" y="880" width="160" height="80"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_ProvideDocs" bpmnElement="Task_ProvideDocs">
-        <dc:Bounds x="1186" y="320" width="100" height="80"/>
+        <dc:Bounds x="1897.6000000000001" y="320" width="160" height="80"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Gateway_Fork" bpmnElement="Gateway_Fork" isMarkerVisible="true">
-        <dc:Bounds x="1011" y="575" width="50" height="50"/>
+        <dc:Bounds x="1632.6000000000001" y="575" width="50" height="50"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_RequestGrid" bpmnElement="Task_RequestGrid">
-        <dc:Bounds x="1186" y="560" width="100" height="80"/>
+        <dc:Bounds x="1897.6000000000001" y="560" width="160" height="80"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_ConfirmGrid" bpmnElement="Task_ConfirmGrid">
-        <dc:Bounds x="1386" y="1120" width="100" height="80"/>
+        <dc:Bounds x="2217.6" y="1120" width="160" height="80"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_PrepareDraft" bpmnElement="Task_PrepareDraft">
-        <dc:Bounds x="1186" y="720" width="100" height="80"/>
+        <dc:Bounds x="1897.6000000000001" y="720" width="160" height="80"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Gateway_Join" bpmnElement="Gateway_Join" isMarkerVisible="true">
-        <dc:Bounds x="1586" y="575" width="50" height="50"/>
+        <dc:Bounds x="2552.6000000000004" y="575" width="50" height="50"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_SendDraft" bpmnElement="Task_SendDraft">
-        <dc:Bounds x="1736" y="560" width="100" height="80"/>
+        <dc:Bounds x="2777.6000000000004" y="560" width="160" height="80"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_Sign" bpmnElement="Task_Sign">
-        <dc:Bounds x="1936" y="160" width="100" height="80"/>
+        <dc:Bounds x="3097.6000000000004" y="160" width="160" height="80"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_EndEvent_Signed" bpmnElement="EndEvent_Signed">
-        <dc:Bounds x="2136" y="182" width="36" height="36"/>
+        <dc:Bounds x="3428.4" y="182" width="36" height="36"/>
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="2124" y="223" width="60" height="28"/>
+          <dc:Bounds x="3416.4" y="223" width="60" height="28"/>
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_Need_Submit" bpmnElement="Flow_Need_Submit">
-        <di:waypoint x="186" y="200"/>
-        <di:waypoint x="286" y="200"/>
+        <di:waypoint x="286.8" y="200"/>
+        <di:waypoint x="457.6" y="200"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_Submit_CheckMerge" bpmnElement="Flow_Submit_CheckMerge">
-        <di:waypoint x="386" y="200"/>
-        <di:waypoint x="511" y="200"/>
-        <di:waypoint x="511" y="575"/>
+        <di:waypoint x="617.6" y="200"/>
+        <di:waypoint x="817.6" y="200"/>
+        <di:waypoint x="817.6" y="575"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_CheckMerge_CheckDocs" bpmnElement="Flow_CheckMerge_CheckDocs">
-        <di:waypoint x="536" y="600"/>
-        <di:waypoint x="636" y="600"/>
+        <di:waypoint x="842.6" y="600"/>
+        <di:waypoint x="1017.6000000000001" y="600"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_CheckDocs_DocsOk" bpmnElement="Flow_CheckDocs_DocsOk">
-        <di:waypoint x="736" y="600"/>
-        <di:waypoint x="836" y="600"/>
+        <di:waypoint x="1177.6000000000001" y="600"/>
+        <di:waypoint x="1352.6000000000001" y="600"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_DocsOk_Fork" bpmnElement="Flow_DocsOk_Fork">
-        <di:waypoint x="886" y="600"/>
-        <di:waypoint x="1011" y="600"/>
+        <di:waypoint x="1402.6000000000001" y="600"/>
+        <di:waypoint x="1632.6000000000001" y="600"/>
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="940" y="578" width="18" height="14"/>
+          <dc:Bounds x="1509.4" y="578" width="18" height="14"/>
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_Fork_RequestGrid" bpmnElement="Flow_Fork_RequestGrid">
-        <di:waypoint x="1061" y="600"/>
-        <di:waypoint x="1186" y="600"/>
+        <di:waypoint x="1682.6000000000001" y="600"/>
+        <di:waypoint x="1897.6000000000001" y="600"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_RequestGrid_ConfirmGrid" bpmnElement="Flow_RequestGrid_ConfirmGrid">
-        <di:waypoint x="1286" y="600"/>
-        <di:waypoint x="1436" y="600"/>
-        <di:waypoint x="1436" y="1120"/>
+        <di:waypoint x="2057.6000000000004" y="600"/>
+        <di:waypoint x="2297.6" y="600"/>
+        <di:waypoint x="2297.6" y="1120"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_ConfirmGrid_Join" bpmnElement="Flow_ConfirmGrid_Join">
-        <di:waypoint x="1486" y="1160"/>
-        <di:waypoint x="1611" y="1160"/>
-        <di:waypoint x="1611" y="625"/>
+        <di:waypoint x="2377.6" y="1160"/>
+        <di:waypoint x="2577.6000000000004" y="1160"/>
+        <di:waypoint x="2577.6000000000004" y="625"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_Join_SendDraft" bpmnElement="Flow_Join_SendDraft">
-        <di:waypoint x="1636" y="600"/>
-        <di:waypoint x="1736" y="600"/>
+        <di:waypoint x="2602.6000000000004" y="600"/>
+        <di:waypoint x="2777.6000000000004" y="600"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_SendDraft_Sign" bpmnElement="Flow_SendDraft_Sign">
-        <di:waypoint x="1836" y="600"/>
-        <di:waypoint x="1986" y="600"/>
-        <di:waypoint x="1986" y="240"/>
+        <di:waypoint x="2937.6000000000004" y="600"/>
+        <di:waypoint x="3177.6000000000004" y="600"/>
+        <di:waypoint x="3177.6000000000004" y="240"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_Sign_Signed" bpmnElement="Flow_Sign_Signed">
-        <di:waypoint x="2036" y="200"/>
-        <di:waypoint x="2136" y="200"/>
+        <di:waypoint x="3257.6000000000004" y="200"/>
+        <di:waypoint x="3428.4" y="200"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_DocsOk_RequestDocs" bpmnElement="Flow_DocsOk_RequestDocs">
-        <di:waypoint x="861" y="625"/>
-        <di:waypoint x="861" y="920"/>
-        <di:waypoint x="986" y="920"/>
+        <di:waypoint x="1377.6000000000001" y="625"/>
+        <di:waypoint x="1377.6000000000001" y="920"/>
+        <di:waypoint x="1577.6000000000001" y="920"/>
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="866" y="766" width="25" height="14"/>
+          <dc:Bounds x="1393.1000000000001" y="766" width="25" height="14"/>
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_Fork_PrepareDraft" bpmnElement="Flow_Fork_PrepareDraft">
-        <di:waypoint x="1036" y="625"/>
-        <di:waypoint x="1036" y="760"/>
-        <di:waypoint x="1186" y="760"/>
+        <di:waypoint x="1657.6000000000001" y="625"/>
+        <di:waypoint x="1657.6000000000001" y="760"/>
+        <di:waypoint x="1897.6000000000001" y="760"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_RequestDocs_ProvideDocs" bpmnElement="Flow_RequestDocs_ProvideDocs">
-        <di:waypoint x="1086" y="920"/>
-        <di:waypoint x="1136" y="920"/>
-        <di:waypoint x="1136" y="360"/>
-        <di:waypoint x="1186" y="360"/>
+        <di:waypoint x="1738" y="920"/>
+        <di:waypoint x="1818" y="920"/>
+        <di:waypoint x="1818" y="360"/>
+        <di:waypoint x="1898" y="360"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_PrepareDraft_Join" bpmnElement="Flow_PrepareDraft_Join">
-        <di:waypoint x="1286" y="740"/>
-        <di:waypoint x="1306" y="740"/>
-        <di:waypoint x="1306" y="555"/>
-        <di:waypoint x="1611" y="555"/>
-        <di:waypoint x="1611" y="575"/>
+        <di:waypoint x="2057.6000000000004" y="740"/>
+        <di:waypoint x="2089.6" y="740"/>
+        <di:waypoint x="2089.6" y="555"/>
+        <di:waypoint x="2577.6000000000004" y="555"/>
+        <di:waypoint x="2577.6000000000004" y="575"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_ProvideDocs_CheckMerge" bpmnElement="Flow_ProvideDocs_CheckMerge">
-        <di:waypoint x="1236" y="320"/>
-        <di:waypoint x="1236" y="300"/>
-        <di:waypoint x="511" y="300"/>
-        <di:waypoint x="511" y="575"/>
+        <di:waypoint x="1977.6000000000001" y="320"/>
+        <di:waypoint x="1977.6000000000001" y="300"/>
+        <di:waypoint x="817.6" y="300"/>
+        <di:waypoint x="817.6" y="575"/>
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>

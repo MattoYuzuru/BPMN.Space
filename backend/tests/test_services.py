@@ -319,10 +319,11 @@ def test_seed_is_deterministic() -> None:
     first, second = build_seed(), build_seed()
     assert [p.id for p in first.projects] == [p.id for p in second.projects]
     assert [q.status for q in first.questions] == [q.status for q in second.questions]
-    assert len(first.projects) == 41
+    assert len(first.projects) == 5
     kinds = {s.kind for s in first.sources}
     assert kinds == set(SourceKind)
-    assert {s.status for s in first.sources} == {"ready", "failed"}
-    assert any(not s.active for s in first.sources)
+    assert {s.status for s in first.sources} == {"ready"}
     with_versions = {v.project_id for v in first.versions}
-    assert len(with_versions) >= 20
+    assert len(with_versions) == 5
+    assert len(first.retired_project_ids) == 39
+    assert not with_versions.intersection(first.retired_project_ids)

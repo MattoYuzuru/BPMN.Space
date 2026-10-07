@@ -2229,6 +2229,33 @@
         "title": "Transcription",
         "type": "object"
       },
+      "TranscriptionErrorResponse": {
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "const": "NO_SPEECH",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "NO_SPEECH — запись обработана, но речь не распознана",
+            "title": "Code"
+          },
+          "detail": {
+            "description": "Сообщение об ошибке для пользователя, на русском",
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "TranscriptionErrorResponse",
+        "type": "object"
+      },
       "UserCreate": {
         "additionalProperties": false,
         "description": "Регистрация по адресу почты и паролю.",
@@ -6258,11 +6285,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/TranscriptionErrorResponse"
                 }
               }
             },
-            "description": "Некорректные данные"
+            "description": "Некорректная запись или речь не распознана"
           },
           "429": {
             "content": {

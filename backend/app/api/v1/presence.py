@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
-from app.api.access import ensure_project_access
+from app.api.access import ensure_project_access, has_stream_project_access
 from app.api.auth import OptionalUserStreamDep
 from app.api.deps import ContainerDep
 from app.api.schemas.common import errors
@@ -59,8 +59,11 @@ async def project_presence(
                     users = await asyncio.wait_for(queue.get(), timeout=30)
                 except TimeoutError:
                     # При отзыве доступа закрываем поток даже без движения на доске.
-                    await ensure_project_access(request, container, project_id, user, write=False)
+                    if not await has_stream_project_access(request, container, project_id, user):
+                        return
                     continue
+                if not await has_stream_project_access(request, container, project_id, user):
+                    return
                 yield ServerSentEvent(
                     event="presence",
                     data=PresenceSnapshot(

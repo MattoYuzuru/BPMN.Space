@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { resetCsrfToken } from '@/shared/api/client'
+import { ApiError, resetCsrfToken } from '@/shared/api/client'
 import { stubUploads } from '@/test/xhr'
-import { transcribeAudio } from './api'
+import { NO_SPEECH_MESSAGE, transcribeAudio } from './api'
 
 describe('голосовая расшифровка', () => {
   beforeEach(resetCsrfToken)
@@ -39,6 +39,8 @@ describe('голосовая расшифровка', () => {
   it('не принимает пустую расшифровку', async () => {
     stubUploads([{ body: { text: '  ', duration_sec: 1, language: 'ru-RU' } }])
 
-    await expect(transcribeAudio(new Blob(['audio']))).rejects.toThrow('Запишите ещё раз')
+    await expect(transcribeAudio(new Blob(['audio']))).rejects.toEqual(
+      new ApiError(422, NO_SPEECH_MESSAGE, { code: 'NO_SPEECH' }),
+    )
   })
 })

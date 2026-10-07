@@ -14,6 +14,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -265,6 +266,15 @@ class DiagramVersionRow(Base):
     __table_args__ = (
         UniqueConstraint("project_id", "number", name="uq_versions_project_number"),
         UniqueConstraint("run_id", name="uq_versions_run_id"),
+        CheckConstraint("storage_depth BETWEEN 0 AND 20", name="ck_versions_storage_depth"),
+        CheckConstraint(
+            "(bpmn_xml IS NOT NULL AND packed_xml IS NULL AND xml_sha256 IS NULL "
+            "AND base_version_id IS NULL AND storage_depth = 0) OR "
+            "(bpmn_xml IS NULL AND packed_xml IS NOT NULL AND xml_sha256 IS NOT NULL AND "
+            "((base_version_id IS NULL AND storage_depth = 0) OR "
+            "(base_version_id IS NOT NULL AND storage_depth > 0)))",
+            name="ck_versions_storage_format",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
@@ -278,7 +288,15 @@ class DiagramVersionRow(Base):
     origin: Mapped[str] = mapped_column(String(24), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     actor_email: Mapped[str | None] = mapped_column(String(320))
-    bpmn_xml: Mapped[str] = mapped_column(Text, nullable=False)
+    bpmn_xml: Mapped[str | None] = mapped_column(Text)
+    packed_xml: Mapped[bytes | None] = mapped_column(LargeBinary)
+    xml_sha256: Mapped[str | None] = mapped_column(String(64))
+    base_version_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("diagram_versions.id", deferrable=True, initially="DEFERRED"),
+        index=True,
+    )
+    storage_depth: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     diff: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     report: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     trace: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

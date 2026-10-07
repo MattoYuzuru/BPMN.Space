@@ -20,3 +20,4 @@
   - [Realtime-комнаты и защита от конфликтных сохранений](adr/0004-realtime-collaboration.md)
   - [Локальное воспроизведение и отдельная модель длительностей](adr/0005-process-playback.md)
   - [Граф IR, проверяемая сверка вопросов и приоритет ручных правок](adr/0006-generation-quality.md)
+  - [Компактное хранение истории XML](adr/0007-compact-version-storage.md)

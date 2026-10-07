@@ -265,7 +265,10 @@ async def test_every_server_action_marks_its_item_exactly_once(stack: Stack) -> 
     xml = (await editor.get(f"/versions/{rebuilt['version_id']}")).json()["xml"]
     saved = await editor.put(
         f"/projects/{pid}/diagram",
-        json={"xml": xml, "base_version_id": rebuilt["version_id"]},
+        json={
+            "xml": xml.replace('name="', 'name="Правка ', 1),
+            "base_version_id": rebuilt["version_id"],
+        },
     )
     assert saved.status_code == 201, saved.text
     assert "diagram_edited" in await _done(editor)

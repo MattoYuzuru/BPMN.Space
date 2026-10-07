@@ -66,6 +66,8 @@ from app.infra.repositories.sql import SqlRunRepository, SqlStore
 from app.infra.seed import DEMO_PROJECT_ID, build_seed
 from app.infra.storage import LocalFileStorage
 from app.infra.tasks import AsyncioTaskSpawner
+from app.infra.version_codec import MAX_DEPTH
+from app.infra.version_maintenance import maintain as maintain_versions
 from app.ingest.parsers import LocalDocumentParser
 from app.llm.base import PipelineError
 from app.llm.mock import MockPipeline
@@ -531,13 +533,14 @@ async def test_concurrent_versions_get_consecutive_numbers(sql_store) -> None:
     )
 
     async def manual() -> int:
+        changed_xml = xml.replace("Провести выездной осмотр", f"Осмотр {uuid4()}")
         while True:
             latest = await repos.versions.latest(project.id)
             try:
                 return (
                     await service.save_manual(
                         project.id,
-                        xml=xml,
+                        xml=changed_xml,
                         base_version_id=latest.id if latest else None,
                     )
                 ).number
@@ -587,7 +590,11 @@ async def test_concurrent_manual_saves_from_same_head_have_one_winner(sql_store)
 
     async def save() -> Version | StaleVersionError:
         try:
-            return await service.save_manual(project.id, xml=xml, base_version_id=initial.id)
+            return await service.save_manual(
+                project.id,
+                xml=xml.replace("Провести выездной осмотр", "Осмотр"),
+                base_version_id=initial.id,
+            )
         except StaleVersionError as error:
             return error
 
@@ -1264,3 +1271,159 @@ async def test_initialize_skips_upgrade_for_newer_schema(
         async with admin.begin() as connection:
             await connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
         await admin.dispose()
+
+
+@pytest.mark.asyncio
+async def test_compact_versions_roundtrip_checkpoints_metadata_and_project_delete(
+    sql_store,
+) -> None:
+    store, sessions = sql_store
+    repos = store.repositories()
+    project = await _make_project(repos)
+    template = build_seed().versions[0]
+    versions = []
+    for number in range(1, 46):
+        version = replace(
+            template,
+            id=uuid4(),
+            project_id=project.id,
+            number=number,
+            run_id=None,
+            origin=VersionOrigin.GENERATED if number == 1 else VersionOrigin.MANUAL,
+            xml=read_bpmn("tp861_v2").replace("Провести выездной осмотр", f"Осмотр {number}"),
+            actor_email="editor@example.org",
+        )
+        await repos.versions.add(version)
+        versions.append(version)
+    async with sessions() as session:
+        rows = list(
+            await session.scalars(
+                select(DiagramVersionRow).where(DiagramVersionRow.project_id == project.id)
+            )
+        )
+        assert all(row.bpmn_xml is None and row.packed_xml for row in rows)
+        assert max(row.storage_depth for row in rows) == MAX_DEPTH
+        assert (
+            sum(len(row.packed_xml or b"") for row in rows)
+            < sum(len(version.xml.encode()) for version in versions) / 10
+        )
+    fresh = store.repositories()
+    for version in versions:
+        assert await fresh.versions.get(version.id) == version
+    summaries = await fresh.versions.list_by_project(project.id, include_xml=False)
+    assert all(version.xml == "" for version in summaries)
+    assert summaries[0].report == versions[-1].report
+    assert summaries[0].trace == versions[-1].trace
+    assert (await fresh.versions.latest(project.id)) == versions[-1]
+    await fresh.projects.delete(project.id)
+    assert await fresh.versions.get(versions[-1].id) is None
+
+
+@pytest.mark.asyncio
+async def test_legacy_compaction_and_restore_are_resumable_and_keep_references(sql_store) -> None:
+    store, sessions = sql_store
+    repos = store.repositories()
+    project = await _make_project(repos)
+    template = build_seed().versions[0]
+    versions = [
+        replace(
+            template,
+            id=uuid4(),
+            project_id=project.id,
+            number=number,
+            run_id=None,
+            origin=VersionOrigin.MANUAL,
+            xml=read_bpmn("tp861_v2").replace("Провести выездной осмотр", f"Осмотр {number}"),
+        )
+        for number in range(1, 6)
+    ]
+    # Старая схема оставляла bpmn_xml; такие строки должны читаться до обслуживания.
+    async with sessions.begin() as session:
+        for version in versions[:-1]:
+            session.add(repos.versions._row(version))
+    for version in versions[:-1]:
+        assert await repos.versions.get(version.id) == version
+    await repos.versions.add(versions[-1])
+    while await repos.versions.maintain_batch(project.id, limit=1):
+        for version in versions:
+            assert await store.repositories().versions.get(version.id) == version
+    assert await repos.versions.maintain_batch(project.id) == 0
+    while await repos.versions.maintain_batch(project.id, restore=True, limit=2):
+        for version in versions:
+            assert await store.repositories().versions.get(version.id) == version
+    assert await repos.versions.maintain_batch(project.id, restore=True) == 0
+    async with sessions() as session:
+        rows = list(
+            await session.scalars(
+                select(DiagramVersionRow).where(DiagramVersionRow.project_id == project.id)
+            )
+        )
+        assert all(row.bpmn_xml is not None and row.packed_xml is None for row in rows)
+
+
+@pytest.mark.asyncio
+async def test_compact_storage_downgrade_requires_lossless_restore(sql_store) -> None:
+    store, sessions = sql_store
+    repos = store.repositories()
+    project = await _make_project(repos)
+    version = replace(
+        build_seed().versions[0], id=uuid4(), project_id=project.id, run_id=None, number=1
+    )
+    await repos.versions.add(version)
+    config = Config()
+    config.set_main_option("script_location", str(MIGRATIONS_DIR))
+
+    def downgrade(connection) -> None:
+        config.attributes["connection"] = connection
+        command.downgrade(config, "0010_merge_heads")
+
+    async with sessions.begin() as session:
+        connection = await session.connection()
+        with pytest.raises(RuntimeError, match="restore"):
+            await connection.run_sync(downgrade)
+    assert await repos.versions.get(version.id) == version
+    assert await repos.versions.maintain_batch(project.id, restore=True) == 1
+    async with sessions.begin() as session:
+        connection = await session.connection()
+        await connection.run_sync(downgrade)
+        xml = await session.scalar(text("SELECT bpmn_xml FROM diagram_versions WHERE number=1"))
+        assert xml == version.xml
+
+
+@pytest.mark.asyncio
+async def test_maintenance_command_uses_real_database_and_is_repeatable(
+    sql_store, monkeypatch
+) -> None:
+    store, sessions = sql_store
+    repos = store.repositories()
+    project = await _make_project(repos)
+    version = replace(
+        build_seed().versions[0], id=uuid4(), project_id=project.id, run_id=None, number=1
+    )
+    async with sessions.begin() as session:
+        session.add(repos.versions._row(version))
+    # Штатный CLI использует настоящую БД, но ограничен тестовой изолированной схемой.
+    monkeypatch.setattr(
+        "app.infra.version_maintenance.Settings",
+        lambda: Settings(database_url=os.environ["TEST_DATABASE_URL"]),
+    )
+    monkeypatch.setattr(
+        "app.infra.version_maintenance.create_async_engine", lambda _url: sessions.kw["bind"]
+    )
+    assert await maintain_versions(restore=False, batch_size=1) == 1
+    assert await maintain_versions(restore=False, batch_size=1) == 0
+    assert await repos.versions.get(version.id) == version
+    assert await maintain_versions(restore=True, batch_size=1) == 1
+    assert await maintain_versions(restore=True, batch_size=1) == 0
+    assert await repos.versions.get(version.id) == version
+    config = Config()
+    config.set_main_option("script_location", str(MIGRATIONS_DIR))
+    async with sessions.begin() as session:
+        connection = await session.connection()
+
+        def downgrade(sync) -> None:
+            config.attributes["connection"] = sync
+            command.downgrade(config, "0010_merge_heads")
+
+        await connection.run_sync(downgrade)
+    assert await maintain_versions(restore=True, batch_size=1) == 0

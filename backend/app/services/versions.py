@@ -139,6 +139,9 @@ class VersionService:
                 raise StaleVersionError(
                     current_id, previous.number if previous is not None else None
                 )
+            # Повтор идентичного сохранения не раздувает историю и не меняет автора.
+            if previous is not None and previous.xml == xml:
+                return previous
             trace = retain_trace(previous.xml, xml, previous.trace) if previous else {}
             return await add_version(
                 repos,

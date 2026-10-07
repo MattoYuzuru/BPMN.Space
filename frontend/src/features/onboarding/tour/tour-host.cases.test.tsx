@@ -99,9 +99,19 @@ describe('ожидание якоря между шагами', () => {
       { ...base, key: 'a', title: 'A', kind: 'action', optional: true, anchor: 'nope' },
       { ...base, key: 'c', title: 'C', kind: 'finish' },
     ]
-    mount(steps, null)
-    act(() => startTour('a'))
-    await waitFor(() => expect(useTourStore.getState().stepKey).toBe('c'))
+    vi.useFakeTimers()
+    const timeoutMs = 150
+    const { unmount } = mount(steps, null, undefined, timeoutMs)
+    try {
+      act(() => startTour('a'))
+      await act(() => vi.advanceTimersByTimeAsync(timeoutMs - 1))
+      expect(useTourStore.getState().stepKey).toBe('a')
+      await act(() => vi.advanceTimersByTimeAsync(1))
+      expect(useTourStore.getState().stepKey).toBe('c')
+    } finally {
+      unmount()
+      vi.useRealTimers()
+    }
   })
 })
 

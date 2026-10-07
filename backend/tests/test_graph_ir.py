@@ -51,6 +51,17 @@ TEXT = (
 PROOF = {"source_id": str(SOURCE_ID), "quote": TEXT}
 
 
+def test_parallel_merge_without_pairing_reports_the_missing_join_id():
+    data = graph_case("and")
+    fork = next(
+        node for node in data["nodes"] if node["type"] == "and" and node["direction"] == "split"
+    )
+    fork["join_id"] = None
+    graph = GraphIR.model_validate(data)
+    with pytest.raises(GraphValidationError, match="у fork отсутствует join_id"):
+        validate_graph(graph)
+
+
 def node(key: str, kind: str = "task", lane: str = "Operator", **kwargs: Any) -> dict[str, Any]:
     return {"id": key, "type": kind, "name": key, "lane": lane, "source": PROOF, **kwargs}
 

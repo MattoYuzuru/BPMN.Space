@@ -4,11 +4,11 @@ import { errorMessage } from '@/shared/api/client'
 import { formatClock } from '@/shared/lib/format'
 import { softTransition } from '@/shared/lib/motion'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
-import { AudioLevel, Button, Field, Icon, Progress, Textarea } from '@/shared/ui'
-import { useTranscribe } from './api'
+import { AudioLevel, Button, Field, Icon, Progress, Textarea, toast } from '@/shared/ui'
+import { isNoSpeechError, NO_SPEECH_MESSAGE, useTranscribe } from './api'
 import { type RecorderState, useVoiceRecorder } from './use-voice-recorder'
 
-const BLOCKED: Record<
+export const BLOCKED: Record<
   Extract<RecorderState, { status: 'blocked' }>['reason'],
   { title: string; description: string }
 > = {
@@ -77,8 +77,16 @@ export function VoiceCapture({
   useEffect(() => {
     if (state.status !== 'recorded') return
     setDuration(state.durationSec)
-    transcribe.mutate(state.blob, { onSuccess: (result) => setText(result.text) })
-  }, [state, transcribe.mutate])
+    transcribe.mutate(state.blob, {
+      onSuccess: (result) => setText(result.text),
+      onError: (error) => {
+        if (!isNoSpeechError(error)) return
+        toast.warning('Речь не распознана', { description: NO_SPEECH_MESSAGE })
+        transcribe.reset()
+        recorder.cancel()
+      },
+    })
+  }, [state, transcribe.mutate, transcribe.reset, recorder.cancel])
 
   const reviewing = state.status === 'recorded' && transcribe.isSuccess
   const transcribing = state.status === 'recorded' && transcribe.isPending

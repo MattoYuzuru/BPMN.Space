@@ -1,6 +1,6 @@
 """Генератор фикстур mock-бэкенда: BPMN-схемы демо-проектов и примеры для `examples/`.
 
-Запуск из корня репозитория (нужны Node ≥ 20 и интернет для первого `npx`):
+Запуск из корня репозитория (нужны зависимости `make setup` и Node ≥ 22.12):
 
     uv run --directory backend python scripts/build_fixtures.py          # пересобрать и проверить
     uv run --directory backend python scripts/build_fixtures.py --check  # только проверить готовые
@@ -8,8 +8,8 @@
 Что делает:
 1. Описания процессов ниже (`DIAGRAMS`) → семантический BPMN 2.0: collaboration + participant +
    laneSet, `incoming`/`outgoing` у каждого узла, подписанные ветки шлюзов с `conditionExpression`.
-2. Координаты (DI) — `npx -y bpmn-auto-layout@2.0.0-alpha.2 <file> --stdout` (та же версия,
-   что будет в сервисе bpmn-tools, RFC §6).
+2. Координаты (DI) — локальный `infra/bpmn-tools/layout-cli.mjs`: тот же runtime layout,
+   включая размеры задач под полные подписи, что используется сервисом.
 3. Проверки: XSD (lxml, официальные схемы OMG из `app/domain/bpmn/xsd/`) и
    `npx -y bpmnlint` с конфигом `bpmnlint:recommended` — ошибок быть не должно.
    Осознанное предупреждение одно: `fake-join` в `tp861_v1` (ранняя версия возвращает цикл
@@ -37,6 +37,12 @@ from xml.sax.saxutils import escape
 
 from lxml import etree
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.domain.bpmn.compiler import compile_graph
+from app.domain.bpmn.ir import GraphIR
+from app.fixtures.complex_examples import COMPLEX_EXAMPLES
+
 BACKEND = Path(__file__).resolve().parent.parent
 ROOT = BACKEND.parent
 FIXTURES = BACKEND / "app" / "fixtures"
@@ -46,7 +52,7 @@ XSD = BACKEND / "app" / "domain" / "bpmn" / "xsd" / "BPMN20.xsd"
 EXAMPLES = ROOT / "examples"
 SAMPLES = FIXTURES / "samples"
 
-LAYOUT = ["npx", "-y", "bpmn-auto-layout@2.0.0-alpha.2"]
+LAYOUT = ["node", str(ROOT / "infra/bpmn-tools/layout-cli.mjs")]
 LINT = ["npx", "-y", "bpmnlint@11.14.0"]
 EXPECTED_WARNINGS = {("tp861_v1", "fake-join", "Task_CheckCompleteness")}
 
@@ -501,7 +507,7 @@ def layout(xml: str, workdir: Path, key: str) -> str:
     source = workdir / f"{key}.semantic.bpmn"
     source.write_text(xml, encoding="utf-8")
     result = subprocess.run(  # noqa: S603 — фиксированная команда, без shell
-        [*LAYOUT, str(source), "--stdout"], capture_output=True, text=True, check=True
+        [*LAYOUT, str(source)], capture_output=True, text=True, check=True
     )
     if result.stderr.strip():
         print(f"  {key}: предупреждения раскладки:\n{result.stderr}", file=sys.stderr)
@@ -680,6 +686,12 @@ def copy_examples() -> None:
             target = EXAMPLES / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(BPMN_DIR / f"{diagram.key}.bpmn", target)
+    for example in COMPLEX_EXAMPLES:
+        directory = EXAMPLES / example.key
+        (directory / "input").mkdir(parents=True, exist_ok=True)
+        (directory / "output").mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(TEXTS / f"{example.fixture}.md", directory / "input/regulation.md")
+        shutil.copyfile(BPMN_DIR / f"{example.fixture}.bpmn", directory / "output/diagram.bpmn")
 
 
 def main() -> None:
@@ -702,14 +714,22 @@ def main() -> None:
                 print(f"Раскладка {diagram.key}…")
                 xml = reroute(layout(semantic_xml(diagram), workdir, diagram.key), diagram.reroute)
                 (BPMN_DIR / f"{diagram.key}.bpmn").write_text(xml, encoding="utf-8")
+            for example in COMPLEX_EXAMPLES:
+                print(f"Раскладка {example.fixture} (записанный IR)…")
+                graph = GraphIR.model_validate_json(
+                    (FIXTURES / "ir" / f"{example.fixture}.json").read_text(encoding="utf-8")
+                )
+                xml = layout(compile_graph(graph), workdir, example.fixture)
+                (BPMN_DIR / f"{example.fixture}.bpmn").write_text(xml, encoding="utf-8")
         paths = [BPMN_DIR / f"{diagram.key}.bpmn" for diagram in DIAGRAMS]
+        paths += [BPMN_DIR / f"{example.fixture}.bpmn" for example in COMPLEX_EXAMPLES]
         for path in paths:
             check_xsd(path)
         check_lint(paths, workdir)
     build_samples(check=args.check)
     if not args.check:
         copy_examples()
-        print(f"Готово: {len(DIAGRAMS)} схем в {BPMN_DIR.relative_to(ROOT)}, примеры в examples/")
+        print(f"Готово: {len(paths)} схем в {BPMN_DIR.relative_to(ROOT)}, примеры в examples/")
 
 
 if __name__ == "__main__":

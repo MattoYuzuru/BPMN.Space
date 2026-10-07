@@ -22,7 +22,8 @@ export const RUN_POLL_MS = 5000
 const FINISH_REFETCH_MS = 4000
 
 /**
- * Связывает прогон проекта с данными экрана. Пока у проекта есть active_run, держит SSE-поток:
+ * Связывает прогон проекта с данными экрана. Держит SSE до `done`, даже если active_run
+ * уже исчез из обновлённого проекта. Незавершённый прогон сохраняется в RunStore:
  * события идут в стор (панель хода) и в кэш запросов — вопросы появляются и решаются вживую,
  * новая версия схемы подхватывается сама. На `done` проект и версии перезапрашиваются.
  */
@@ -30,22 +31,31 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
   const client = useQueryClient()
   const track = useRunStore((state) => state.track)
   const apply = useRunStore((state) => state.apply)
-  const runId = activeRun?.id
+  const unfinishedRunId = useRunStore((state) => {
+    const view = state.views[projectId]
+    return view?.finishedAt === null ? view.runId : undefined
+  })
+  const runId = activeRun?.id ?? unfinishedRunId
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: поток открывается на смену runId
   useEffect(() => {
-    if (!activeRun || !runId) return
-    track(activeRun)
+    if (!runId) return
+    if (activeRun) track(activeRun)
     let finished = false
+    let disposed = false
+    const isCurrentRun = () => !disposed && useRunStore.getState().views[projectId]?.runId === runId
     let poller: ReturnType<typeof setInterval> | undefined
-    let running = activeRun.status === 'running'
+    let running = activeRun
+      ? activeRun.status === 'running'
+      : Boolean(useRunStore.getState().views[projectId]?.stage)
     emitOnboardingSignal({
       type: 'run.status',
-      status: activeRun.status === 'queued' ? 'queued' : 'running',
+      status: activeRun?.status === 'queued' ? 'queued' : 'running',
       projectId,
     })
 
     const handle = (event: RunEvent) => {
+      if (!isCurrentRun()) return
       apply(projectId, event)
       if (event.type === 'stage' && !running) {
         running = true
@@ -76,7 +86,7 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
     }
 
     const finish = (run: Run) => {
-      if (finished) return
+      if (finished || !isCurrentRun()) return
       finished = true
       clearInterval(poller)
       const refetched = client.invalidateQueries({ queryKey: projectKeys.detail(projectId) })
@@ -119,6 +129,7 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
         onEvent: handle,
         onSessionExpired: expire,
         onLost: () => {
+          if (finished || !isCurrentRun() || poller) return
           void client.invalidateQueries({ queryKey: projectKeys.detail(projectId) })
           toast.warning('Связь с прогоном потеряна', {
             description: 'Результат появится, когда прогон завершится.',
@@ -129,6 +140,7 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
               .then((run) => {
                 if (
                   finished ||
+                  !isCurrentRun() ||
                   (run.status !== 'succeeded' &&
                     run.status !== 'failed' &&
                     run.status !== 'cancelled')
@@ -148,6 +160,7 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
       },
     )
     return () => {
+      disposed = true
       closeStream()
       clearInterval(poller)
     }

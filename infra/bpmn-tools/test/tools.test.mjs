@@ -3,7 +3,7 @@ import { once } from 'node:events'
 import { readdir, readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 import { createToolsServer } from '../server.mjs'
-import { layout, lint } from '../tools.mjs'
+import { layout, lint, parse } from '../tools.mjs'
 
 const sample = `<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="D" targetNamespace="urn:test"><bpmn:process id="P"><bpmn:startEvent id="S" name="Начало"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent><bpmn:task id="T" name="Работа"><bpmn:incoming>F1</bpmn:incoming><bpmn:outgoing>F2</bpmn:outgoing></bpmn:task><bpmn:endEvent id="E" name="Конец"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent><bpmn:sequenceFlow id="F1" sourceRef="S" targetRef="T"/><bpmn:sequenceFlow id="F2" sourceRef="T" targetRef="E"/></bpmn:process></bpmn:definitions>`
 
@@ -12,6 +12,27 @@ test('настоящий layout делает DI, готовый DI остаёт�
   assert.match(result.xml, /BPMNShape/)
   assert.equal((await lint(result.xml)).issues.filter((i) => i.severity === 'error').length, 0)
   assert.equal((await layout(result.xml)).xml, result.xml)
+})
+
+test('новая раскладка вмещает длинную подпись, не теряет текст и сохраняет прямые сегменты', async () => {
+  const label =
+    'Подготовить и согласовать полный комплект технических документов для восстановления энергоснабжения потребителей после завершения ремонтных работ и проверки готовности оборудования к вводу в эксплуатацию'
+  const result = await layout(sample.replace('name="Работа"', `name="${label}"`))
+  const definitions = await parse(result.xml)
+  const elements = definitions.diagrams[0].plane.planeElement
+  const task = elements.find((element) => element.bpmnElement?.id === 'T')
+  assert.equal(task.bpmnElement.name, label)
+  assert.equal(task.bounds.width, 160)
+  assert.ok(task.bounds.height >= 160, '200 символов требуют большей высоты, чем стандартные 80')
+  for (const edge of elements.filter((element) => element.$type === 'bpmndi:BPMNEdge')) {
+    for (let index = 1; index < edge.waypoint.length; index += 1) {
+      const before = edge.waypoint[index - 1]
+      const after = edge.waypoint[index]
+      assert.ok(before.x === after.x || before.y === after.y, edge.bpmnElement.id)
+    }
+  }
+  assert.equal((await layout(result.xml)).xml, result.xml)
+  assert.deepEqual((await lint(result.xml)).issues, [])
 })
 
 test('известный fake-join имеет предупреждение настоящего bpmnlint', async () => {

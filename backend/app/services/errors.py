@@ -33,6 +33,13 @@ class InvalidInputError(ServiceError):
     """422: данные корректны по форме, но не по смыслу (пустой текст, битый XML)."""
 
 
+class SpeechNotRecognizedError(InvalidInputError):
+    """422: запись обработана, но речь не распознана; можно записать снова."""
+
+    def __init__(self) -> None:
+        super().__init__("Не удалось распознать речь. Попробуйте записать ещё раз.")
+
+
 class UnsupportedMediaError(ServiceError):
     """415: формат файла не поддерживается."""
 

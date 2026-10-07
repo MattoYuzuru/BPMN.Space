@@ -4,7 +4,7 @@ import { type FormEvent, useEffect, useState } from 'react'
 import { examplesQueryOptions } from '@/entities/example'
 import { useCreateProjectFromExample } from '@/entities/project'
 import { ACCEPTED_FILES } from '@/entities/source'
-import { VoiceDictation } from '@/features/voice-record/voice-dictation'
+import { appendDictation, VoiceDictation } from '@/features/voice-record/voice-dictation'
 import { errorMessage } from '@/shared/api/client'
 import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
@@ -81,6 +81,7 @@ function BlankForm() {
   const { title: initialTitle, minimal, onboarding } = useCreateProjectDialog.getState()
   const [title, setTitle] = useState(initialTitle)
   const [description, setDescription] = useState('')
+  const [dictating, setDictating] = useState(false)
   const [files, setFiles] = useState<File[]>([])
   const [error, setError] = useState<string>()
   const create = useCreateProjectFlow()
@@ -143,7 +144,10 @@ function BlankForm() {
       </Field>
       {!minimal && (
         <Field label="Описание процесса" optional>
-          <div className="relative">
+          <VoiceDictation
+            onText={(text) => setDescription((current) => appendDictation(current, text))}
+            onActiveChange={setDictating}
+          >
             <Textarea
               value={description}
               minRows={3}
@@ -152,15 +156,7 @@ function BlankForm() {
               className="pr-10"
               onChange={(event) => setDescription(event.target.value)}
             />
-            <VoiceDictation
-              side="bottom"
-              submitLabel="Добавить в описание"
-              className="absolute top-1.5 right-1.5"
-              onText={(text) =>
-                setDescription((current) => [current.trim(), text].filter(Boolean).join('\n'))
-              }
-            />
-          </div>
+          </VoiceDictation>
         </Field>
       )}
       {!minimal && (
@@ -202,6 +198,7 @@ function BlankForm() {
           type="submit"
           variant="primary"
           loading={create.isPending}
+          disabled={dictating}
           {...tourAnchor(TOUR_ANCHORS.createSubmit)}
         >
           Создать проект

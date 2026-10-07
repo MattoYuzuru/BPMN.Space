@@ -19,6 +19,7 @@ export {
   type Quote,
   type QuoteMark,
   type QuoteRange,
+  quoteReferences,
   type Sample,
   type SampleKind,
   SOURCE_KIND,

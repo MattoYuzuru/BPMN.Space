@@ -1,0 +1,966 @@
+{
+  "schema_version": 1,
+  "title": "Исполнение заказа со склада и контроль доставки",
+  "lanes": [
+    {
+      "id": "Lane_1",
+      "name": "Менеджер заказа",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Менеджер заказа"
+      }
+    },
+    {
+      "id": "Lane_2",
+      "name": "Склад",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Склад"
+      }
+    },
+    {
+      "id": "Lane_3",
+      "name": "Финансовая служба",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Финансовая служба"
+      }
+    },
+    {
+      "id": "Lane_4",
+      "name": "Логистика",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Логистика"
+      }
+    },
+    {
+      "id": "Lane_5",
+      "name": "Контроль качества",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Контроль качества"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "Start_1",
+      "type": "start",
+      "name": "Подтверждён заказ клиента",
+      "lane": "Lane_1",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Подтверждён заказ клиента"
+      }
+    },
+    {
+      "id": "Task_2",
+      "type": "task",
+      "name": "Зарегистрировать состав заказа и адрес доставки",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Зарегистрировать состав заказа и адрес доставки"
+      }
+    },
+    {
+      "id": "Xor_3",
+      "type": "xor",
+      "name": "Повторная проверка",
+      "lane": "Lane_1",
+      "direction": "join",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Повторная проверка"
+      }
+    },
+    {
+      "id": "Task_4",
+      "type": "task",
+      "name": "Проверить реквизиты клиента и условия договора",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Проверить реквизиты клиента и условия договора"
+      }
+    },
+    {
+      "id": "Xor_5",
+      "type": "xor",
+      "name": "Проверка пройдена?",
+      "lane": "Lane_1",
+      "direction": "split",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Проверка пройдена?"
+      }
+    },
+    {
+      "id": "Task_6",
+      "type": "task",
+      "name": "Уточнить реквизиты и согласовать исправленный заказ",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Уточнить реквизиты и согласовать исправленный заказ"
+      }
+    },
+    {
+      "id": "Task_7",
+      "type": "task",
+      "name": "Зафиксировать согласованный состав заказа",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Зафиксировать согласованный состав заказа"
+      }
+    },
+    {
+      "id": "And_8",
+      "type": "and",
+      "name": "Проверить возможность исполнения",
+      "lane": "Lane_1",
+      "direction": "split",
+      "join_id": "And_9",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Проверить возможность исполнения"
+      }
+    },
+    {
+      "id": "And_9",
+      "type": "and",
+      "name": "Все ветви завершены",
+      "lane": "Lane_1",
+      "direction": "join",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Все ветви завершены"
+      }
+    },
+    {
+      "id": "Task_10",
+      "type": "task",
+      "name": "Проверить наличие всех позиций и сроки годности",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Проверить наличие всех позиций и сроки годности"
+      }
+    },
+    {
+      "id": "Task_11",
+      "type": "task",
+      "name": "Зарезервировать доступные партии товара",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Зарезервировать доступные партии товара"
+      }
+    },
+    {
+      "id": "Task_12",
+      "type": "task",
+      "name": "Проверить поступление оплаты или согласованный кредитный лимит",
+      "lane": "Lane_3",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Проверить поступление оплаты или согласованный кредитный лимит"
+      }
+    },
+    {
+      "id": "Task_13",
+      "type": "task",
+      "name": "Подтвердить финансовое разрешение на отгрузку",
+      "lane": "Lane_3",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Подтвердить финансовое разрешение на отгрузку"
+      }
+    },
+    {
+      "id": "Task_14",
+      "type": "task",
+      "name": "Проверить маршрут и ограничения приёмки у клиента",
+      "lane": "Lane_4",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Проверить маршрут и ограничения приёмки у клиента"
+      }
+    },
+    {
+      "id": "Task_15",
+      "type": "task",
+      "name": "Забронировать транспорт и окно доставки",
+      "lane": "Lane_4",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Забронировать транспорт и окно доставки"
+      }
+    },
+    {
+      "id": "Xor_16",
+      "type": "xor",
+      "name": "Все позиции доступны?",
+      "lane": "Lane_1",
+      "direction": "split",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Все позиции доступны?"
+      }
+    },
+    {
+      "id": "Xor_17",
+      "type": "xor",
+      "name": "Вариант выбран",
+      "lane": "Lane_1",
+      "direction": "join",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Вариант выбран"
+      }
+    },
+    {
+      "id": "Task_18",
+      "type": "task",
+      "name": "Выдать задание на комплектование полной поставки",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Выдать задание на комплектование полной поставки"
+      }
+    },
+    {
+      "id": "Task_19",
+      "type": "task",
+      "name": "Согласовать с клиентом замену дефицитных позиций",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Согласовать с клиентом замену дефицитных позиций"
+      }
+    },
+    {
+      "id": "Task_20",
+      "type": "task",
+      "name": "Получить согласованные позиции из резервного склада",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Получить согласованные позиции из резервного склада"
+      }
+    },
+    {
+      "id": "Task_21",
+      "type": "task",
+      "name": "Обновить резерв и задание на комплектование",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Обновить резерв и задание на комплектование"
+      }
+    },
+    {
+      "id": "And_22",
+      "type": "and",
+      "name": "Подготовить отгрузку",
+      "lane": "Lane_1",
+      "direction": "split",
+      "join_id": "And_23",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Подготовить отгрузку"
+      }
+    },
+    {
+      "id": "And_23",
+      "type": "and",
+      "name": "Все ветви завершены",
+      "lane": "Lane_1",
+      "direction": "join",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Все ветви завершены"
+      }
+    },
+    {
+      "id": "Task_24",
+      "type": "task",
+      "name": "Отобрать партии по сроку годности и собрать заказ",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Отобрать партии по сроку годности и собрать заказ"
+      }
+    },
+    {
+      "id": "Task_25",
+      "type": "task",
+      "name": "Упаковать груз и нанести транспортную маркировку",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Упаковать груз и нанести транспортную маркировку"
+      }
+    },
+    {
+      "id": "Task_26",
+      "type": "task",
+      "name": "Проверить количество и сохранность упаковки",
+      "lane": "Lane_5",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Проверить количество и сохранность упаковки"
+      }
+    },
+    {
+      "id": "Task_27",
+      "type": "task",
+      "name": "Сформировать счёт и закрывающие документы",
+      "lane": "Lane_3",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Сформировать счёт и закрывающие документы"
+      }
+    },
+    {
+      "id": "Task_28",
+      "type": "task",
+      "name": "Проверить данные получателя в накладной",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Проверить данные получателя в накладной"
+      }
+    },
+    {
+      "id": "Task_29",
+      "type": "task",
+      "name": "Подготовить маршрутный лист и документы перевозчика",
+      "lane": "Lane_4",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Подготовить маршрутный лист и документы перевозчика"
+      }
+    },
+    {
+      "id": "Xor_30",
+      "type": "xor",
+      "name": "Повторная проверка",
+      "lane": "Lane_5",
+      "direction": "join",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Повторная проверка"
+      }
+    },
+    {
+      "id": "Task_31",
+      "type": "task",
+      "name": "Сверить груз с документами и заданием на отгрузку",
+      "lane": "Lane_5",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Сверить груз с документами и заданием на отгрузку"
+      }
+    },
+    {
+      "id": "Xor_32",
+      "type": "xor",
+      "name": "Проверка пройдена?",
+      "lane": "Lane_5",
+      "direction": "split",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Проверка пройдена?"
+      }
+    },
+    {
+      "id": "Task_33",
+      "type": "task",
+      "name": "Исправить комплектацию или документы и повторно предъявить груз",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Исправить комплектацию или документы и повторно предъявить груз"
+      }
+    },
+    {
+      "id": "Task_34",
+      "type": "task",
+      "name": "Разрешить передачу груза перевозчику",
+      "lane": "Lane_5",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Разрешить передачу груза перевозчику"
+      }
+    },
+    {
+      "id": "Task_35",
+      "type": "task",
+      "name": "Загрузить автомобиль и подписать передачу груза",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Загрузить автомобиль и подписать передачу груза"
+      }
+    },
+    {
+      "id": "Task_36",
+      "type": "task",
+      "name": "Доставить груз в согласованное окно",
+      "lane": "Lane_4",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Доставить груз в согласованное окно"
+      }
+    },
+    {
+      "id": "Xor_37",
+      "type": "xor",
+      "name": "Клиент принял весь груз?",
+      "lane": "Lane_1",
+      "direction": "split",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Клиент принял весь груз?"
+      }
+    },
+    {
+      "id": "Xor_38",
+      "type": "xor",
+      "name": "Вариант выбран",
+      "lane": "Lane_1",
+      "direction": "join",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Вариант выбран"
+      }
+    },
+    {
+      "id": "Task_39",
+      "type": "task",
+      "name": "Получить подписанное подтверждение полной приёмки",
+      "lane": "Lane_4",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Получить подписанное подтверждение полной приёмки"
+      }
+    },
+    {
+      "id": "Task_40",
+      "type": "task",
+      "name": "Зафиксировать расхождение и фотографии при приёмке",
+      "lane": "Lane_4",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Зафиксировать расхождение и фотографии при приёмке"
+      }
+    },
+    {
+      "id": "Task_41",
+      "type": "task",
+      "name": "Согласовать компенсацию или возврат спорных позиций",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Согласовать компенсацию или возврат спорных позиций"
+      }
+    },
+    {
+      "id": "Task_42",
+      "type": "task",
+      "name": "Принять согласованный возврат и обновить остатки",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Принять согласованный возврат и обновить остатки"
+      }
+    },
+    {
+      "id": "And_43",
+      "type": "and",
+      "name": "Закрыть исполнение заказа",
+      "lane": "Lane_1",
+      "direction": "split",
+      "join_id": "And_44",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Закрыть исполнение заказа"
+      }
+    },
+    {
+      "id": "And_44",
+      "type": "and",
+      "name": "Все ветви завершены",
+      "lane": "Lane_1",
+      "direction": "join",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Все ветви завершены"
+      }
+    },
+    {
+      "id": "Task_45",
+      "type": "task",
+      "name": "Учесть принятый товар и согласованную корректировку стоимости",
+      "lane": "Lane_3",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Учесть принятый товар и согласованную корректировку стоимости"
+      }
+    },
+    {
+      "id": "Task_46",
+      "type": "task",
+      "name": "Отправить клиенту итоговые закрывающие документы",
+      "lane": "Lane_3",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Отправить клиенту итоговые закрывающие документы"
+      }
+    },
+    {
+      "id": "Task_47",
+      "type": "task",
+      "name": "Закрыть рейс и сверить расходы перевозки",
+      "lane": "Lane_4",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Закрыть рейс и сверить расходы перевозки"
+      }
+    },
+    {
+      "id": "Task_48",
+      "type": "task",
+      "name": "Сохранить обратную связь клиента",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Сохранить обратную связь клиента"
+      }
+    },
+    {
+      "id": "End_49",
+      "type": "end",
+      "name": "Заказ исполнен и расчёты сверены",
+      "lane": "Lane_1",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Заказ исполнен и расчёты сверены"
+      }
+    }
+  ],
+  "flows": [
+    {
+      "id": "Flow_1",
+      "source_id": "Start_1",
+      "target_id": "Task_2",
+      "name": ""
+    },
+    {
+      "id": "Flow_2",
+      "source_id": "Task_2",
+      "target_id": "Xor_3",
+      "name": ""
+    },
+    {
+      "id": "Flow_3",
+      "source_id": "Xor_3",
+      "target_id": "Task_4",
+      "name": ""
+    },
+    {
+      "id": "Flow_4",
+      "source_id": "Task_4",
+      "target_id": "Xor_5",
+      "name": ""
+    },
+    {
+      "id": "Flow_5",
+      "source_id": "Xor_5",
+      "target_id": "Task_6",
+      "name": "Нет",
+      "condition": "проверка не пройдена",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "проверка не пройдена"
+      }
+    },
+    {
+      "id": "Flow_6",
+      "source_id": "Task_6",
+      "target_id": "Xor_3",
+      "name": ""
+    },
+    {
+      "id": "Flow_7",
+      "source_id": "Xor_5",
+      "target_id": "Task_7",
+      "name": "Да",
+      "condition": "проверка пройдена",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "проверка пройдена"
+      }
+    },
+    {
+      "id": "Flow_8",
+      "source_id": "Task_7",
+      "target_id": "And_8",
+      "name": ""
+    },
+    {
+      "id": "Flow_9",
+      "source_id": "And_8",
+      "target_id": "Task_10",
+      "name": ""
+    },
+    {
+      "id": "Flow_10",
+      "source_id": "Task_10",
+      "target_id": "Task_11",
+      "name": ""
+    },
+    {
+      "id": "Flow_11",
+      "source_id": "Task_11",
+      "target_id": "And_9",
+      "name": ""
+    },
+    {
+      "id": "Flow_12",
+      "source_id": "And_8",
+      "target_id": "Task_12",
+      "name": ""
+    },
+    {
+      "id": "Flow_13",
+      "source_id": "Task_12",
+      "target_id": "Task_13",
+      "name": ""
+    },
+    {
+      "id": "Flow_14",
+      "source_id": "Task_13",
+      "target_id": "And_9",
+      "name": ""
+    },
+    {
+      "id": "Flow_15",
+      "source_id": "And_8",
+      "target_id": "Task_14",
+      "name": ""
+    },
+    {
+      "id": "Flow_16",
+      "source_id": "Task_14",
+      "target_id": "Task_15",
+      "name": ""
+    },
+    {
+      "id": "Flow_17",
+      "source_id": "Task_15",
+      "target_id": "And_9",
+      "name": ""
+    },
+    {
+      "id": "Flow_18",
+      "source_id": "And_9",
+      "target_id": "Xor_16",
+      "name": ""
+    },
+    {
+      "id": "Flow_19",
+      "source_id": "Xor_16",
+      "target_id": "Task_18",
+      "name": "Заказ полный",
+      "condition": "Заказ полный",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Заказ полный"
+      }
+    },
+    {
+      "id": "Flow_20",
+      "source_id": "Task_18",
+      "target_id": "Xor_17",
+      "name": ""
+    },
+    {
+      "id": "Flow_21",
+      "source_id": "Xor_16",
+      "target_id": "Task_19",
+      "name": "Есть дефицит",
+      "condition": "Есть дефицит",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Есть дефицит"
+      }
+    },
+    {
+      "id": "Flow_22",
+      "source_id": "Task_19",
+      "target_id": "Task_20",
+      "name": ""
+    },
+    {
+      "id": "Flow_23",
+      "source_id": "Task_20",
+      "target_id": "Task_21",
+      "name": ""
+    },
+    {
+      "id": "Flow_24",
+      "source_id": "Task_21",
+      "target_id": "Xor_17",
+      "name": ""
+    },
+    {
+      "id": "Flow_25",
+      "source_id": "Xor_17",
+      "target_id": "And_22",
+      "name": ""
+    },
+    {
+      "id": "Flow_26",
+      "source_id": "And_22",
+      "target_id": "Task_24",
+      "name": ""
+    },
+    {
+      "id": "Flow_27",
+      "source_id": "Task_24",
+      "target_id": "Task_25",
+      "name": ""
+    },
+    {
+      "id": "Flow_28",
+      "source_id": "Task_25",
+      "target_id": "Task_26",
+      "name": ""
+    },
+    {
+      "id": "Flow_29",
+      "source_id": "Task_26",
+      "target_id": "And_23",
+      "name": ""
+    },
+    {
+      "id": "Flow_30",
+      "source_id": "And_22",
+      "target_id": "Task_27",
+      "name": ""
+    },
+    {
+      "id": "Flow_31",
+      "source_id": "Task_27",
+      "target_id": "Task_28",
+      "name": ""
+    },
+    {
+      "id": "Flow_32",
+      "source_id": "Task_28",
+      "target_id": "Task_29",
+      "name": ""
+    },
+    {
+      "id": "Flow_33",
+      "source_id": "Task_29",
+      "target_id": "And_23",
+      "name": ""
+    },
+    {
+      "id": "Flow_34",
+      "source_id": "And_23",
+      "target_id": "Xor_30",
+      "name": ""
+    },
+    {
+      "id": "Flow_35",
+      "source_id": "Xor_30",
+      "target_id": "Task_31",
+      "name": ""
+    },
+    {
+      "id": "Flow_36",
+      "source_id": "Task_31",
+      "target_id": "Xor_32",
+      "name": ""
+    },
+    {
+      "id": "Flow_37",
+      "source_id": "Xor_32",
+      "target_id": "Task_33",
+      "name": "Нет",
+      "condition": "проверка не пройдена",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "проверка не пройдена"
+      }
+    },
+    {
+      "id": "Flow_38",
+      "source_id": "Task_33",
+      "target_id": "Xor_30",
+      "name": ""
+    },
+    {
+      "id": "Flow_39",
+      "source_id": "Xor_32",
+      "target_id": "Task_34",
+      "name": "Да",
+      "condition": "проверка пройдена",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "проверка пройдена"
+      }
+    },
+    {
+      "id": "Flow_40",
+      "source_id": "Task_34",
+      "target_id": "Task_35",
+      "name": ""
+    },
+    {
+      "id": "Flow_41",
+      "source_id": "Task_35",
+      "target_id": "Task_36",
+      "name": ""
+    },
+    {
+      "id": "Flow_42",
+      "source_id": "Task_36",
+      "target_id": "Xor_37",
+      "name": ""
+    },
+    {
+      "id": "Flow_43",
+      "source_id": "Xor_37",
+      "target_id": "Task_39",
+      "name": "Принял полностью",
+      "condition": "Принял полностью",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Принял полностью"
+      }
+    },
+    {
+      "id": "Flow_44",
+      "source_id": "Task_39",
+      "target_id": "Xor_38",
+      "name": ""
+    },
+    {
+      "id": "Flow_45",
+      "source_id": "Xor_37",
+      "target_id": "Task_40",
+      "name": "Есть расхождение",
+      "condition": "Есть расхождение",
+      "source": {
+        "source_id": "20de194c-00c4-59c1-b0e7-1e1925340a56",
+        "quote": "Есть расхождение"
+      }
+    },
+    {
+      "id": "Flow_46",
+      "source_id": "Task_40",
+      "target_id": "Task_41",
+      "name": ""
+    },
+    {
+      "id": "Flow_47",
+      "source_id": "Task_41",
+      "target_id": "Task_42",
+      "name": ""
+    },
+    {
+      "id": "Flow_48",
+      "source_id": "Task_42",
+      "target_id": "Xor_38",
+      "name": ""
+    },
+    {
+      "id": "Flow_49",
+      "source_id": "Xor_38",
+      "target_id": "And_43",
+      "name": ""
+    },
+    {
+      "id": "Flow_50",
+      "source_id": "And_43",
+      "target_id": "Task_45",
+      "name": ""
+    },
+    {
+      "id": "Flow_51",
+      "source_id": "Task_45",
+      "target_id": "Task_46",
+      "name": ""
+    },
+    {
+      "id": "Flow_52",
+      "source_id": "Task_46",
+      "target_id": "And_44",
+      "name": ""
+    },
+    {
+      "id": "Flow_53",
+      "source_id": "And_43",
+      "target_id": "Task_47",
+      "name": ""
+    },
+    {
+      "id": "Flow_54",
+      "source_id": "Task_47",
+      "target_id": "Task_48",
+      "name": ""
+    },
+    {
+      "id": "Flow_55",
+      "source_id": "Task_48",
+      "target_id": "And_44",
+      "name": ""
+    },
+    {
+      "id": "Flow_56",
+      "source_id": "And_44",
+      "target_id": "End_49",
+      "name": ""
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { createExampleProject, DEMO_PROJECT_ID } from './support'
+import { createExampleProject, DEMO_PROJECT_ID, runViaApi } from './support'
 
 test('тёмная тема переключается и запоминается', async ({ page }) => {
   await page.goto('/')
@@ -69,11 +69,90 @@ test('описание процесса можно надиктовать гол
   const dialog = page.getByRole('dialog', { name: 'Новый проект' })
   await dialog.getByRole('button', { name: 'Надиктовать' }).click()
   await expect(page.getByText('Идёт запись')).toBeVisible()
+  await expect(dialog.getByRole('textbox', { name: 'Описание процесса' })).toBeHidden()
+  await expect(page.getByRole('dialog')).toHaveCount(1)
   await page.waitForTimeout(1200)
-  await page.getByRole('button', { name: 'Остановить' }).click()
-  await expect(page.getByRole('textbox', { name: 'Расшифровка' })).not.toHaveValue('')
-  await page.getByRole('button', { name: 'Добавить в описание' }).click()
+  await page.getByRole('button', { name: 'Остановить и вставить текст' }).click()
   await expect(dialog.getByRole('textbox', { name: 'Описание процесса' })).not.toHaveValue('')
+  await expect(dialog.getByRole('textbox', { name: 'Описание процесса' })).toBeFocused()
+})
+
+test('тишина в диктовке сохраняет черновик и показывает уведомление', async ({ page }) => {
+  await page.route('**/api/v1/transcriptions', (route) =>
+    route.fulfill({
+      status: 422,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        detail: 'Не удалось распознать речь. Попробуйте записать ещё раз.',
+        code: 'NO_SPEECH',
+      }),
+    }),
+  )
+  await page.goto('/projects')
+  await page.getByRole('button', { name: 'Новый проект' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Новый проект' })
+  const description = dialog.getByRole('textbox', { name: 'Описание процесса' })
+  await description.fill('Текст до записи')
+  await dialog.getByRole('button', { name: 'Надиктовать' }).click()
+  await expect(dialog.getByText('Идёт запись')).toBeVisible()
+  await dialog.getByRole('button', { name: 'Остановить и вставить текст' }).click()
+  await expect(page.getByText('Речь не распознана', { exact: true })).toBeVisible()
+  await expect(description).toHaveValue('Текст до записи')
+  await expect(description).toBeFocused()
+  await expect(page.getByText(/Ошибка сервера/)).toBeHidden()
+})
+
+test('главная сетка сохраняет три крупные карточки на широком окне', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  await page.goto('/projects')
+  const grid = page.locator('[data-projects-grid]')
+  await expect(grid).toBeVisible()
+  const columns = await grid.evaluate((element) => getComputedStyle(element).gridTemplateColumns)
+  expect(columns.split(' ')).toHaveLength(3)
+})
+
+test('голосовой ответ можно проверить после остановки или отправить сразу', async ({
+  page,
+  request,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.route('**/api/v1/transcriptions', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        text: 'Проверку выполняет оператор.',
+        duration_sec: 2,
+        language: 'ru',
+      }),
+    }),
+  )
+  const projectId = await createExampleProject(request)
+  await runViaApi(request, projectId, 'analyze')
+  await page.goto(`/projects/${projectId}`)
+  const card = page.locator('[data-question="Q-1"]')
+  await card.getByRole('button', { name: 'Ответить', exact: true }).click()
+  const field = card.getByRole('textbox')
+  await field.fill('Черновик ответа.')
+  await card.getByRole('button', { name: 'Ответить голосом' }).click()
+  await expect(card.getByText('Идёт запись')).toBeVisible()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(card.getByText('0:01', { exact: true })).toBeVisible()
+  const voice = card.getByRole('group', { name: 'Ввод текста или запись голоса' })
+  expect(await voice.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+  await card.screenshot({ path: '../reports/screenshots/quality-voice-inline-light.png' })
+  await page.getByRole('radio', { name: 'Тёмная', exact: true }).click()
+  await card.screenshot({ path: '../reports/screenshots/quality-voice-inline-dark.png' })
+  await page.getByRole('radio', { name: 'Светлая', exact: true }).click()
+  await card.getByRole('button', { name: 'Остановить и вставить текст' }).click()
+  await expect(field).toHaveValue('Черновик ответа.\nПроверку выполняет оператор.')
+  await expect(card.getByRole('button', { name: 'Отправить ответ' })).toBeEnabled()
+  await card.getByRole('button', { name: 'Ответить голосом' }).click()
+  await expect(card.getByText('Идёт запись')).toBeVisible()
+  await card.getByRole('button', { name: 'Распознать и отправить ответ' }).click()
+  await expect(card).toBeHidden()
+  await page.getByRole('tab', { name: /Решённые/ }).click()
+  await expect(card).toContainText('Черновик ответа.')
+  await expect(card).toContainText('Проверку выполняет оператор.')
 })
 
 test('диалог создания проекта показывает форму целиком', async ({ page }) => {

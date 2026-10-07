@@ -1,5 +1,6 @@
 """Общие схемы контракта API v1. Поля — snake_case, id — UUID, даты — ISO 8601 (UTC)."""
 
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -11,6 +12,12 @@ class ApiModel(BaseModel):
 
 class ErrorResponse(ApiModel):
     detail: str = Field(description="Сообщение об ошибке для пользователя, на русском")
+
+
+class TranscriptionErrorResponse(ErrorResponse):
+    code: Literal["NO_SPEECH"] | None = Field(
+        default=None, description="NO_SPEECH — запись обработана, но речь не распознана"
+    )
 
 
 class Quote(ApiModel):

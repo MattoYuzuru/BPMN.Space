@@ -9,6 +9,7 @@ import { CollaboratorOverlay } from '@/features/project-collaboration/collaborat
 import { useProjectCollaboration } from '@/features/project-collaboration/use-project-collaboration'
 import { ApiError } from '@/shared/api/client'
 import { useDebouncedCallback } from '@/shared/hooks/use-debounced'
+import { cn } from '@/shared/lib/cn'
 import { floatingPanel } from '@/shared/lib/motion'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import { Button, Skeleton, toast } from '@/shared/ui'
@@ -21,6 +22,14 @@ import { ElementInspector } from './element-inspector'
 
 /** Пауза после последней правки перед сохранением новой версии. */
 const SAVE_DEBOUNCE_MS = 1500
+
+const INSPECTOR_CORNERS = {
+  'top-right': { x: 1, y: 0, className: 'top-4 right-4' },
+  'top-left': { x: 0, y: 0, className: 'top-4 left-4' },
+  // Нижний правый угол занят обязательным знаком bpmn.io.
+  'bottom-left': { x: 0, y: 1, className: 'bottom-4 left-4' },
+} as const
+type InspectorCorner = keyof typeof INSPECTOR_CORNERS
 
 /** Центральная панель: схема в bpmn-js, тулбар, ход прогона и карточка элемента. */
 export function DiagramPanel() {
@@ -42,10 +51,13 @@ export function DiagramPanel() {
   const isLatest = !viewedVersionId || viewedVersionId === latest?.id
   // Анализ схему не меняет — править можно; сборка заменит схему, поэтому на её время только просмотр.
   const building = project.status === 'building'
-  const readOnly = !isLatest || building || !canEdit
+  const [openingRemote, setOpeningRemote] = useState(false)
+  const readOnly = !isLatest || building || !canEdit || openingRemote
 
   const [markers, setMarkers] = useState<MarkerToggles>({ assumptions: true, added: true })
   const [inspected, setInspected] = useState<string | null>(null)
+  const [inspectorCorner, setInspectorCorner] = useState<InspectorCorner>('bottom-left')
+  const inspectionPoint = useRef<{ x: number; y: number } | null>(null)
   const [simulationActive, setSimulationActive] = useState(false)
   const reportOnboarding = useReportOnboardingEvent()
   const [ready, setReady] = useState(false)
@@ -54,8 +66,11 @@ export function DiagramPanel() {
 
   const save = useSaveDiagram(project.id)
   const lastSaved = useRef<string | null>(null)
+  const canvasXmlRef = useRef<string | null>(null)
   const headVersionRef = useRef<string | null>(latest?.id ?? null)
   const draftXmlRef = useRef<string | null>(null)
+  const serializationPendingRef = useRef(false)
+  const draftEpochRef = useRef(0)
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const canvasBoundsRef = useRef<HTMLDivElement>(null)
   const [viewportRevision, setViewportRevision] = useState(0)
@@ -63,15 +78,28 @@ export function DiagramPanel() {
   const selectionRef = useRef<string[]>(selection)
   selectionRef.current = selection
   const [remoteUpdate, setRemoteUpdate] = useState<{ id?: string; number?: number } | null>(null)
+  const remoteUpdateRef = useRef(remoteUpdate)
+  remoteUpdateRef.current = remoteUpdate
+  const markRemoteUpdate = useCallback((update: { id?: string; number?: number } | null) => {
+    remoteUpdateRef.current = update
+    setRemoteUpdate(update)
+  }, [])
   const collaboration = useProjectCollaboration(project.id, collaborationShareToken, isLatest)
 
   const enqueueSave = useCallback(
     (xml: string) => {
       draftXmlRef.current = xml
+      const epoch = draftEpochRef.current
       saveQueueRef.current = saveQueueRef.current
         .catch(() => undefined)
         .then(async () => {
-          if (xml === lastSaved.current || remoteUpdate) return
+          if (
+            epoch !== draftEpochRef.current ||
+            xml === lastSaved.current ||
+            remoteUpdateRef.current
+          ) {
+            return
+          }
           try {
             const version = await save.mutateAsync({
               xml,
@@ -79,10 +107,12 @@ export function DiagramPanel() {
             })
             headVersionRef.current = version.id
             lastSaved.current = xml
-            if (draftXmlRef.current === xml) draftXmlRef.current = null
+            if (draftXmlRef.current === xml && !serializationPendingRef.current) {
+              draftXmlRef.current = null
+            }
           } catch (error) {
             if (error instanceof ApiError && error.code === 'stale_version') {
-              setRemoteUpdate({
+              markRemoteUpdate({
                 id: error.headVersionId ?? undefined,
                 number: error.headVersionNumber ?? undefined,
               })
@@ -90,16 +120,24 @@ export function DiagramPanel() {
           }
         })
     },
-    [remoteUpdate, save],
+    [markRemoteUpdate, save],
   )
   const debouncedSave = useDebouncedCallback((xml: string) => {
     enqueueSave(xml)
   }, SAVE_DEBOUNCE_MS)
 
-  const xml = version.data?.xml ?? ''
+  // Инвалидация проекта из другого канала не должна импортировать серверный XML поверх черновика.
+  const hasLocalChanges = !!draftXmlRef.current || serializationPendingRef.current
+  const xml =
+    (isLatest && hasLocalChanges
+      ? (draftXmlRef.current ?? canvasXmlRef.current ?? lastSaved.current)
+      : (version.data?.xml ?? canvasXmlRef.current)) ?? ''
+  useEffect(() => {
+    if (xml) canvasXmlRef.current = xml
+  }, [xml])
   const loadedVersion = version.data
   useEffect(() => {
-    if (loadedVersion && !draftXmlRef.current) {
+    if (loadedVersion && !draftXmlRef.current && !serializationPendingRef.current) {
       headVersionRef.current = loadedVersion.id
       lastSaved.current = loadedVersion.xml
     }
@@ -116,18 +154,14 @@ export function DiagramPanel() {
           : event.type === 'run.changed' && event.status === 'succeeded'
             ? event.version_id
             : undefined
-    if (typeof eventVersionId !== 'string' || eventVersionId === latest?.id) return
-    const local = collaboration.presence
-      .getSnapshot()
-      .find((participant) => participant.session_id === collaboration.localSessionId)
-    const ownEvent =
-      event.type !== 'ready' &&
-      (event.actor === local?.display_name || (!event.actor && !local?.user_id))
-    if (ownEvent) return
-    if (draftXmlRef.current || save.isPending) {
+    if (typeof eventVersionId !== 'string' || eventVersionId === headVersionRef.current) return
+    // Событие собственного сохранения может обогнать HTTP-ответ. После ответа сравним точный id;
+    // одинаковый actor не различает вкладки одного аккаунта и локальные вкладки без авторизации.
+    if (save.isPending) return
+    if (draftXmlRef.current || serializationPendingRef.current) {
       const id = eventVersionId
       if (remoteUpdate?.id !== id) {
-        setRemoteUpdate({
+        markRemoteUpdate({
           id,
           number:
             typeof event.number === 'number'
@@ -143,9 +177,7 @@ export function DiagramPanel() {
     void queryClient.invalidateQueries({ queryKey: versionKeys.list(project.id) })
   }, [
     collaboration.event,
-    collaboration.localSessionId,
-    collaboration.presence,
-    latest?.id,
+    markRemoteUpdate,
     project.id,
     queryClient,
     remoteUpdate?.id,
@@ -171,6 +203,13 @@ export function DiagramPanel() {
       lastCursor.current = editorRef.current?.screenToDiagram(event.clientX, event.clientY) ?? null
       if (lastCursor.current) {
         const drag = dragStart.current
+        if (
+          drag &&
+          event.buttons !== 0 &&
+          Math.hypot(lastCursor.current.x - drag.point.x, lastCursor.current.y - drag.point.y) > 4
+        ) {
+          setInspected(null)
+        }
         collaboration.sendPresence({
           cursor: lastCursor.current,
           selection,
@@ -258,22 +297,42 @@ export function DiagramPanel() {
       activity: canEdit && selection.length ? 'editing' : 'idle',
     })
   }, [canEdit, collaboration.connected, collaboration.sendPresence, selection])
-  const downloadDraft = useCallback(() => {
-    if (!draftXmlRef.current) return
-    const href = URL.createObjectURL(new Blob([draftXmlRef.current], { type: 'application/xml' }))
-    const link = document.createElement('a')
-    link.href = href
-    link.download = `${project.title || 'diagram'}-draft.bpmn`
-    link.click()
-    URL.revokeObjectURL(href)
-  }, [project.title])
-  const loadRemoteVersion = useCallback(() => {
-    downloadDraft()
-    setRemoteUpdate(null)
-    draftXmlRef.current = null
-    void queryClient.invalidateQueries({ queryKey: projectKeys.detail(project.id) })
-    void queryClient.invalidateQueries({ queryKey: versionKeys.list(project.id) })
-  }, [downloadDraft, project.id, queryClient])
+  const downloadDraft = useCallback(async () => {
+    try {
+      const draft = serializationPendingRef.current
+        ? await editorRef.current?.exportXml()
+        : draftXmlRef.current
+      if (!draft) return !serializationPendingRef.current
+      const href = URL.createObjectURL(new Blob([draft], { type: 'application/xml' }))
+      const link = document.createElement('a')
+      link.href = href
+      link.download = `${project.title || 'diagram'}-draft.bpmn`
+      link.click()
+      URL.revokeObjectURL(href)
+      return true
+    } catch {
+      toast.error('Черновик не скачался. Попробуйте ещё раз.')
+      return false
+    }
+  }, [editorRef, project.title])
+  const loadRemoteVersion = useCallback(async () => {
+    setOpeningRemote(true)
+    try {
+      if (!(await downloadDraft())) return
+      editorRef.current?.cancelPendingChanges()
+      debouncedSave.cancel()
+      draftEpochRef.current += 1
+      markRemoteUpdate(null)
+      draftXmlRef.current = null
+      serializationPendingRef.current = false
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: projectKeys.detail(project.id) }),
+        queryClient.invalidateQueries({ queryKey: versionKeys.list(project.id) }),
+      ])
+    } finally {
+      setOpeningRemote(false)
+    }
+  }, [debouncedSave.cancel, downloadDraft, editorRef, markRemoteUpdate, project.id, queryClient])
 
   const elements = useMemo(() => diagramElements(xml), [xml])
 
@@ -353,13 +412,40 @@ export function DiagramPanel() {
   const handleChange = useCallback(
     (next: string) => {
       if (readOnly) return
-      // Mark the draft immediately, before the debounce timer: a remote version
-      // may arrive during this window and must not replace unsaved canvas edits.
+      // XML уже выгружен: запоминаем его до debounce сохранения, чтобы чужая версия
+      // не импортировалась поверх ещё не сохранённой модели.
       draftXmlRef.current = next
+      canvasXmlRef.current = next
       debouncedSave.run(next)
     },
     [readOnly, debouncedSave],
   )
+  const handleChangePending = useCallback(
+    (pending: boolean) => {
+      if (pending && readOnly) return
+      serializationPendingRef.current = pending
+    },
+    [readOnly],
+  )
+
+  const handleElementClick = useCallback((elementId: string) => {
+    const bounds = canvasBoundsRef.current?.getBoundingClientRect()
+    const point = inspectionPoint.current
+    if (bounds && point && bounds.width > 0 && bounds.height > 0) {
+      const x = (point.x - bounds.left) / bounds.width
+      const y = (point.y - bounds.top) / bounds.height
+      const corners = Object.entries(INSPECTOR_CORNERS) as [
+        InspectorCorner,
+        (typeof INSPECTOR_CORNERS)[InspectorCorner],
+      ][]
+      corners.sort(
+        ([, left], [, right]) =>
+          (right.x - x) ** 2 + (right.y - y) ** 2 - ((left.x - x) ** 2 + (left.y - y) ** 2),
+      )
+      setInspectorCorner(corners[0]?.[0] ?? 'bottom-left')
+    }
+    setInspected(elementId)
+  }, [])
 
   if (!latest) {
     return (
@@ -392,11 +478,19 @@ export function DiagramPanel() {
           ref={canvasBoundsRef}
           className="relative min-w-0 flex-1"
           {...tourAnchor(TOUR_ANCHORS.diagramCanvas)}
+          onPointerDownCapture={(event) => {
+            if (!(event.target instanceof Element) || !event.target.closest('.djs-element')) return
+            inspectionPoint.current = { x: event.clientX, y: event.clientY }
+          }}
+          onDoubleClickCapture={(event) => {
+            if (event.target instanceof Element && event.target.closest('.djs-element'))
+              setInspected(null)
+          }}
           onPointerLeave={() =>
             collaboration.sendPresence({ cursor: null, selection, activity: 'idle' })
           }
         >
-          {versionId && version.isPending ? (
+          {versionId && version.isPending && !xml ? (
             <CanvasSkeleton />
           ) : (
             <LazyDiagramEditor
@@ -407,10 +501,11 @@ export function DiagramPanel() {
               onSimulationChange={(state) => setSimulationActive(state.active)}
               onSimulationStart={() => reportOnboarding.mutate('simulation_run')}
               onChange={handleChange}
+              onChangePending={handleChangePending}
               onSelectionChange={handleSelectionChange}
               onViewportChange={() => setViewportRevision((value) => value + 1)}
               onReady={handleReady}
-              onElementClick={setInspected}
+              onElementClick={handleElementClick}
               onError={(error) =>
                 toast.error(
                   error.kind === 'import' ? 'Схема не открылась' : 'Правка не сохранена',
@@ -440,10 +535,15 @@ export function DiagramPanel() {
                   : 'Коллега обновил схему. Ваши несохранённые изменения пока остаются в этом окне.'}
               </p>
               <div className="flex shrink-0 gap-2">
-                <Button size="sm" variant="secondary" onClick={downloadDraft}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={downloadDraft}
+                  disabled={openingRemote}
+                >
                   Скачать черновик
                 </Button>
-                <Button size="sm" onClick={loadRemoteVersion}>
+                <Button size="sm" onClick={loadRemoteVersion} disabled={openingRemote}>
                   Открыть новую версию
                 </Button>
               </div>
@@ -454,7 +554,13 @@ export function DiagramPanel() {
             <RunProgress projectId={project.id} canCancel={canEdit} />
           </div>
 
-          <div className="pointer-events-none absolute bottom-4 left-4 z-10">
+          <div
+            data-open={Boolean(inspected)}
+            className={cn(
+              'group/inspector pointer-events-none absolute z-10',
+              INSPECTOR_CORNERS[inspectorCorner].className,
+            )}
+          >
             <AnimatePresence>
               {inspected && version.data && (
                 <m.div
@@ -463,7 +569,7 @@ export function DiagramPanel() {
                   initial="initial"
                   animate="animate"
                   exit="exit"
-                  className="pointer-events-auto"
+                  className="pointer-events-none group-data-[open=true]/inspector:pointer-events-auto"
                 >
                   <ElementInspector
                     elementId={inspected}

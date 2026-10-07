@@ -54,6 +54,7 @@ from app.infra.db_models import (
     DiagramVersionRow,
     LlmCallRow,
     ProjectMemberRow,
+    ProjectRow,
     ProjectShareLinkRow,
     QuestionRow,
     RunRow,
@@ -62,8 +63,8 @@ from app.infra.db_models import (
 )
 from app.infra.events import InMemoryRunEventBus
 from app.infra.repositories.base import ActiveRunConflictError
-from app.infra.repositories.sql import SqlRunRepository, SqlStore
-from app.infra.seed import DEMO_PROJECT_ID, build_seed
+from app.infra.repositories.sql import SqlRunRepository, SqlSourceRepository, SqlStore
+from app.infra.seed import DEMO_PROJECT_ID, build_seed, seed_id
 from app.infra.storage import LocalFileStorage
 from app.infra.tasks import AsyncioTaskSpawner
 from app.infra.version_codec import MAX_DEPTH
@@ -292,6 +293,126 @@ async def test_database_seed_persists_linked_runs_and_versions(sql_store) -> Non
         assert restored_version is not None
         assert restored_version.run_id == linked_run.id
         assert await repos.projects.get(DEMO_PROJECT_ID) is not None
+    finally:
+        await database.dispose()
+
+
+@pytest.mark.asyncio
+async def test_updated_demo_catalog_hides_only_retired_common_projects(sql_store) -> None:
+    store, sessions = sql_store
+    now = datetime.now(UTC)
+    owner = UserRow(
+        id=uuid4(),
+        email="catalog-owner@example.com",
+        hashed_password=uuid4().hex,
+        is_active=True,
+        is_superuser=False,
+        is_verified=False,
+    )
+    retired_id = seed_id("project/repair-outage")
+    owned_id = seed_id("project/procurement-223")
+    private_id = uuid4()
+    async with sessions.begin() as session:
+        session.add(owner)
+        await session.flush()
+        session.add_all(
+            [
+                ProjectRow(
+                    id=retired_id,
+                    title="Прежний встроенный пример",
+                    description=None,
+                    owner_id=None,
+                    public_read_only=True,
+                    created_at=now,
+                    updated_at=now,
+                ),
+                ProjectRow(
+                    id=owned_id,
+                    title="Личная изменённая копия",
+                    description=None,
+                    owner_id=owner.id,
+                    public_read_only=True,
+                    created_at=now,
+                    updated_at=now,
+                ),
+                ProjectRow(
+                    id=private_id,
+                    title="Пользовательский проект",
+                    description=None,
+                    owner_id=owner.id,
+                    public_read_only=False,
+                    created_at=now,
+                    updated_at=now,
+                ),
+            ]
+        )
+    database = Database(os.environ["TEST_DATABASE_URL"])
+    database.store, database.sessions = store, sessions
+    try:
+        await database.seed(build_seed)
+        await database.seed(build_seed)
+        async with sessions() as session:
+            retired = await session.get(ProjectRow, retired_id)
+            owned = await session.get(ProjectRow, owned_id)
+            private = await session.get(ProjectRow, private_id)
+            assert retired is not None
+            assert not retired.public_read_only
+            assert retired.title == "Прежний встроенный пример"
+            assert owned is not None
+            assert owned.public_read_only
+            assert owned.owner_id == owner.id
+            assert owned.title == "Личная изменённая копия"
+            assert private is not None
+            assert not private.public_read_only
+            assert private.title == "Пользовательский проект"
+            common = await session.scalar(
+                select(func.count())
+                .select_from(ProjectRow)
+                .where(
+                    ProjectRow.owner_id.is_(None),
+                    ProjectRow.public_read_only.is_(True),
+                )
+            )
+            assert common == 5
+        assert await store.repositories().access.project_role(retired_id, owner.id) is None
+        role = await store.repositories().access.project_role(owned_id, owner.id)
+        assert role is ProjectRole.OWNER
+    finally:
+        await database.dispose()
+
+
+@pytest.mark.asyncio
+async def test_database_seed_rolls_back_partial_project_and_can_retry(
+    sql_store, monkeypatch
+) -> None:
+    store, sessions = sql_store
+    database = Database(os.environ["TEST_DATABASE_URL"])
+    database.store, database.sessions = store, sessions
+    original = SqlSourceRepository.add
+    calls = 0
+
+    async def fail_second_source(self, source):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("Проверка сбоя записи второго источника")
+        await original(self, source)
+
+    monkeypatch.setattr(SqlSourceRepository, "add", fail_second_source)
+    try:
+        with pytest.raises(RuntimeError, match="второго источника"):
+            await database.seed(build_seed)
+        assert await store.repositories().projects.get(DEMO_PROJECT_ID) is None
+        async with sessions() as session:
+            assert await session.scalar(select(func.count()).select_from(SourceRow)) == 0
+        monkeypatch.setattr(SqlSourceRepository, "add", original)
+        await database.seed(build_seed)
+        assert await store.repositories().projects.get(DEMO_PROJECT_ID) is not None
+        restored = await store.repositories().sources.list_by_project(DEMO_PROJECT_ID)
+        expected = [
+            source for source in build_seed().sources if source.project_id == DEMO_PROJECT_ID
+        ]
+        assert len(restored) == len(expected)
     finally:
         await database.dispose()
 

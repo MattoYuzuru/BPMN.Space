@@ -5,6 +5,7 @@ import json
 import select
 import shutil
 import subprocess
+from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -43,6 +44,45 @@ from app.services.runs import RunService
 from tests.test_graph_ir import SOURCE_ID, TEXT, graph_case
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+async def test_structural_paraphrase_is_repaired_without_becoming_false_evidence():
+    graph = graph_case("xor")
+    end = next(node for node in graph["nodes"] if node["type"] == "end")
+    end["source"] = {"source_id": str(SOURCE_ID), "quote": "Выдуманное объяснение завершения BPMN"}
+    prompts = []
+
+    def complete(system, prompt):
+        payload = json.loads(prompt)
+        prompts.append(payload)
+        if len(prompts) == 1:
+            return json.dumps(graph)
+        repaired = deepcopy(graph)
+        next(node for node in repaired["nodes"] if node["type"] == "end").pop("source")
+        return json.dumps(repaired)
+
+    context = RunContext(
+        project_id=uuid4(),
+        project_title="Проверка оснований",
+        sources=[
+            ContextSource(
+                id=SOURCE_ID,
+                kind=SourceKind.TEXT,
+                title="Регламент",
+                content=TEXT,
+                created_at=datetime.now(UTC),
+            )
+        ],
+        questions=[],
+    )
+    draft = await OpenAICompatiblePipeline(api_key="recorded-only", complete=complete).structure(
+        context, AnalysisResult()
+    )
+    assert len(prompts) == 2
+    assert any("source=null" in error for error in prompts[1]["errors"])
+    assert end["id"] not in draft.trace
+    assert draft.ir is not None
+    assert next(node for node in draft.ir["nodes"] if node["id"] == end["id"])["source"] is None
 
 
 def recorded_reply(prompt: str, case: str = "xor") -> str:

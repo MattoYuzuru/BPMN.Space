@@ -6,12 +6,14 @@ import pytest
 from lxml import etree
 
 from app.domain.bpmn.document import parse_bpmn
+from app.domain.bpmn.ir import GraphIR, validate_graph
 from app.domain.bpmn.linear import LinearStep, build_linear_diagram
 from app.domain.bpmn.lint import lint_document
 from app.domain.bpmn.xsd import XSD_ENTRY
 from app.domain.questions import quote_in_source
 from app.fixtures import BPMN_DIR, TEXTS_DIR, bpmn_names, read_bpmn, read_text
 from app.fixtures.catalog import TOPICS
+from app.fixtures.complex_examples import COMPLEX_EXAMPLES
 from app.fixtures.generic import generic_questions, meeting_note, regulation_text
 from app.fixtures.playbook import (
     PERMIT_ANSWER_REMARKS,
@@ -51,7 +53,7 @@ def test_fixture_is_xsd_valid_and_complete(name: str) -> None:
 
 def test_examples_are_copies_of_fixtures() -> None:
     files = sorted(EXAMPLES.rglob("*.bpmn"))
-    assert len(files) == 5
+    assert len(files) == 8
     fixtures = {path.read_text(encoding="utf-8") for path in BPMN_DIR.glob("*.bpmn")}
     for path in files:
         xml = path.read_text(encoding="utf-8")
@@ -67,6 +69,27 @@ def test_demo_diagram_has_xor_and_parallel_and_loop() -> None:
     assert loop_back[0].target == "Gateway_CheckMerge"
     labels = {f.name for f in document.flows if f.source == "Gateway_Power"}
     assert labels == {"Да", "Нет"}
+
+
+@pytest.mark.parametrize("example", COMPLEX_EXAMPLES, ids=lambda example: example.key)
+def test_complex_examples_preserve_full_graph_and_grounded_tasks(example) -> None:
+    graph = GraphIR.model_validate_json(
+        (BPMN_DIR.parent / "ir" / f"{example.fixture}.json").read_text(encoding="utf-8")
+    )
+    validate_graph(graph)
+    document = parse_bpmn(read_bpmn(example.fixture))
+    assert len(graph.nodes) == example.nodes
+    assert len(document.nodes) == len(graph.nodes)
+    assert len(document.flows) == len(graph.flows)
+    assert {node.id for node in graph.nodes} == set(document.nodes)
+    assert {flow.id for flow in graph.flows} == {flow.id for flow in document.flows}
+    source = read_text(f"{example.fixture}.md")
+    for node in graph.nodes:
+        assert node.name == document.nodes[node.id].name
+        if node.type == "task":
+            assert node.source is not None
+            assert quote_in_source(node.source.quote, source)
+    assert len(source) > 10_000
 
 
 def test_playbook_quotes_exist_in_fixture_texts() -> None:

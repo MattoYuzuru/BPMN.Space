@@ -3,6 +3,7 @@ import {
   findQuoteRanges,
   type QuoteMark,
   type QuoteRange,
+  quoteReferences,
   SOURCE_KIND,
   type Source,
   sourceMeta,
@@ -17,13 +18,15 @@ import {
   Field,
   Icon,
   Input,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
   Sheet,
   SheetContent,
   Switch,
   Textarea,
-  Tooltip,
 } from '@/shared/ui'
-import { useWorkspace } from '@/widgets/workspace/model'
+import { useWorkspace, useWorkspaceUi } from '@/widgets/workspace/model'
 
 const MARK_CLASS: Record<QuoteRange['kind'], string> = {
   about:
@@ -46,17 +49,27 @@ export function SourceSheet({ sourceId, mark, onClose }: SourceSheetProps) {
   const source = project.sources.find((item) => item.id === sourceId)
   return (
     <Sheet open={Boolean(source)} onOpenChange={(open) => !open && onClose()}>
-      {source && <SourceDetail key={source.id} source={source} mark={mark} />}
+      {source && <SourceDetail key={source.id} source={source} mark={mark} onClose={onClose} />}
     </Sheet>
   )
 }
 
-function SourceDetail({ source, mark }: { source: Source; mark?: string }) {
-  const { project, canEdit } = useWorkspace()
+function SourceDetail({
+  source,
+  mark,
+  onClose,
+}: {
+  source: Source
+  mark?: string
+  onClose: () => void
+}) {
+  const { project, canEdit, selectQuestion, focusElements } = useWorkspace()
+  const openQuestion = useWorkspaceUi((state) => state.openQuestionSheet)
   const update = useUpdateSource(project.id)
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(source.title)
   const [content, setContent] = useState(source.content)
+  const [referenceStart, setReferenceStart] = useState<number | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const kind = SOURCE_KIND[source.kind]
 
@@ -75,32 +88,39 @@ function SourceDetail({ source, mark }: { source: Source; mark?: string }) {
     return list
   }, [project.questions, project.latest_version, source.id])
 
-  // Цитата из ссылки подсвечивается, даже если на неё больше ничего не ссылается.
-  const ranges = useMemo(
-    () =>
-      findQuoteRanges(
-        source.content,
-        mark ? [...marks, { quote: mark, kind: 'about', ref: '' }] : marks,
-      ),
-    [source.content, marks, mark],
-  )
-  const parts = useMemo(() => splitByRanges(source.content, ranges), [source.content, ranges])
-  const counts = { about: 0, evidence: 0, trace: 0 }
-  for (const range of ranges) counts[range.kind] += 1
-
   const target = useMemo(() => {
     if (!mark) return undefined
     const [hit] = findQuoteRanges(source.content, [{ quote: mark, kind: 'about', ref: 'target' }])
     return hit
   }, [mark, source.content])
 
+  // Выбранная цитата важнее перекрывающей её подсветки: показываем весь фрагмент из ссылки.
+  const ranges = useMemo(() => {
+    const found = findQuoteRanges(source.content, marks)
+    if (!target) return found
+    const [linked] = findQuoteRanges(
+      source.content,
+      marks.filter((item) => item.quote === mark),
+    )
+    return [
+      ...found.filter((range) => range.end <= target.start || range.start >= target.end),
+      linked ?? { ...target, ref: '' },
+    ].sort((left, right) => left.start - right.start)
+  }, [source.content, marks, mark, target])
+  const parts = useMemo(() => splitByRanges(source.content, ranges), [source.content, ranges])
+  const counts = { about: 0, evidence: 0, trace: 0 }
+  for (const range of ranges) counts[range.kind] += 1
+
   // Открыли по цитате — прокручиваем к ней, когда панель уже выехала.
   useEffect(() => {
     if (!target) return
     const timer = setTimeout(() => {
-      bodyRef.current
-        ?.querySelector('[data-target="true"]')
-        ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      bodyRef.current?.querySelector('[data-target="true"]')?.scrollIntoView({
+        block: 'center',
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+          ? 'instant'
+          : 'smooth',
+      })
     }, 260)
     return () => clearTimeout(timer)
   }, [target])
@@ -109,6 +129,22 @@ function SourceDetail({ source, mark }: { source: Source; mark?: string }) {
     if (range.kind === 'trace') return 'Элемент схемы'
     const question = project.questions.find((item) => item.id === range.ref)
     return question ? `${question.code}: ${question.text}` : 'Цитата'
+  }
+
+  const references = useMemo(
+    () =>
+      new Map(ranges.map((range) => [range.start, quoteReferences(source.content, range, marks)])),
+    [ranges, source.content, marks],
+  )
+
+  const navigateTo = (ref: QuoteMark) => {
+    onClose()
+    if (ref.kind === 'trace') {
+      focusElements([ref.ref])
+    } else {
+      selectQuestion(ref.ref, { focus: true })
+      openQuestion(ref.ref)
+    }
   }
 
   const save = () => {
@@ -159,7 +195,14 @@ function SourceDetail({ source, mark }: { source: Source; mark?: string }) {
             />
             <span className="flex-1" />
             {canEdit && source.kind !== 'answer' && source.status === 'ready' && (
-              <Button leadingIcon="pencil" onClick={() => setEditing(true)}>
+              <Button
+                leadingIcon="pencil"
+                onClick={() => {
+                  setTitle(source.title)
+                  setContent(source.content)
+                  setEditing(true)
+                }}
+              >
                 Править текст
               </Button>
             )}
@@ -184,6 +227,15 @@ function SourceDetail({ source, mark }: { source: Source; mark?: string }) {
         </div>
       ) : (
         <div className="flex flex-col gap-4">
+          {mark && !target && (
+            <p
+              role="status"
+              className="rounded-md bg-amber-subtle px-3 py-2.5 type-ui text-amber-fg"
+            >
+              Цитата не найдена в текущем тексте. Возможно, источник был изменён. Исходная цитата: «
+              {mark}»
+            </p>
+          )}
           {ranges.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {counts.about > 0 && (
@@ -216,22 +268,69 @@ function SourceDetail({ source, mark }: { source: Source; mark?: string }) {
           >
             {parts.map((part) =>
               part.range ? (
-                <Tooltip key={part.start} content={labelFor(part.range)}>
-                  <mark
-                    data-target={
-                      target && part.range.start <= target.start && part.range.end >= target.end
-                        ? 'true'
-                        : undefined
-                    }
-                    className={cn(
-                      'rounded-xs px-0.5 transition-[background-color,box-shadow] duration-slow ease-soft',
-                      MARK_CLASS[part.range.kind],
-                      'data-[target=true]:shadow-glow data-[target=true]:ring-1 data-[target=true]:ring-accent/40',
-                    )}
+                <Popover
+                  key={part.start}
+                  open={referenceStart === part.start}
+                  onOpenChange={(open) => setReferenceStart(open ? part.start : null)}
+                >
+                  <PopoverTrigger asChild>
+                    <a
+                      href={`?source=${source.id}`}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        setReferenceStart((current) => (current === part.start ? null : part.start))
+                      }}
+                      aria-label={`Связи фрагмента: ${labelFor(part.range)}`}
+                      className="cursor-pointer rounded-xs outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                    >
+                      <mark
+                        data-target={
+                          target && part.range.start <= target.start && part.range.end >= target.end
+                            ? 'true'
+                            : undefined
+                        }
+                        className={cn(
+                          'rounded-xs px-0.5 transition-[background-color,box-shadow] duration-slow ease-soft',
+                          MARK_CLASS[part.range.kind],
+                          'data-[target=true]:shadow-glow data-[target=true]:ring-1 data-[target=true]:ring-accent/40',
+                        )}
+                      >
+                        {part.text}
+                      </mark>
+                    </a>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    aria-label="Связи фрагмента"
+                    align="start"
+                    className="flex flex-col gap-2"
                   >
-                    {part.text}
-                  </mark>
-                </Tooltip>
+                    <p className="type-label text-fg-muted">Связано с фрагментом</p>
+                    {(references.get(part.start) ?? []).map((ref) => {
+                      const question =
+                        ref.kind === 'trace'
+                          ? undefined
+                          : project.questions.find((item) => item.id === ref.ref)
+                      return (
+                        <Button
+                          key={`${ref.kind}:${ref.ref}`}
+                          variant="ghost"
+                          leadingIcon={ref.kind === 'trace' ? 'locate' : 'message-question'}
+                          className="h-auto justify-start whitespace-normal py-2 text-left"
+                          onClick={() => navigateTo(ref)}
+                        >
+                          {question
+                            ? `${question.code}: ${question.text}`
+                            : `Показать элемент ${ref.ref}`}
+                        </Button>
+                      )
+                    })}
+                    {(references.get(part.start)?.length ?? 0) === 0 && (
+                      <p className="type-ui text-fg-subtle">
+                        У фрагмента нет связей в текущей версии.
+                      </p>
+                    )}
+                  </PopoverContent>
+                </Popover>
               ) : (
                 <span key={part.start}>{part.text}</span>
               ),

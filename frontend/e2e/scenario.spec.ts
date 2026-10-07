@@ -10,6 +10,8 @@ import { DEMO_PROJECT_TITLE, dragElement, FINANCES_MD, questionCard, startRun } 
 test('список проектов: пять учебных примеров и поиск демо-проекта', async ({ page }) => {
   await page.goto('/projects')
   await expect(page).toHaveTitle(/Проекты/)
+  await page.getByRole('radio', { name: 'Примеры', exact: true }).click()
+  await expect(page).toHaveURL(/scope=examples/)
   const cards = page.locator('section[aria-label="Проекты"] a[href^="/projects/"]')
   await expect(cards.first()).toBeVisible()
   await expect(cards).toHaveCount(5)

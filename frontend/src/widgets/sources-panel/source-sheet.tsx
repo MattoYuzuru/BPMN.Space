@@ -281,18 +281,22 @@ function SourceDetail({
                         setReferenceStart((current) => (current === part.start ? null : part.start))
                       }}
                       aria-label={`Связи фрагмента: ${labelFor(part.range)}`}
-                      data-target={
-                        target && part.range.start <= target.start && part.range.end >= target.end
-                          ? 'true'
-                          : undefined
-                      }
-                      className={cn(
-                        'cursor-pointer rounded-xs px-0.5 outline-none transition-[background-color,box-shadow] duration-slow ease-soft focus-visible:ring-2 focus-visible:ring-focus-ring',
-                        MARK_CLASS[part.range.kind],
-                        'data-[target=true]:shadow-glow data-[target=true]:ring-1 data-[target=true]:ring-accent/40',
-                      )}
+                      className="cursor-pointer rounded-xs outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
                     >
-                      {part.text}
+                      <mark
+                        data-target={
+                          target && part.range.start <= target.start && part.range.end >= target.end
+                            ? 'true'
+                            : undefined
+                        }
+                        className={cn(
+                          'rounded-xs px-0.5 transition-[background-color,box-shadow] duration-slow ease-soft',
+                          MARK_CLASS[part.range.kind],
+                          'data-[target=true]:shadow-glow data-[target=true]:ring-1 data-[target=true]:ring-accent/40',
+                        )}
+                      >
+                        {part.text}
+                      </mark>
                     </a>
                   </PopoverTrigger>
                   <PopoverContent

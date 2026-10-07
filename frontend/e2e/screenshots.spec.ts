@@ -64,7 +64,9 @@ test('03 создание проекта', async ({ page }) => {
   await page.getByRole('button', { name: 'Начать с примера' }).first().click()
   const dialog = page.getByRole('dialog', { name: 'Новый проект' })
   await expect(dialog.getByRole('radio', { name: /Технологическое/ })).toBeChecked()
-  await dialog.getByRole('radio', { name: /Вывод оборудования/ }).click()
+  await dialog
+    .getByRole('radio', { name: /Восстановление энергоснабжения после технологического нарушения/ })
+    .click()
   await settle(page)
   await shoot(page, '03-create-project')
 })

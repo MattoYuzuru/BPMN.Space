@@ -12,13 +12,34 @@ test('ручная правка → новый источник → обычна
   await expect(page.locator('.djs-container')).toBeVisible()
   await page.getByRole('button', { name: 'Вписать в окно' }).click()
   const element = page.locator('.djs-element[data-element-id="Task_SubmitApplication"]')
+  await element.click()
+  const inspector = page.getByRole('dialog', { name: 'Элемент схемы', exact: true })
+  await expect(inspector).toBeVisible()
+  await expect(inspector).toContainText('Откуда в схеме')
+  const taskBounds = await element.boundingBox()
+  const inspectorBounds = await inspector.boundingBox()
+  if (!taskBounds || !inspectorBounds) throw new Error('Элемент и карточка должны быть видимы')
+  const clicked = {
+    x: taskBounds.x + taskBounds.width / 2,
+    y: taskBounds.y + taskBounds.height / 2,
+  }
+  expect(
+    clicked.x < inspectorBounds.x ||
+      clicked.x > inspectorBounds.x + inspectorBounds.width ||
+      clicked.y < inspectorBounds.y ||
+      clicked.y > inspectorBounds.y + inspectorBounds.height,
+  ).toBe(true)
   await element.dblclick()
   const editor = page.locator('.djs-direct-editing-content')
   await expect(editor).toBeVisible()
+  await expect(inspector).toBeHidden()
   await editor.fill('Подать проверенную заявку')
   await page.getByRole('button', { name: 'Вписать в окно' }).click()
   await expect(page.getByText('Схема сохранена')).toBeVisible({ timeout: 15_000 })
+  await element.click()
+  await expect(inspector).toBeVisible()
   await dragElement(page, 'Task_SubmitApplication', 35, 0)
+  await expect(inspector).toBeHidden()
 
   const detail = async () => await (await request.get(`/api/v1/projects/${projectId}`)).json()
   await expect

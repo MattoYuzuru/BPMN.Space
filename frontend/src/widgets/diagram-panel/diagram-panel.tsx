@@ -9,6 +9,7 @@ import { CollaboratorOverlay } from '@/features/project-collaboration/collaborat
 import { useProjectCollaboration } from '@/features/project-collaboration/use-project-collaboration'
 import { ApiError } from '@/shared/api/client'
 import { useDebouncedCallback } from '@/shared/hooks/use-debounced'
+import { cn } from '@/shared/lib/cn'
 import { floatingPanel } from '@/shared/lib/motion'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import { Button, Skeleton, toast } from '@/shared/ui'
@@ -21,6 +22,14 @@ import { ElementInspector } from './element-inspector'
 
 /** Пауза после последней правки перед сохранением новой версии. */
 const SAVE_DEBOUNCE_MS = 1500
+
+const INSPECTOR_CORNERS = {
+  'top-right': { x: 1, y: 0, className: 'top-4 right-4' },
+  'top-left': { x: 0, y: 0, className: 'top-4 left-4' },
+  // Нижний правый угол занят обязательным знаком bpmn.io.
+  'bottom-left': { x: 0, y: 1, className: 'bottom-4 left-4' },
+} as const
+type InspectorCorner = keyof typeof INSPECTOR_CORNERS
 
 /** Центральная панель: схема в bpmn-js, тулбар, ход прогона и карточка элемента. */
 export function DiagramPanel() {
@@ -46,6 +55,8 @@ export function DiagramPanel() {
 
   const [markers, setMarkers] = useState<MarkerToggles>({ assumptions: true, added: true })
   const [inspected, setInspected] = useState<string | null>(null)
+  const [inspectorCorner, setInspectorCorner] = useState<InspectorCorner>('bottom-left')
+  const inspectionPoint = useRef<{ x: number; y: number } | null>(null)
   const [simulationActive, setSimulationActive] = useState(false)
   const reportOnboarding = useReportOnboardingEvent()
   const [ready, setReady] = useState(false)
@@ -180,6 +191,13 @@ export function DiagramPanel() {
       lastCursor.current = editorRef.current?.screenToDiagram(event.clientX, event.clientY) ?? null
       if (lastCursor.current) {
         const drag = dragStart.current
+        if (
+          drag &&
+          event.buttons !== 0 &&
+          Math.hypot(lastCursor.current.x - drag.point.x, lastCursor.current.y - drag.point.y) > 4
+        ) {
+          setInspected(null)
+        }
         collaboration.sendPresence({
           cursor: lastCursor.current,
           selection,
@@ -372,6 +390,25 @@ export function DiagramPanel() {
     [readOnly, debouncedSave],
   )
 
+  const handleElementClick = useCallback((elementId: string) => {
+    const bounds = canvasBoundsRef.current?.getBoundingClientRect()
+    const point = inspectionPoint.current
+    if (bounds && point && bounds.width > 0 && bounds.height > 0) {
+      const x = (point.x - bounds.left) / bounds.width
+      const y = (point.y - bounds.top) / bounds.height
+      const corners = Object.entries(INSPECTOR_CORNERS) as [
+        InspectorCorner,
+        (typeof INSPECTOR_CORNERS)[InspectorCorner],
+      ][]
+      corners.sort(
+        ([, left], [, right]) =>
+          (right.x - x) ** 2 + (right.y - y) ** 2 - ((left.x - x) ** 2 + (left.y - y) ** 2),
+      )
+      setInspectorCorner(corners[0]?.[0] ?? 'bottom-left')
+    }
+    setInspected(elementId)
+  }, [])
+
   if (!latest) {
     return (
       <div className="relative isolate flex h-full flex-col">
@@ -403,6 +440,14 @@ export function DiagramPanel() {
           ref={canvasBoundsRef}
           className="relative min-w-0 flex-1"
           {...tourAnchor(TOUR_ANCHORS.diagramCanvas)}
+          onPointerDownCapture={(event) => {
+            if (!(event.target instanceof Element) || !event.target.closest('.djs-element')) return
+            inspectionPoint.current = { x: event.clientX, y: event.clientY }
+          }}
+          onDoubleClickCapture={(event) => {
+            if (event.target instanceof Element && event.target.closest('.djs-element'))
+              setInspected(null)
+          }}
           onPointerLeave={() =>
             collaboration.sendPresence({ cursor: null, selection, activity: 'idle' })
           }
@@ -421,7 +466,7 @@ export function DiagramPanel() {
               onSelectionChange={handleSelectionChange}
               onViewportChange={() => setViewportRevision((value) => value + 1)}
               onReady={handleReady}
-              onElementClick={setInspected}
+              onElementClick={handleElementClick}
               onError={(error) =>
                 toast.error(
                   error.kind === 'import' ? 'Схема не открылась' : 'Правка не сохранена',
@@ -465,7 +510,13 @@ export function DiagramPanel() {
             <RunProgress projectId={project.id} canCancel={canEdit} />
           </div>
 
-          <div className="pointer-events-none absolute bottom-4 left-4 z-10">
+          <div
+            data-open={Boolean(inspected)}
+            className={cn(
+              'group/inspector pointer-events-none absolute z-10',
+              INSPECTOR_CORNERS[inspectorCorner].className,
+            )}
+          >
             <AnimatePresence>
               {inspected && version.data && (
                 <m.div
@@ -474,7 +525,7 @@ export function DiagramPanel() {
                   initial="initial"
                   animate="animate"
                   exit="exit"
-                  className="pointer-events-auto"
+                  className="pointer-events-none group-data-[open=true]/inspector:pointer-events-auto"
                 >
                   <ElementInspector
                     elementId={inspected}

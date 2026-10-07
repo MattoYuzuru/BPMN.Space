@@ -13,7 +13,7 @@ import sys
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from copy import deepcopy
-from dataclasses import asdict, dataclass, field, is_dataclass, replace
+from dataclasses import asdict, dataclass, field, fields, is_dataclass, replace
 from datetime import date, datetime
 from enum import Enum
 from typing import Any, Protocol
@@ -289,7 +289,7 @@ class RunService:
             run: Run | None = None
             try:
                 run = await self._repos.runs.get(run_id)
-                if run is not None:
+                if run is not None and run.status in ACTIVE_STATUSES:
                     await self._drive(run)
             finally:
                 # Что бы ни случилось (в том числе сбой чтения прогона из БД), подписчики SSE
@@ -319,6 +319,21 @@ class RunService:
                 async with asyncio.timeout(deadline) as scope:
                     await self._run_stages(run, execution_started)
         except asyncio.CancelledError:
+            # После публикации версия уже могла попасть в БД, хотя coroutine ещё
+            # не успела обновить локальный объект. Не затираем подтверждённый результат.
+            current = await self._repos.runs.get(run.id)
+            if current is not None:
+                for item in fields(run):
+                    setattr(run, item.name, getattr(current, item.name))
+            if run.version_id is not None:
+                run.status = RunStatus.SUCCEEDED
+                run.progress = 1.0
+                run.error = None
+                run.finished_at = self._rt.clock()
+                await self._repos.runs.update(run)
+                return
+            if run.status not in ACTIVE_STATUSES:
+                return
             if run.id not in self._cancel_requested:
                 run.status = RunStatus.QUEUED
                 run.error = None

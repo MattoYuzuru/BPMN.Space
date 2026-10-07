@@ -6,6 +6,7 @@ from dataclasses import replace
 
 from app.domain.analysis import RunContext
 from app.domain.bpmn.ir import GraphIR
+from app.domain.models import QuestionStatus
 from app.llm.base import PipelineError
 
 MAX_REVIEW_ISSUES = 30
@@ -29,14 +30,18 @@ async def _review_part(
     context: RunContext,
     complete: Callable[[str, str], Awaitable[str]],
 ) -> list[str]:
-    """Цитаты проверяются по полному снимку; непроверяемый отчёт не считается успехом."""
+    """Цитаты проверяются по переданной порции; непроверяемый отчёт не считается успехом."""
     raw = await complete(
         SYSTEM,
         json.dumps(
             {
                 "graph": graph.canonical(),
                 "sources": [{"source_id": str(s.id), "text": s.content} for s in context.sources],
-                "assumptions": [{"code": q.code, "text": q.assumption} for q in context.questions],
+                "assumptions": [
+                    {"code": q.code, "text": q.assumption}
+                    for q in context.questions
+                    if q.status in (QuestionStatus.OPEN, QuestionStatus.IGNORED)
+                ],
                 "manual_overrides": context.manual_overrides,
             },
             ensure_ascii=False,
@@ -46,7 +51,7 @@ async def _review_part(
         issues = json.loads(raw)["issues"]
         if not isinstance(issues, list) or len(issues) > MAX_REVIEW_ISSUES:
             raise ValueError("Некорректный список ошибок")
-        sources = {str(s.id): s.content for s in (context.evidence_sources or context.sources)}
+        sources = {str(s.id): s.content for s in context.sources}
         ids = {x.id for field in (graph.lanes, graph.nodes, graph.flows) for x in field}
         errors = []
         for issue in issues:

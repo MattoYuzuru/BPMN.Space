@@ -122,6 +122,8 @@ export function useVoiceRecorder({ maxSeconds = 600 }: { maxSeconds?: number } =
       if (event.data.size > 0) chunks.push(event.data)
     }
     recorder.onstop = () => {
+      // Отменённая запись может прислать stop после старта новой — не освобождаем её микрофон.
+      if (session.current?.recorder !== recorder) return
       const discard = session.current?.discard ?? true
       const durationSec = (performance.now() - startedAt) / 1000
       cleanup()
@@ -176,7 +178,7 @@ export function useVoiceRecorder({ maxSeconds = 600 }: { maxSeconds?: number } =
     if (current) {
       current.discard = true
       if (current.recorder.state !== 'inactive') current.recorder.stop()
-      else cleanup()
+      cleanup()
     }
     setLevels([])
     setElapsed(0)

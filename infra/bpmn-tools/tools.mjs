@@ -3,6 +3,7 @@ import { layoutProcess } from 'bpmn-auto-layout'
 import { BpmnModdle } from 'bpmn-moddle'
 import { Linter } from 'bpmnlint'
 import NodeResolver from 'bpmnlint/lib/resolver/node-resolver.js'
+import { fitTaskLabels } from './label-layout.mjs'
 
 const require = createRequire(import.meta.url)
 const resolver = new NodeResolver({ require })
@@ -54,8 +55,10 @@ export async function layout(xml) {
   const result = await layoutProcess(xml)
   const laidOut = await parse(result.xml)
   if (!completeDi(laidOut)) throw new Error('Алгоритм не создал DI для всех узлов и потоков')
+  fitTaskLabels(laidOut)
+  const fitted = await new BpmnModdle().toXML(laidOut, { format: true })
   return {
-    xml: result.xml,
+    xml: fitted.xml,
     warnings: result.warnings.map((w) => `Раскладка: ${String(w.message || w).slice(0, 300)}`),
     engine: 'bpmn-auto-layout@2.0.0-alpha.2',
   }

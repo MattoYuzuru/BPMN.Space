@@ -164,7 +164,13 @@ class MockPipeline:
             )
         if _has_marker(MARKER_NO_QUESTIONS, context.sources):
             new_questions = []
-        elif not context.questions and not new_questions:
+        elif (
+            not context.questions
+            and not new_questions
+            and not (
+                (diagram := self._pick_diagram(context.sources)) and diagram.questions_complete
+            )
+        ):
             new_questions = self._generic_questions(context.sources)
         return AnalysisResult(question_updates=updates, new_questions=new_questions)
 

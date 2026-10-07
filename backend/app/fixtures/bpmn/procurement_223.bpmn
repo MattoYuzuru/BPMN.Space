@@ -114,155 +114,155 @@
   <bpmndi:BPMNDiagram id="BPMNDiagram_Collaboration_procurement_223">
     <bpmndi:BPMNPlane id="BPMNPlane_Collaboration_procurement_223" bpmnElement="Collaboration_procurement_223">
       <bpmndi:BPMNShape id="BPMNShape_Participant_procurement_223" bpmnElement="Participant_procurement_223" isHorizontal="true">
-        <dc:Bounds x="80" y="80" width="2332" height="1040" />
+        <dc:Bounds x="128" y="88" width="3731.2000000000003" height="1144" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Lane_Initiator" bpmnElement="Lane_Initiator" isHorizontal="true">
-        <dc:Bounds x="110" y="80" width="2302" height="240" />
+        <dc:Bounds x="176" y="88.00000000000003" width="3683.2000000000003" height="264" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Lane_Procurement" bpmnElement="Lane_Procurement" isHorizontal="true">
-        <dc:Bounds x="110" y="320" width="2302" height="400" />
+        <dc:Bounds x="176" y="352" width="3683.2000000000003" height="440.00000000000006" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Lane_Commission" bpmnElement="Lane_Commission" isHorizontal="true">
-        <dc:Bounds x="110" y="720" width="2302" height="400" />
+        <dc:Bounds x="176" y="792.0000000000001" width="3683.2000000000003" height="440.00000000000006" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_StartEvent_Need" bpmnElement="StartEvent_Need">
-        <dc:Bounds x="150" y="182" width="36" height="36" />
+        <dc:Bounds x="250.8" y="202.00000000000003" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="128" y="223" width="81" height="28" />
+          <dc:Bounds x="229.10000000000002" y="246.70000000000005" width="81" height="28" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_Request" bpmnElement="Task_Request">
-        <dc:Bounds x="286" y="160" width="100" height="80" />
+        <dc:Bounds x="457.6" y="176.00000000000003" width="160" height="88" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_CheckPlan" bpmnElement="Task_CheckPlan">
-        <dc:Bounds x="486" y="400" width="100" height="80" />
+        <dc:Bounds x="777.6" y="444.00000000000006" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Gateway_InPlan" bpmnElement="Gateway_InPlan" isMarkerVisible="true">
-        <dc:Bounds x="686" y="415" width="50" height="50" />
+        <dc:Bounds x="1112.6000000000001" y="459.00000000000006" width="50" height="50" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="669" y="382" width="85" height="28" />
+          <dc:Bounds x="1095.9" y="421.6" width="85" height="28" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_AmendPlan" bpmnElement="Task_AmendPlan">
-        <dc:Bounds x="836" y="400" width="100" height="80" />
+        <dc:Bounds x="1337.6000000000001" y="444.00000000000006" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Gateway_PlanMerge" bpmnElement="Gateway_PlanMerge" isMarkerVisible="true">
-        <dc:Bounds x="1036" y="415" width="50" height="50" />
+        <dc:Bounds x="1672.6000000000001" y="459.00000000000006" width="50" height="50" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_Publish" bpmnElement="Task_Publish">
-        <dc:Bounds x="1186" y="400" width="100" height="80" />
+        <dc:Bounds x="1897.6000000000001" y="444.00000000000006" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_CollectBids" bpmnElement="Task_CollectBids">
-        <dc:Bounds x="1386" y="400" width="100" height="80" />
+        <dc:Bounds x="2217.6" y="444.00000000000006" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_Evaluate" bpmnElement="Task_Evaluate">
-        <dc:Bounds x="1586" y="800" width="100" height="80" />
+        <dc:Bounds x="2537.6000000000004" y="884.0000000000001" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Gateway_HasBids" bpmnElement="Gateway_HasBids" isMarkerVisible="true">
-        <dc:Bounds x="1786" y="815" width="50" height="50" />
+        <dc:Bounds x="2872.6000000000004" y="899.0000000000001" width="50" height="50" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="1774" y="768" width="74" height="42" />
+          <dc:Bounds x="2860.6000000000004" y="846.9000000000001" width="74" height="42" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_Failed" bpmnElement="Task_Failed">
-        <dc:Bounds x="1936" y="800" width="100" height="80" />
+        <dc:Bounds x="3097.6000000000004" y="884.0000000000001" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_EndEvent_Failed" bpmnElement="EndEvent_Failed">
-        <dc:Bounds x="2168" y="822" width="36" height="36" />
+        <dc:Bounds x="3479.6000000000004" y="906.0000000000001" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="2149" y="863" width="74" height="28" />
+          <dc:Bounds x="3460.6000000000004" y="950.7" width="74" height="28" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_Protocol" bpmnElement="Task_Protocol">
-        <dc:Bounds x="1936" y="960" width="100" height="80" />
+        <dc:Bounds x="3097.6000000000004" y="1060" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_Contract" bpmnElement="Task_Contract">
-        <dc:Bounds x="2136" y="560" width="100" height="80" />
+        <dc:Bounds x="3417.6000000000004" y="620" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_EndEvent_Contract" bpmnElement="EndEvent_Contract">
-        <dc:Bounds x="2336" y="582" width="36" height="36" />
+        <dc:Bounds x="3748.4" y="642" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="2324" y="623" width="60" height="28" />
+          <dc:Bounds x="3736.4" y="686.7" width="60" height="28" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_Need_Request" bpmnElement="Flow_Need_Request">
-        <di:waypoint x="186" y="200" />
-        <di:waypoint x="286" y="200" />
+        <di:waypoint x="286.8" y="220.00000000000003" />
+        <di:waypoint x="457.6" y="220.00000000000003" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_Request_CheckPlan" bpmnElement="Flow_Request_CheckPlan">
-        <di:waypoint x="386" y="200" />
-        <di:waypoint x="536" y="200" />
-        <di:waypoint x="536" y="400" />
+        <di:waypoint x="617.6" y="220.00000000000003" />
+        <di:waypoint x="857.6" y="220.00000000000003" />
+        <di:waypoint x="857.6" y="444.00000000000006" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_CheckPlan_InPlan" bpmnElement="Flow_CheckPlan_InPlan">
-        <di:waypoint x="586" y="440" />
-        <di:waypoint x="686" y="440" />
+        <di:waypoint x="937.6" y="484.00000000000006" />
+        <di:waypoint x="1112.6000000000001" y="484.00000000000006" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_InPlan_AmendPlan" bpmnElement="Flow_InPlan_AmendPlan">
-        <di:waypoint x="736" y="440" />
-        <di:waypoint x="836" y="440" />
+        <di:waypoint x="1162.6000000000001" y="484.00000000000006" />
+        <di:waypoint x="1337.6000000000001" y="484.00000000000006" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="774" y="418" width="25" height="14" />
+          <dc:Bounds x="1245.9" y="460.50000000000006" width="25" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_AmendPlan_PlanMerge" bpmnElement="Flow_AmendPlan_PlanMerge">
-        <di:waypoint x="936" y="440" />
-        <di:waypoint x="1036" y="440" />
+        <di:waypoint x="1497.6000000000001" y="484.00000000000006" />
+        <di:waypoint x="1672.6000000000001" y="484.00000000000006" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_PlanMerge_Publish" bpmnElement="Flow_PlanMerge_Publish">
-        <di:waypoint x="1086" y="440" />
-        <di:waypoint x="1186" y="440" />
+        <di:waypoint x="1722.6000000000001" y="484.00000000000006" />
+        <di:waypoint x="1897.6000000000001" y="484.00000000000006" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_Publish_CollectBids" bpmnElement="Flow_Publish_CollectBids">
-        <di:waypoint x="1286" y="440" />
-        <di:waypoint x="1386" y="440" />
+        <di:waypoint x="2057.6000000000004" y="484.00000000000006" />
+        <di:waypoint x="2217.6" y="484.00000000000006" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_CollectBids_Evaluate" bpmnElement="Flow_CollectBids_Evaluate">
-        <di:waypoint x="1486" y="440" />
-        <di:waypoint x="1636" y="440" />
-        <di:waypoint x="1636" y="800" />
+        <di:waypoint x="2377.6" y="484.00000000000006" />
+        <di:waypoint x="2617.6000000000004" y="484.00000000000006" />
+        <di:waypoint x="2617.6000000000004" y="884.0000000000001" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_Evaluate_HasBids" bpmnElement="Flow_Evaluate_HasBids">
-        <di:waypoint x="1686" y="840" />
-        <di:waypoint x="1786" y="840" />
+        <di:waypoint x="2697.6000000000004" y="924.0000000000001" />
+        <di:waypoint x="2872.6000000000004" y="924.0000000000001" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_HasBids_Failed" bpmnElement="Flow_HasBids_Failed">
-        <di:waypoint x="1836" y="840" />
-        <di:waypoint x="1936" y="840" />
+        <di:waypoint x="2922.6000000000004" y="924.0000000000001" />
+        <di:waypoint x="3097.6000000000004" y="924.0000000000001" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="1874" y="818" width="25" height="14" />
+          <dc:Bounds x="3005.9" y="900.5000000000001" width="25" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_Failed_Failed" bpmnElement="Flow_Failed_Failed">
-        <di:waypoint x="2036" y="840" />
-        <di:waypoint x="2168" y="840" />
+        <di:waypoint x="3257.6000000000004" y="924.0000000000001" />
+        <di:waypoint x="3479.6000000000004" y="924.0000000000001" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_HasBids_Protocol" bpmnElement="Flow_HasBids_Protocol">
-        <di:waypoint x="1811" y="865" />
-        <di:waypoint x="1811" y="1000" />
-        <di:waypoint x="1936" y="1000" />
+        <di:waypoint x="2897.6000000000004" y="949.0000000000001" />
+        <di:waypoint x="2897.6000000000004" y="1100" />
+        <di:waypoint x="3097.6000000000004" y="1100" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="1817" y="926" width="18" height="14" />
+          <dc:Bounds x="2912.6000000000004" y="1019.3000000000002" width="18" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_InPlan_PlanMerge" bpmnElement="Flow_InPlan_PlanMerge">
-        <di:waypoint x="711" y="465" />
-        <di:waypoint x="711" y="500" />
-        <di:waypoint x="1061" y="500" />
-        <di:waypoint x="1061" y="465" />
+        <di:waypoint x="1137.6000000000001" y="509.00000000000006" />
+        <di:waypoint x="1137.6000000000001" y="550" />
+        <di:waypoint x="1697.6000000000001" y="550" />
+        <di:waypoint x="1697.6000000000001" y="509.00000000000006" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="877" y="508" width="18" height="14" />
+          <dc:Bounds x="1408.6000000000001" y="559.5" width="18" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_Protocol_Contract" bpmnElement="Flow_Protocol_Contract">
-        <di:waypoint x="2036" y="1000" />
-        <di:waypoint x="2116" y="1000" />
-        <di:waypoint x="2116" y="600" />
-        <di:waypoint x="2136" y="600" />
+        <di:waypoint x="3257.6000000000004" y="1100" />
+        <di:waypoint x="3385.6000000000004" y="1100" />
+        <di:waypoint x="3385.6000000000004" y="660" />
+        <di:waypoint x="3417.6000000000004" y="660" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_Contract_Contract" bpmnElement="Flow_Contract_Contract">
-        <di:waypoint x="2236" y="600" />
-        <di:waypoint x="2336" y="600" />
+        <di:waypoint x="3577.6000000000004" y="660" />
+        <di:waypoint x="3748.4" y="660" />
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>

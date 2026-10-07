@@ -1,6 +1,6 @@
 import { type FormEvent, useState } from 'react'
 import { type Question, useQuestionAction } from '@/entities/question'
-import { VoiceDictation } from '@/features/voice-record/voice-dictation'
+import { appendDictation, VoiceDictation } from '@/features/voice-record/voice-dictation'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import { Button, Textarea } from '@/shared/ui'
 
@@ -27,6 +27,7 @@ export function AnswerComposer({
   tourAnchored = true,
 }: AnswerComposerProps) {
   const [text, setText] = useState('')
+  const [dictating, setDictating] = useState(false)
   const action = useQuestionAction(projectId)
 
   const send = (value: string) => {
@@ -47,7 +48,12 @@ export function AnswerComposer({
       className="flex flex-col gap-2 animate-fade-in"
       {...(tourAnchored ? tourAnchor(TOUR_ANCHORS.answerComposer) : {})}
     >
-      <div className="relative">
+      <VoiceDictation
+        label="Ответить голосом"
+        onText={(value) => setText((draft) => appendDictation(draft, value))}
+        onSubmit={(value) => send(appendDictation(text, value))}
+        onActiveChange={setDictating}
+      >
         <Textarea
           autoFocus={autoFocus}
           value={text}
@@ -66,15 +72,11 @@ export function AnswerComposer({
             }
           }}
         />
-        <VoiceDictation
-          label="Ответить голосом"
-          submitLabel="Отправить ответ"
-          submitIcon="send"
-          className="absolute top-1.5 right-1.5"
-          onText={send}
-        />
-      </div>
-      <div className="flex items-center justify-end gap-2">
+      </VoiceDictation>
+      <div
+        hidden={dictating}
+        className={dictating ? 'hidden' : 'flex items-center justify-end gap-2'}
+      >
         <div className="flex gap-1.5">
           {onCancel && (
             <Button size="sm" variant="ghost" onClick={onCancel}>

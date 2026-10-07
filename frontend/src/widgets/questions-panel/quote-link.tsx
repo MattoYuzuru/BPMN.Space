@@ -13,18 +13,31 @@ export function QuoteLink({
   source,
   tone = 'about',
   clamp = true,
+  onNavigate,
 }: {
   quote: Quote
   source?: Source
   tone?: 'about' | 'evidence'
   clamp?: boolean
+  onNavigate?: () => void
 }) {
   const { openSource } = useWorkspace()
+  if (!source) {
+    return (
+      <div className="flex flex-col gap-1 border-l-2 border-border-strong py-1 pr-2 pl-3">
+        <span className={cn('type-ui text-fg-muted', clamp && 'line-clamp-3')}>
+          «{quote.quote}»
+        </span>
+        <span className="type-caption text-fg-subtle">Источник удалён или недоступен</span>
+      </div>
+    )
+  }
   return (
     <a
-      href={`?source=${quote.source_id}`}
+      href={`?source=${quote.source_id}&mark=${encodeURIComponent(quote.quote)}`}
       onClick={(event) => {
         event.preventDefault()
+        onNavigate?.()
         openSource(quote.source_id, quote.quote)
       }}
       className={cn(

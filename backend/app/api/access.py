@@ -6,7 +6,7 @@ from fastapi import Request
 
 from app.container import Container
 from app.domain.access import ProjectRole, ResourceKind, ShareLink
-from app.services.auth import UserRow
+from app.services.auth import UserRow, stream_user
 from app.services.errors import ForbiddenError, NotFoundError, UnauthorizedError
 
 __all__ = [
@@ -15,6 +15,7 @@ __all__ = [
     "ensure_project_access",
     "ensure_resource_access",
     "get_active_share_link",
+    "has_stream_project_access",
     "project_roles",
     "require_account",
 ]
@@ -76,3 +77,23 @@ async def ensure_resource_access(
 
 async def get_active_share_link(container: Container, token: str) -> ShareLink:
     return await container.access.active_link(token)
+
+
+async def has_stream_project_access(
+    request: Request, container: Container, project_id: UUID, user: UserRow | None
+) -> bool:
+    """После SSE-handshake проверять и членство, и исходную cookie-сессию.
+
+    У уже начатого ответа нельзя поменять HTTP-статус: потеря доступа закрывает поток
+    до отправки следующего события, без исключения и утечки данных из очереди.
+    """
+    current = await stream_user(request) if request.app.state.auth_enabled else user
+    if request.app.state.auth_enabled and (
+        current is None or user is None or current.id != user.id
+    ):
+        return False
+    try:
+        await ensure_project_access(request, container, project_id, current, write=False)
+    except (NotFoundError, ForbiddenError, UnauthorizedError):
+        return False
+    return True

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { type Browser, expect, type Page, test } from '@playwright/test'
 import { createExampleProject, runViaApi } from './support'
 
@@ -36,6 +37,62 @@ async function guestPage(browser: Browser, baseURL: string | undefined): Promise
   })
   return context.newPage()
 }
+
+test('сохранение синхронизирует две вкладки одного аккаунта без перезагрузки', async ({
+  page,
+  request,
+  browser,
+  baseURL,
+}) => {
+  const projectId = await createExampleProject(request)
+  const initialXml = readFileSync(
+    new URL('../../examples/tp861/output/diagram-v2.bpmn', import.meta.url),
+    'utf8',
+  )
+  const { csrf_token: csrf } = await (await request.get('/api/v1/auth/csrf')).json()
+  const initial = await request.put(`/api/v1/projects/${projectId}/diagram`, {
+    headers: { 'X-CSRF-Token': csrf },
+    data: { xml: initialXml, base_version_id: null },
+  })
+  expect(initial.status()).toBe(201)
+  const base = await initial.json()
+  const otherContext = await browser.newContext({
+    baseURL,
+    storageState: await page.context().storageState(),
+  })
+  const other = await otherContext.newPage()
+  const localCount = observeRoom(page)
+  const remoteCount = observeRoom(other)
+  try {
+    await Promise.all([page.goto(`/projects/${projectId}`), other.goto(`/projects/${projectId}`)])
+    await expect.poll(localCount, { timeout: 15_000 }).toBe(2)
+    await expect.poll(remoteCount).toBe(2)
+    const title = 'Заявка проверена во второй вкладке'
+    const updatedXml = await page.evaluate(
+      ({ xml, title }) => {
+        const document = new DOMParser().parseFromString(xml, 'application/xml')
+        const task = document.querySelector('[id="Task_SubmitApplication"]')
+        if (!task) throw new Error('В исходной схеме нет задачи подачи заявки')
+        task.setAttribute('name', title)
+        return new XMLSerializer().serializeToString(document)
+      },
+      { xml: initialXml, title },
+    )
+    const saved = await request.put(`/api/v1/projects/${projectId}/diagram`, {
+      headers: { 'X-CSRF-Token': csrf },
+      data: { xml: updatedXml, base_version_id: base.id },
+    })
+    expect(saved.status()).toBe(201)
+    for (const tab of [page, other]) {
+      await expect(
+        tab.locator('.djs-element[data-element-id="Task_SubmitApplication"]'),
+      ).toContainText(title)
+      await expect(tab.getByRole('button', { name: 'Открыть новую версию' })).toHaveCount(0)
+    }
+  } finally {
+    await otherContext.close()
+  }
+})
 
 test('движение BPMN-блока сразу видно во второй вкладке', async ({
   page,

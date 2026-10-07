@@ -111,7 +111,7 @@ export function ProjectsGrid({ query, scope, onResetQuery, onResetScope }: Proje
   return (
     <section aria-label="Проекты" aria-busy={projects.isFetching || undefined}>
       <div className="@container">
-        <div ref={gridRef} className={GRID}>
+        <div ref={gridRef} data-projects-grid className={GRID}>
           <AnimatePresence>
             {items.map((project, index) => (
               <m.div

@@ -7,15 +7,17 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.container import Container
+from app.domain.bpmn.document import parse_bpmn
+from app.fixtures.complex_examples import COMPLEX_EXAMPLES
 from tests.conftest import API, DEMO, create_project, read_events
 
 MISSING = "00000000-0000-0000-0000-000000000000"
 
 
 def test_list_paginates_through_all_seed_projects(client: TestClient) -> None:
-    first = client.get(f"{API}/projects", params={"limit": 20}).json()
-    assert first["total"] == 41
-    assert len(first["items"]) == 20
+    first = client.get(f"{API}/projects", params={"limit": 3}).json()
+    assert first["total"] == 5
+    assert len(first["items"]) == 3
     assert first["items"][0]["id"] == DEMO  # демо-проект изменён последним
     seen = [item["id"] for item in first["items"]]
     cursor = first["next_cursor"]
@@ -23,7 +25,7 @@ def test_list_paginates_through_all_seed_projects(client: TestClient) -> None:
         page = client.get(f"{API}/projects", params={"limit": 20, "cursor": cursor}).json()
         seen += [item["id"] for item in page["items"]]
         cursor = page["next_cursor"]
-    assert len(seen) == len(set(seen)) == 41
+    assert len(seen) == len(set(seen)) == 5
     statuses = {item["status"] for item in first["items"]}
     assert {"needs_answers", "ready"} <= statuses
 
@@ -47,7 +49,7 @@ def test_search_is_case_and_yo_insensitive(client: TestClient) -> None:
     assert [item["title"] for item in result["items"]] == [
         "Работы в электроустановках по наряду-допуску"
     ]
-    assert client.get(f"{API}/projects", params={"q": "перерасчет"}).json()["total"] == 1
+    assert client.get(f"{API}/projects", params={"q": "РАБОТЫ"}).json()["total"] == 1
     empty = client.get(f"{API}/projects", params={"q": "нет такого"}).json()
     assert empty == {"items": [], "next_cursor": None, "total": 0}
 
@@ -142,20 +144,45 @@ def test_create_validation(client: TestClient) -> None:
 
 def test_examples_and_project_from_example(client: TestClient) -> None:
     examples = client.get(f"{API}/examples").json()
-    assert [e["id"] for e in examples] == ["tp861", "repair-outage", "work-permit"]
+    assert [e["id"] for e in examples] == [
+        "tp861",
+        "work-permit",
+        "energy-incident",
+        "logistics-order",
+        "service-release",
+    ]
     assert all(e["content"] and e["description"] for e in examples)
 
-    created = client.post(f"{API}/projects/from-example", json={"example_id": "repair-outage"})
+    created = client.post(f"{API}/projects/from-example", json={"example_id": "energy-incident"})
     assert created.status_code == 201
     project = created.json()
     assert project["status"] == "ready"
     assert project["counts"]["sources"] == 1
     detail = client.get(f"{API}/projects/{project['id']}").json()
-    assert detail["sources"][0]["title"] == "Вывод оборудования в ремонт"
+    assert detail["sources"][0]["title"].startswith("Восстановление энергоснабжения")
+    assert len(detail["sources"][0]["content"]) > 10_000
 
     missing = client.post(f"{API}/projects/from-example", json={"example_id": "nope"})
     assert missing.status_code == 404
     assert missing.json() == {"detail": "Пример не найден"}
+
+
+@pytest.mark.parametrize("example", COMPLEX_EXAMPLES, ids=lambda example: example.key)
+def test_complex_example_copy_builds_full_recorded_graph_without_invented_gaps(
+    client: TestClient, example
+) -> None:
+    copied = client.post(f"{API}/projects/from-example", json={"example_id": example.key}).json()
+    run = client.post(f"{API}/projects/{copied['id']}/runs", json={"mode": "build"}).json()
+    events = read_events(client, run["id"])
+    assert events[-1][0] == "done"
+    assert events[-1][1]["run"]["status"] == "succeeded"
+    assert not [event for event in events if event[0] == "question"]
+    version = next(data["version"] for kind, data in events if kind == "version")
+    xml = client.get(f"{API}/versions/{version['id']}/xml").text
+    document = parse_bpmn(xml)
+    assert len(document.nodes) == example.nodes
+    tasks = [node for node in document.nodes.values() if node.type.endswith("Task")]
+    assert len(version["trace"]) == len(tasks)
 
 
 def test_unknown_route_has_russian_detail(client: TestClient) -> None:

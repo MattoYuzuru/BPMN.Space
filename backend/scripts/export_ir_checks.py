@@ -32,14 +32,25 @@ async def export(url: str, output: Path) -> None:
     await asyncio.to_thread(output.mkdir, parents=True, exist_ok=True)
     for path in sorted(fixtures.glob("*.json")):
         recorded = await asyncio.to_thread(path.read_text)
+        graph = json.loads(recorded)
+        scenario_text = fixtures.parent / "texts" / f"{path.stem}.md"
+        scenario_source = source
+        if scenario_text.exists():
+            scenario_source = ContextSource(
+                id=UUID(graph["lanes"][0]["source"]["source_id"]),
+                title=graph["title"],
+                kind=SourceKind.TEXT,
+                content=await asyncio.to_thread(scenario_text.read_text),
+                created_at=source.created_at,
+            )
         pipeline = OpenAICompatiblePipeline(
             api_key="recorded-never-sent", complete=lambda _s, _p, value=recorded: value
         )
         draft = await pipeline.structure(
             RunContext(
                 project_id=uuid4(),
-                project_title="Согласование заявки",
-                sources=[source],
+                project_title=graph["title"],
+                sources=[scenario_source],
                 questions=[],
             ),
             AnalysisResult(),

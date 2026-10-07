@@ -6,7 +6,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from app.ingest.stt import Transcript
+from app.ingest.stt import NoSpeechError, Transcript
 
 
 class DeepgramSpeechToText:
@@ -39,10 +39,13 @@ class DeepgramSpeechToText:
 
         try:
             alternative = result["results"]["channels"][0]["alternatives"][0]
-            text = str(alternative["transcript"]).strip()
+            raw_text = alternative["transcript"]
+            if not isinstance(raw_text, str):
+                raise TypeError
+            text = raw_text.strip()
             duration = float(result["metadata"].get("duration", 0))
         except (KeyError, IndexError, TypeError, ValueError):
             raise RuntimeError("Deepgram вернул ответ в неизвестном формате") from None
         if not text:
-            raise RuntimeError("В записи не удалось распознать речь")
+            raise NoSpeechError
         return Transcript(text=text, duration_sec=max(0.0, duration), language="ru-RU")

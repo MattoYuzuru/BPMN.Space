@@ -16,6 +16,7 @@ from app.services.errors import (
     NotFoundError,
     PayloadTooLargeError,
     ServiceError,
+    SpeechNotRecognizedError,
     StaleVersionError,
     UnauthorizedError,
     UnavailableError,
@@ -84,6 +85,8 @@ def install_error_handlers(app: FastAPI) -> None:
                 },
                 status_code=status,
             )
+        if isinstance(error, SpeechNotRecognizedError):
+            return JSONResponse({"detail": error.message, "code": "NO_SPEECH"}, status_code=status)
         return JSONResponse({"detail": error.message}, status_code=status)
 
     async def request_validation(_: Request, error: Exception) -> JSONResponse:

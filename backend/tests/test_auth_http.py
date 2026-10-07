@@ -22,16 +22,23 @@ from sqlalchemy import text, update
 from sqlalchemy.ext.asyncio import create_async_engine
 from sse_starlette import ServerSentEvent
 from starlette.requests import Request
+from starlette.types import Message
+from starlette.websockets import WebSocket
 
+from app.api.v1.collaboration import _ticket_is_current
 from app.api.v1.presence import project_presence
+from app.api.v1.runs import run_events
 from app.config import Settings
 from app.container import build_container
+from app.domain.access import ProjectRole
 from app.domain.models import Project, Source, SourceKind, SourceStatus
+from app.domain.runs import RunEvent, RunEventKind
 from app.infra.database import Database
 from app.infra.db_models import ProjectShareLinkRow, UserRow
 from app.infra.seed import DEMO_PROJECT_ID, SeedData, build_seed
 from app.main import create_app
 from app.services.auth import SESSION_COOKIE, stream_user
+from app.services.presence import PresentUser
 
 API = "/api/v1"
 PASSWORD = "test-password-long-enough"  # noqa: S105
@@ -234,10 +241,7 @@ async def test_presence_stream_emits_authorized_user_and_cleans_up(stack: Stack)
     assert created.status_code == 201, created.text
     project_id = UUID(created.json()["id"])
 
-    async def receive() -> dict[str, Any]:
-        return {"type": "http.request", "body": b"", "more_body": False}
-
-    request = Request({"type": "http", "app": stack.app}, receive=receive)
+    request = _authenticated_stream_request(stack, owner)
     user = UserRow(
         id=UUID(owner.user_id),
         email=owner.email,
@@ -274,6 +278,140 @@ async def test_stream_auth_reads_user_and_releases_database_connection(stack: St
     assert user is not None
     assert str(user.id) == owner.user_id
     assert user.email == owner.email
+    assert cast(Any, stack.database.engine.pool).checkedout() == 0
+
+
+async def test_account_websocket_requires_current_matching_session(stack: Stack) -> None:
+    owner = await stack.user("ws-session-owner@example.com")
+    other = await stack.user("ws-session-other@example.com")
+    created = await owner.post("/projects", json={"title": "Проверка сессии комнаты"})
+    project_id = UUID(created.json()["id"])
+    issued = await owner.post(f"/projects/{project_id}/collaboration-ticket")
+    container = stack.app.state.container
+    ticket = container.realtime.consume_ticket(issued.json()["ticket"], project_id=project_id)
+    assert ticket is not None
+
+    def connection(account: Account | None) -> WebSocket:
+        async def receive() -> dict[str, Any]:
+            return {"type": "websocket.disconnect", "code": 1000}
+
+        async def send(message: Message) -> None:
+            pass
+
+        headers = []
+        if account is not None:
+            token = account.http.cookies.get(SESSION_COOKIE)
+            headers = [(b"cookie", f"{SESSION_COOKIE}={token}".encode())]
+        return WebSocket({"type": "websocket", "app": stack.app, "headers": headers}, receive, send)
+
+    opened = connection(owner)
+    assert await _ticket_is_current(container, ticket, opened)
+    assert not await _ticket_is_current(container, ticket, connection(None))
+    assert not await _ticket_is_current(container, ticket, connection(other))
+    assert (await owner.post("/auth/session/logout")).status_code == 204
+    assert not await _ticket_is_current(container, ticket, opened)
+    assert cast(Any, stack.database.engine.pool).checkedout() == 0
+
+
+def _authenticated_stream_request(stack: Stack, account: Account) -> Request:
+    async def receive() -> dict[str, Any]:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    token = account.http.cookies.get(SESSION_COOKIE)
+    assert token
+    return Request(
+        {
+            "type": "http",
+            "app": stack.app,
+            "headers": [(b"cookie", f"{SESSION_COOKIE}={token}".encode())],
+        },
+        receive=receive,
+    )
+
+
+@pytest.mark.parametrize("stream_kind", ["presence", "run"])
+@pytest.mark.parametrize("revoke_kind", ["membership", "session"])
+async def test_active_stream_stops_before_next_event_after_access_revocation(
+    stack: Stack, stream_kind: str, revoke_kind: str
+) -> None:
+    owner = await stack.user("stream-owner@example.com")
+    viewer = await stack.user("stream-viewer@example.com")
+    finished = await _finished_project(owner)
+    project_id = UUID(finished["project"])
+    await stack.app.state.container.sharing.accept_invite(
+        project_id, UUID(viewer.user_id), role="viewer"
+    )
+    request = _authenticated_stream_request(stack, viewer)
+    user = await stream_user(request)
+    assert user is not None
+    response = (
+        await project_presence(project_id, request, stack.app.state.container, user)
+        if stream_kind == "presence"
+        else await run_events(UUID(finished["run"]), request, stack.app.state.container, user)
+    )
+    stream = cast(AsyncGenerator[ServerSentEvent], response.body_iterator)
+    await anext(stream)
+
+    if revoke_kind == "membership":
+        removed = await owner.delete(f"/projects/{project_id}/members/{viewer.user_id}")
+        assert removed.status_code == 204, removed.text
+    else:
+        assert (await viewer.post("/auth/session/logout")).status_code == 204
+    if stream_kind == "presence":
+        # Снимки продолжают поступать: проверка только по idle timeout не сработает.
+        await stack.app.state.presence.join(
+            project_id,
+            PresentUser(id=UUID(owner.user_id), email=owner.email, role=ProjectRole.OWNER),
+        )
+    try:
+        with pytest.raises(StopAsyncIteration):
+            await anext(stream)
+    finally:
+        await stream.aclose()
+    assert cast(Any, stack.database.engine.pool).checkedout() == 0
+
+
+async def test_quiet_run_stream_rechecks_access_and_closes_pending_subscription(
+    stack: Stack, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owner = await stack.user("quiet-owner@example.com")
+    viewer = await stack.user("quiet-viewer@example.com")
+    finished = await _finished_project(owner)
+    project_id = UUID(finished["project"])
+    container = stack.app.state.container
+    await container.sharing.accept_invite(project_id, UUID(viewer.user_id), role="viewer")
+    request = _authenticated_stream_request(stack, viewer)
+    user = await stream_user(request)
+    assert user is not None
+    run = await container.runs.get(UUID(finished["run"]))
+    waiting = asyncio.Event()
+    closed = []
+
+    async def events():
+        try:
+            await waiting.wait()
+            yield RunEvent(id=1, kind=RunEventKind.DONE, payload=run)
+        finally:
+            closed.append(True)
+
+    async def subscribe(*args, **kwargs):
+        return events()
+
+    monkeypatch.setattr(container.runs, "events", subscribe)
+    monkeypatch.setattr("app.api.v1.runs.ACCESS_RECHECK_SEC", 0.01)
+    response = await run_events(run.id, request, container, user)
+    stream = cast(AsyncGenerator[ServerSentEvent], response.body_iterator)
+    pending = asyncio.create_task(anext(stream))
+    try:
+        removed = await owner.delete(f"/projects/{project_id}/members/{viewer.user_id}")
+        assert removed.status_code == 204, removed.text
+        with pytest.raises(StopAsyncIteration):
+            await asyncio.wait_for(pending, timeout=1)
+    finally:
+        pending.cancel()
+        await asyncio.gather(pending, return_exceptions=True)
+        await stream.aclose()
+    assert closed == [True]
     assert cast(Any, stack.database.engine.pool).checkedout() == 0
 
 

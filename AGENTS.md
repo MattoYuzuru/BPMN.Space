@@ -8,6 +8,12 @@
 
 **Каноничный документ архитектуры и плана:** [`docs/rfc/0001-architecture.md`](docs/rfc/0001-architecture.md). Правила генерации — [`docs/backend/generation-quality.md`](docs/backend/generation-quality.md). Общий план — GitLab #1–#6, первая очередь качества — #18–#23, дальнейшие задачи — #17 и #24–#34. Воспроизведение и модель бизнес-времени — [`RFC-0003`](docs/rfc/0003-process-playback-and-timing.md).
 
+Сверка приоритетов и оставшихся границ BPMN — [`docs/research/product-priorities-2026-10.md`](docs/research/product-priorities-2026-10.md).
+Открытие, генерация, сохранение ручного XML и воспроизведение имеют разные поднаборы;
+не объявляйте поддержку типа только по наличию его в палитре bpmn-js. Полноценные ревизии
+оснований (#34), восстановление версии (#30) и компактное хранение из отдельной ветки
+ещё не следует считать реализованными.
+
 ## Карта
 
 | Путь | Что |
@@ -48,6 +54,7 @@ make gen-api      # после изменения API: OpenAPI + TS-типы
 make fixtures     # пересобрать BPMN-фикстуры и examples/ (Node, XSD, bpmnlint)
 make e2e          # Playwright против Docker-стека; E2E_BASE_URL задаёт уже запущенный стенд
 make e2e-diagram  # настоящий BPMN canvas: воспроизведение, шлюзы, экспорт, мини-карта; Vite без backend
+make eval-complex # три подробных регламента без платных вызовов; сначала dev-bpmn-tools
 make verify       # перед MR: check + e2e + секреты → reports/verify-<sha>.md
 make mr-report    # отчёт verify комментарием в MR
 make deploy-env   # передать production-переменные из локального .env на VM по SSH

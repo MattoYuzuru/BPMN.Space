@@ -15,6 +15,8 @@ import {
   Select,
   Switch,
   Textarea,
+  toast,
+  VoiceInput,
 } from '@/shared/ui'
 import { Caption, Section, Specimen, SpecimenGrid } from './kit'
 
@@ -188,6 +190,30 @@ export function FieldsSection() {
               <BrandMark size="lg" />
               <Caption>BrandMark — знак продукта: шапка, 404, пустые экраны.</Caption>
             </div>
+          </div>
+        </Specimen>
+        <Specimen title="VoiceInput" note="запись внутри поля, без отдельного окна">
+          <div className="flex flex-col gap-4">
+            <VoiceInput
+              phase="recording"
+              levels={levels}
+              elapsed={12}
+              onCancel={() => toast('Запись отменена')}
+              onStop={() => toast('Расшифровка вернётся в поле')}
+              onSend={() => toast('Речь будет распознана и отправлена')}
+              sendLabel="Распознать и отправить ответ"
+            />
+            <VoiceInput
+              phase="transcribing"
+              levels={levels}
+              elapsed={12}
+              onCancel={() => toast('Распознавание отменено')}
+              onStop={() => {}}
+            />
+            <Caption>
+              Остановка возвращает текст в черновик. Стрелка распознаёт и отправляет ответ. Отмена
+              или Escape сохраняют набранный текст.
+            </Caption>
           </div>
         </Specimen>
       </SpecimenGrid>

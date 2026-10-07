@@ -44,7 +44,7 @@ export function AudioLevel({
           // biome-ignore lint/suspicious/noArrayIndexKey: полосы — позиции, а не сущности
           key={index}
           aria-hidden="true"
-          className="h-full w-1 shrink-0 rounded-full bg-current transition-transform duration-fast ease-soft motion-reduce:transition-none"
+          className="h-full w-1 min-w-0 shrink rounded-full bg-current transition-transform duration-fast ease-soft motion-reduce:transition-none"
           style={{ transform: `scaleY(${Math.max(0.06, Math.min(1, level))})` }}
         />
       ))}

@@ -51,7 +51,8 @@ export function DiagramPanel() {
   const isLatest = !viewedVersionId || viewedVersionId === latest?.id
   // Анализ схему не меняет — править можно; сборка заменит схему, поэтому на её время только просмотр.
   const building = project.status === 'building'
-  const readOnly = !isLatest || building || !canEdit
+  const [openingRemote, setOpeningRemote] = useState(false)
+  const readOnly = !isLatest || building || !canEdit || openingRemote
 
   const [markers, setMarkers] = useState<MarkerToggles>({ assumptions: true, added: true })
   const [inspected, setInspected] = useState<string | null>(null)
@@ -65,8 +66,10 @@ export function DiagramPanel() {
 
   const save = useSaveDiagram(project.id)
   const lastSaved = useRef<string | null>(null)
+  const canvasXmlRef = useRef<string | null>(null)
   const headVersionRef = useRef<string | null>(latest?.id ?? null)
   const draftXmlRef = useRef<string | null>(null)
+  const serializationPendingRef = useRef(false)
   const draftEpochRef = useRef(0)
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const canvasBoundsRef = useRef<HTMLDivElement>(null)
@@ -104,7 +107,9 @@ export function DiagramPanel() {
             })
             headVersionRef.current = version.id
             lastSaved.current = xml
-            if (draftXmlRef.current === xml) draftXmlRef.current = null
+            if (draftXmlRef.current === xml && !serializationPendingRef.current) {
+              draftXmlRef.current = null
+            }
           } catch (error) {
             if (error instanceof ApiError && error.code === 'stale_version') {
               markRemoteUpdate({
@@ -122,10 +127,17 @@ export function DiagramPanel() {
   }, SAVE_DEBOUNCE_MS)
 
   // Инвалидация проекта из другого канала не должна импортировать серверный XML поверх черновика.
-  const xml = (isLatest && draftXmlRef.current ? draftXmlRef.current : version.data?.xml) ?? ''
+  const hasLocalChanges = !!draftXmlRef.current || serializationPendingRef.current
+  const xml =
+    (isLatest && hasLocalChanges
+      ? (draftXmlRef.current ?? canvasXmlRef.current ?? lastSaved.current)
+      : (version.data?.xml ?? canvasXmlRef.current)) ?? ''
+  useEffect(() => {
+    if (xml) canvasXmlRef.current = xml
+  }, [xml])
   const loadedVersion = version.data
   useEffect(() => {
-    if (loadedVersion && !draftXmlRef.current) {
+    if (loadedVersion && !draftXmlRef.current && !serializationPendingRef.current) {
       headVersionRef.current = loadedVersion.id
       lastSaved.current = loadedVersion.xml
     }
@@ -146,7 +158,7 @@ export function DiagramPanel() {
     // Событие собственного сохранения может обогнать HTTP-ответ. После ответа сравним точный id;
     // одинаковый actor не различает вкладки одного аккаунта и локальные вкладки без авторизации.
     if (save.isPending) return
-    if (draftXmlRef.current) {
+    if (draftXmlRef.current || serializationPendingRef.current) {
       const id = eventVersionId
       if (remoteUpdate?.id !== id) {
         markRemoteUpdate({
@@ -285,24 +297,42 @@ export function DiagramPanel() {
       activity: canEdit && selection.length ? 'editing' : 'idle',
     })
   }, [canEdit, collaboration.connected, collaboration.sendPresence, selection])
-  const downloadDraft = useCallback(() => {
-    if (!draftXmlRef.current) return
-    const href = URL.createObjectURL(new Blob([draftXmlRef.current], { type: 'application/xml' }))
-    const link = document.createElement('a')
-    link.href = href
-    link.download = `${project.title || 'diagram'}-draft.bpmn`
-    link.click()
-    URL.revokeObjectURL(href)
-  }, [project.title])
-  const loadRemoteVersion = useCallback(() => {
-    downloadDraft()
-    debouncedSave.cancel()
-    draftEpochRef.current += 1
-    markRemoteUpdate(null)
-    draftXmlRef.current = null
-    void queryClient.invalidateQueries({ queryKey: projectKeys.detail(project.id) })
-    void queryClient.invalidateQueries({ queryKey: versionKeys.list(project.id) })
-  }, [debouncedSave.cancel, downloadDraft, markRemoteUpdate, project.id, queryClient])
+  const downloadDraft = useCallback(async () => {
+    try {
+      const draft = serializationPendingRef.current
+        ? await editorRef.current?.exportXml()
+        : draftXmlRef.current
+      if (!draft) return !serializationPendingRef.current
+      const href = URL.createObjectURL(new Blob([draft], { type: 'application/xml' }))
+      const link = document.createElement('a')
+      link.href = href
+      link.download = `${project.title || 'diagram'}-draft.bpmn`
+      link.click()
+      URL.revokeObjectURL(href)
+      return true
+    } catch {
+      toast.error('Черновик не скачался. Попробуйте ещё раз.')
+      return false
+    }
+  }, [editorRef, project.title])
+  const loadRemoteVersion = useCallback(async () => {
+    setOpeningRemote(true)
+    try {
+      if (!(await downloadDraft())) return
+      editorRef.current?.cancelPendingChanges()
+      debouncedSave.cancel()
+      draftEpochRef.current += 1
+      markRemoteUpdate(null)
+      draftXmlRef.current = null
+      serializationPendingRef.current = false
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: projectKeys.detail(project.id) }),
+        queryClient.invalidateQueries({ queryKey: versionKeys.list(project.id) }),
+      ])
+    } finally {
+      setOpeningRemote(false)
+    }
+  }, [debouncedSave.cancel, downloadDraft, editorRef, markRemoteUpdate, project.id, queryClient])
 
   const elements = useMemo(() => diagramElements(xml), [xml])
 
@@ -382,12 +412,20 @@ export function DiagramPanel() {
   const handleChange = useCallback(
     (next: string) => {
       if (readOnly) return
-      // Mark the draft immediately, before the debounce timer: a remote version
-      // may arrive during this window and must not replace unsaved canvas edits.
+      // XML уже выгружен: запоминаем его до debounce сохранения, чтобы чужая версия
+      // не импортировалась поверх ещё не сохранённой модели.
       draftXmlRef.current = next
+      canvasXmlRef.current = next
       debouncedSave.run(next)
     },
     [readOnly, debouncedSave],
+  )
+  const handleChangePending = useCallback(
+    (pending: boolean) => {
+      if (pending && readOnly) return
+      serializationPendingRef.current = pending
+    },
+    [readOnly],
   )
 
   const handleElementClick = useCallback((elementId: string) => {
@@ -452,7 +490,7 @@ export function DiagramPanel() {
             collaboration.sendPresence({ cursor: null, selection, activity: 'idle' })
           }
         >
-          {versionId && version.isPending && !draftXmlRef.current ? (
+          {versionId && version.isPending && !xml ? (
             <CanvasSkeleton />
           ) : (
             <LazyDiagramEditor
@@ -463,6 +501,7 @@ export function DiagramPanel() {
               onSimulationChange={(state) => setSimulationActive(state.active)}
               onSimulationStart={() => reportOnboarding.mutate('simulation_run')}
               onChange={handleChange}
+              onChangePending={handleChangePending}
               onSelectionChange={handleSelectionChange}
               onViewportChange={() => setViewportRevision((value) => value + 1)}
               onReady={handleReady}
@@ -496,10 +535,15 @@ export function DiagramPanel() {
                   : 'Коллега обновил схему. Ваши несохранённые изменения пока остаются в этом окне.'}
               </p>
               <div className="flex shrink-0 gap-2">
-                <Button size="sm" variant="secondary" onClick={downloadDraft}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={downloadDraft}
+                  disabled={openingRemote}
+                >
                   Скачать черновик
                 </Button>
-                <Button size="sm" onClick={loadRemoteVersion}>
+                <Button size="sm" onClick={loadRemoteVersion} disabled={openingRemote}>
                   Открыть новую версию
                 </Button>
               </div>

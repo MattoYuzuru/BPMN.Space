@@ -4,12 +4,14 @@ import type { ReactNode } from 'react'
 import { type ProjectDetail, projectKeys } from '@/entities/project'
 import { projectVersionSource, type VersionDetail, versionKeys } from '@/entities/version'
 import { ApiError } from '@/shared/api/client'
+import type { DiagramEditorHandle } from '@/widgets/diagram-editor'
 import { type WorkspaceApi, WorkspaceContext } from '@/widgets/workspace/model'
 import { DiagramPanel } from './diagram-panel'
 
 const transport = vi.hoisted(() => ({
   event: null as { type: string; [key: string]: unknown } | null,
   nextXml: '<draft/>',
+  pendingTimer: 0,
   save: { isPending: false, isSuccess: false, mutateAsync: vi.fn() },
 }))
 vi.mock('@/features/project-collaboration/use-project-collaboration', () => ({
@@ -34,11 +36,31 @@ vi.mock('@/features/project-collaboration/collaborator-overlay', () => ({
   CollaboratorOverlay: () => null,
 }))
 vi.mock('@/widgets/diagram-editor', () => ({
-  LazyDiagramEditor: ({ xml, onChange }: { xml: string; onChange: (xml: string) => void }) => (
+  LazyDiagramEditor: ({
+    xml,
+    onChange,
+    onChangePending,
+  }: {
+    xml: string
+    onChange: (xml: string) => void
+    onChangePending?: (pending: boolean) => void
+  }) => (
     <div>
       <pre data-testid="canvas-xml">{xml}</pre>
       <button type="button" onClick={() => onChange(transport.nextXml)}>
         Изменить схему
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          onChangePending?.(true)
+          transport.pendingTimer = window.setTimeout(() => {
+            onChange(transport.nextXml)
+            onChangePending?.(false)
+          }, 400)
+        }}
+      >
+        Изменить с задержкой XML
       </button>
     </div>
   ),
@@ -94,6 +116,7 @@ beforeEach(() => {
   vi.useFakeTimers()
   transport.event = null
   transport.nextXml = '<draft/>'
+  transport.pendingTimer = 0
   transport.save.isPending = false
   transport.save.mutateAsync.mockReset()
   transport.save.mutateAsync.mockResolvedValue(version('v-own', '<draft/>'))
@@ -143,6 +166,24 @@ it('инвалидация проекта сохраняет несохранё�
   expect(screen.getByRole('button', { name: 'Открыть новую версию' })).toBeInTheDocument()
 })
 
+it('версия в первые 400 мс после команды не импортируется поверх ещё не выгруженной правки', async () => {
+  const panel = mount()
+  fireEvent.click(screen.getByRole('button', { name: 'Изменить с задержкой XML' }))
+  await act(async () => vi.advanceTimersByTimeAsync(100))
+  transport.event = { type: 'diagram.version', version_id: 'v-2', number: 2 }
+  panel.refresh()
+  expect(panel.invalidate).not.toHaveBeenCalled()
+  expect(screen.getByRole('button', { name: 'Открыть новую версию' })).toBeInTheDocument()
+  const remote = version('v-2', '<remote/>')
+  panel.client.setQueryData(versionKeys.detail(remote.id), remote)
+  panel.workspace.project = { ...panel.workspace.project, latest_version: remote }
+  panel.refresh()
+  expect(screen.getByTestId('canvas-xml')).toHaveTextContent('<initial/>')
+  await act(async () => vi.advanceTimersByTimeAsync(300))
+  panel.refresh()
+  expect(screen.getByTestId('canvas-xml')).toHaveTextContent('<draft/>')
+})
+
 it('следующая правка в очереди не сохраняется после конфликта первой', async () => {
   mount()
   let reject: (error: Error) => void = () => {}
@@ -188,4 +229,55 @@ it('событие собственного сохранения до HTTP-от�
   panel.refresh()
   expect(screen.queryByRole('button', { name: 'Открыть новую версию' })).not.toBeInTheDocument()
   expect(panel.invalidate).not.toHaveBeenCalled()
+})
+
+it('собственная новая голова с ожидающим detail сохраняет тот же холст и текущий XML', async () => {
+  vi.stubGlobal('fetch', () => new Promise(() => {}))
+  const panel = mount()
+  const canvas = screen.getByTestId('canvas-xml')
+  fireEvent.click(screen.getByRole('button', { name: 'Изменить схему' }))
+  await act(async () => vi.advanceTimersByTimeAsync(1600))
+  panel.workspace.project = {
+    ...panel.workspace.project,
+    latest_version: version('v-own', '<draft/>'),
+  }
+  panel.refresh()
+  expect(screen.getByTestId('canvas-xml')).toBe(canvas)
+  expect(canvas).toHaveTextContent('<draft/>')
+  await act(async () =>
+    panel.client.setQueryData(versionKeys.detail('v-own'), version('v-own', '<draft/>')),
+  )
+  expect(screen.getByTestId('canvas-xml')).toBe(canvas)
+  expect(canvas).toHaveTextContent('<draft/>')
+})
+
+it('открытие серверной версии в первые 400 мс скачивает текущий холст и отменяет отложенный XML', async () => {
+  const panel = mount()
+  const exportXml = vi.fn(async () => '<unemitted-draft/>')
+  const cancelPendingChanges = vi.fn(() => window.clearTimeout(transport.pendingTimer))
+  panel.workspace.editorRef.current = {
+    exportXml,
+    cancelPendingChanges,
+  } as unknown as DiagramEditorHandle
+  fireEvent.click(screen.getByRole('button', { name: 'Изменить с задержкой XML' }))
+  transport.event = { type: 'diagram.version', version_id: 'v-2', number: 2 }
+  panel.refresh()
+  fireEvent.click(screen.getByRole('button', { name: 'Открыть новую версию' }))
+  await act(async () => vi.advanceTimersByTimeAsync(1600))
+  expect(exportXml).toHaveBeenCalledTimes(1)
+  expect(cancelPendingChanges).toHaveBeenCalledTimes(1)
+  expect(URL.createObjectURL).toHaveBeenCalledWith(expect.objectContaining({ size: 18 }))
+  expect(transport.save.mutateAsync).not.toHaveBeenCalled()
+})
+
+it('сигнал ранней правки не обходит режим только просмотра', () => {
+  const panel = mount()
+  panel.workspace.canEdit = false
+  panel.refresh()
+  fireEvent.click(screen.getByRole('button', { name: 'Изменить с задержкой XML' }))
+  transport.event = { type: 'diagram.version', version_id: 'v-2', number: 2 }
+  panel.refresh()
+  expect(panel.invalidate).toHaveBeenCalled()
+  expect(screen.queryByRole('button', { name: 'Открыть новую версию' })).not.toBeInTheDocument()
+  expect(transport.save.mutateAsync).not.toHaveBeenCalled()
 })

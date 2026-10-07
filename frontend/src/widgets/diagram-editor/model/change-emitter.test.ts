@@ -3,9 +3,10 @@ import { createChangeEmitter } from './change-emitter'
 function setup(xml: () => string) {
   const onChange = vi.fn()
   const onError = vi.fn()
+  const onChangePending = vi.fn()
   const serialize = vi.fn(async () => xml())
-  const emitter = createChangeEmitter({ delay: 400, serialize, onChange, onError })
-  return { emitter, onChange, onError, serialize }
+  const emitter = createChangeEmitter({ delay: 400, serialize, onChange, onChangePending, onError })
+  return { emitter, onChange, onChangePending, onError, serialize }
 }
 
 describe('createChangeEmitter', () => {
@@ -28,11 +29,59 @@ describe('createChangeEmitter', () => {
   })
 
   it('игнорирует очистку стека при импорте', async () => {
-    const { emitter, serialize } = setup(() => '<new/>')
+    const { emitter, serialize, onChangePending } = setup(() => '<new/>')
     emitter.notify('clear')
     await vi.advanceTimersByTimeAsync(1000)
     expect(serialize).not.toHaveBeenCalled()
     expect(emitter.hasPending()).toBe(false)
+    expect(onChangePending).not.toHaveBeenCalled()
+  })
+
+  it('сразу защищает правку до XML и снимает защиту после его выдачи', async () => {
+    const { emitter, serialize, onChange, onChangePending } = setup(() => '<new/>')
+    emitter.notify('execute')
+    expect(onChangePending).toHaveBeenCalledWith(true)
+    expect(serialize).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(399)
+    expect(onChange).not.toHaveBeenCalled()
+    expect(onChangePending.mock.calls).toEqual([[true]])
+    await vi.advanceTimersByTimeAsync(1)
+    expect(onChange).toHaveBeenCalledWith('<new/>')
+    expect(onChangePending.mock.calls).toEqual([[true], [false]])
+  })
+
+  it('cancel снимает раннюю защиту и не выдаёт отвергнутый черновик', async () => {
+    const { emitter, onChange, onChangePending } = setup(() => '<discarded/>')
+    emitter.notify('execute')
+    emitter.cancel()
+    await vi.advanceTimersByTimeAsync(400)
+    expect(onChange).not.toHaveBeenCalled()
+    expect(onChangePending.mock.calls).toEqual([[true], [false]])
+  })
+
+  it('старый экспорт не снимает защиту команды, пришедшей во время сериализации', async () => {
+    let resolve: (xml: string) => void = () => {}
+    const onChange = vi.fn()
+    const onChangePending = vi.fn()
+    const serialize = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<string>((done) => {
+            resolve = done
+          }),
+      )
+      .mockResolvedValue('<latest/>')
+    const emitter = createChangeEmitter({ delay: 400, serialize, onChange, onChangePending })
+    emitter.notify('execute')
+    await vi.advanceTimersByTimeAsync(400)
+    emitter.notify('execute')
+    resolve('<first/>')
+    await Promise.resolve()
+    expect(onChange).toHaveBeenCalledWith('<first/>')
+    expect(onChangePending.mock.calls).toEqual([[true]])
+    await vi.advanceTimersByTimeAsync(400)
+    expect(onChangePending.mock.calls).toEqual([[true], [false]])
   })
 
   it('учитывает undo и redo как правки', async () => {

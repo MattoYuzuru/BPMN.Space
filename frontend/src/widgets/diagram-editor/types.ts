@@ -93,6 +93,8 @@ export interface DiagramEditorHandle {
   setRemoteMoves(moves: readonly DiagramRemoteMove[]): void
   /** BPMN 2.0 XML с отступами. */
   exportXml(): Promise<string>
+  /** Отменить ещё не выданный XML после явного отказа от локального черновика. */
+  cancelPendingChanges(): void
   /** Самодостаточный SVG: цвета текущей темы, шрифт встроен. */
   exportSvg(): Promise<string>
   /** PNG через canvas. `scale` по умолчанию 2. */
@@ -118,6 +120,8 @@ export interface DiagramEditorProps {
    * и только если XML действительно стал другим. Возврат этого XML обратно в `xml` не перечитывает схему.
    */
   onChange?: (xml: string) => void
+  /** Синхронно отметить команду до onChange; false — XML выдан, правка отменена или импортирована. */
+  onChangePending?: (pending: boolean) => void
   /** Включение режима, пауза, ожидание и завершение. */
   onSimulationChange?: (simulation: DiagramSimulation) => void
   /** Реально создан экземпляр процесса (включение режима без запуска сюда не приходит). */

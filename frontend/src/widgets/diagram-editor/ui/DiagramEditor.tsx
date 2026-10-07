@@ -24,6 +24,7 @@ export default function DiagramEditor({
   ref,
   xml,
   onChange,
+  onChangePending,
   onSimulationStart,
   onSimulationChange,
   onSelectionChange,
@@ -42,6 +43,7 @@ export default function DiagramEditor({
   const controllerRef = useRef<DiagramController | null>(null)
   const callbacksRef = useRef({
     onChange,
+    onChangePending,
     onSimulationStart,
     onSimulationChange,
     onElementClick,
@@ -58,6 +60,7 @@ export default function DiagramEditor({
   useLayoutEffect(() => {
     callbacksRef.current = {
       onChange,
+      onChangePending,
       onSimulationStart,
       onSimulationChange,
       onElementClick,
@@ -141,6 +144,7 @@ function createHandle(
     setRemoteSelections: (selections) => get()?.setRemoteSelections(selections),
     setRemoteMoves: (moves) => get()?.setRemoteMoves(moves),
     exportXml: async () => ensure().exportXml(),
+    cancelPendingChanges: () => get()?.cancelPendingChanges(),
     exportSvg: async () => ensure().exportSvg(),
     exportPng: async (scale, options) => ensure().exportPng(scale, options),
     toggleMinimap: (open) => get()?.toggleMinimap(open) ?? false,

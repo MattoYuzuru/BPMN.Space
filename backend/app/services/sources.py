@@ -21,6 +21,7 @@ from app.services.common import Runtime, get_project, get_source, too_large, tou
 from app.services.errors import (
     ConflictError,
     InvalidInputError,
+    NotFoundError,
     UnsupportedMediaError,
 )
 
@@ -153,11 +154,20 @@ class SourceService:
         if not background:
             for name, value in (await self._parse_changes(file_name=file_name, data=data)).items():
                 setattr(source, name, value)
-        async with self._repos.atomic() as repos:
-            await repos.projects.lock(project_id)
-            await get_project(repos, project_id)
-            await repos.sources.add(source)
-            await touch_project(repos, project_id, now)
+        try:
+            async with self._repos.atomic() as repos:
+                await repos.projects.lock(project_id)
+                await get_project(repos, project_id)
+                await repos.sources.add(source)
+                await touch_project(repos, project_id, now)
+        except NotFoundError:
+            # Владелец мог удалить проект, пока файл сохранялся или разбирался.
+            # До вставки источника не дошли: этот blob уже никому не принадлежит.
+            try:
+                await self._storage.delete(key)
+            except OSError:
+                logger.warning("Не удалён файл %s после удаления проекта во время загрузки", key)
+            raise
         return source, background
 
     async def _parse_changes(self, *, file_name: str, data: bytes) -> dict[str, Any]:

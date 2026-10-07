@@ -6,6 +6,8 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _MB = 1024 * 1024
+# Квитанции удаления доступны 30 дней; содержимое проектов удаляется сразу.
+DELETED_PROJECT_NOTICE_DAYS = 30
 
 
 class Settings(BaseSettings):

@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from hashlib import sha256
 from uuid import UUID
 
 
@@ -50,3 +51,13 @@ class ProjectMember:
     email: str
     role: str
     added_at: datetime
+
+
+def project_deletion_key(project_id: UUID, user_id: UUID) -> str:
+    """Непрозрачная квитанция: сообщение об удалении только бывшему участнику."""
+    return sha256(f"project:{project_id}:user:{user_id}".encode()).hexdigest()
+
+
+def share_deletion_key(token_hash: str) -> str:
+    """Квитанция для обладателя действовавшей ссылки, без сохранения сырого токена."""
+    return sha256(f"share:{token_hash}".encode()).hexdigest()

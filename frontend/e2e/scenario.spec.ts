@@ -7,20 +7,14 @@ import { DEMO_PROJECT_TITLE, dragElement, FINANCES_MD, questionCard, startRun } 
  * анализ → ответ, игнор, голос, документ → повторный анализ (решено/новые) → схема с маркерами →
  * правка мышью → новая версия manual → скачивание .bpmn.
  */
-test('список проектов: бесконечная прокрутка и демо-проект', async ({ page }) => {
+test('список проектов: пять учебных примеров и поиск демо-проекта', async ({ page }) => {
   await page.goto('/projects')
   await expect(page).toHaveTitle(/Проекты/)
+  await page.getByRole('radio', { name: 'Примеры', exact: true }).click()
+  await expect(page).toHaveURL(/scope=examples/)
   const cards = page.locator('section[aria-label="Проекты"] a[href^="/projects/"]')
   await expect(cards.first()).toBeVisible()
-  const firstPage = await cards.count()
-  expect(firstPage).toBeGreaterThanOrEqual(12)
-
-  // Дочитываем до ~90 % — следующая страница подгружается без кнопок.
-  for (let attempt = 0; attempt < 6 && (await cards.count()) <= firstPage; attempt += 1) {
-    await page.mouse.wheel(0, 2400)
-    await page.waitForTimeout(400)
-  }
-  await expect.poll(() => cards.count()).toBeGreaterThan(firstPage)
+  await expect(cards).toHaveCount(5)
 
   await page.mouse.wheel(0, -100_000)
   await page.getByRole('searchbox', { name: 'Поиск по проектам' }).fill('электросетям')

@@ -41,6 +41,7 @@ class DiagramRule:
     fixture: str
     requires: tuple[str, ...]
     trace: Mapping[str, str] = field(default_factory=dict[str, str])
+    questions_complete: bool = False  # полный учебный регламент без записанных пробелов
 
 
 @dataclass(frozen=True, slots=True)

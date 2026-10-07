@@ -29,6 +29,18 @@ describe('fitViewbox', () => {
     const viewbox = fitViewbox(OUTER, { x: 10, y: 10, width: 100, height: 50 })
     expect(scaleOf(OUTER, viewbox)).toBe(1)
   })
+
+  it('большой процесс полностью помещается при обзоре ниже 20%', () => {
+    const bbox = { x: 500, y: 100, width: 10_000, height: 2500 }
+    const viewbox = fitViewbox(OUTER, bbox, 50)
+    expect(scaleOf(OUTER, viewbox)).toBeCloseTo(0.09)
+    expect(viewbox.x).toBeLessThan(bbox.x)
+    expect(viewbox.y).toBeLessThan(bbox.y)
+    expect(viewbox.x + viewbox.width).toBeGreaterThan(bbox.x + bbox.width)
+    expect(viewbox.y + viewbox.height).toBeGreaterThan(bbox.y + bbox.height)
+    const zoomed = zoomViewbox(OUTER, viewbox, 1.25)
+    expect(scaleOf(OUTER, zoomed)).toBeCloseTo(0.1125)
+  })
 })
 
 describe('focusViewbox', () => {

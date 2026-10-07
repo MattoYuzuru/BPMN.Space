@@ -9,7 +9,7 @@ UV := uv run --directory backend
 NPM_FRONT := npm run --workspace frontend
 
 .PHONY: help setup up down logs db-upgrade dev-backend dev-frontend deploy deploy-env \
-        format lint typecheck design-lint check-fast test test-backend test-frontend \
+        format lint typecheck design-lint check-fast test test-backend test-frontend eval-complex \
         test-postgres test-bpmn-tools dev-bpmn-tools build contract-check openapi gen-api fixtures check e2e e2e-diagram screenshots secrets verify mr-report
 
 help: ## Список команд
@@ -78,6 +78,9 @@ test-frontend: ## vitest
 
 test-bpmn-tools: ## Unit/HTTP integration настоящего Node layout и bpmnlint
 	npm --prefix infra/bpmn-tools test
+
+eval-complex: ## Три сложных регламента на записанных правилах; нужен dev-bpmn-tools, отчёт в reports/
+	$(UV) python scripts/complex_eval.py --tools-url "$${BPMN_TOOLS_URL:-http://127.0.0.1:3000}"
 
 dev-bpmn-tools: ## Runtime сервис схем на :3000 (backend: BPMN_TOOLS_URL=http://localhost:3000)
 	npm --prefix infra/bpmn-tools start

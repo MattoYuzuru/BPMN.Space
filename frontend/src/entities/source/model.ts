@@ -45,6 +45,23 @@ export interface QuoteMark {
   ref: string
 }
 
+/** Все связи фрагмента, включая перекрывающиеся цитаты разных вопросов и узлов. */
+export function quoteReferences(
+  content: string,
+  range: Pick<QuoteRange, 'start' | 'end'>,
+  marks: readonly QuoteMark[],
+): QuoteMark[] {
+  const refs = new Map<string, QuoteMark>()
+  for (const mark of marks) {
+    if (!mark.ref) continue
+    const [hit] = findQuoteRanges(content, [mark])
+    if (hit && hit.start < range.end && hit.end > range.start) {
+      refs.set(`${mark.kind === 'trace' ? 'element' : 'question'}:${mark.ref}`, mark)
+    }
+  }
+  return [...refs.values()]
+}
+
 /**
  * Позиции цитат в тексте источника. Цитаты из вопросов могут пересекаться; перекрытия
  * отбрасываются — побеждает более ранняя по тексту, при равном начале — доказательство.

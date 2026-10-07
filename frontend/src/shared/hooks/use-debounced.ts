@@ -23,6 +23,11 @@ export function useDebouncedCallback<A extends unknown[]>(
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const pending = useRef<A | null>(null)
 
+  const cancel = useCallback(() => {
+    clearTimeout(timer.current)
+    pending.current = null
+  }, [])
+
   const flush = useCallback(() => {
     clearTimeout(timer.current)
     if (pending.current) {
@@ -42,5 +47,5 @@ export function useDebouncedCallback<A extends unknown[]>(
   )
 
   useEffect(() => flush, [flush])
-  return { run, flush }
+  return { run, flush, cancel }
 }

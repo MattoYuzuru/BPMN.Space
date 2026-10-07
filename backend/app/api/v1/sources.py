@@ -25,7 +25,7 @@ from app.api.auth import OptionalUserDep
 from app.api.deps import ContainerDep
 from app.api.limits import read_upload
 from app.api.ratelimit import limit_expensive
-from app.api.schemas.common import errors
+from app.api.schemas.common import TranscriptionErrorResponse, errors
 from app.api.schemas.onboarding import SampleAdd
 from app.api.schemas.projects import Transcription
 from app.api.schemas.sources import Source, SourceTextCreate, SourceUpdate
@@ -171,7 +171,13 @@ async def delete_source(
     "/transcriptions",
     tags=["transcriptions"],
     dependencies=[Depends(limit_expensive)],
-    responses=errors(401, 413, 415, 422, 429),
+    responses={
+        **errors(401, 413, 415, 422, 429),
+        422: {
+            "model": TranscriptionErrorResponse,
+            "description": "Некорректная запись или речь не распознана",
+        },
+    },
 )
 async def transcribe(
     request: Request,

@@ -46,7 +46,7 @@ fi
 rollback() {
   echo "Деплой не прошёл. Выполняю откат." >&2
   if [[ -n "$previous" ]]; then
-    # Старый код до ADR-0006 не читает packed XML. Восстановить его до смены кода,
+    # Старый код до ADR-0007 не читает packed XML. Восстановить его до смены кода,
     # используя код нового релиза даже при сбое сборки образа (read-only bind mount).
     if ssh "$deploy_user@$deploy_host" "test -f '$release/backend/app/infra/version_maintenance.py' && ! test -f '$previous/backend/app/infra/version_maintenance.py'"; then
       if ! ssh "$deploy_user@$deploy_host" "set -eu; cd '$release'; docker compose --env-file '$remote_root/shared/.env' -p arkhitektor -f compose.yaml -f compose.prod.yaml stop backend; docker compose --env-file '$remote_root/shared/.env' -p arkhitektor -f compose.yaml -f compose.prod.yaml run --rm --no-deps -T -v '$release/backend/app:/app/app:ro' --entrypoint python backend -m app.infra.version_maintenance --restore"; then

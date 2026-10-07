@@ -6,8 +6,7 @@
 import { BrandMark, Skeleton, SkeletonText } from '@/shared/ui'
 
 /** Сетка карточек проектов: те же колонки, что у настоящей. */
-export const PROJECTS_GRID =
-  'grid grid-cols-1 gap-3 @2xl:grid-cols-2 @5xl:grid-cols-3 @7xl:grid-cols-4 wide:gap-4'
+export const PROJECTS_GRID = 'grid grid-cols-1 gap-3 @2xl:grid-cols-2 @5xl:grid-cols-3 wide:gap-4'
 
 function HeaderSkeleton({ children }: { children?: React.ReactNode }) {
   return (

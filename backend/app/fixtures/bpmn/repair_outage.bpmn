@@ -140,190 +140,190 @@
   <bpmndi:BPMNDiagram id="BPMNDiagram_Collaboration_repair_outage">
     <bpmndi:BPMNPlane id="BPMNPlane_Collaboration_repair_outage" bpmnElement="Collaboration_repair_outage">
       <bpmndi:BPMNShape id="BPMNShape_Participant_repair_outage" bpmnElement="Participant_repair_outage" isHorizontal="true">
-        <dc:Bounds x="80" y="80" width="2732" height="1600" />
+        <dc:Bounds x="128" y="80" width="4371.2" height="1600" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Lane_Owner" bpmnElement="Lane_Owner" isHorizontal="true">
-        <dc:Bounds x="110" y="80" width="2702" height="560" />
+        <dc:Bounds x="176" y="80" width="4323.2" height="560" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Lane_Dispatch" bpmnElement="Lane_Dispatch" isHorizontal="true">
-        <dc:Bounds x="110" y="640" width="2702" height="560" />
+        <dc:Bounds x="176" y="640" width="4323.2" height="560" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Lane_Operators" bpmnElement="Lane_Operators" isHorizontal="true">
-        <dc:Bounds x="110" y="1200" width="2702" height="240" />
+        <dc:Bounds x="176" y="1200" width="4323.2" height="240" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Lane_Brigade" bpmnElement="Lane_Brigade" isHorizontal="true">
-        <dc:Bounds x="110" y="1440" width="2702" height="240" />
+        <dc:Bounds x="176" y="1440" width="4323.2" height="240" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_StartEvent_Planned" bpmnElement="StartEvent_Planned">
-        <dc:Bounds x="150" y="182" width="36" height="36" />
+        <dc:Bounds x="250.8" y="182" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="136" y="223" width="64" height="42" />
+          <dc:Bounds x="236.8" y="223" width="64" height="42" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_PrepareRequest" bpmnElement="Task_PrepareRequest">
-        <dc:Bounds x="286" y="160" width="100" height="80" />
+        <dc:Bounds x="457.6" y="160" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_SubmitRequest" bpmnElement="Task_SubmitRequest">
-        <dc:Bounds x="486" y="160" width="100" height="80" />
+        <dc:Bounds x="777.6" y="160" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_ReviewRequest" bpmnElement="Task_ReviewRequest">
-        <dc:Bounds x="686" y="720" width="100" height="80" />
+        <dc:Bounds x="1097.6000000000001" y="720" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Gateway_Approved" bpmnElement="Gateway_Approved" isMarkerVisible="true">
-        <dc:Bounds x="886" y="735" width="50" height="50" />
+        <dc:Bounds x="1432.6000000000001" y="735" width="50" height="50" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="878" y="688" width="67" height="42" />
+          <dc:Bounds x="1424.9" y="688" width="67" height="42" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_NotifyRefusal" bpmnElement="Task_NotifyRefusal">
-        <dc:Bounds x="1036" y="720" width="100" height="80" />
+        <dc:Bounds x="1657.6000000000001" y="720" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_EndEvent_Refused" bpmnElement="EndEvent_Refused">
-        <dc:Bounds x="1268" y="742" width="36" height="36" />
+        <dc:Bounds x="2039.6" y="742" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="1253" y="783" width="67" height="28" />
+          <dc:Bounds x="2024.9" y="783" width="67" height="28" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_CommandOutage" bpmnElement="Task_CommandOutage">
-        <dc:Bounds x="1036" y="880" width="100" height="80" />
+        <dc:Bounds x="1657.6000000000001" y="880" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_Switching" bpmnElement="Task_Switching">
-        <dc:Bounds x="1236" y="1280" width="100" height="80" />
+        <dc:Bounds x="1977.6" y="1280" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_PrepareWorkplace" bpmnElement="Task_PrepareWorkplace">
-        <dc:Bounds x="1436" y="1280" width="100" height="80" />
+        <dc:Bounds x="2297.6" y="1280" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Gateway_WorksMerge" bpmnElement="Gateway_WorksMerge" isMarkerVisible="true">
-        <dc:Bounds x="1636" y="1535" width="50" height="50" />
+        <dc:Bounds x="2632.6000000000004" y="1535" width="50" height="50" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_RepairWorks" bpmnElement="Task_RepairWorks">
-        <dc:Bounds x="1786" y="1520" width="100" height="80" />
+        <dc:Bounds x="2857.6000000000004" y="1520" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Gateway_InTime" bpmnElement="Gateway_InTime" isMarkerVisible="true">
-        <dc:Bounds x="1986" y="1535" width="50" height="50" />
+        <dc:Bounds x="3192.6000000000004" y="1535" width="50" height="50" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="2041" y="1539" width="88" height="42" />
+          <dc:Bounds x="3292" y="1539" width="88" height="42" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_ExtendRequest" bpmnElement="Task_ExtendRequest">
-        <dc:Bounds x="2136" y="480" width="100" height="80" />
+        <dc:Bounds x="3417.6000000000004" y="480" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_ApproveExtension" bpmnElement="Task_ApproveExtension">
-        <dc:Bounds x="2336" y="1040" width="100" height="80" />
+        <dc:Bounds x="3737.6000000000004" y="1040" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_ReportReady" bpmnElement="Task_ReportReady">
-        <dc:Bounds x="2136" y="320" width="100" height="80" />
+        <dc:Bounds x="3417.6000000000004" y="320" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_CommandReturn" bpmnElement="Task_CommandReturn">
-        <dc:Bounds x="2336" y="880" width="100" height="80" />
+        <dc:Bounds x="3737.6000000000004" y="880" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_Task_ReturnToService" bpmnElement="Task_ReturnToService">
-        <dc:Bounds x="2536" y="1280" width="100" height="80" />
+        <dc:Bounds x="4057.6000000000004" y="1280" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_EndEvent_InService" bpmnElement="EndEvent_InService">
-        <dc:Bounds x="2736" y="1302" width="36" height="36" />
+        <dc:Bounds x="4388.400000000001" y="1302" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="2710" y="1343" width="88" height="28" />
+          <dc:Bounds x="4362.400000000001" y="1343" width="88" height="28" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_Planned_PrepareRequest" bpmnElement="Flow_Planned_PrepareRequest">
-        <di:waypoint x="186" y="200" />
-        <di:waypoint x="286" y="200" />
+        <di:waypoint x="286.8" y="200" />
+        <di:waypoint x="457.6" y="200" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_PrepareRequest_SubmitRequest" bpmnElement="Flow_PrepareRequest_SubmitRequest">
-        <di:waypoint x="386" y="200" />
-        <di:waypoint x="486" y="200" />
+        <di:waypoint x="617.6" y="200" />
+        <di:waypoint x="777.6" y="200" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_SubmitRequest_ReviewRequest" bpmnElement="Flow_SubmitRequest_ReviewRequest">
-        <di:waypoint x="586" y="200" />
-        <di:waypoint x="736" y="200" />
-        <di:waypoint x="736" y="720" />
+        <di:waypoint x="937.6" y="200" />
+        <di:waypoint x="1177.6000000000001" y="200" />
+        <di:waypoint x="1177.6000000000001" y="720" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_ReviewRequest_Approved" bpmnElement="Flow_ReviewRequest_Approved">
-        <di:waypoint x="786" y="760" />
-        <di:waypoint x="886" y="760" />
+        <di:waypoint x="1257.6000000000001" y="760" />
+        <di:waypoint x="1432.6000000000001" y="760" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_Approved_NotifyRefusal" bpmnElement="Flow_Approved_NotifyRefusal">
-        <di:waypoint x="936" y="760" />
-        <di:waypoint x="1036" y="760" />
+        <di:waypoint x="1482.6000000000001" y="760" />
+        <di:waypoint x="1657.6000000000001" y="760" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="974" y="738" width="25" height="14" />
+          <dc:Bounds x="1565.9" y="738" width="25" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_NotifyRefusal_Refused" bpmnElement="Flow_NotifyRefusal_Refused">
-        <di:waypoint x="1136" y="760" />
-        <di:waypoint x="1268" y="760" />
+        <di:waypoint x="1817.6000000000001" y="760" />
+        <di:waypoint x="2039.6" y="760" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_InTime_ReportReady" bpmnElement="Flow_InTime_ReportReady">
-        <di:waypoint x="2011" y="1535" />
-        <di:waypoint x="2011" y="360" />
-        <di:waypoint x="2136" y="360" />
+        <di:waypoint x="3217.6000000000004" y="1535" />
+        <di:waypoint x="3217.6000000000004" y="360" />
+        <di:waypoint x="3417.6000000000004" y="360" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="2017" y="433" width="18" height="14" />
+          <dc:Bounds x="3232.6000000000004" y="433" width="18" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_ReportReady_CommandReturn" bpmnElement="Flow_ReportReady_CommandReturn">
-        <di:waypoint x="2236" y="360" />
-        <di:waypoint x="2386" y="360" />
-        <di:waypoint x="2386" y="880" />
+        <di:waypoint x="3577.6000000000004" y="360" />
+        <di:waypoint x="3817.6000000000004" y="360" />
+        <di:waypoint x="3817.6000000000004" y="880" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_CommandReturn_ReturnToService" bpmnElement="Flow_CommandReturn_ReturnToService">
-        <di:waypoint x="2436" y="920" />
-        <di:waypoint x="2586" y="920" />
-        <di:waypoint x="2586" y="1280" />
+        <di:waypoint x="3897.6000000000004" y="920" />
+        <di:waypoint x="4137.6" y="920" />
+        <di:waypoint x="4137.6" y="1280" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_ReturnToService_InService" bpmnElement="Flow_ReturnToService_InService">
-        <di:waypoint x="2636" y="1320" />
-        <di:waypoint x="2736" y="1320" />
+        <di:waypoint x="4217.6" y="1320" />
+        <di:waypoint x="4388.400000000001" y="1320" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_Approved_CommandOutage" bpmnElement="Flow_Approved_CommandOutage">
-        <di:waypoint x="911" y="785" />
-        <di:waypoint x="911" y="920" />
-        <di:waypoint x="1036" y="920" />
+        <di:waypoint x="1457.6000000000001" y="785" />
+        <di:waypoint x="1457.6000000000001" y="920" />
+        <di:waypoint x="1657.6000000000001" y="920" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="917" y="846" width="18" height="14" />
+          <dc:Bounds x="1472.6000000000001" y="846" width="18" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_InTime_ExtendRequest" bpmnElement="Flow_InTime_ExtendRequest">
-        <di:waypoint x="2011" y="1535" />
-        <di:waypoint x="2011" y="520" />
-        <di:waypoint x="2136" y="520" />
+        <di:waypoint x="3217.6000000000004" y="1535" />
+        <di:waypoint x="3217.6000000000004" y="520" />
+        <di:waypoint x="3417.6000000000004" y="520" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="2061" y="498" width="25" height="14" />
+          <dc:Bounds x="3305.1000000000004" y="498" width="25" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_CommandOutage_Switching" bpmnElement="Flow_CommandOutage_Switching">
-        <di:waypoint x="1136" y="920" />
-        <di:waypoint x="1286" y="920" />
-        <di:waypoint x="1286" y="1280" />
+        <di:waypoint x="1817.6000000000001" y="920" />
+        <di:waypoint x="2057.6" y="920" />
+        <di:waypoint x="2057.6" y="1280" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_Switching_PrepareWorkplace" bpmnElement="Flow_Switching_PrepareWorkplace">
-        <di:waypoint x="1336" y="1320" />
-        <di:waypoint x="1436" y="1320" />
+        <di:waypoint x="2137.6" y="1320" />
+        <di:waypoint x="2297.6" y="1320" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_PrepareWorkplace_WorksMerge" bpmnElement="Flow_PrepareWorkplace_WorksMerge">
-        <di:waypoint x="1536" y="1320" />
-        <di:waypoint x="1661" y="1320" />
-        <di:waypoint x="1661" y="1535" />
+        <di:waypoint x="2457.6" y="1320" />
+        <di:waypoint x="2657.6000000000004" y="1320" />
+        <di:waypoint x="2657.6000000000004" y="1535" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_WorksMerge_RepairWorks" bpmnElement="Flow_WorksMerge_RepairWorks">
-        <di:waypoint x="1686" y="1560" />
-        <di:waypoint x="1786" y="1560" />
+        <di:waypoint x="2682.6000000000004" y="1560" />
+        <di:waypoint x="2857.6000000000004" y="1560" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_RepairWorks_InTime" bpmnElement="Flow_RepairWorks_InTime">
-        <di:waypoint x="1886" y="1560" />
-        <di:waypoint x="1986" y="1560" />
+        <di:waypoint x="3017.6000000000004" y="1560" />
+        <di:waypoint x="3192.6000000000004" y="1560" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_ExtendRequest_ApproveExtension" bpmnElement="Flow_ExtendRequest_ApproveExtension">
-        <di:waypoint x="2186" y="560" />
-        <di:waypoint x="2186" y="1080" />
-        <di:waypoint x="2336" y="1080" />
+        <di:waypoint x="3497.6000000000004" y="560" />
+        <di:waypoint x="3497.6000000000004" y="1080" />
+        <di:waypoint x="3737.6000000000004" y="1080" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_Flow_ApproveExtension_WorksMerge" bpmnElement="Flow_ApproveExtension_WorksMerge">
-        <di:waypoint x="2386" y="1120" />
-        <di:waypoint x="2386" y="1605" />
-        <di:waypoint x="1661" y="1605" />
-        <di:waypoint x="1661" y="1585" />
+        <di:waypoint x="3817.6000000000004" y="1120" />
+        <di:waypoint x="3817.6000000000004" y="1605" />
+        <di:waypoint x="2657.6000000000004" y="1605" />
+        <di:waypoint x="2657.6000000000004" y="1585" />
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>

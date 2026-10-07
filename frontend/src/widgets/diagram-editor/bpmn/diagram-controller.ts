@@ -67,6 +67,7 @@ const SIMULATION_TOGGLE_EVENT = 'tokenSimulation.toggleMode'
 
 export interface ControllerCallbacks {
   onChange?: (xml: string) => void
+  onChangePending?: (pending: boolean) => void
   onSimulationChange?: (simulation: DiagramSimulation) => void
   onSimulationStart?: () => void
   onElementClick?: (elementId: string) => void
@@ -236,13 +237,20 @@ export class DiagramController {
         this.currentXml = xml
         this.callbacks().onChange?.(xml)
       },
+      onChangePending: (pending) => this.callbacks().onChangePending?.(pending),
       onError: (cause) => this.report('export', 'Не удалось сохранить изменения схемы.', cause),
     })
 
     const eventBus = this.service<EventBus>('eventBus')
-    eventBus.on('commandStack.changed', (event: { trigger?: string }) =>
-      this.changes.notify(event.trigger),
-    )
+    // Ручное действие важнее плавной навигации. Следующий кадр камеры иначе завершит
+    // только что открытое редактирование подписи через canvas.viewbox.changing.
+    eventBus.on(['element.mousedown', 'drag.init', 'directEditing.activate'], 2000, () => {
+      this.stopAnimation?.()
+      this.stopAnimation = undefined
+    })
+    eventBus.on('commandStack.changed', (event: { trigger?: string }) => {
+      if (!this.readOnly && !this.importing) this.changes.notify(event.trigger)
+    })
     eventBus.on('element.click', (event: { element: DiagramElement }) => this.handleClick(event))
     eventBus.on('selection.changed', (event: { newSelection?: DiagramElement[] }) =>
       this.callbacks().onSelectionChange?.((event.newSelection ?? []).map((element) => element.id)),
@@ -405,6 +413,10 @@ export class DiagramController {
 
   exportXml(): Promise<string> {
     return this.serialize()
+  }
+
+  cancelPendingChanges(): void {
+    this.changes.cancel()
   }
 
   async exportSvg(): Promise<string> {

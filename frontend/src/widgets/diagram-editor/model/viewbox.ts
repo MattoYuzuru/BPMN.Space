@@ -44,7 +44,8 @@ function fitScale(outer: Size, bbox: Box, padding: number): number {
 
 /** Вписать bbox в окно с отступами (72 px — шире плавающей палитры), не увеличивая больше `maxScale` (по умолчанию 100 %). */
 export function fitViewbox(outer: Size, bbox: Box, padding = 72, maxScale = 1): Box {
-  const scale = clamp(fitScale(outer, bbox, padding), MIN_SCALE, maxScale)
+  // Общий обзор обязан вмещать даже большой процесс; предел ручного zoom здесь обрежет его.
+  const scale = Math.min(fitScale(outer, bbox, padding), maxScale)
   return around(outer, bbox.x + bbox.width / 2, bbox.y + bbox.height / 2, scale)
 }
 
@@ -68,7 +69,9 @@ export function focusViewbox(outer: Size, current: Box, bbox: Box, padding = 96)
 
 /** Шаг масштаба вокруг центра окна. */
 export function zoomViewbox(outer: Size, current: Box, factor: number): Box {
-  const scale = clamp(scaleOf(outer, current) * factor, MIN_SCALE, MAX_SCALE)
+  const currentScale = scaleOf(outer, current)
+  // Из общего обзора ниже 20% приближаемся шагами, без скачка на первое нажатие.
+  const scale = clamp(currentScale * factor, Math.min(MIN_SCALE, currentScale), MAX_SCALE)
   return around(outer, current.x + current.width / 2, current.y + current.height / 2, scale)
 }
 

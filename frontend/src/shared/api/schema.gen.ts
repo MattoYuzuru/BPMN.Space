@@ -1890,6 +1890,19 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** TranscriptionErrorResponse */
+        TranscriptionErrorResponse: {
+            /**
+             * Code
+             * @description NO_SPEECH — запись обработана, но речь не распознана
+             */
+            code?: "NO_SPEECH" | null;
+            /**
+             * Detail
+             * @description Сообщение об ошибке для пользователя, на русском
+             */
+            detail: string;
+        };
         /**
          * UserCreate
          * @description Регистрация по адресу почты и паролю.
@@ -4730,13 +4743,13 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Некорректные данные */
+            /** @description Некорректная запись или речь не распознана */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
+                    "application/json": components["schemas"]["TranscriptionErrorResponse"];
                 };
             };
             /** @description Слишком много запросов; повторите через `Retry-After` секунд */

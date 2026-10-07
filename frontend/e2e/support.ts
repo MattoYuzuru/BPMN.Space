@@ -43,11 +43,16 @@ export async function runViaApi(
   mode: 'analyze' | 'build',
 ) {
   const started = await apiPost(request, `/api/v1/projects/${projectId}/runs`, { mode })
-  expect(started.ok()).toBeTruthy()
+  expect(started.ok(), `Запуск прогона: HTTP ${started.status()}`).toBeTruthy()
   const run = await started.json()
   await expect
     .poll(
-      async () => (await (await request.get(`/api/v1/runs/${run.id}`)).json()).status as string,
+      async () => {
+        const response = await request.get(`/api/v1/runs/${run.id}`)
+        // Ошибка API — сбой проверки, а не незавершённый прогон. Не скрываем её опросом.
+        expect(response.ok(), `Получение состояния прогона: HTTP ${response.status()}`).toBeTruthy()
+        return (await response.json()).status as string
+      },
       { timeout: 30_000 },
     )
     .toBe('succeeded')

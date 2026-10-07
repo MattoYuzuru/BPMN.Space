@@ -16,6 +16,7 @@ from app.api.access import ProjectRole, ensure_project_access, get_active_share_
 from app.api.auth import OptionalUserDep
 from app.api.deps import ContainerDep
 from app.api.schemas.common import ApiModel, errors
+from app.services.auth import stream_user
 from app.services.collaboration import Participant, RealtimeHub, RoomFullError, Ticket
 from app.services.errors import NotFoundError, UnauthorizedError
 
@@ -167,19 +168,19 @@ async def project_collaboration_socket(websocket: WebSocket, project_id: UUID) -
         return
     ticket = _ticket_from_subprotocol(websocket.headers.get("sec-websocket-protocol", ""))
     principal = hub.consume_ticket(ticket, project_id=project_id) if ticket else None
-    if principal is None or not await _ticket_is_current(container, principal):
+    if principal is None or not await _ticket_is_current(container, principal, websocket):
         await websocket.close(code=1008, reason="Ссылка на подключение истекла")
         return
 
-    latest = await container.versions.list(project_id)
-    head = latest[0] if latest else None
-    active = await container.repos.runs.active_for_project(project_id)
     try:
         participant = await hub.join(project_id, principal)
     except RoomFullError:
         await websocket.close(code=1013, reason="В комнате слишком много участников")
         return
     try:
+        # Подписка раньше чтения головы: commit между snapshot и join иначе терялся бы навсегда.
+        head = await container.repos.versions.latest(project_id)
+        active = await container.repos.runs.active_for_project(project_id)
         await websocket.accept(subprotocol=WS_SUBPROTOCOL)
         await websocket.send_json(
             {
@@ -231,8 +232,12 @@ def _origin_allowed(websocket: WebSocket) -> bool:
     )
 
 
-async def _ticket_is_current(container, ticket: Ticket) -> bool:
+async def _ticket_is_current(container, ticket: Ticket, websocket: WebSocket) -> bool:
     if ticket.user_id is not None:
+        if container.settings.auth_enabled:
+            user = await stream_user(websocket)
+            if user is None or user.id != ticket.user_id:
+                return False
         role = await container.access.project_role(ticket.project_id, ticket.user_id)
         return role is ticket.role
     if ticket.share_link_id is not None:
@@ -267,6 +272,7 @@ async def _serve_connection(websocket: WebSocket, container, participant: Partic
                     share_link_id=participant.share_link_id,
                     expires_at=datetime.max.replace(tzinfo=UTC),
                 ),
+                websocket,
             ):
                 await websocket.close(code=1008, reason="Доступ к проекту изменён")
                 break
@@ -289,7 +295,7 @@ async def _receive_events(websocket: WebSocket, hub: RealtimeHub, participant: P
     while websocket.application_state is WebSocketState.CONNECTED:
         try:
             raw = await websocket.receive_text()
-        except RuntimeError:
+        except (RuntimeError, KeyError):
             await websocket.close(code=1003, reason="Ожидаются текстовые JSON-сообщения")
             return
         if len(raw.encode("utf-8")) > MAX_MESSAGE_BYTES:

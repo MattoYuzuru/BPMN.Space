@@ -22,8 +22,7 @@ export function FlowLine({ orientation = 'horizontal', state = 'idle', className
       data-state={state}
       className={cn(
         'relative block rounded-full transition-colors duration-slow ease-soft',
-        // Импульс обрезается по концам линии, но ореол может выходить в стороны.
-        vertical ? 'w-px [clip-path:inset(0_-6px)]' : 'h-px [clip-path:inset(-6px_0)]',
+        vertical ? 'w-px' : 'h-px',
         state === 'done' ? 'bg-accent/45' : 'bg-border-strong',
         state === 'active' && 'motion-reduce:bg-accent/45',
         className,
@@ -32,13 +31,22 @@ export function FlowLine({ orientation = 'horizontal', state = 'idle', className
       {state === 'active' && (
         <span
           className={cn(
-            'absolute from-transparent via-accent to-transparent motion-reduce:hidden',
+            // Маска гасит ореол до границ дорожки: конец импульса не превращается в срез.
+            'absolute overflow-hidden motion-reduce:hidden',
             vertical
-              ? '-inset-x-px top-0 h-2/5 animate-flow-y bg-linear-to-b'
-              : '-inset-y-px left-0 w-2/5 animate-flow bg-linear-to-r',
-            'rounded-full shadow-[0_0_8px_1px_color-mix(in_oklab,var(--color-accent)_45%,transparent)]',
+              ? '-inset-x-1.5 inset-y-0 [mask-image:linear-gradient(to_bottom,transparent,black_8px,black_calc(100%_-_8px),transparent)]'
+              : '-inset-y-1.5 inset-x-0 [mask-image:linear-gradient(to_right,transparent,black_8px,black_calc(100%_-_8px),transparent)]',
           )}
-        />
+        >
+          <span
+            className={cn(
+              'absolute rounded-full from-transparent via-accent to-transparent shadow-[0_0_8px_1px_color-mix(in_oklab,var(--color-accent)_45%,transparent)]',
+              vertical
+                ? 'top-0 left-1/2 h-2/5 w-0.5 -translate-x-1/2 animate-flow-y bg-linear-to-b'
+                : 'top-1/2 left-0 h-0.5 w-2/5 -translate-y-1/2 animate-flow bg-linear-to-r',
+            )}
+          />
+        </span>
       )}
     </span>
   )

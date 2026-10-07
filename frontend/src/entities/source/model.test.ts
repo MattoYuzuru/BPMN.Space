@@ -1,4 +1,11 @@
-import { findQuoteRanges, isAcceptedFile, type Source, sourceMeta, splitByRanges } from './model'
+import {
+  findQuoteRanges,
+  isAcceptedFile,
+  quoteReferences,
+  type Source,
+  sourceMeta,
+  splitByRanges,
+} from './model'
 
 const text =
   'Сетевая организация проверяет комплектность заявки.\nЕсли документов не хватает, заявителю направляется уведомление.'
@@ -32,6 +39,23 @@ describe('цитаты в источнике', () => {
       [0, 'раз ', false],
       [4, 'два', true],
       [7, ' три', false],
+    ])
+  })
+
+  it('сохраняет все связи перекрывающихся цитат и не дублирует один вопрос', () => {
+    const marks = [
+      { quote: 'проверяет комплектность', kind: 'about' as const, ref: 'q1' },
+      { quote: 'проверяет комплектность заявки', kind: 'evidence' as const, ref: 'q1' },
+      { quote: 'комплектность', kind: 'about' as const, ref: 'q2' },
+      { quote: 'комплектность', kind: 'trace' as const, ref: 'Task_1' },
+      { quote: 'не найдено', kind: 'about' as const, ref: 'q3' },
+    ]
+    const [range] = findQuoteRanges(text, marks)
+    if (!range) throw new Error('Цитата должна находиться в источнике')
+    expect(quoteReferences(text, range, marks).map((ref) => ref.ref)).toEqual([
+      'q1',
+      'q2',
+      'Task_1',
     ])
   })
 })

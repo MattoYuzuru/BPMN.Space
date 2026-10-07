@@ -1,0 +1,882 @@
+{
+  "schema_version": 1,
+  "title": "Восстановление энергоснабжения после технологического нарушения",
+  "lanes": [
+    {
+      "id": "Lane_1",
+      "name": "Диспетчер",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Диспетчер"
+      }
+    },
+    {
+      "id": "Lane_2",
+      "name": "Оперативный персонал",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Оперативный персонал"
+      }
+    },
+    {
+      "id": "Lane_3",
+      "name": "Ремонтная служба",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Ремонтная служба"
+      }
+    },
+    {
+      "id": "Lane_4",
+      "name": "Служба учёта",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Служба учёта"
+      }
+    },
+    {
+      "id": "Lane_5",
+      "name": "Руководитель работ",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Руководитель работ"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "Start_1",
+      "type": "start",
+      "name": "Получено сообщение об отключении",
+      "lane": "Lane_1",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Получено сообщение об отключении"
+      }
+    },
+    {
+      "id": "Task_2",
+      "type": "task",
+      "name": "Зарегистрировать нарушение и затронутые объекты",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Зарегистрировать нарушение и затронутые объекты"
+      }
+    },
+    {
+      "id": "Task_3",
+      "type": "task",
+      "name": "Оценить безопасность и границы отключения",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Оценить безопасность и границы отключения"
+      }
+    },
+    {
+      "id": "Xor_4",
+      "type": "xor",
+      "name": "Есть непосредственная опасность?",
+      "lane": "Lane_1",
+      "direction": "split",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Есть непосредственная опасность?"
+      }
+    },
+    {
+      "id": "Xor_5",
+      "type": "xor",
+      "name": "Вариант выбран",
+      "lane": "Lane_1",
+      "direction": "join",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Вариант выбран"
+      }
+    },
+    {
+      "id": "Task_6",
+      "type": "task",
+      "name": "Оградить опасную зону и отключить повреждённый участок",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Оградить опасную зону и отключить повреждённый участок"
+      }
+    },
+    {
+      "id": "Task_7",
+      "type": "task",
+      "name": "Уведомить экстренные службы и получить разрешение продолжить",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Уведомить экстренные службы и получить разрешение продолжить"
+      }
+    },
+    {
+      "id": "Task_8",
+      "type": "task",
+      "name": "Подтвердить безопасный доступ к оборудованию",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Подтвердить безопасный доступ к оборудованию"
+      }
+    },
+    {
+      "id": "And_9",
+      "type": "and",
+      "name": "Подготовить восстановление",
+      "lane": "Lane_1",
+      "direction": "split",
+      "join_id": "And_10",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Подготовить восстановление"
+      }
+    },
+    {
+      "id": "And_10",
+      "type": "and",
+      "name": "Все ветви завершены",
+      "lane": "Lane_1",
+      "direction": "join",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Все ветви завершены"
+      }
+    },
+    {
+      "id": "Task_11",
+      "type": "task",
+      "name": "Осмотреть оборудование и измерить состояние изоляции",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Осмотреть оборудование и измерить состояние изоляции"
+      }
+    },
+    {
+      "id": "Task_12",
+      "type": "task",
+      "name": "Установить место и характер повреждения",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Установить место и характер повреждения"
+      }
+    },
+    {
+      "id": "Task_13",
+      "type": "task",
+      "name": "Собрать ремонтную бригаду и необходимый комплект запасных частей",
+      "lane": "Lane_3",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Собрать ремонтную бригаду и необходимый комплект запасных частей"
+      }
+    },
+    {
+      "id": "Task_14",
+      "type": "task",
+      "name": "Проверить доставку материалов и готовность инструмента",
+      "lane": "Lane_3",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Проверить доставку материалов и готовность инструмента"
+      }
+    },
+    {
+      "id": "Task_15",
+      "type": "task",
+      "name": "Уточнить список отключённых потребителей",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Уточнить список отключённых потребителей"
+      }
+    },
+    {
+      "id": "Task_16",
+      "type": "task",
+      "name": "Проверить показания и сообщения приборов учёта",
+      "lane": "Lane_4",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Проверить показания и сообщения приборов учёта"
+      }
+    },
+    {
+      "id": "Task_17",
+      "type": "task",
+      "name": "Сообщить потребителям предварительный план восстановления",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Сообщить потребителям предварительный план восстановления"
+      }
+    },
+    {
+      "id": "Task_18",
+      "type": "task",
+      "name": "Утвердить программу восстановительных работ",
+      "lane": "Lane_5",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Утвердить программу восстановительных работ"
+      }
+    },
+    {
+      "id": "Xor_19",
+      "type": "xor",
+      "name": "Возможно резервное питание?",
+      "lane": "Lane_1",
+      "direction": "split",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Возможно резервное питание?"
+      }
+    },
+    {
+      "id": "Xor_20",
+      "type": "xor",
+      "name": "Вариант выбран",
+      "lane": "Lane_1",
+      "direction": "join",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Вариант выбран"
+      }
+    },
+    {
+      "id": "Task_21",
+      "type": "task",
+      "name": "Согласовать схему временного резервного питания",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Согласовать схему временного резервного питания"
+      }
+    },
+    {
+      "id": "Task_22",
+      "type": "task",
+      "name": "Выполнить переключения и подать резервное питание",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Выполнить переключения и подать резервное питание"
+      }
+    },
+    {
+      "id": "Task_23",
+      "type": "task",
+      "name": "Подтвердить восстановление после ремонта основного участка",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Подтвердить восстановление после ремонта основного участка"
+      }
+    },
+    {
+      "id": "Task_24",
+      "type": "task",
+      "name": "Зафиксировать состав потребителей без питания",
+      "lane": "Lane_4",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Зафиксировать состав потребителей без питания"
+      }
+    },
+    {
+      "id": "And_25",
+      "type": "and",
+      "name": "Выполнить ремонт и подготовку ввода",
+      "lane": "Lane_1",
+      "direction": "split",
+      "join_id": "And_26",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Выполнить ремонт и подготовку ввода"
+      }
+    },
+    {
+      "id": "And_26",
+      "type": "and",
+      "name": "Все ветви завершены",
+      "lane": "Lane_1",
+      "direction": "join",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Все ветви завершены"
+      }
+    },
+    {
+      "id": "Task_27",
+      "type": "task",
+      "name": "Заменить повреждённые элементы оборудования",
+      "lane": "Lane_3",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Заменить повреждённые элементы оборудования"
+      }
+    },
+    {
+      "id": "Task_28",
+      "type": "task",
+      "name": "Выполнить контроль качества ремонтных соединений",
+      "lane": "Lane_3",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Выполнить контроль качества ремонтных соединений"
+      }
+    },
+    {
+      "id": "Task_29",
+      "type": "task",
+      "name": "Передать акт завершения ремонта",
+      "lane": "Lane_3",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Передать акт завершения ремонта"
+      }
+    },
+    {
+      "id": "Task_30",
+      "type": "task",
+      "name": "Согласовать режим и порядок обратных переключений",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Согласовать режим и порядок обратных переключений"
+      }
+    },
+    {
+      "id": "Task_31",
+      "type": "task",
+      "name": "Подготовить бланк переключений для ввода оборудования",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Подготовить бланк переключений для ввода оборудования"
+      }
+    },
+    {
+      "id": "Xor_32",
+      "type": "xor",
+      "name": "Повторная проверка",
+      "lane": "Lane_2",
+      "direction": "join",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Повторная проверка"
+      }
+    },
+    {
+      "id": "Task_33",
+      "type": "task",
+      "name": "Проверить протоколы испытаний и готовность оборудования",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Проверить протоколы испытаний и готовность оборудования"
+      }
+    },
+    {
+      "id": "Xor_34",
+      "type": "xor",
+      "name": "Проверка пройдена?",
+      "lane": "Lane_2",
+      "direction": "split",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Проверка пройдена?"
+      }
+    },
+    {
+      "id": "Task_35",
+      "type": "task",
+      "name": "Устранить замечания испытаний и повторить измерения",
+      "lane": "Lane_3",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Устранить замечания испытаний и повторить измерения"
+      }
+    },
+    {
+      "id": "Task_36",
+      "type": "task",
+      "name": "Разрешить ввод отремонтированного участка",
+      "lane": "Lane_5",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Разрешить ввод отремонтированного участка"
+      }
+    },
+    {
+      "id": "Task_37",
+      "type": "task",
+      "name": "Выполнить обратные переключения и восстановить штатное питание",
+      "lane": "Lane_2",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Выполнить обратные переключения и восстановить штатное питание"
+      }
+    },
+    {
+      "id": "And_38",
+      "type": "and",
+      "name": "Подтвердить восстановление",
+      "lane": "Lane_1",
+      "direction": "split",
+      "join_id": "And_39",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Подтвердить восстановление"
+      }
+    },
+    {
+      "id": "And_39",
+      "type": "and",
+      "name": "Все ветви завершены",
+      "lane": "Lane_1",
+      "direction": "join",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Все ветви завершены"
+      }
+    },
+    {
+      "id": "Task_40",
+      "type": "task",
+      "name": "Проверить устойчивость режима и загрузку оборудования",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Проверить устойчивость режима и загрузку оборудования"
+      }
+    },
+    {
+      "id": "Task_41",
+      "type": "task",
+      "name": "Закрыть диспетчерскую заявку",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Закрыть диспетчерскую заявку"
+      }
+    },
+    {
+      "id": "Task_42",
+      "type": "task",
+      "name": "Сверить восстановление связи со всеми приборами учёта",
+      "lane": "Lane_4",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Сверить восстановление связи со всеми приборами учёта"
+      }
+    },
+    {
+      "id": "Task_43",
+      "type": "task",
+      "name": "Отправить потребителям сообщение о восстановлении питания",
+      "lane": "Lane_1",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Отправить потребителям сообщение о восстановлении питания"
+      }
+    },
+    {
+      "id": "Task_44",
+      "type": "task",
+      "name": "Подготовить отчёт о причинах и предотвращающих мероприятиях",
+      "lane": "Lane_5",
+      "task_kind": "userTask",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Подготовить отчёт о причинах и предотвращающих мероприятиях"
+      }
+    },
+    {
+      "id": "End_45",
+      "type": "end",
+      "name": "Энергоснабжение восстановлено и случай закрыт",
+      "lane": "Lane_5",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Энергоснабжение восстановлено и случай закрыт"
+      }
+    }
+  ],
+  "flows": [
+    {
+      "id": "Flow_1",
+      "source_id": "Start_1",
+      "target_id": "Task_2",
+      "name": ""
+    },
+    {
+      "id": "Flow_2",
+      "source_id": "Task_2",
+      "target_id": "Task_3",
+      "name": ""
+    },
+    {
+      "id": "Flow_3",
+      "source_id": "Task_3",
+      "target_id": "Xor_4",
+      "name": ""
+    },
+    {
+      "id": "Flow_4",
+      "source_id": "Xor_4",
+      "target_id": "Task_6",
+      "name": "Опасность есть",
+      "condition": "Опасность есть",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Опасность есть"
+      }
+    },
+    {
+      "id": "Flow_5",
+      "source_id": "Task_6",
+      "target_id": "Task_7",
+      "name": ""
+    },
+    {
+      "id": "Flow_6",
+      "source_id": "Task_7",
+      "target_id": "Xor_5",
+      "name": ""
+    },
+    {
+      "id": "Flow_7",
+      "source_id": "Xor_4",
+      "target_id": "Task_8",
+      "name": "Опасности нет",
+      "condition": "Опасности нет",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Опасности нет"
+      }
+    },
+    {
+      "id": "Flow_8",
+      "source_id": "Task_8",
+      "target_id": "Xor_5",
+      "name": ""
+    },
+    {
+      "id": "Flow_9",
+      "source_id": "Xor_5",
+      "target_id": "And_9",
+      "name": ""
+    },
+    {
+      "id": "Flow_10",
+      "source_id": "And_9",
+      "target_id": "Task_11",
+      "name": ""
+    },
+    {
+      "id": "Flow_11",
+      "source_id": "Task_11",
+      "target_id": "Task_12",
+      "name": ""
+    },
+    {
+      "id": "Flow_12",
+      "source_id": "Task_12",
+      "target_id": "And_10",
+      "name": ""
+    },
+    {
+      "id": "Flow_13",
+      "source_id": "And_9",
+      "target_id": "Task_13",
+      "name": ""
+    },
+    {
+      "id": "Flow_14",
+      "source_id": "Task_13",
+      "target_id": "Task_14",
+      "name": ""
+    },
+    {
+      "id": "Flow_15",
+      "source_id": "Task_14",
+      "target_id": "And_10",
+      "name": ""
+    },
+    {
+      "id": "Flow_16",
+      "source_id": "And_9",
+      "target_id": "Task_15",
+      "name": ""
+    },
+    {
+      "id": "Flow_17",
+      "source_id": "Task_15",
+      "target_id": "Task_16",
+      "name": ""
+    },
+    {
+      "id": "Flow_18",
+      "source_id": "Task_16",
+      "target_id": "Task_17",
+      "name": ""
+    },
+    {
+      "id": "Flow_19",
+      "source_id": "Task_17",
+      "target_id": "And_10",
+      "name": ""
+    },
+    {
+      "id": "Flow_20",
+      "source_id": "And_10",
+      "target_id": "Task_18",
+      "name": ""
+    },
+    {
+      "id": "Flow_21",
+      "source_id": "Task_18",
+      "target_id": "Xor_19",
+      "name": ""
+    },
+    {
+      "id": "Flow_22",
+      "source_id": "Xor_19",
+      "target_id": "Task_21",
+      "name": "Резерв доступен",
+      "condition": "Резерв доступен",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Резерв доступен"
+      }
+    },
+    {
+      "id": "Flow_23",
+      "source_id": "Task_21",
+      "target_id": "Task_22",
+      "name": ""
+    },
+    {
+      "id": "Flow_24",
+      "source_id": "Task_22",
+      "target_id": "Xor_20",
+      "name": ""
+    },
+    {
+      "id": "Flow_25",
+      "source_id": "Xor_19",
+      "target_id": "Task_23",
+      "name": "Резерв недоступен",
+      "condition": "Резерв недоступен",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "Резерв недоступен"
+      }
+    },
+    {
+      "id": "Flow_26",
+      "source_id": "Task_23",
+      "target_id": "Task_24",
+      "name": ""
+    },
+    {
+      "id": "Flow_27",
+      "source_id": "Task_24",
+      "target_id": "Xor_20",
+      "name": ""
+    },
+    {
+      "id": "Flow_28",
+      "source_id": "Xor_20",
+      "target_id": "And_25",
+      "name": ""
+    },
+    {
+      "id": "Flow_29",
+      "source_id": "And_25",
+      "target_id": "Task_27",
+      "name": ""
+    },
+    {
+      "id": "Flow_30",
+      "source_id": "Task_27",
+      "target_id": "Task_28",
+      "name": ""
+    },
+    {
+      "id": "Flow_31",
+      "source_id": "Task_28",
+      "target_id": "Task_29",
+      "name": ""
+    },
+    {
+      "id": "Flow_32",
+      "source_id": "Task_29",
+      "target_id": "And_26",
+      "name": ""
+    },
+    {
+      "id": "Flow_33",
+      "source_id": "And_25",
+      "target_id": "Task_30",
+      "name": ""
+    },
+    {
+      "id": "Flow_34",
+      "source_id": "Task_30",
+      "target_id": "Task_31",
+      "name": ""
+    },
+    {
+      "id": "Flow_35",
+      "source_id": "Task_31",
+      "target_id": "And_26",
+      "name": ""
+    },
+    {
+      "id": "Flow_36",
+      "source_id": "And_26",
+      "target_id": "Xor_32",
+      "name": ""
+    },
+    {
+      "id": "Flow_37",
+      "source_id": "Xor_32",
+      "target_id": "Task_33",
+      "name": ""
+    },
+    {
+      "id": "Flow_38",
+      "source_id": "Task_33",
+      "target_id": "Xor_34",
+      "name": ""
+    },
+    {
+      "id": "Flow_39",
+      "source_id": "Xor_34",
+      "target_id": "Task_35",
+      "name": "Нет",
+      "condition": "проверка не пройдена",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "проверка не пройдена"
+      }
+    },
+    {
+      "id": "Flow_40",
+      "source_id": "Task_35",
+      "target_id": "Xor_32",
+      "name": ""
+    },
+    {
+      "id": "Flow_41",
+      "source_id": "Xor_34",
+      "target_id": "Task_36",
+      "name": "Да",
+      "condition": "проверка пройдена",
+      "source": {
+        "source_id": "bd97b4f8-c63d-55c3-92c0-af4411e82cba",
+        "quote": "проверка пройдена"
+      }
+    },
+    {
+      "id": "Flow_42",
+      "source_id": "Task_36",
+      "target_id": "Task_37",
+      "name": ""
+    },
+    {
+      "id": "Flow_43",
+      "source_id": "Task_37",
+      "target_id": "And_38",
+      "name": ""
+    },
+    {
+      "id": "Flow_44",
+      "source_id": "And_38",
+      "target_id": "Task_40",
+      "name": ""
+    },
+    {
+      "id": "Flow_45",
+      "source_id": "Task_40",
+      "target_id": "Task_41",
+      "name": ""
+    },
+    {
+      "id": "Flow_46",
+      "source_id": "Task_41",
+      "target_id": "And_39",
+      "name": ""
+    },
+    {
+      "id": "Flow_47",
+      "source_id": "And_38",
+      "target_id": "Task_42",
+      "name": ""
+    },
+    {
+      "id": "Flow_48",
+      "source_id": "Task_42",
+      "target_id": "Task_43",
+      "name": ""
+    },
+    {
+      "id": "Flow_49",
+      "source_id": "Task_43",
+      "target_id": "And_39",
+      "name": ""
+    },
+    {
+      "id": "Flow_50",
+      "source_id": "And_39",
+      "target_id": "Task_44",
+      "name": ""
+    },
+    {
+      "id": "Flow_51",
+      "source_id": "Task_44",
+      "target_id": "End_45",
+      "name": ""
+    }
+  ]
+}

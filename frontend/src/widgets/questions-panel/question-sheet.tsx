@@ -108,6 +108,7 @@ function QuestionDetail({ question }: { question: Question }) {
           <Section title="Цитаты" icon="quote">
             {question.about && (
               <QuoteLink
+                onNavigate={() => close(null)}
                 clamp={false}
                 quote={question.about}
                 source={sourceOf(question.about.source_id)}
@@ -115,6 +116,7 @@ function QuestionDetail({ question }: { question: Question }) {
             )}
             {question.evidence && (
               <QuoteLink
+                onNavigate={() => close(null)}
                 clamp={false}
                 tone={question.status === 'obsolete' ? 'about' : 'evidence'}
                 quote={question.evidence}

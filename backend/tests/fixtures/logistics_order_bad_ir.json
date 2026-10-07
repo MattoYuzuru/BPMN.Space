@@ -1,0 +1,1084 @@
+{
+  "schema_version": 1,
+  "title": "Исполнение заказа со склада и контроль доставки",
+  "process_name": "Исполнение заказа со склада и контроль доставки",
+  "process_id": "Process_1",
+  "participant_id": "Participant_1",
+  "collaboration_id": "Collaboration_1",
+  "lanes": [
+    {
+      "id": "Lane_Manager",
+      "name": "Менеджер заказа",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "В процессе участвуют: Менеджер заказа, Склад, Финансовая служба, Логистика, Контроль качества."
+      }
+    },
+    {
+      "id": "Lane_Warehouse",
+      "name": "Склад",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "В процессе участвуют: Менеджер заказа, Склад, Финансовая служба, Логистика, Контроль качества."
+      }
+    },
+    {
+      "id": "Lane_Finance",
+      "name": "Финансовая служба",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "В процессе участвуют: Менеджер заказа, Склад, Финансовая служба, Логистика, Контроль качества."
+      }
+    },
+    {
+      "id": "Lane_Logistics",
+      "name": "Логистика",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "В процессе участвуют: Менеджер заказа, Склад, Финансовая служба, Логистика, Контроль качества."
+      }
+    },
+    {
+      "id": "Lane_QC",
+      "name": "Контроль качества",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "В процессе участвуют: Менеджер заказа, Склад, Финансовая служба, Логистика, Контроль качества."
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "Start_OrderConfirmed",
+      "type": "start",
+      "name": "Подтверждён заказ клиента",
+      "lane": "Lane_Manager",
+      "event_kind": "none",
+      "source": null
+    },
+    {
+      "id": "Task_RegisterOrder",
+      "type": "task",
+      "name": "Зарегистрировать состав заказа и адрес доставки",
+      "lane": "Lane_Manager",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Зарегистрировать состав заказа и адрес доставки. Ответственный: Менеджер заказа."
+      }
+    },
+    {
+      "id": "Task_CheckDetails",
+      "type": "task",
+      "name": "Проверить реквизиты клиента и условия договора",
+      "lane": "Lane_Manager",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Проверить реквизиты клиента и условия договора. Ответственный: Менеджер заказа."
+      }
+    },
+    {
+      "id": "Xor_DetailsCheck",
+      "type": "xor",
+      "name": "Проверка пройдена? — реквизиты",
+      "lane": "Lane_Manager",
+      "direction": "split",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "«проверка пройдена», если заполнены наименование клиента, идентификатор налогоплательщика, адрес, контакт получателя, артикулы и количество, а условия оплаты и доставки совпадают с действующим договором. «проверка не пройдена», если есть пропуск или расхождение."
+      }
+    },
+    {
+      "id": "Task_ClarifyDetails",
+      "type": "task",
+      "name": "Уточнить реквизиты и согласовать исправленный заказ",
+      "lane": "Lane_Manager",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Уточнить реквизиты и согласовать исправленный заказ. Ответственный: Менеджер заказа."
+      }
+    },
+    {
+      "id": "Xor_DetailsJoin",
+      "type": "xor",
+      "name": "Повторная проверка",
+      "lane": "Lane_Manager",
+      "direction": "join",
+      "source": null
+    },
+    {
+      "id": "Task_FixOrder",
+      "type": "task",
+      "name": "Зафиксировать согласованный состав заказа",
+      "lane": "Lane_Manager",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Зафиксировать согласованный состав заказа. Ответственный: Менеджер заказа."
+      }
+    },
+    {
+      "id": "And_FeasibilitySplit",
+      "type": "and",
+      "name": "Проверить возможность исполнения",
+      "lane": "Lane_Manager",
+      "direction": "split",
+      "source": null
+    },
+    {
+      "id": "Task_CheckStock",
+      "type": "task",
+      "name": "Проверить наличие всех позиций и сроки годности",
+      "lane": "Lane_Warehouse",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Проверить наличие всех позиций и сроки годности. Ответственный: Склад."
+      }
+    },
+    {
+      "id": "Task_ReserveStock",
+      "type": "task",
+      "name": "Зарезервировать доступные партии товара",
+      "lane": "Lane_Warehouse",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Зарезервировать доступные партии товара. Ответственный: Склад."
+      }
+    },
+    {
+      "id": "Task_CheckPayment",
+      "type": "task",
+      "name": "Проверить поступление оплаты или согласованный кредитный лимит",
+      "lane": "Lane_Finance",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Проверить поступление оплаты или согласованный кредитный лимит. Ответственный: Финансовая служба."
+      }
+    },
+    {
+      "id": "Task_ConfirmFinance",
+      "type": "task",
+      "name": "Подтвердить финансовое разрешение на отгрузку",
+      "lane": "Lane_Finance",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Подтвердить финансовое разрешение на отгрузку. Ответственный: Финансовая служба."
+      }
+    },
+    {
+      "id": "Task_CheckRoute",
+      "type": "task",
+      "name": "Проверить маршрут и ограничения приёмки у клиента",
+      "lane": "Lane_Logistics",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Проверить маршрут и ограничения приёмки у клиента. Ответственный: Логистика."
+      }
+    },
+    {
+      "id": "Task_BookTransport",
+      "type": "task",
+      "name": "Забронировать транспорт и окно доставки",
+      "lane": "Lane_Logistics",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Забронировать транспорт и окно доставки. Ответственный: Логистика."
+      }
+    },
+    {
+      "id": "And_FeasibilityJoin",
+      "type": "and",
+      "name": "Все ветви завершены",
+      "lane": "Lane_Manager",
+      "direction": "join",
+      "source": null
+    },
+    {
+      "id": "Xor_StockAvailability",
+      "type": "xor",
+      "name": "Все позиции доступны?",
+      "lane": "Lane_Warehouse",
+      "direction": "split",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "«Заказ полный», если доступное количество каждой исходной позиции не меньше заказанного и срок годности соответствует договору. «Есть дефицит», если хотя бы одна исходная позиция не выполняет это требование."
+      }
+    },
+    {
+      "id": "Task_IssueFullPicking",
+      "type": "task",
+      "name": "Выдать задание на комплектование полной поставки",
+      "lane": "Lane_Warehouse",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Выдать задание на комплектование полной поставки. Ответственный: Склад."
+      }
+    },
+    {
+      "id": "Task_AgreeReplacement",
+      "type": "task",
+      "name": "Согласовать с клиентом замену дефицитных позиций",
+      "lane": "Lane_Manager",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Согласовать с клиентом замену дефицитных позиций. Ответственный: Менеджер заказа."
+      }
+    },
+    {
+      "id": "Task_ReceiveReplacement",
+      "type": "task",
+      "name": "Получить согласованные позиции из резервного склада",
+      "lane": "Lane_Warehouse",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Получить согласованные позиции из резервного склада. Ответственный: Склад."
+      }
+    },
+    {
+      "id": "Task_UpdateReserve",
+      "type": "task",
+      "name": "Обновить резерв и задание на комплектование",
+      "lane": "Lane_Warehouse",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Обновить резерв и задание на комплектование. Ответственный: Склад."
+      }
+    },
+    {
+      "id": "Xor_StockJoin",
+      "type": "xor",
+      "name": "Вариант выбран",
+      "lane": "Lane_Warehouse",
+      "direction": "join",
+      "source": null
+    },
+    {
+      "id": "And_ShippingSplit",
+      "type": "and",
+      "name": "Подготовить отгрузку",
+      "lane": "Lane_Manager",
+      "direction": "split",
+      "source": null
+    },
+    {
+      "id": "Task_PickGoods",
+      "type": "task",
+      "name": "Отобрать партии по сроку годности и собрать заказ",
+      "lane": "Lane_Warehouse",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Отобрать партии по сроку годности и собрать заказ. Ответственный: Склад."
+      }
+    },
+    {
+      "id": "Task_PackGoods",
+      "type": "task",
+      "name": "Упаковать груз и нанести транспортную маркировку",
+      "lane": "Lane_Warehouse",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Упаковать груз и нанести транспортную маркировку. Ответственный: Склад."
+      }
+    },
+    {
+      "id": "Task_CheckPackaging",
+      "type": "task",
+      "name": "Проверить количество и сохранность упаковки",
+      "lane": "Lane_QC",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Проверить количество и сохранность упаковки. Ответственный: Контроль качества."
+      }
+    },
+    {
+      "id": "Task_CreateInvoice",
+      "type": "task",
+      "name": "Сформировать счёт и закрывающие документы",
+      "lane": "Lane_Finance",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Сформировать счёт и закрывающие документы. Ответственный: Финансовая служба."
+      }
+    },
+    {
+      "id": "Task_CheckInvoice",
+      "type": "task",
+      "name": "Проверить данные получателя в накладной",
+      "lane": "Lane_Manager",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Проверить данные получателя в накладной. Ответственный: Менеджер заказа."
+      }
+    },
+    {
+      "id": "Task_PrepareRouteDocs",
+      "type": "task",
+      "name": "Подготовить маршрутный лист и документы перевозчика",
+      "lane": "Lane_Logistics",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Подготовить маршрутный лист и документы перевозчика. Ответственный: Логистика."
+      }
+    },
+    {
+      "id": "And_ShippingJoin",
+      "type": "and",
+      "name": "Все ветви завершены",
+      "lane": "Lane_Manager",
+      "direction": "join",
+      "source": null
+    },
+    {
+      "id": "Xor_ShippingCheck",
+      "type": "xor",
+      "name": "Проверка пройдена? — сверка отгрузки",
+      "lane": "Lane_QC",
+      "direction": "split",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "«проверка пройдена», если фактические артикулы, количества, номера грузовых мест и адресная маркировка совпадают с итоговым заданием, накладной и маршрутным листом, а упаковка целая. «проверка не пройдена», если хотя бы одно сравнение не совпало или упаковка повреждена."
+      }
+    },
+    {
+      "id": "Task_VerifyShipment",
+      "type": "task",
+      "name": "Сверить груз с документами и заданием на отгрузку",
+      "lane": "Lane_QC",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Сверить груз с документами и заданием на отгрузку. Ответственный: Контроль качества."
+      }
+    },
+    {
+      "id": "Task_CorrectShipment",
+      "type": "task",
+      "name": "Исправить комплектацию или документы и повторно предъявить груз",
+      "lane": "Lane_Warehouse",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Исправить комплектацию или документы и повторно предъявить груз. Ответственный: Склад."
+      }
+    },
+    {
+      "id": "Xor_ShippingJoin",
+      "type": "xor",
+      "name": "Повторная проверка",
+      "lane": "Lane_QC",
+      "direction": "join",
+      "source": null
+    },
+    {
+      "id": "Task_AuthorizeTransfer",
+      "type": "task",
+      "name": "Разрешить передачу груза перевозчику",
+      "lane": "Lane_QC",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Разрешить передачу груза перевозчику. Ответственный: Контроль качества."
+      }
+    },
+    {
+      "id": "Task_LoadTruck",
+      "type": "task",
+      "name": "Загрузить автомобиль и подписать передачу груза",
+      "lane": "Lane_Warehouse",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Загрузить автомобиль и подписать передачу груза. Ответственный: Склад."
+      }
+    },
+    {
+      "id": "Task_DeliverGoods",
+      "type": "task",
+      "name": "Доставить груз в согласованное окно",
+      "lane": "Lane_Logistics",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Доставить груз в согласованное окно. Ответственный: Логистика."
+      }
+    },
+    {
+      "id": "Xor_AcceptanceCheck",
+      "type": "xor",
+      "name": "Клиент принял весь груз?",
+      "lane": "Lane_Logistics",
+      "direction": "split",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "«Принял полностью», если получатель подтвердил все места и количество из накладной без замечаний к сохранности. «Есть расхождение», если в акте указано любое несоответствие количества или повреждение."
+      }
+    },
+    {
+      "id": "Task_GetAcceptance",
+      "type": "task",
+      "name": "Получить подписанное подтверждение полной приёмки",
+      "lane": "Lane_Logistics",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Получить подписанное подтверждение полной приёмки. Ответственный: Логистика."
+      }
+    },
+    {
+      "id": "Task_RecordDiscrepancy",
+      "type": "task",
+      "name": "Зафиксировать расхождение и фотографии при приёмке",
+      "lane": "Lane_Logistics",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Зафиксировать расхождение и фотографии при приёмке. Ответственный: Логистика."
+      }
+    },
+    {
+      "id": "Task_AgreeCompensation",
+      "type": "task",
+      "name": "Согласовать компенсацию или возврат спорных позиций",
+      "lane": "Lane_Manager",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Согласовать компенсацию или возврат спорных позиций. Ответственный: Менеджер заказа."
+      }
+    },
+    {
+      "id": "Task_AcceptReturn",
+      "type": "task",
+      "name": "Принять согласованный возврат и обновить остатки",
+      "lane": "Lane_Warehouse",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Принять согласованный возврат и обновить остатки. Ответственный: Склад."
+      }
+    },
+    {
+      "id": "Xor_AcceptanceJoin",
+      "type": "xor",
+      "name": "Вариант выбран",
+      "lane": "Lane_Logistics",
+      "direction": "join",
+      "source": null
+    },
+    {
+      "id": "And_ClosingSplit",
+      "type": "and",
+      "name": "Закрыть исполнение заказа",
+      "lane": "Lane_Manager",
+      "direction": "split",
+      "source": null
+    },
+    {
+      "id": "Task_AccountGoods",
+      "type": "task",
+      "name": "Учесть принятый товар и согласованную корректировку стоимости",
+      "lane": "Lane_Finance",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Учесть принятый товар и согласованную корректировку стоимости. Ответственный: Финансовая служба."
+      }
+    },
+    {
+      "id": "Task_SendClosingDocs",
+      "type": "task",
+      "name": "Отправить клиенту итоговые закрывающие документы",
+      "lane": "Lane_Finance",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Отправить клиенту итоговые закрывающие документы. Ответственный: Финансовая служба."
+      }
+    },
+    {
+      "id": "Task_CloseTrip",
+      "type": "task",
+      "name": "Закрыть рейс и сверить расходы перевозки",
+      "lane": "Lane_Logistics",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Закрыть рейс и сверить расходы перевозки. Ответственный: Логистика."
+      }
+    },
+    {
+      "id": "Task_SaveFeedback",
+      "type": "task",
+      "name": "Сохранить обратную связь клиента",
+      "lane": "Lane_Manager",
+      "task_kind": "task",
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "Сохранить обратную связь клиента. Ответственный: Менеджер заказа."
+      }
+    },
+    {
+      "id": "And_ClosingJoin",
+      "type": "and",
+      "name": "Все ветви завершены",
+      "lane": "Lane_Manager",
+      "direction": "join",
+      "source": null
+    },
+    {
+      "id": "End_OrderFulfilled",
+      "type": "end",
+      "name": "Заказ исполнен и расчёты сверены",
+      "lane": "Lane_Manager",
+      "source": null
+    }
+  ],
+  "flows": [
+    {
+      "id": "Flow_Start_Register",
+      "source_id": "Start_OrderConfirmed",
+      "target_id": "Task_RegisterOrder",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Register_Check",
+      "source_id": "Task_RegisterOrder",
+      "target_id": "Task_CheckDetails",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Check_XorSplit",
+      "source_id": "Task_CheckDetails",
+      "target_id": "Xor_DetailsCheck",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_XorSplit_Clarify",
+      "source_id": "Xor_DetailsCheck",
+      "target_id": "Task_ClarifyDetails",
+      "name": "Проверка не пройдена",
+      "condition": "Проверка не пройдена",
+      "default": false,
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "«проверка не пройдена», если есть пропуск или расхождение."
+      }
+    },
+    {
+      "id": "Flow_XorSplit_Fix",
+      "source_id": "Xor_DetailsCheck",
+      "target_id": "Task_FixOrder",
+      "name": "Проверка пройдена",
+      "condition": "Проверка пройдена",
+      "default": false,
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "«проверка пройдена», если заполнены наименование клиента, идентификатор налогоплательщика, адрес, контакт получателя, артикулы и количество, а условия оплаты и доставки совпадают с действующим договором."
+      }
+    },
+    {
+      "id": "Flow_Clarify_Join",
+      "source_id": "Task_ClarifyDetails",
+      "target_id": "Xor_DetailsJoin",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Join_Check",
+      "source_id": "Xor_DetailsJoin",
+      "target_id": "Task_CheckDetails",
+      "name": "Повторная проверка",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Fix_AndSplit",
+      "source_id": "Task_FixOrder",
+      "target_id": "And_FeasibilitySplit",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_AndSplit_Stock",
+      "source_id": "And_FeasibilitySplit",
+      "target_id": "Task_CheckStock",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_AndSplit_Payment",
+      "source_id": "And_FeasibilitySplit",
+      "target_id": "Task_CheckPayment",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_AndSplit_Route",
+      "source_id": "And_FeasibilitySplit",
+      "target_id": "Task_CheckRoute",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Stock_Reserve",
+      "source_id": "Task_CheckStock",
+      "target_id": "Task_ReserveStock",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Reserve_Join",
+      "source_id": "Task_ReserveStock",
+      "target_id": "And_FeasibilityJoin",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Payment_Confirm",
+      "source_id": "Task_CheckPayment",
+      "target_id": "Task_ConfirmFinance",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Confirm_Join",
+      "source_id": "Task_ConfirmFinance",
+      "target_id": "And_FeasibilityJoin",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Route_Book",
+      "source_id": "Task_CheckRoute",
+      "target_id": "Task_BookTransport",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Book_Join",
+      "source_id": "Task_BookTransport",
+      "target_id": "And_FeasibilityJoin",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Join_XorStock",
+      "source_id": "And_FeasibilityJoin",
+      "target_id": "Xor_StockAvailability",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_XorStock_Full",
+      "source_id": "Xor_StockAvailability",
+      "target_id": "Task_IssueFullPicking",
+      "name": "Заказ полный",
+      "condition": "Заказ полный",
+      "default": false,
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "«Заказ полный», если доступное количество каждой исходной позиции не меньше заказанного и срок годности соответствует договору."
+      }
+    },
+    {
+      "id": "Flow_XorStock_Deficit",
+      "source_id": "Xor_StockAvailability",
+      "target_id": "Task_AgreeReplacement",
+      "name": "Есть дефицит",
+      "condition": "Есть дефицит",
+      "default": false,
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "«Есть дефицит», если хотя бы одна исходная позиция не выполняет это требование."
+      }
+    },
+    {
+      "id": "Flow_Full_Join",
+      "source_id": "Task_IssueFullPicking",
+      "target_id": "Xor_StockJoin",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Agree_Receive",
+      "source_id": "Task_AgreeReplacement",
+      "target_id": "Task_ReceiveReplacement",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Receive_Update",
+      "source_id": "Task_ReceiveReplacement",
+      "target_id": "Task_UpdateReserve",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Update_Join",
+      "source_id": "Task_UpdateReserve",
+      "target_id": "Xor_StockJoin",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_StockJoin_AndSplit",
+      "source_id": "Xor_StockJoin",
+      "target_id": "And_ShippingSplit",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_AndSplit_Goods",
+      "source_id": "And_ShippingSplit",
+      "target_id": "Task_PickGoods",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_AndSplit_Docs",
+      "source_id": "And_ShippingSplit",
+      "target_id": "Task_CreateInvoice",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Pick_Pack",
+      "source_id": "Task_PickGoods",
+      "target_id": "Task_PackGoods",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Pack_Check",
+      "source_id": "Task_PackGoods",
+      "target_id": "Task_CheckPackaging",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_CheckPack_Join",
+      "source_id": "Task_CheckPackaging",
+      "target_id": "And_ShippingJoin",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Invoice_CheckInvoice",
+      "source_id": "Task_CreateInvoice",
+      "target_id": "Task_CheckInvoice",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_CheckInvoice_RouteDocs",
+      "source_id": "Task_CheckInvoice",
+      "target_id": "Task_PrepareRouteDocs",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_RouteDocs_Join",
+      "source_id": "Task_PrepareRouteDocs",
+      "target_id": "And_ShippingJoin",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Join_XorShip",
+      "source_id": "And_ShippingJoin",
+      "target_id": "Xor_ShippingCheck",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_XorShip_Verify",
+      "source_id": "Xor_ShippingCheck",
+      "target_id": "Task_VerifyShipment",
+      "name": "Проверка пройдена",
+      "condition": "Проверка пройдена",
+      "default": false,
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "«проверка пройдена», если фактические артикулы, количества, номера грузовых мест и адресная маркировка совпадают с итоговым заданием, накладной и маршрутным листом, а упаковка целая."
+      }
+    },
+    {
+      "id": "Flow_XorShip_Correct",
+      "source_id": "Xor_ShippingCheck",
+      "target_id": "Task_CorrectShipment",
+      "name": "Проверка не пройдена",
+      "condition": "Проверка не пройдена",
+      "default": false,
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "«проверка не пройдена», если хотя бы одно сравнение не совпало или упаковка повреждена."
+      }
+    },
+    {
+      "id": "Flow_Verify_Authorize",
+      "source_id": "Task_VerifyShipment",
+      "target_id": "Task_AuthorizeTransfer",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Correct_Join",
+      "source_id": "Task_CorrectShipment",
+      "target_id": "Xor_ShippingJoin",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Join_Verify",
+      "source_id": "Xor_ShippingJoin",
+      "target_id": "Task_VerifyShipment",
+      "name": "Повторная проверка",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Authorize_Load",
+      "source_id": "Task_AuthorizeTransfer",
+      "target_id": "Task_LoadTruck",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Load_Deliver",
+      "source_id": "Task_LoadTruck",
+      "target_id": "Task_DeliverGoods",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Deliver_XorAccept",
+      "source_id": "Task_DeliverGoods",
+      "target_id": "Xor_AcceptanceCheck",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_XorAccept_Full",
+      "source_id": "Xor_AcceptanceCheck",
+      "target_id": "Task_GetAcceptance",
+      "name": "Принял полностью",
+      "condition": "Принял полностью",
+      "default": false,
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "«Принял полностью», если получатель подтвердил все места и количество из накладной без замечаний к сохранности."
+      }
+    },
+    {
+      "id": "Flow_XorAccept_Discrepancy",
+      "source_id": "Xor_AcceptanceCheck",
+      "target_id": "Task_RecordDiscrepancy",
+      "name": "Есть расхождение",
+      "condition": "Есть расхождение",
+      "default": false,
+      "source": {
+        "source_id": "ef51c3e7-fc87-43bd-bb52-495a8bbc7bcf",
+        "quote": "«Есть расхождение», если в акте указано любое несоответствие количества или повреждение."
+      }
+    },
+    {
+      "id": "Flow_Acceptance_Join",
+      "source_id": "Task_GetAcceptance",
+      "target_id": "Xor_AcceptanceJoin",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Record_Agree",
+      "source_id": "Task_RecordDiscrepancy",
+      "target_id": "Task_AgreeCompensation",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Agree_Return",
+      "source_id": "Task_AgreeCompensation",
+      "target_id": "Task_AcceptReturn",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Return_Join",
+      "source_id": "Task_AcceptReturn",
+      "target_id": "Xor_AcceptanceJoin",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_AcceptJoin_AndSplit",
+      "source_id": "Xor_AcceptanceJoin",
+      "target_id": "And_ClosingSplit",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_AndSplit_Finance",
+      "source_id": "And_ClosingSplit",
+      "target_id": "Task_AccountGoods",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_AndSplit_Logistics",
+      "source_id": "And_ClosingSplit",
+      "target_id": "Task_CloseTrip",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Account_Send",
+      "source_id": "Task_AccountGoods",
+      "target_id": "Task_SendClosingDocs",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Send_Join",
+      "source_id": "Task_SendClosingDocs",
+      "target_id": "And_ClosingJoin",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_CloseTrip_Feedback",
+      "source_id": "Task_CloseTrip",
+      "target_id": "Task_SaveFeedback",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Feedback_Join",
+      "source_id": "Task_SaveFeedback",
+      "target_id": "And_ClosingJoin",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    },
+    {
+      "id": "Flow_Join_End",
+      "source_id": "And_ClosingJoin",
+      "target_id": "End_OrderFulfilled",
+      "name": "",
+      "condition": null,
+      "default": false,
+      "source": null
+    }
+  ]
+}

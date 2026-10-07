@@ -1,5 +1,6 @@
 """Прогоны и их SSE-поток."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import Annotated
 from uuid import UUID
@@ -7,7 +8,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, Request, status
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
-from app.api.access import ResourceKind, ensure_project_access, ensure_resource_access
+from app.api.access import (
+    ResourceKind,
+    ensure_project_access,
+    ensure_resource_access,
+    has_stream_project_access,
+)
 from app.api.auth import OptionalUserDep, OptionalUserStreamDep
 from app.api.deps import ContainerDep
 from app.api.ratelimit import limit_expensive
@@ -31,6 +37,7 @@ from app.domain.runs import RunEvent as DomainRunEvent
 
 router = APIRouter(tags=["runs"])
 SSE_PING_SEC = 15
+ACCESS_RECHECK_SEC = 30
 
 
 @router.post(
@@ -134,14 +141,39 @@ async def run_events(
     )
     after = int(last_event_id) if last_event_id and last_event_id.isdigit() else 0
     events = await container.runs.events(run_id, after=after)
+    project_id = (await container.runs.get(run_id)).project_id
 
     async def stream() -> AsyncIterator[ServerSentEvent]:
-        async for event in events:
-            yield ServerSentEvent(
-                data=_event_data(event).model_dump_json(),
-                event=event.kind.value,
-                id=str(event.id),
-            )
+        async def next_event() -> DomainRunEvent:
+            return await anext(events)
+
+        pending: asyncio.Task[DomainRunEvent] | None = None
+        try:
+            while True:
+                if pending is None:
+                    pending = asyncio.create_task(next_event())
+                done, _ = await asyncio.wait({pending}, timeout=ACCESS_RECHECK_SEC)
+                if not await has_stream_project_access(request, container, project_id, user):
+                    return
+                if not done:
+                    continue
+                try:
+                    event = pending.result()
+                except StopAsyncIteration:
+                    return
+                pending = None
+                yield ServerSentEvent(
+                    data=_event_data(event).model_dump_json(),
+                    event=event.kind.value,
+                    id=str(event.id),
+                )
+        finally:
+            if pending is not None:
+                pending.cancel()
+                await asyncio.gather(pending, return_exceptions=True)
+            close = getattr(events, "aclose", None)
+            if close is not None:
+                await close()
 
     return EventSourceResponse(stream(), ping=SSE_PING_SEC)
 

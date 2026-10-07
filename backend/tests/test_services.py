@@ -384,3 +384,14 @@ async def test_recovery_refuses_changed_sources(service_container):
     assert saved.status is RunStatus.FAILED
     assert "Источники изменились" in saved.error
     assert await service_container.runs._repos.versions.list_by_project(project_id) == []
+
+
+async def test_recovered_run_replays_done_even_with_old_sse_cursor(service_container):
+    run = await service_container.runs.start(DEMO_PROJECT_ID, mode=RunMode.ANALYZE, created_by=None)
+    await service_container.spawner.wait_idle()
+    saved = await service_container.runs.get(run.id)
+    saved.ir["execution"]["recovery_attempts"] = 1
+    await service_container.runs._repos.runs.update(saved)
+    events = await service_container.runs.events(run.id, after=10_000)
+    received = [event async for event in events]
+    assert received[-1].kind.value == "done"

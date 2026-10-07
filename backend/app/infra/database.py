@@ -7,6 +7,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from alembic import command
 from alembic.config import Config
@@ -14,7 +15,7 @@ from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from alembic.script.revision import ResolutionError
 from alembic.util.exc import CommandError
-from sqlalchemy import event, update
+from sqlalchemy import event, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from app.domain.models import RunStatus
@@ -23,6 +24,7 @@ from app.infra.repositories.sql import SqlStore
 
 logger = logging.getLogger(__name__)
 SLOW_CHECKOUT_WARNING_SEC = 5.0
+MAX_RUN_RECOVERIES = 2
 
 INTERRUPTED_PARSE_ERROR = (
     "Разбор файла прервался из-за перезапуска сервера. "
@@ -86,8 +88,8 @@ class Database:
         self.store = SqlStore(self.sessions)
         self._migrations_dir = migrations_dir or Path(__file__).resolve().parents[2] / "migrations"
 
-    async def initialize(self) -> None:
-        """Применяет миграции, затем делает прерванные прогоны и разборы файлов явными."""
+    async def initialize(self) -> list[UUID]:
+        """Применяет миграции и возвращает безопасно восстанавливаемые прогоны."""
         async with self.engine.begin() as connection:
             config = Config()
             config.set_main_option("script_location", str(self._migrations_dir))
@@ -106,19 +108,45 @@ class Database:
                 command.upgrade(config, "head")
 
             await connection.run_sync(migrate)
+        recoverable: list[UUID] = []
         async with self.sessions.begin() as session:
-            await session.execute(
-                update(RunRow)
-                .where(RunRow.status.in_([RunStatus.QUEUED.value, RunStatus.RUNNING.value]))
-                .values(
-                    status=RunStatus.FAILED.value,
-                    error="Прогон прерван перезапуском сервера",
-                    finished_at=datetime.now(UTC),
+            rows = (
+                await session.scalars(
+                    select(RunRow)
+                    .where(RunRow.status.in_([RunStatus.QUEUED.value, RunStatus.RUNNING.value]))
+                    .with_for_update()
                 )
-            )
+            ).all()
+            for row in rows:
+                # Завершённый commit версии нельзя повторять после падения между commit/status.
+                if row.version_id is not None:
+                    row.status = RunStatus.SUCCEEDED.value
+                    row.progress = 1.0
+                    row.finished_at = datetime.now(UTC)
+                    continue
+                ir = dict(row.ir or {})
+                execution = dict(ir.get("execution", {}))
+                attempts = execution.get("recovery_attempts", 0)
+                if not execution.get("source_snapshot_hash") or attempts >= MAX_RUN_RECOVERIES:
+                    row.status = RunStatus.FAILED.value
+                    row.error = (
+                        "Автовосстановление невозможно: старый запуск или лимит перезапусков"
+                    )
+                    row.finished_at = datetime.now(UTC)
+                    continue
+                execution["recovery_attempts"] = attempts + 1
+                ir["execution"] = execution
+                row.ir = ir
+                row.status = RunStatus.QUEUED.value
+                row.progress = 0.0
+                row.stage = None
+                row.error = None
+                row.warnings = [*row.warnings, "Прогон восстановлен после перезапуска сервера"]
+                recoverable.append(row.id)
         # Фоновый разбор документа жил в памяти процесса и не пережил перезапуск: без этого
         # источник остался бы в `processing` навсегда и не попадал бы в прогоны.
         await self.store.repositories().sources.fail_processing(INTERRUPTED_PARSE_ERROR)
+        return recoverable
 
     async def seed(self, build_seed: Callable[[], Any]) -> None:
         """Идемпотентно добавляет демонстрационные проекты, не затирая пользовательские данные."""

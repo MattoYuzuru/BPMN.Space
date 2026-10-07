@@ -22,3 +22,5 @@
   - [Локальное воспроизведение и отдельная модель длительностей](adr/0005-process-playback.md)
   - [Граф IR, проверяемая сверка вопросов и приоритет ручных правок](adr/0006-generation-quality.md)
   - [Компактное хранение истории XML](adr/0007-compact-version-storage.md)
+
+- [Полное чтение оснований, смысловая проверка и восстановление](adr/0008-evidence-semantic-review-and-recovery.md)

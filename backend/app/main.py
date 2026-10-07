@@ -50,9 +50,11 @@ def create_app(settings: Settings | None = None, *, container: Container | None 
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         database = container.database
         if database:
-            await database.initialize()
+            recovered_runs = await database.initialize()
             if settings.seed_demo_data:
                 await database.seed(build_seed)
+            for run_id in recovered_runs:
+                container.runs.resume(run_id)
         try:
             yield
         finally:

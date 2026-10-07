@@ -16,6 +16,7 @@ from app.domain.bpmn.ir import GraphIR, GraphValidationError, SourceReference, v
 from app.domain.bpmn.manual import ManualPolicy, semantic_value
 from app.domain.models import QuestionStatus, Quote
 from app.llm.base import PipelineError
+from app.llm.semantic_review import review_semantics
 
 SYSTEM = """Ты строишь проверяемый BPMN-граф, а не XML и не линейный список.
 Верни JSON IR schema_version=1 с title, lanes, nodes и flows по JSON Schema ниже.
@@ -56,11 +57,13 @@ _MAX_HINT_TEXT = 480
 _MAX_HINT_FLOWS = 12
 
 
-async def generate_graph(
+async def generate_graph(  # noqa: PLR0912 — адресные repair-пути одной генерации
     context: RunContext,
     analysis: AnalysisResult,
     complete: Callable[[str, str], Awaitable[str]],
     verify_quote: Callable[[list, object, object], tuple[UUID | None, str | None]],
+    *,
+    semantic_review: bool = False,
 ) -> DiagramDraft:
     current = None
     policy = None
@@ -144,6 +147,10 @@ async def generate_graph(
                     graph, trace, context, policy, current, verify_quote=verify_quote
                 )
             validate_graph(graph)
+            if semantic_review:
+                semantic_errors = await review_semantics(graph, context, complete)
+                if semantic_errors:
+                    raise GraphValidationError(semantic_errors)
             bindings = _bindings(graph)
             warnings = [
                 f"Сохранена ручная правка «{c['element_id']}»; противоречие вынесено в вопросы"
@@ -390,7 +397,9 @@ def _ground(
             )
             if item.source:
                 source_id, quote = verify_quote(
-                    context.sources, str(item.source.source_id), item.source.quote
+                    context.evidence_sources or context.sources,
+                    str(item.source.source_id),
+                    item.source.quote,
                 )
                 if source_id is None or quote is None:
                     errors.append(

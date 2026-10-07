@@ -271,6 +271,10 @@ class RunService:
     async def events(self, run_id: UUID, *, after: int = 0) -> AsyncIterator[RunEvent]:
         """Поток событий; для прогона без журнала (сид, рестарт) — сразу итоговый `done`."""
         run = await get_run(self._repos, run_id)
+        if (run.ir or {}).get("execution", {}).get("recovery_attempts", 0):
+            # Журнал процесса после рестарта начинается с 1: старый Last-Event-ID
+            # не должен скрыть этапы и финальный done нового исполнения.
+            after = 0
         if not self._events.has_log(run_id) and run.status not in ACTIVE_STATUSES:
             return self._single_done(run, after=after)
         return self._events.subscribe(run_id, after=after)

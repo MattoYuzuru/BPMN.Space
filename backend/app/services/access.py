@@ -4,10 +4,16 @@ from datetime import datetime
 from hashlib import sha256
 from uuid import UUID
 
-from app.domain.access import ProjectRole, ResourceKind, ShareLink
+from app.domain.access import (
+    ProjectRole,
+    ResourceKind,
+    ShareLink,
+    project_deletion_key,
+    share_deletion_key,
+)
 from app.infra.repositories.base import AccessRepository
 from app.services.common import Runtime
-from app.services.errors import GoneError, NotFoundError, UnavailableError
+from app.services.errors import DeletedProjectError, GoneError, NotFoundError, UnavailableError
 
 __all__ = ["AccessService", "ProjectRole", "token_digest"]
 
@@ -36,6 +42,9 @@ class AccessService:
     async def project_role(self, project_id: UUID, user_id: UUID) -> ProjectRole | None:
         return await self.repo.project_role(project_id, user_id)
 
+    async def project_was_deleted(self, project_id: UUID, user_id: UUID) -> bool:
+        return await self.repo.deleted_access(project_deletion_key(project_id, user_id))
+
     async def project_roles(
         self, project_ids: list[UUID], user_id: UUID | None
     ) -> dict[UUID, ProjectRole]:
@@ -48,8 +57,10 @@ class AccessService:
         return project_id
 
     async def active_link(self, token: str) -> ShareLink:
-        """Живая ссылка по сырому токену: неизвестная или отозванная — 404, истёкшая — 410."""
+        """Живая ссылка по сырому токену: неизвестная/отозванная — 404, истёкшая/удалённая — 410."""
         link = await self.repo.find_share_link(token_digest(token))
+        if link is None and await self.repo.deleted_access(share_deletion_key(token_digest(token))):
+            raise DeletedProjectError()
         if link is None or link.revoked_at is not None:
             raise NotFoundError("Ссылка не найдена или отключена")
         if is_expired(link, self._rt.clock()):

@@ -38,7 +38,7 @@ async def _ensure_owner(
 @router.get(
     "/projects/{project_id}/members",
     response_model=list[ProjectMemberRead],
-    responses=errors(401, 403, 404, 422),
+    responses=errors(401, 403, 404, 410, 422),
 )
 async def list_project_members(
     project_id: UUID,
@@ -63,7 +63,7 @@ async def list_project_members(
 @router.delete(
     "/projects/{project_id}/members/{member_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    responses=errors(401, 403, 404, 422),
+    responses=errors(401, 403, 404, 410, 422),
 )
 async def remove_project_member(
     project_id: UUID,
@@ -79,11 +79,30 @@ async def remove_project_member(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.delete(
+    "/projects/{project_id}/membership",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=errors(401, 403, 404, 410, 422),
+)
+async def leave_project(
+    project_id: UUID,
+    request: Request,
+    container: ContainerDep,
+    user: OptionalUserDep,
+) -> Response:
+    """Выйти из общего проекта; данные владельца и остальных участников сохраняются."""
+    await ensure_project_access(request, container, project_id, user, write=False)
+    if user is None:
+        raise UnauthorizedError("Войдите в аккаунт")
+    await container.sharing.leave_project(project_id, user.id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post(
     "/projects/{project_id}/share-links",
     status_code=status.HTTP_201_CREATED,
     response_model=ShareLinkCreated,
-    responses=errors(401, 403, 404, 422),
+    responses=errors(401, 403, 404, 410, 422),
 )
 async def create_share_link(
     project_id: UUID,
@@ -120,7 +139,7 @@ async def create_share_link(
 @router.get(
     "/projects/{project_id}/share-links",
     response_model=list[ShareLinkRead],
-    responses=errors(401, 403, 404, 422),
+    responses=errors(401, 403, 404, 410, 422),
 )
 async def list_share_links(
     project_id: UUID,
@@ -144,7 +163,7 @@ async def list_share_links(
 @router.delete(
     "/projects/{project_id}/share-links/{link_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    responses=errors(401, 403, 404, 422),
+    responses=errors(401, 403, 404, 410, 422),
 )
 async def revoke_share_link(
     project_id: UUID,
@@ -218,5 +237,5 @@ async def accept_share_link(
     link = await get_active_share_link(container, token)
     if user is None:
         raise UnauthorizedError("Войдите или зарегистрируйтесь, чтобы добавить проект в профиль")
-    await container.sharing.accept_invite(link.project_id, user.id, link.role)
+    await container.sharing.accept_invite(link.project_id, user.id, link.role, link_id=link.id)
     return ShareAccepted(project_id=link.project_id, role=ShareRole(link.role))

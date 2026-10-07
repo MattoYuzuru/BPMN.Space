@@ -34,7 +34,7 @@ from app.domain.access import ProjectRole
 from app.domain.models import Project, Source, SourceKind, SourceStatus
 from app.domain.runs import RunEvent, RunEventKind
 from app.infra.database import Database
-from app.infra.db_models import ProjectShareLinkRow, UserRow
+from app.infra.db_models import DeletedProjectAccessRow, ProjectShareLinkRow, UserRow
 from app.infra.seed import DEMO_PROJECT_ID, SeedData, build_seed
 from app.main import create_app
 from app.services.auth import SESSION_COOKIE, stream_user
@@ -691,7 +691,7 @@ async def test_projects_scope_filters_list_and_total(stack: Stack) -> None:
 # ---------- роли ----------
 
 
-async def test_editor_can_edit_but_not_delete_or_share(stack: Stack) -> None:
+async def test_editor_can_edit_but_not_manage_sharing(stack: Stack) -> None:
     owner = await stack.user("boss@example.com")
     editor = await stack.user("colleague@example.com")
     pid = (await _finished_project(owner))["project"]
@@ -721,7 +721,6 @@ async def test_editor_can_edit_but_not_delete_or_share(stack: Stack) -> None:
     assert added.status_code == 201
 
     denied = [
-        ("DELETE", f"/projects/{pid}", {}),
         ("GET", f"/projects/{pid}/members", {}),
         ("GET", f"/projects/{pid}/share-links", {}),
         ("POST", f"/projects/{pid}/share-links", {"json": {"role": "viewer"}}),
@@ -738,7 +737,7 @@ async def test_editor_can_edit_but_not_delete_or_share(stack: Stack) -> None:
     assert (await editor.get(f"/projects/{pid}")).status_code == 404
 
     assert (await owner.delete(f"/projects/{pid}")).status_code == 204
-    assert (await owner.get(f"/projects/{pid}")).status_code == 404
+    assert (await owner.get(f"/projects/{pid}")).status_code == 410
 
 
 async def test_editor_can_cancel_shared_run_but_viewer_cannot(stack: Stack) -> None:
@@ -1043,3 +1042,194 @@ async def test_startup_fails_sources_left_in_processing(stack: Stack) -> None:
     assert restored.status is SourceStatus.FAILED
     assert restored.error is not None
     assert "перезапуск" in restored.error
+
+
+@pytest.mark.parametrize("role", ["viewer", "editor"])
+@pytest.mark.parametrize("suffix", ["", "/membership"])
+async def test_shared_project_delete_only_removes_own_membership(stack: Stack, role, suffix):
+    owner = await stack.user("leave-owner@example.com")
+    member = await stack.user("leave-member@example.com")
+    other = await stack.user("leave-other@example.com")
+    pid = (await owner.post("/projects", json={"title": "Не удалять у владельца"})).json()["id"]
+    link = await owner.post(f"/projects/{pid}/share-links", json={"role": role})
+    token = link.json()["url_path"].removeprefix("/share/")
+    for account in (member, other):
+        assert (await account.post(f"/shares/{token}/accept")).status_code == 200
+    assert (await member.delete(f"/projects/{pid}{suffix}")).status_code == 204
+    assert (await member.get(f"/projects/{pid}")).status_code == 404
+    assert (await member.get("/projects?scope=shared")).json()["items"] == []
+    assert (await owner.get(f"/projects/{pid}")).status_code == 200
+    assert (await other.get(f"/projects/{pid}")).status_code == 200
+    assert (await member.post(f"/shares/{token}/accept")).status_code == 200
+    assert (await member.get(f"/projects/{pid}")).json()["access"] == role
+    assert (await owner.delete(f"/projects/{pid}/membership")).status_code == 403
+    assert (await owner.get(f"/projects/{pid}")).status_code == 200
+
+
+async def test_owner_delete_cascades_and_notifies_only_authorized_people(stack: Stack):
+    owner = await stack.user("delete-owner@example.com")
+    viewer = await stack.user("delete-viewer@example.com")
+    editor = await stack.user("delete-editor@example.com")
+    removed = await stack.user("delete-removed@example.com")
+    stranger = await stack.user("delete-stranger@example.com")
+    guest = await stack.guest()
+    ids = await _finished_project(owner)
+    pid = ids["project"]
+    uploaded = await owner.post(
+        f"/projects/{pid}/sources/file",
+        files={"file": ("roles.csv", b"role,action\noperator,review", "text/csv")},
+    )
+    assert uploaded.status_code == 201
+    container = stack.app.state.container
+    uploaded_source = await container.repos.sources.get(UUID(uploaded.json()["id"]))
+    assert uploaded_source is not None
+    assert uploaded_source.file_key is not None
+    file_key = uploaded_source.file_key
+    assert await container.storage.load(file_key)
+    tokens = []
+    for account, role in ((viewer, "viewer"), (editor, "editor"), (removed, "viewer")):
+        created = await owner.post(f"/projects/{pid}/share-links", json={"role": role})
+        token = created.json()["url_path"].removeprefix("/share/")
+        tokens.append(token)
+        assert (await account.post(f"/shares/{token}/accept")).status_code == 200
+    assert (await removed.delete(f"/projects/{pid}")).status_code == 204
+    revoked = await owner.post(f"/projects/{pid}/share-links", json={"role": "viewer"})
+    revoked_token = revoked.json()["url_path"].removeprefix("/share/")
+    assert (
+        await owner.delete(f"/projects/{pid}/share-links/{revoked.json()['id']}")
+    ).status_code == 204
+    assert (await owner.delete(f"/projects/{pid}")).status_code == 204
+    with pytest.raises(FileNotFoundError):
+        await container.storage.load(file_key)
+    for account in (owner, viewer, editor):
+        response = await account.get(f"/projects/{pid}")
+        assert response.status_code == 410
+        assert response.json() == {"detail": "Автор удалил проект", "code": "PROJECT_DELETED"}
+        assert (await account.get("/projects?scope=shared")).json()["items"] == []
+    for account in (stranger, removed):
+        assert (await account.get(f"/projects/{pid}")).status_code == 404
+    assert (await guest.get(f"/projects/{pid}")).status_code == 401
+    for token in tokens[:2]:
+        assert (await guest.get(f"/shares/{token}")).json()["code"] == "PROJECT_DELETED"
+        assert (await viewer.post(f"/shares/{token}/accept")).status_code == 410
+    assert (await guest.get(f"/shares/{revoked_token}")).status_code == 404
+    assert (await guest.get("/shares/unknown-token")).status_code == 404
+    assert (
+        await owner.patch(f"/sources/{ids['source']}", json={"title": "Удалён"})
+    ).status_code == 404
+    for path in (f"/versions/{ids['version']}", f"/runs/{ids['run']}"):
+        assert (await owner.get(path)).status_code == 404
+
+
+async def test_deletion_receipt_expiry_does_not_keep_project_or_identity(stack: Stack):
+    owner = await stack.user("receipt-owner@example.com")
+    pid = (await owner.post("/projects", json={"title": "Секретное название"})).json()["id"]
+    assert (await owner.delete(f"/projects/{pid}")).status_code == 204
+    async with stack.database.sessions.begin() as session:
+        await session.execute(
+            update(DeletedProjectAccessRow).values(expires_at=datetime.now(UTC) - timedelta(days=1))
+        )
+    assert (await owner.get(f"/projects/{pid}")).status_code == 404
+
+
+@pytest.mark.parametrize("change", ["delete", "revoke", "expire"])
+async def test_acceptance_rechecks_invitation_at_membership_commit(
+    stack: Stack, monkeypatch, change
+):
+    owner = await stack.user("race-owner@example.com")
+    member = await stack.user("race-member@example.com")
+    pid = (await owner.post("/projects", json={"title": "Гонка приглашения"})).json()["id"]
+    created = await owner.post(f"/projects/{pid}/share-links", json={"role": "editor"})
+    token = created.json()["url_path"].removeprefix("/share/")
+    repo = stack.app.state.container.access.repo
+    original = repo.add_member
+
+    async def change_before_commit(*args, **kwargs):
+        if change == "delete":
+            assert (await owner.delete(f"/projects/{pid}")).status_code == 204
+        elif change == "revoke":
+            assert (
+                await owner.delete(f"/projects/{pid}/share-links/{created.json()['id']}")
+            ).status_code == 204
+        else:
+            async with stack.database.sessions.begin() as session:
+                await session.execute(
+                    update(ProjectShareLinkRow)
+                    .where(ProjectShareLinkRow.id == UUID(created.json()["id"]))
+                    .values(
+                        created_at=datetime.now(UTC) - timedelta(days=2),
+                        expires_at=datetime.now(UTC) - timedelta(days=1),
+                    )
+                )
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(repo, "add_member", change_before_commit)
+    response = await member.post(f"/shares/{token}/accept")
+    assert response.status_code == (404 if change == "revoke" else 410)
+    assert (await member.get("/projects?scope=shared")).json()["items"] == []
+    if change != "delete":
+        assert (await owner.get(f"/projects/{pid}")).status_code == 200
+        assert (await member.get(f"/projects/{pid}")).status_code == 404
+
+
+async def test_owner_accepting_own_link_does_not_create_redundant_membership(stack: Stack):
+    owner = await stack.user("self-owner@example.com")
+    pid = (await owner.post("/projects", json={"title": "Своё приглашение"})).json()["id"]
+    created = await owner.post(f"/projects/{pid}/share-links", json={"role": "editor"})
+    token = created.json()["url_path"].removeprefix("/share/")
+    assert (await owner.post(f"/shares/{token}/accept")).status_code == 200
+    assert (await owner.get(f"/projects/{pid}/members")).json() == []
+    assert (await owner.get(f"/projects/{pid}")).json()["access"] == "owner"
+
+
+async def test_project_cannot_be_deleted_during_run_but_member_can_leave(stack: Stack):
+    owner = await stack.user("active-owner@example.com")
+    member = await stack.user("active-member@example.com")
+    pid = (await owner.post("/projects/from-example", json={"example_id": "tp861"})).json()["id"]
+    created = await owner.post(f"/projects/{pid}/share-links", json={"role": "editor"})
+    token = created.json()["url_path"].removeprefix("/share/")
+    assert (await member.post(f"/shares/{token}/accept")).status_code == 200
+    container = stack.app.state.container
+    entered = asyncio.Event()
+
+    async def hold(_stage):
+        entered.set()
+        await asyncio.Event().wait()
+
+    container.runs._pace = hold
+    started = await member.post(f"/projects/{pid}/runs", json={"mode": "build"})
+    assert started.status_code == 202
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        assert (await owner.delete(f"/projects/{pid}")).status_code == 409
+        assert (await member.delete(f"/projects/{pid}")).status_code == 204
+        assert (await owner.get(f"/runs/{started.json()['id']}")).json()["status"] == "running"
+        assert (await member.get(f"/runs/{started.json()['id']}")).status_code == 404
+        assert (await owner.post(f"/runs/{started.json()['id']}/cancel")).status_code == 200
+        assert (await owner.delete(f"/projects/{pid}")).status_code == 204
+    finally:
+        await container.spawner.shutdown()
+
+
+async def test_deletion_during_upload_does_not_leave_orphan_file(stack: Stack, monkeypatch):
+    owner = await stack.user("upload-delete@example.com")
+    pid = (await owner.post("/projects", json={"title": "Загрузка и удаление"})).json()["id"]
+    storage = stack.app.state.container.storage
+    original = storage.save
+    keys = []
+
+    async def delete_after_blob_save(**kwargs):
+        key = await original(**kwargs)
+        keys.append(key)
+        assert (await owner.delete(f"/projects/{pid}")).status_code == 204
+        return key
+
+    monkeypatch.setattr(storage, "save", delete_after_blob_save)
+    response = await owner.post(
+        f"/projects/{pid}/sources/file",
+        files={"file": ("roles.csv", b"role,action\noperator,review", "text/csv")},
+    )
+    assert response.status_code == 404
+    assert len(keys) == 1
+    with pytest.raises(FileNotFoundError):
+        await storage.load(keys[0])

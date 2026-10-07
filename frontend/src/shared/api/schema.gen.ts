@@ -325,7 +325,10 @@ export interface paths {
         get: operations["get_project"];
         put?: never;
         post?: never;
-        /** Delete Project */
+        /**
+         * Delete Project
+         * @description Владелец удаляет проект для всех; viewer/editor удаляет только своё членство.
+         */
         delete: operations["delete_project"];
         options?: never;
         head?: never;
@@ -418,6 +421,26 @@ export interface paths {
         post?: never;
         /** Remove Project Member */
         delete: operations["remove_project_member"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/membership": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Leave Project
+         * @description Выйти из общего проекта; данные владельца и остальных участников сохраняются.
+         */
+        delete: operations["leave_project"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1103,6 +1126,19 @@ export interface components {
             id: string;
             /** Title */
             title: string;
+        };
+        /** GoneErrorResponse */
+        GoneErrorResponse: {
+            /**
+             * Code
+             * @description PROJECT_DELETED — автор удалил ранее доступный проект
+             */
+            code?: "PROJECT_DELETED" | null;
+            /**
+             * Detail
+             * @description Сообщение об ошибке для пользователя, на русском
+             */
+            detail: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -2433,6 +2469,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
             /** @description Некорректные данные */
             422: {
                 headers: {
@@ -2482,6 +2527,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
             /** @description Некорректные данные */
             422: {
                 headers: {
@@ -2529,6 +2583,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
                 };
             };
             /** @description Некорректные данные */
@@ -2591,6 +2654,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
             /** @description Некорректные данные */
             422: {
                 headers: {
@@ -2636,6 +2708,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
                 };
             };
         };
@@ -2768,6 +2849,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
             /** @description Некорректные данные */
             422: {
                 headers: {
@@ -2815,6 +2905,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
                 };
             };
             /** @description Некорректные данные */
@@ -2882,6 +2981,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
             /** @description Некорректные данные */
             422: {
                 headers: {
@@ -2944,6 +3052,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
             /** @description Некорректные данные */
             422: {
                 headers: {
@@ -3004,6 +3121,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
                 };
             };
             /** @description Некорректные данные */
@@ -3091,6 +3217,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
             /** @description Некорректные данные */
             422: {
                 headers: {
@@ -3171,6 +3306,15 @@ export interface operations {
                     "application/json": components["schemas"]["DiagramConflictResponse"];
                 };
             };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
             /** @description Слишком большой файл */
             413: {
                 headers: {
@@ -3247,6 +3391,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
             /** @description Некорректные данные */
             422: {
                 headers: {
@@ -3304,6 +3457,80 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    leave_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
             /** @description Некорректные данные */
             422: {
                 headers: {
@@ -3349,6 +3576,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
                 };
             };
             /** @description Некорректные данные */
@@ -3400,6 +3636,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
                 };
             };
             /** @description Некорректные данные */
@@ -3473,6 +3718,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
             /** @description Некорректные данные */
             422: {
                 headers: {
@@ -3540,6 +3794,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
             /** @description Некорректные данные */
             422: {
                 headers: {
@@ -3602,6 +3865,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
             /** @description Некорректные данные */
             422: {
                 headers: {
@@ -3657,6 +3929,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
                 };
             };
             /** @description Некорректные данные */
@@ -3719,6 +4000,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
                 };
             };
             /** @description Слишком большой файл */
@@ -3810,6 +4100,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
             /** @description Некорректные данные */
             422: {
                 headers: {
@@ -3881,6 +4180,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
             /** @description Некорректные данные */
             422: {
                 headers: {
@@ -3928,6 +4236,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
                 };
             };
             /** @description Некорректные данные */
@@ -4001,6 +4318,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
             /** @description Некорректные данные */
             422: {
                 headers: {
@@ -4066,6 +4392,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
                 };
             };
             /** @description Некорректные данные */
@@ -4135,6 +4470,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
             /** @description Некорректные данные */
             422: {
                 headers: {
@@ -4182,6 +4526,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
                 };
             };
             /** @description Некорректные данные */
@@ -4242,6 +4595,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
             /** @description Некорректные данные */
             422: {
                 headers: {
@@ -4292,6 +4654,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
                 };
             };
             /** @description Некорректные данные */
@@ -4363,13 +4734,13 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Срок действия ссылки истёк */
+            /** @description Ссылка истекла либо автор удалил проект */
             410: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
+                    "application/json": components["schemas"]["GoneErrorResponse"];
                 };
             };
             /** @description Некорректные данные */
@@ -4421,13 +4792,13 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Срок действия ссылки истёк */
+            /** @description Ссылка истекла либо автор удалил проект */
             410: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
+                    "application/json": components["schemas"]["GoneErrorResponse"];
                 };
             };
             /** @description Некорректные данные */
@@ -4488,13 +4859,13 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Срок действия ссылки истёк */
+            /** @description Ссылка истекла либо автор удалил проект */
             410: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
+                    "application/json": components["schemas"]["GoneErrorResponse"];
                 };
             };
             /** @description Некорректные данные */
@@ -4556,13 +4927,13 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Срок действия ссылки истёк */
+            /** @description Ссылка истекла либо автор удалил проект */
             410: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
+                    "application/json": components["schemas"]["GoneErrorResponse"];
                 };
             };
             /** @description Некорректные данные */
@@ -4619,6 +4990,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
                 };
             };
             /** @description Некорректные данные */
@@ -4681,6 +5061,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
                 };
             };
             /** @description Некорректные данные */
@@ -4801,6 +5190,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
             /** @description Некорректные данные */
             422: {
                 headers: {
@@ -4848,6 +5246,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
                 };
             };
             /** @description Некорректные данные */

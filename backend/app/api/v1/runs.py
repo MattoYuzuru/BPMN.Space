@@ -44,7 +44,7 @@ ACCESS_RECHECK_SEC = 30
     "/projects/{project_id}/runs",
     status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(limit_expensive)],
-    responses=errors(401, 403, 404, 409, 422, 429),
+    responses=errors(401, 403, 404, 409, 410, 422, 429),
 )
 async def start_run(
     project_id: UUID,
@@ -68,7 +68,7 @@ async def start_run(
     )
 
 
-@router.get("/runs/{run_id}", responses=errors(401, 404, 422))
+@router.get("/runs/{run_id}", responses=errors(401, 404, 410, 422))
 async def get_run(
     run_id: UUID,
     request: Request,
@@ -81,7 +81,7 @@ async def get_run(
     return Run.of(await container.runs.get(run_id))
 
 
-@router.post("/runs/{run_id}/cancel", responses=errors(401, 403, 404, 422))
+@router.post("/runs/{run_id}/cancel", responses=errors(401, 403, 404, 410, 422))
 async def cancel_run(
     run_id: UUID,
     request: Request,
@@ -124,7 +124,7 @@ def _event_data(event: DomainRunEvent) -> ApiModel:
             "description": "Поток SSE (`text/event-stream`); схема — одно сообщение",
             "content": {"text/event-stream": {"schema": {"$ref": "#/components/schemas/RunEvent"}}},
         },
-        **errors(401, 404, 422),
+        **errors(401, 404, 410, 422),
     },
 )
 async def run_events(

@@ -66,7 +66,7 @@ async def get_onboarding(container: ContainerDep, user: OptionalUserDep) -> Onbo
     return _state(await container.onboarding.state(user.id))
 
 
-@router.patch("/me/onboarding/tour", responses=errors(401, 404, 409, 422))
+@router.patch("/me/onboarding/tour", responses=errors(401, 404, 409, 410, 422))
 async def update_tour(
     body: TourUpdate, container: ContainerDep, user: OptionalUserDep
 ) -> OnboardingState:
@@ -84,13 +84,13 @@ async def update_tour(
     )
 
 
-@router.post("/me/onboarding/tour/restart", responses=errors(401, 404))
+@router.post("/me/onboarding/tour/restart", responses=errors(401, 404, 410))
 async def restart_tour(container: ContainerDep, user: OptionalUserDep) -> OnboardingState:
     """Начать тур заново: `active`, шаг `project.create`, без учебного проекта."""
     return _state(await container.onboarding.restart(_account(container, user)))
 
 
-@router.patch("/me/onboarding/checklist", responses=errors(401, 404, 422))
+@router.patch("/me/onboarding/checklist", responses=errors(401, 404, 410, 422))
 async def update_checklist(
     body: ChecklistUpdate, container: ContainerDep, user: OptionalUserDep
 ) -> OnboardingState:
@@ -102,7 +102,7 @@ async def update_checklist(
 @router.post(
     "/me/onboarding/events",
     status_code=status.HTTP_204_NO_CONTENT,
-    responses=errors(401, 404, 422),
+    responses=errors(401, 404, 410, 422),
 )
 async def report_event(
     body: OnboardingEvent, container: ContainerDep, user: OptionalUserDep
@@ -113,7 +113,7 @@ async def report_event(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get("/me/onboarding/items/{item}/target", responses=errors(401, 404, 422))
+@router.get("/me/onboarding/items/{item}/target", responses=errors(401, 404, 410, 422))
 async def item_target(
     item: ChecklistItem, container: ContainerDep, user: OptionalUserDep
 ) -> OnboardingTarget:

@@ -25,6 +25,10 @@ class AsyncioTaskSpawner:
         self._tasks: set[asyncio.Task[None]] = set()
 
     def spawn(self, coro: Coroutine[Any, Any, None], *, name: str) -> None:
+        if any(task.get_name() == name and not task.done() for task in self._tasks):
+            # Повтор resume не запускает два исполнителя одного прогона.
+            coro.close()
+            return
         task = asyncio.get_running_loop().create_task(coro, name=name)
         self._tasks.add(task)
         task.add_done_callback(self._finished)

@@ -3,6 +3,7 @@
 import asyncio
 import io
 import zipfile
+from dataclasses import replace
 from uuid import UUID, uuid4
 
 import pytest
@@ -395,3 +396,63 @@ async def test_recovered_run_replays_done_even_with_old_sse_cursor(service_conta
     events = await service_container.runs.events(run.id, after=10_000)
     received = [event async for event in events]
     assert received[-1].kind.value == "done"
+
+
+async def test_shutdown_preserves_version_committed_before_local_state_update(service_container):
+    entered = asyncio.Event()
+    version_id = uuid4()
+
+    async def committed_then_interrupted(run, _started):
+        await service_container.runs._repos.runs.update(
+            replace(run, status=RunStatus.RUNNING, version_id=version_id)
+        )
+        entered.set()
+        await asyncio.Event().wait()
+
+    service_container.runs._run_stages = committed_then_interrupted
+    project_id = await _new_project(service_container)
+    run = await service_container.runs.start(project_id, mode=RunMode.BUILD, created_by=None)
+    await asyncio.wait_for(entered.wait(), 1)
+    await service_container.spawner.shutdown()
+    saved = await service_container.runs.get(run.id)
+    assert saved.version_id == version_id
+    assert saved.status is RunStatus.SUCCEEDED
+    assert saved.progress == 1
+
+
+async def test_resume_never_reexecutes_cancelled_run(service_container):
+    entered = asyncio.Event()
+
+    async def hold(_stage):
+        entered.set()
+        await asyncio.Event().wait()
+
+    service_container.runs._pace = hold
+    project_id = await _new_project(service_container)
+    run = await service_container.runs.start(project_id, mode=RunMode.BUILD, created_by=None)
+    await asyncio.wait_for(entered.wait(), 1)
+    await service_container.runs.cancel(run.id)
+    service_container.runs.resume(run.id)
+    await service_container.spawner.wait_idle()
+    assert (await service_container.runs.get(run.id)).status is RunStatus.CANCELLED
+    assert await service_container.runs._repos.versions.list_by_project(project_id) == []
+
+
+async def test_task_spawner_deduplicates_active_task_names():
+    spawner = AsyncioTaskSpawner()
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    count = 0
+
+    async def work():
+        nonlocal count
+        count += 1
+        entered.set()
+        await release.wait()
+
+    spawner.spawn(work(), name="same-run")
+    await asyncio.wait_for(entered.wait(), 1)
+    spawner.spawn(work(), name="same-run")
+    release.set()
+    await spawner.wait_idle()
+    assert count == 1

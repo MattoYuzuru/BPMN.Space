@@ -4,6 +4,7 @@ import json
 import re
 from collections import deque
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from typing import Any
 from uuid import UUID
 
@@ -148,7 +149,10 @@ async def generate_graph(  # noqa: PLR0912 — адресные repair-пути 
                 )
             validate_graph(graph)
             if semantic_review:
-                semantic_errors = await review_semantics(graph, context, complete)
+                review_context = replace(
+                    context, manual_overrides=policy.dump() if policy else context.manual_overrides
+                )
+                semantic_errors = await review_semantics(graph, review_context, complete)
                 if semantic_errors:
                     raise GraphValidationError(semantic_errors)
             bindings = _bindings(graph)

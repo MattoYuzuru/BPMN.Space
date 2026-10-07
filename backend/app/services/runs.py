@@ -368,7 +368,9 @@ class RunService:
 
     async def _rebuilt_with_answers(self, run: Run) -> bool:
         """Схема уже была, и после неё появился ответ на вопрос — это перестроение."""
-        versions = await self._repos.versions.list_by_project(run.project_id)  # новые — первыми
+        versions = await self._repos.versions.list_by_project(
+            run.project_id, include_xml=False
+        )  # новые — первыми
         created = next((v for v in versions if v.id == run.version_id), None)
         if created is None:
             return False
@@ -469,7 +471,11 @@ class RunService:
         async with self._repos.atomic() as repos:
             await repos.projects.lock(project_id)
             project = await get_project(repos, project_id)
-            versions = await repos.versions.list_by_project(project_id)
+            versions = await repos.versions.list_by_project(project_id, include_xml=False)
+            if versions:
+                latest = await repos.versions.get(versions[0].id)
+                if latest is not None:
+                    versions[0] = latest
             context = build_run_context(
                 project=project,
                 sources=await repos.sources.list_by_project(project_id),

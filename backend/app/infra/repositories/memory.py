@@ -326,9 +326,13 @@ class InMemoryVersionRepository:
         item = self._items.get(version_id)
         return copy.deepcopy(item) if item else None
 
-    async def list_by_project(self, project_id: UUID) -> list[Version]:
+    async def list_by_project(self, project_id: UUID, *, include_xml: bool = True) -> list[Version]:
         items = [v for v in self._items.values() if v.project_id == project_id]
-        return [copy.deepcopy(v) for v in sorted(items, key=lambda v: v.number, reverse=True)]
+        result = [copy.deepcopy(v) for v in sorted(items, key=lambda v: v.number, reverse=True)]
+        if not include_xml:
+            for version in result:
+                version.xml = ""
+        return result
 
     async def latest(self, project_id: UUID) -> Version | None:
         items = await self.list_by_project(project_id)

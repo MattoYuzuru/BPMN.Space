@@ -221,6 +221,7 @@ class RunService:
                     "execution": {
                         "base_version_id": str(head.id) if head else None,
                         "replace_manual": replace_manual,
+                        "source_snapshot_hash": source_snapshot_hash(sources),
                     }
                 },
             )
@@ -234,6 +235,10 @@ class RunService:
         await self._publish_live(run)
         self._spawner.spawn(self._execute(run.id), name=f"run-{run.id}")
         return run
+
+    def resume(self, run_id: UUID) -> None:
+        """Запустить подтверждённую БД работу после старта единственного backend-процесса."""
+        self._spawner.spawn(self._execute(run_id), name=f"run-{run_id}")
 
     async def get(self, run_id: UUID) -> Run:
         return await get_run(self._repos, run_id)
@@ -311,11 +316,9 @@ class RunService:
                     await self._run_stages(run, execution_started)
         except asyncio.CancelledError:
             if run.id not in self._cancel_requested:
-                await self._fail(
-                    run,
-                    "Прогон прерван остановкой сервера",
-                    execution_started=execution_started,
-                )
+                run.status = RunStatus.QUEUED
+                run.error = None
+                await self._repos.runs.update(run)
                 raise
             run.status = RunStatus.CANCELLED
             run.error = "Прогон отменён участником"
@@ -393,12 +396,22 @@ class RunService:
         )
         await self._publish(run, RunEventKind.STAGE, progress)
 
+    def _check_recovered_input(self, run: Run, context: RunContext, execution: dict) -> None:
+        snapshot = execution.get("source_snapshot_hash")
+        if snapshot and snapshot != context.source_snapshot_hash:
+            raise PipelineError(
+                "Источники изменились после запуска; повторите прогон по актуальным данным"
+            )
+        if run.model != getattr(self._pipeline, "model_name", type(self._pipeline).__name__):
+            raise PipelineError("Модель изменилась после запуска; создайте новый прогон")
+
     async def _perform(self, run: Run, stage: RunStage, state: _RunState) -> None:
         match stage:
             case RunStage.READING_SOURCES:
                 state.context = await self._context(run.project_id)
                 execution = (run.ir or {}).get("execution", {})
                 expected = execution.get("base_version_id")
+                self._check_recovered_input(run, state.context, execution)
                 if (
                     run.mode is RunMode.BUILD
                     and str(state.context.base_version_id) != str(expected)
@@ -410,7 +423,7 @@ class RunService:
                 state.context = replace(
                     state.context, replace_manual=bool(execution.get("replace_manual"))
                 )
-                run.warnings = list(state.context.warnings)
+                run.warnings = list(dict.fromkeys([*run.warnings, *state.context.warnings]))
                 await self._repos.runs.update(run)
             case RunStage.EXTRACTING:
                 context = self._require(state)
@@ -448,6 +461,14 @@ class RunService:
                     "manual_overrides": state.draft.manual_overrides,
                     "conflicts": state.draft.conflicts,
                 }
+                if getattr(self._pipeline, "uses_complete_evidence", False):
+                    run.warnings = [
+                        w
+                        for w in run.warnings
+                        if not w.startswith(
+                            ("В контекст модели не поместились", "Из-за лимита контекста модели")
+                        )
+                    ]
                 run.warnings.extend(state.draft.warnings)
                 await self._repos.runs.update(run)
             case RunStage.VALIDATING:

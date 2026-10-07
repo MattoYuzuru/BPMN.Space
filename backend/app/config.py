@@ -82,6 +82,7 @@ class Settings(BaseSettings):
     llm_model: str | None = None
     llm_timeout_sec: float = 120.0
     llm_json_mode: bool = True
+    llm_semantic_review: bool = True
     # Настраивается под ограничения провайдера; незавершённый length-ответ не применяется.
     llm_json_max_tokens: int = Field(default=16384, ge=256, le=131_072)
     # Температура для JSON-ответов (анализ, сборка). Дефолт провайдера (DeepSeek — 1.0)

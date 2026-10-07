@@ -1548,3 +1548,36 @@ async def test_maintenance_command_uses_real_database_and_is_repeatable(
 
         await connection.run_sync(downgrade)
     assert await maintain_versions(restore=True, batch_size=1) == 0
+
+
+async def test_interrupted_runs_recover_twice_then_stop(sql_store):
+    store, sessions = sql_store
+    repos = store.repositories()
+    now = datetime.now(UTC)
+    project = Project(
+        id=uuid4(), title="Восстановление", description=None, created_at=now, updated_at=now
+    )
+    await repos.projects.add(project)
+    run = Run(
+        id=uuid4(),
+        project_id=project.id,
+        mode=RunMode.BUILD,
+        status=RunStatus.RUNNING,
+        started_at=now,
+        ir={"execution": {"source_snapshot_hash": "saved-hash"}},
+    )
+    await repos.runs.add(run)
+    database = Database(os.environ["TEST_DATABASE_URL"])
+    await database.engine.dispose()
+    database.engine = sessions.kw["bind"]
+    database.sessions = sessions
+    database.store = store
+    assert await database.initialize() == [run.id]
+    saved = await repos.runs.get(run.id)
+    assert saved.status is RunStatus.QUEUED
+    assert saved.ir["execution"]["recovery_attempts"] == 1
+    assert await database.initialize() == [run.id]
+    assert await database.initialize() == []
+    saved = await repos.runs.get(run.id)
+    assert saved.status is RunStatus.FAILED
+    assert "лимит" in saved.error

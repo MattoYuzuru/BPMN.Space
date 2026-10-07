@@ -73,7 +73,7 @@ async def test_no_more_than_two_runs_at_once(service_container: Container) -> No
     assert finals == [RunStatus.SUCCEEDED] * 3
 
 
-async def test_cancelled_run_is_failed(service_container: Container) -> None:
+async def test_shutdown_run_remains_queued_for_recovery(service_container: Container) -> None:
     async def forever(_: RunStage) -> None:
         await asyncio.sleep(3600)
 
@@ -82,8 +82,8 @@ async def test_cancelled_run_is_failed(service_container: Container) -> None:
     await asyncio.sleep(0.01)
     await service_container.spawner.shutdown()
     final = await service_container.runs.get(run.id)
-    assert final.status is RunStatus.FAILED
-    assert final.error == "Прогон прерван остановкой сервера"
+    assert final.status is RunStatus.QUEUED
+    assert final.error is None
 
 
 async def test_project_editor_can_cancel_shared_run(service_container: Container) -> None:
@@ -327,3 +327,60 @@ def test_seed_is_deterministic() -> None:
     assert len(with_versions) == 5
     assert len(first.retired_project_ids) == 39
     assert not with_versions.intersection(first.retired_project_ids)
+
+
+async def test_shutdown_then_resume_keeps_run_id_and_creates_one_version(service_container):
+    entered = asyncio.Event()
+
+    async def stop_at_reading(_stage):
+        entered.set()
+        await asyncio.Event().wait()
+
+    service_container.runs._pace = stop_at_reading
+    project_id = await _new_project(service_container)
+    run = await service_container.runs.start(project_id, mode=RunMode.BUILD, created_by=None)
+    await entered.wait()
+    await service_container.spawner.shutdown()
+    assert (await service_container.runs.get(run.id)).status is RunStatus.QUEUED
+
+    async def no_wait(_stage):
+        return None
+
+    service_container.runs._pace = no_wait
+    service_container.runs._events = InMemoryRunEventBus()
+    service_container.runs.resume(run.id)
+    await service_container.spawner.wait_idle()
+    saved = await service_container.runs.get(run.id)
+    assert saved.status is RunStatus.SUCCEEDED
+    versions = await service_container.runs._repos.versions.list_by_project(project_id)
+    assert len(versions) == 1
+    assert versions[0].run_id == run.id
+
+
+async def test_recovery_refuses_changed_sources(service_container):
+    entered = asyncio.Event()
+
+    async def stop(_stage):
+        entered.set()
+        await asyncio.Event().wait()
+
+    project_id = await _new_project(service_container)
+    service_container.runs._pace = stop
+    run = await service_container.runs.start(project_id, mode=RunMode.BUILD, created_by=None)
+    await entered.wait()
+    await service_container.spawner.shutdown()
+    await service_container.sources.create_text(
+        project_id, content="Новый регламент", title=None, kind=SourceKind.TEXT, duration_sec=None
+    )
+
+    async def no_wait(_stage):
+        return None
+
+    service_container.runs._pace = no_wait
+    service_container.runs._events = InMemoryRunEventBus()
+    service_container.runs.resume(run.id)
+    await service_container.spawner.wait_idle()
+    saved = await service_container.runs.get(run.id)
+    assert saved.status is RunStatus.FAILED
+    assert "Источники изменились" in saved.error
+    assert await service_container.runs._repos.versions.list_by_project(project_id) == []

@@ -53,7 +53,7 @@ make db-upgrade   # вручную применить миграции к лок
 make dev-backend  # :8000 с автоперезагрузкой
 make dev-frontend # :5173, /api проксируется на :8000
 make dev-bpmn-tools # :3000; backend: BPMN_TOOLS_URL=http://localhost:3000
-make check-fast   # линт + design-lint + типы (после каждой правки)
+make check-fast   # линт + design-lint + типы (после изменения кода)
 make check        # всё: + тесты (backend cov ≥80%) + контракт + сборка (pre-push)
 make test-bpmn-tools # настоящий Node layout/lint; также входит в make check/verify
 make gen-api      # после изменения API: OpenAPI + TS-типы
@@ -61,7 +61,7 @@ make fixtures     # пересобрать BPMN-фикстуры и examples/ (N
 make e2e          # Playwright против Docker-стека; E2E_BASE_URL задаёт уже запущенный стенд
 make e2e-diagram  # настоящий BPMN canvas: воспроизведение, шлюзы, экспорт, мини-карта; Vite без backend
 make eval-complex # три подробных регламента без платных вызовов; сначала dev-bpmn-tools
-make verify       # перед MR: check + e2e + секреты → reports/verify-<sha>.md
+make verify       # перед MR с кодом: check + e2e + секреты → reports/verify-<sha>.md
 make mr-report    # отчёт verify комментарием в MR
 make deploy-env   # передать production-переменные из локального .env на VM по SSH
 make deploy       # задеплоить commit из main после MR и make verify
@@ -71,7 +71,7 @@ make deploy       # задеплоить commit из main после MR и make 
 
 ## Правила
 
-- **Проверяем всё, а не только «свою» часть.** Pre-push и хук агента гоняют фронтенд, бэкенд и контракт вместе. Сломал соседнюю часть — чини её в том же MR.
+- **Продуктовые изменения проверяем целиком.** Pre-push гоняет фронтенд, бэкенд и контракт вместе для кода/runtime и неизвестного scope. Только документация и агентские хуки проходят точечные проверки по [правилам хуков](scripts/agent-hooks/README.md). Сломал соседнюю часть — чини её в том же MR.
 - Прямой push в `main` запрещён: ветки `feature/*`, `fix/*`, `docs/*`, `chore/*` → Merge Request (`Closes #N`).
 - Изменил API → `make gen-api` и закоммить оба сгенерированных файла, иначе `contract-check` уронит push.
 - Конфигурация — только `backend/app/config.py` и `.env.example`. Секреты — только в `.env`; не печатать их.
@@ -82,9 +82,9 @@ make deploy       # задеплоить commit из main после MR и make 
 
 ## Хуки
 
-- Git (lefthook, ставится при `npm ci`): pre-commit — biome, design-lint, ruff, secretlint по изменённым файлам; pre-push — `make check`.
-- Claude Code (`.claude/settings.json`): после правки файла — его форматирование и линт; перед завершением ответа — `make check-fast`.
-- Другие агенты: после правок запускайте `make check-fast`, перед MR — `make verify`.
+- Git (lefthook, ставится при `npm ci`): pre-commit — biome, design-lint, ruff, secretlint по изменённым файлам; pre-push выбирает точечные проверки документации/agent hooks либо полный `make check` по публикуемому delta.
+- Claude Code (`.claude/settings.json`): после правки файла — его форматирование и линт; перед завершением ответа — `make check-fast` для новых изменений этой сессии, с кешем успешного неизменного кандидата. Чтение и ранее оставленный dirty checkout сами по себе gate не запускают.
+- Другие агенты: после изменения кода запускайте `make check-fast`, перед MR с кодом — `make verify`. Для документации/agent hooks достаточно [точечных проверок](scripts/agent-hooks/README.md).
 
 ## Скиллы (`.claude/skills/`)
 

@@ -1,12 +1,13 @@
 # Git-хуки — замена CI (RFC-0001 §9). Ставятся автоматически при `npm ci` (скрипт prepare).
-# pre-commit — быстро и только по изменённым файлам; pre-push — полная проверка всего репозитория.
+# pre-commit — по изменённым файлам; pre-push — полный gate для продукта,
+# точечные проверки для документации и agent hooks (неизвестный scope => полный gate).
 
 pre-commit:
   parallel: true
   commands:
     biome:
       glob: "*.{ts,tsx,js,mjs,json,jsonc,css}"
-      run: npx biome check --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
+      run: ./node_modules/.bin/biome check --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
     design-lint:
       root: "frontend/"
       glob: "*.{ts,tsx,css}"
@@ -16,9 +17,10 @@ pre-commit:
       glob: "*.py"
       run: uv run ruff format --check {staged_files} && uv run ruff check {staged_files}
     secrets:
-      run: npx secretlint --maskSecrets {staged_files}
+      run: ./node_modules/.bin/secretlint --maskSecrets {staged_files}
 
 pre-push:
   commands:
     check:
-      run: make check
+      run: python3 -B scripts/agent-hooks/pre-push-check.py "{1}"
+      use_stdin: true

@@ -18,7 +18,10 @@ describe('SecretInput', () => {
     const { user } = renderUi(<Harness />)
     const input = screen.getByLabelText('API-ключ') as HTMLInputElement
     expect(input).toHaveAttribute('type', 'password')
-    expect(input).toHaveAttribute('autocomplete', 'off')
+    // Подсказываем браузеру и менеджерам паролей не сохранять секрет.
+    expect(input).toHaveAttribute('autocomplete', 'new-password')
+    expect(input).toHaveAttribute('data-1p-ignore')
+    expect(input).toHaveAttribute('data-lpignore', 'true')
     const toggle = screen.getByRole('button', { name: 'Показать секрет' })
     expect(toggle).toHaveAttribute('aria-pressed', 'false')
     await user.click(toggle)

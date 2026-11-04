@@ -12,6 +12,7 @@ describe('CopyField', () => {
     const input = screen.getByLabelText('Токен') as HTMLInputElement
     expect(input).toHaveValue(SECRET)
     expect(input).toHaveAttribute('readonly')
+    expect(input).toHaveAttribute('autocomplete', 'off')
     await user.click(screen.getByRole('button', { name: 'Копировать: токен' }))
     await waitFor(async () => expect(await navigator.clipboard.readText()).toBe(SECRET))
   })
@@ -43,4 +44,17 @@ describe('CopyField', () => {
       screen.getByRole('button', { name: 'Копировать: команда подключения' }),
     ).toBeInTheDocument()
   })
+})
+
+it('onCopied срабатывает только после успешного копирования', async () => {
+  const onCopied = vi.fn()
+  const { user } = renderUi(<CopyField label="Токен" value={SECRET} onCopied={onCopied} />)
+  await user.click(screen.getByRole('button', { name: 'Копировать: токен' }))
+  await waitFor(() => expect(onCopied).toHaveBeenCalledTimes(1))
+})
+
+it('многострочный секрет запрещён типами', () => {
+  // @ts-expect-error: textarea не умеет type="password" и показала бы секрет открытым текстом
+  const invalid = <CopyField label="Секрет" value="x" secret multiline />
+  expect(invalid).toBeDefined()
 })

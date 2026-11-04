@@ -40,6 +40,27 @@ describe('CostMeter', () => {
     expect(screen.getByText(/Неполная оценка/)).toBeInTheDocument()
   })
 
+  it('оценка может превысить бюджет — предупреждение, но не «выше»', () => {
+    render(<CostMeter label="Оценка" estimate={{ min: 8, max: 14 }} budget={10} />)
+    expect(screen.getByText('Может превысить бюджет')).toHaveClass('text-amber-fg')
+    expect(screen.queryByText('Выше бюджета')).toBeNull()
+  })
+
+  it('фактическое превышение и неполная оценка видны одновременно', () => {
+    render(<CostMeter spent={12} budget={10} estimate={{ min: 8, max: 14 }} incomplete />)
+    expect(screen.getByText('Выше бюджета')).toHaveClass('text-danger-fg')
+    expect(screen.getByText('Может превысить бюджет')).toBeInTheDocument()
+    expect(screen.getByText(/Неполная оценка/)).toBeInTheDocument()
+  })
+
+  it('нулевой или отрицательный бюджет — бюджета нет: ни полосы, ни деления', () => {
+    const { rerender } = render(<CostMeter spent={2} budget={0} />)
+    expect(screen.queryByTestId('cost-meter-bar')).toBeNull()
+    expect(screen.getByText('$2')).toBeInTheDocument()
+    rerender(<CostMeter spent={2} budget={-5} />)
+    expect(screen.queryByTestId('cost-meter-bar')).toBeNull()
+  })
+
   it('без бюджета — только сумма, без полосы', () => {
     render(<CostMeter label="Потрачено" spent={0.42} />)
     expect(screen.getByText(/\$0,42/)).toBeInTheDocument()

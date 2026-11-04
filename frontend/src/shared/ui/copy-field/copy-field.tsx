@@ -7,7 +7,7 @@ import { IconButton } from '../icon-button/icon-button'
 import { Input } from '../input/input'
 import { Textarea } from '../textarea/textarea'
 
-export interface CopyFieldProps {
+export interface CopyFieldBaseProps {
   /** Значение: адрес, токен, команда подключения. Копируется целиком. */
   value: string
   /** Подпись поля. */
@@ -17,16 +17,21 @@ export interface CopyFieldProps {
   /** Подпись кнопки копирования для скринридера. */
   copyLabel?: string
   hint?: ReactNode
-  /** Многострочное значение — команда или текст запроса. */
-  multiline?: boolean
   minRows?: number
   maxRows?: number
-  /** Секрет: скрыт за кнопкой «показать», но копируется целиком. */
-  secret?: boolean
   /** Иконка слева внутри поля. */
   leadingIcon?: IconName
+  /** Успешно скопировали: клиентский сигнал обучения, аналитика. */
+  onCopied?: () => void
   className?: string
 }
+
+/**
+ * Многострочный секрет не поддерживаем: `textarea` не умеет `type="password"` и показала бы
+ * значение без маски. Сочетание запрещено типами.
+ */
+export type CopyFieldProps = CopyFieldBaseProps &
+  ({ secret: true; multiline?: false } | { secret?: false; multiline?: boolean })
 
 /**
  * Поле только для чтения с копированием: одноразовый секрет, команда подключения, ссылка.
@@ -43,16 +48,20 @@ export function CopyField({
   maxRows = 4,
   secret = false,
   leadingIcon,
+  onCopied,
   className,
 }: CopyFieldProps) {
   const copy = useCopy(copyMessage)
   const [visible, setVisible] = useState(!secret)
+  const copyValue = async () => {
+    if (await copy.copy(value)) onCopied?.()
+  }
   const copyButton = (
     <IconButton
       icon={copy.copied ? 'check' : 'copy'}
       size="sm"
       label={copyLabel}
-      onClick={() => void copy.copy(value)}
+      onClick={() => void copyValue()}
     />
   )
   const revealButton = secret ? (
@@ -73,6 +82,7 @@ export function CopyField({
           minRows={minRows}
           maxRows={maxRows}
           value={value}
+          autoComplete="off"
           spellCheck={false}
           className={cn('font-mono', className)}
           onFocus={(event) => event.currentTarget.select()}
@@ -82,6 +92,9 @@ export function CopyField({
           readOnly
           type={visible ? 'text' : 'password'}
           value={value}
+          autoComplete="off"
+          data-lpignore={secret ? 'true' : undefined}
+          data-1p-ignore={secret ? 'true' : undefined}
           spellCheck={false}
           leadingIcon={leadingIcon}
           className={cn('font-mono', className)}

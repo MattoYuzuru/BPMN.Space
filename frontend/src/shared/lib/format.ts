@@ -96,27 +96,56 @@ export function formatDuration(ms: number): string {
 
 const CURRENCY_SYMBOL: Record<string, string> = { USD: '$', EUR: '€', RUB: '₽' }
 
+/** Суммы меньше этой считаем «меньше минимальной заметной»: «< $0,001», а не «$0». */
+const MONEY_EPSILON = 0.001
+
+function moneyDigits(amount: number): number {
+  if (amount >= 1000) return 0
+  if (amount >= 1) return 2
+  return 3
+}
+
+/** Число без валюты: «1,8», «0,004», «1 234». */
+function moneyAmount(value: number): string {
+  const amount = Math.abs(value)
+  return new Intl.NumberFormat(LOCALE, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: moneyDigits(amount),
+  }).format(amount)
+}
+
+/** Валюта по-русски: знак перед числом («$1,8»), у рубля — после («1,8 ₽»). */
+function withCurrency(amount: string, currency: string): string {
+  const symbol = CURRENCY_SYMBOL[currency]
+  if (!symbol) return `${currency} ${amount}`
+  return currency === 'RUB' ? `${amount}\u00A0${symbol}` : `${symbol}${amount}`
+}
+
 /**
- * Стоимость в валюте прогона: «$1,8», «$2,71», «$0,004». Символ валюты стоит перед числом —
- * так короче в метке шапки и в оценке; незнакомая валюта остаётся кодом.
+ * Стоимость: «$2,71», «-$2,71» — знак перед символом валюты, «1,8 ₽» — у рубля символ после
+ * числа, незнакомая валюта остаётся кодом. Ненулевая сумма меньше $0,001 — «< $0,001»,
+ * чтобы она не превращалась в «$0».
  */
 export function formatMoney(value: number, currency = 'USD'): string {
   const amount = Math.abs(value)
-  const digits = amount > 0 && amount < 1 ? 3 : amount >= 1000 ? 0 : 2
-  const formatted = new Intl.NumberFormat(LOCALE, {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: digits,
-  }).format(value)
-  return `${CURRENCY_SYMBOL[currency] ?? `${currency} `}${formatted}`
+  const sign = value < 0 ? '-' : ''
+  if (amount > 0 && amount < MONEY_EPSILON) {
+    return `${sign}< ${withCurrency(moneyAmount(MONEY_EPSILON), currency)}`
+  }
+  return `${sign}${withCurrency(moneyAmount(value), currency)}`
 }
 
-/** Диапазон стоимости: «$1,8–3,2»; одинаковые границы схлопываются в одно число. */
+/**
+ * Диапазон стоимости: «$1,8–3,2», «1,8–3,2 ₽»; одинаковые границы схлопываются в одно число.
+ * Если нижняя граница меньше минимальной заметной — «< $0,002», без ложного «$0».
+ */
 export function formatMoneyRange(min: number, max: number, currency = 'USD'): string {
   if (min === max) return formatMoney(min, currency)
-  const symbol = CURRENCY_SYMBOL[currency]
-  return symbol
-    ? `${formatMoney(min, currency)}–${formatMoney(max, currency).slice(symbol.length)}`
-    : `${formatMoney(min, currency)}–${formatMoney(max, currency)}`
+  if (min > 0 && min < MONEY_EPSILON) {
+    return max < MONEY_EPSILON ? formatMoney(min, currency) : `< ${formatMoney(max, currency)}`
+  }
+  const sign = min < 0 ? '-' : ''
+  return `${sign}${withCurrency(moneyAmount(min), currency)}–${moneyAmount(max)}`
 }
 
 /** Проценты без десятых: «64 %». */

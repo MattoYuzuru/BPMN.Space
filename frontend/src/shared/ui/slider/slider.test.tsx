@@ -40,8 +40,23 @@ describe('Slider', () => {
     await waitFor(() => expect(slider).toHaveAttribute('aria-valuenow', '0'))
   })
 
-  it('выключенный бегунок недоступен', () => {
-    renderUi(<Slider label="Плеер" value={10} disabled />)
-    expect(screen.getByRole('slider', { name: 'Плеер' })).toHaveAttribute('data-disabled')
+  it('выключенный бегунок не меняет значение и не встаёт в Tab', async () => {
+    const onChange = vi.fn()
+    const { user } = renderUi(
+      <div>
+        <button type="button">До</button>
+        <Slider label="Плеер" value={10} disabled onValueChange={onChange} />
+        <button type="button">После</button>
+      </div>,
+    )
+    const slider = screen.getByRole('slider', { name: 'Плеер' })
+    expect(slider).toHaveAttribute('data-disabled')
+    expect(slider).not.toHaveAttribute('tabindex', '0')
+    screen.getByRole('button', { name: 'До' }).focus()
+    await user.tab()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'После' }))
+    ;(slider as HTMLElement).focus()
+    await user.keyboard('{ArrowRight}')
+    expect(onChange).not.toHaveBeenCalled()
   })
 })

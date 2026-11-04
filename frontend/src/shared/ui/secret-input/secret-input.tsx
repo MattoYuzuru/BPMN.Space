@@ -12,8 +12,10 @@ export interface SecretInputProps extends Omit<InputProps, 'type' | 'trailing'> 
 }
 
 /**
- * Поле секрета: ключ API и токен. Скрыто по умолчанию, глаз показывает; браузер и менеджер
- * паролей значение не запоминают. Секрет не попадает в DOM в открытом виде, пока его не покажут.
+ * Поле секрета: ключ API и токен. Скрыто по умолчанию, глаз показывает. Браузеру и менеджерам
+ * паролей подсказываем не запоминать значение (`autocomplete="new-password"`, `data-1p-ignore`,
+ * `data-lpignore`), но стопроцентной гарантии у веб-страницы нет — ключ не попадает в DOM
+ * открытым текстом, пока его не покажут, и не уходит в заголовок вкладки или логи.
  */
 export function SecretInput({
   revealLabel = 'Показать секрет',
@@ -27,9 +29,11 @@ export function SecretInput({
     <Input
       {...props}
       type={visible ? 'text' : 'password'}
-      autoComplete="off"
+      autoComplete="new-password"
       autoCapitalize="none"
       spellCheck={false}
+      data-1p-ignore
+      data-lpignore="true"
       leadingIcon={leadingIcon}
       trailing={
         <IconButton

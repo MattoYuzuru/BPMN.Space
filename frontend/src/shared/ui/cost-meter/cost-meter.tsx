@@ -45,17 +45,17 @@ export function CostMeter({
 }: CostMeterProps) {
   const spentValue = spent ?? null
   const estimateValue = estimate ?? null
-  const budgetValue = budget ?? null
+  // Нулевой и отрицательный бюджет — «бюджет не задан»: делить на него нельзя.
+  const budgetValue = budget !== null && budget !== undefined && budget > 0 ? budget : null
+  const spentOver = budgetValue !== null && spentValue !== null && spentValue > budgetValue
+  const estimateOver =
+    budgetValue !== null && estimateValue !== null && estimateValue.max > budgetValue
   const main =
     spentValue !== null
       ? formatMoney(spentValue, currency)
       : estimateValue
         ? `≈ ${formatMoneyRange(estimateValue.min, estimateValue.max, currency)}`
         : null
-  const overBudget =
-    budgetValue !== null &&
-    ((spentValue !== null && spentValue > budgetValue) ||
-      (spentValue === null && estimateValue !== null && estimateValue.max > budgetValue))
   const estimateBand =
     budgetValue !== null && estimateValue !== null
       ? {
@@ -65,6 +65,11 @@ export function CostMeter({
       : null
   const spentWidth =
     budgetValue !== null && spentValue !== null ? clamp((spentValue / budgetValue) * 100) : 0
+  const remaining =
+    budgetValue !== null && spentValue !== null && !spentOver
+      ? Math.max(budgetValue - spentValue, 0)
+      : null
+  const hasNotes = spentOver || estimateOver || incomplete || remaining !== null
 
   return (
     // biome-ignore lint/a11y/useSemanticElements: смысловая группа без формы — fieldset тут не подходит
@@ -84,7 +89,8 @@ export function CostMeter({
             <span
               className={cn(
                 'text-fg',
-                overBudget && 'text-danger-fg',
+                spentOver && 'text-danger-fg',
+                estimateOver && !spentOver && 'text-amber-fg',
                 size === 'sm' ? 'type-ui' : 'type-ui font-medium',
               )}
               data-numeric
@@ -119,7 +125,7 @@ export function CostMeter({
               data-part="spent"
               className={cn(
                 'absolute inset-y-0 left-0 rounded-full',
-                overBudget ? 'bg-danger' : 'bg-accent',
+                spentOver ? 'bg-danger' : 'bg-accent',
               )}
               style={{ width: percent(spentWidth) }}
             />
@@ -127,25 +133,30 @@ export function CostMeter({
         </div>
       )}
 
-      {(overBudget || incomplete || (spentValue !== null && budgetValue !== null)) && (
-        <div className="min-h-4">
-          {overBudget ? (
+      {hasNotes && (
+        <div className="flex min-h-4 flex-col gap-0.5">
+          {spentOver && (
             <p className="flex items-center gap-1 type-caption text-danger-fg">
               <Icon name="alert-triangle" size={14} />
               Выше бюджета
             </p>
-          ) : incomplete ? (
+          )}
+          {estimateOver && (
+            <p className="flex items-center gap-1 type-caption text-amber-fg">
+              <Icon name="alert-triangle" size={14} />
+              Может превысить бюджет
+            </p>
+          )}
+          {incomplete && (
             <p className="flex items-center gap-1 type-caption text-amber-fg">
               <Icon name="alert-triangle" size={14} />
               Неполная оценка: не у всех шагов известны цены
             </p>
-          ) : (
-            spentValue !== null &&
-            budgetValue !== null && (
-              <p className="type-caption text-fg-subtle" data-numeric>
-                Осталось {formatMoney(Math.max(budgetValue - spentValue, 0), currency)}
-              </p>
-            )
+          )}
+          {remaining !== null && (
+            <p className="type-caption text-fg-subtle" data-numeric>
+              Осталось {formatMoney(remaining, currency)}
+            </p>
           )}
         </div>
       )}

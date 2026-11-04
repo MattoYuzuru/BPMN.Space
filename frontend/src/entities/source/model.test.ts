@@ -1,11 +1,16 @@
 import {
+  buildSourceTree,
+  derivationLabel,
+  descendantIds,
   findQuoteRanges,
   isAcceptedFile,
   limitParts,
   quoteReferences,
   type Source,
+  sourceKindOf,
   sourceMeta,
   splitByRanges,
+  splitTimecodes,
 } from './model'
 
 const text =
@@ -98,5 +103,64 @@ describe('поддерживаемые форматы и показ длинно
     expect(visible[1]?.range?.ref).toBe('q1')
     expect(limitParts(parts, 10).map((part) => part.text.length)).toEqual([10])
     expect(limitParts(parts, 1000).map((part) => part.text.length)).toEqual([40, 20, 40])
+  })
+})
+
+describe('дерево материалов', () => {
+  const node = (id: string, extra: Partial<Source> = {}): Source => ({
+    id,
+    project_id: 'p',
+    kind: 'text',
+    title: id,
+    content: '',
+    status: 'ready',
+    active: true,
+    created_at: '2026-11-04T10:00:00Z',
+    origin: 'user',
+    trust: 'primary',
+    edited_by_human: false,
+    ...extra,
+  })
+
+  it('вкладывает производные в родителя, сироту делает корнем', () => {
+    const tree = buildSourceTree([
+      node('rec', { kind: 'file', file_name: 'a.mp3' }),
+      node('tr', { parent_id: 'rec', origin: 'derived' }),
+      node('lost', { parent_id: 'deleted', origin: 'derived' }),
+      node('txt'),
+    ])
+    expect(tree.map((item) => item.source.id)).toEqual(['rec', 'lost', 'txt'])
+    expect(tree[0]?.children.map((item) => item.source.id)).toEqual(['tr'])
+  })
+
+  it('подписывает запись, расшифровку и провайдера', () => {
+    expect(sourceKindOf(node('a', { kind: 'file', file_name: 'a.mp3' })).label).toBe('Аудиозапись')
+    expect(sourceKindOf(node('v', { kind: 'file', file_name: 'v.mov' })).label).toBe('Видеозапись')
+    const derived = node('t', {
+      origin: 'derived',
+      derivation: {
+        capability: 'speech_to_text',
+        provider: 'mock',
+        created_at: '2026-11-04T10:00:00Z',
+      },
+    })
+    expect(sourceKindOf(derived).label).toBe('Расшифровка')
+    expect(derivationLabel(derived)).toBe('Демо-распознавание')
+    expect(derivationLabel(node('u'))).toBeUndefined()
+  })
+
+  it('выделяет таймкоды, не теряя текста', () => {
+    const text = '[00:00] Начало.\n[1:02:03] Конец.'
+    const parts = splitTimecodes(text)
+    expect(parts.join('')).toBe(text)
+    expect(parts.filter((_, index) => index % 2 === 1)).toEqual(['[00:00]', '[1:02:03]'])
+  })
+
+  it('находит детей и внуков без самого корня', () => {
+    const ids = descendantIds(
+      [node('r'), node('a', { parent_id: 'r' }), node('b', { parent_id: 'a' }), node('x')],
+      'r',
+    )
+    expect([...ids]).toEqual(['a', 'b'])
   })
 })

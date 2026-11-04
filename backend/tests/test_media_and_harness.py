@@ -567,7 +567,9 @@ async def test_ffprobe_output_is_parsed(monkeypatch: pytest.MonkeyPatch, tmp_pat
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
     runner = FfmpegRunner(ffmpeg="ffmpeg", ffprobe="ffprobe", timeout_sec=5)
-    assert await runner.probe(tmp_path / "a.mp4") == MediaProbe(duration_sec=12.5, has_audio=True)
+    assert await runner.probe(tmp_path / "a.mp4") == MediaProbe(
+        duration_sec=12.5, has_audio=True, has_video=True
+    )
 
 
 @pytest.mark.skipif(
@@ -626,14 +628,16 @@ def test_media_upload_runs_in_background_and_streams_to_storage(settings: Settin
         )
         assert response.status_code == 201
         assert response.json()["status"] == "processing"
-        source = next(
-            s
-            for s in client.get(f"{API}/projects/{project_id}").json()["sources"]
-            if s["file_name"] == "встреча.mp4"
-        )
+        sources = client.get(f"{API}/projects/{project_id}").json()["sources"]
+        source = next(s for s in sources if s["file_name"] == "встреча.mp4")
+        # Запись — исходный файл без текста; текст лежит в производной расшифровке (RFC-0006).
         assert source["status"] == "ready"
-        assert source["content"]
-        assert source["duration_sec"] is None or source["duration_sec"] > 0
+        assert source["content"] == ""
+        assert source["origin"] == "user" and source["parent_id"] is None
+        transcript = next(s for s in sources if s["parent_id"] == source["id"])
+        assert transcript["status"] == "ready"
+        assert transcript["content"]
+        assert transcript["duration_sec"] is None or transcript["duration_sec"] > 0
 
 
 def test_media_upload_limit_is_separate_from_document_limit(settings: Settings) -> None:

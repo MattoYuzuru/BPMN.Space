@@ -4,6 +4,8 @@ import type { IconName } from '@/shared/ui'
 
 export type Source = Schemas['Source']
 export type SourceKind = Schemas['SourceKind']
+export type SourceOrigin = Schemas['SourceOrigin']
+export type SourceTrust = Schemas['SourceTrust']
 export type Quote = Schemas['Quote']
 export type Sample = Schemas['Sample']
 export type SampleKind = Schemas['SampleKind']
@@ -42,10 +44,79 @@ export function isAcceptedFile(name: string): boolean {
 
 /** Короткая метаинформация справа в строке источника: длительность, размер или объём текста. */
 export function sourceMeta(source: Source): string {
-  if (source.kind === 'voice' && source.duration_sec) return formatClock(source.duration_sec)
-  if (source.kind === 'file' && source.duration_sec) return formatClock(source.duration_sec)
+  if (source.duration_sec && source.kind !== 'text' && source.kind !== 'answer')
+    return formatClock(source.duration_sec)
   if (source.kind === 'file' && source.size_bytes) return formatBytes(source.size_bytes)
   return formatCount(source.content.length, ['знак', 'знака', 'знаков'])
+}
+
+export function isMediaFile(name?: string | null): boolean {
+  const lower = (name ?? '').toLowerCase()
+  return MEDIA_FILES.some((ext) => lower.endsWith(ext))
+}
+
+/** Производный узел дерева: получен сервером из исходного файла (RFC-0006), метка «ИИ». */
+export function isDerived(source: Source): boolean {
+  return source.origin === 'derived'
+}
+
+/** Подпись и иконка вида источника; запись отличается от документа, расшифровка — от текста. */
+export function sourceKindOf(source: Source): { label: string; icon: IconName } {
+  const capability = source.derivation?.capability
+  if (capability && CAPABILITY[capability]) return CAPABILITY[capability]
+  if (source.kind === 'file' && isMediaFile(source.file_name)) {
+    return source.media?.has_video || /\.(mp4|mov|mkv)$/i.test(source.file_name ?? '')
+      ? { label: 'Видеозапись', icon: 'video' }
+      : { label: 'Аудиозапись', icon: 'audio' }
+  }
+  return SOURCE_KIND[source.kind]
+}
+
+const CAPABILITY: Record<string, { label: string; icon: IconName }> = {
+  speech_to_text: { label: 'Расшифровка', icon: 'transcript' },
+}
+
+const PROVIDER: Record<string, string> = {
+  deepgram: 'Deepgram',
+  mock: 'Демо-распознавание',
+}
+
+/** Кто получил производный узел: «Deepgram, nova-3». Пусто для исходных материалов. */
+export function derivationLabel(source: Source): string | undefined {
+  const derivation = source.derivation
+  if (!derivation) return undefined
+  const provider = PROVIDER[derivation.provider] ?? derivation.provider
+  return derivation.model ? `${provider}, ${derivation.model}` : provider
+}
+
+export interface SourceNode {
+  source: Source
+  children: SourceNode[]
+}
+
+/**
+ * Дерево материалов по `parent_id`: исходные файлы и вложенные производные узлы.
+ * Порядок — как в списке (по `created_at`); узел без найденного родителя становится корнем.
+ */
+export function buildSourceTree(sources: readonly Source[]): SourceNode[] {
+  const nodes = new Map(
+    sources.map((source) => [source.id, { source, children: [] as SourceNode[] }]),
+  )
+  const roots: SourceNode[] = []
+  for (const node of nodes.values()) {
+    const parent = node.source.parent_id ? nodes.get(node.source.parent_id) : undefined
+    if (parent && parent !== node) parent.children.push(node)
+    else roots.push(node)
+  }
+  return roots
+}
+
+/**
+ * Разбить текст расшифровки по таймкодам `[мм:сс]` (и `[ч:мм:сс]`): нечётные элементы — таймкоды.
+ * Только для показа; цитаты и поиск по тексту работают с исходной строкой.
+ */
+export function splitTimecodes(text: string): string[] {
+  return text.split(/(\[\d{1,3}(?::\d{2}){1,2}\])/)
 }
 
 export interface QuoteRange {
@@ -152,4 +223,19 @@ export function limitParts<T extends { start: number; text: string; range?: Quot
     )
   }
   return visible
+}
+
+/** id всех потомков источника по `parent_id` (дети, внуки…), без самого источника. */
+export function descendantIds(sources: readonly Source[], rootId: string): Set<string> {
+  const found = new Set<string>()
+  let frontier = [rootId]
+  while (frontier.length > 0) {
+    const next = sources
+      .filter((source) => source.parent_id && frontier.includes(source.parent_id))
+      .map((source) => source.id)
+      .filter((id) => id !== rootId && !found.has(id))
+    for (const id of next) found.add(id)
+    frontier = next
+  }
+  return found
 }

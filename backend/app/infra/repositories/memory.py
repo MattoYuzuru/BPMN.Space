@@ -40,6 +40,7 @@ from app.domain.onboarding import (
 )
 from app.domain.questions import normalize
 from app.domain.runs import ACTIVE_STATUSES
+from app.domain.sources import descendants
 from app.infra.repositories.base import PageKey, ProjectStats, Repositories
 
 
@@ -132,7 +133,7 @@ class InMemoryProjectRepository:
                 None,
             )
             result[project_id] = ProjectStats(
-                sources=len(sources),
+                sources=sum(1 for s in sources if s.parent_id is None),
                 has_material=any(s.active and s.status is not SourceStatus.FAILED for s in sources),
                 questions_open=sum(1 for q in questions if q.status is QuestionStatus.OPEN),
                 questions_resolved=sum(1 for q in questions if q.status is QuestionStatus.RESOLVED),
@@ -252,6 +253,9 @@ class InMemorySourceRepository:
             "warning",
             "unreadable_pages",
             "duration_sec",
+            "derivation",
+            "edited_by_human",
+            "media",
         }
         if unknown:
             raise ValueError(f"Поля источника нельзя менять точечно: {sorted(unknown)}")
@@ -259,7 +263,7 @@ class InMemorySourceRepository:
         if stored is None or (only_status is not None and stored.status is not only_status):
             return False
         for name, value in changes.items():
-            setattr(stored, name, value)
+            setattr(stored, name, copy.deepcopy(value))
         return True
 
     async def lock_by_project(self, project_id: UUID) -> list[Source]:
@@ -273,6 +277,9 @@ class InMemorySourceRepository:
         return len(stuck)
 
     async def delete(self, source_id: UUID) -> None:
+        # Как ON DELETE CASCADE в PostgreSQL: вместе с источником удаляются производные.
+        for child in descendants(self._items.values(), source_id):
+            self._items.pop(child.id, None)
         self._items.pop(source_id, None)
 
     async def list_by_project(self, project_id: UUID) -> list[Source]:

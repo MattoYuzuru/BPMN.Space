@@ -15,6 +15,9 @@ const source: Source = {
   content: 'Инженер проверяет заявку. Диспетчер утверждает решение.',
   active: true,
   created_at: '2026-10-01T10:00:00Z',
+  origin: 'user',
+  trust: 'primary',
+  edited_by_human: false,
 }
 const question = {
   id: 'q1',

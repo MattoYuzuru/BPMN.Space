@@ -44,6 +44,9 @@ const created: Source = {
   status: 'processing',
   active: true,
   created_at: '2026-10-04T10:00:00Z',
+  origin: 'user',
+  trust: 'primary',
+  edited_by_human: false,
 }
 
 function setup() {

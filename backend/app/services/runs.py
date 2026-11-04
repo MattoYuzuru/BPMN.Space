@@ -140,8 +140,7 @@ def _source_snapshot(
     return sorted(
         (str(s.id), s.kind.value, s.title, s.content, s.created_at.isoformat())
         for s in sources
-        if not isinstance(s, Source)
-        or (s.active and s.status is SourceStatus.READY and s.content.strip())
+        if not isinstance(s, Source) or s.feeds_model
     )
 
 
@@ -240,13 +239,8 @@ class RunService:
                 if await repos.runs.active_for_project(project_id):
                     raise ConflictError("По проекту уже идёт прогон — дождитесь его завершения")
                 sources = await repos.sources.list_by_project(project_id)
-                usable = [
-                    s
-                    for s in sources
-                    if s.active
-                    and s.status is SourceStatus.READY
-                    and s.kind is not SourceKind.ANSWER
-                ]
+                # Запись без расшифровки текста не даёт: нужен источник, который читает модель.
+                usable = [s for s in sources if s.feeds_model and s.kind is not SourceKind.ANSWER]
                 if not usable:
                     raise ConflictError("Добавьте хотя бы один источник с текстом")
                 head = await repos.versions.latest(project_id)
@@ -691,7 +685,7 @@ class RunService:
                     id=s.id, kind=s.kind, title=s.title, content=s.content, created_at=s.created_at
                 )
                 for s in sources
-                if s.active and s.status is SourceStatus.READY and s.content.strip()
+                if s.feeds_model
             ]
             snapshot = (
                 context.evidence_sources

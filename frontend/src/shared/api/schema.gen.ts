@@ -146,6 +146,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/llm-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Llm Credentials */
+        get: operations["list_llm_credentials"];
+        put?: never;
+        /**
+         * Create Llm Credential
+         * @description Проверяет ключ запросом списка моделей у провайдера и сохраняет его зашифрованным.
+         */
+        post: operations["create_llm_credential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/llm-credentials/{credential_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Llm Credential */
+        delete: operations["delete_llm_credential"];
+        options?: never;
+        head?: never;
+        /** Update Llm Credential */
+        patch: operations["update_llm_credential"];
+        trace?: never;
+    };
+    "/api/v1/me/llm-credentials/{credential_id}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Llm Models */
+        get: operations["list_llm_models"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/onboarding": {
         parameters: {
             query?: never;
@@ -954,6 +1010,11 @@ export interface components {
         /** AssistantRequest */
         AssistantRequest: {
             /**
+             * Credential Id
+             * @description Свой ключ модели; не задан — ключ по умолчанию, затем сервер
+             */
+            credential_id?: string | null;
+            /**
              * Diagram Xml
              * @default
              */
@@ -962,6 +1023,8 @@ export interface components {
             history?: components["schemas"]["AssistantTurn"][];
             /** Message */
             message: string;
+            /** Model */
+            model?: string | null;
         };
         /** AssistantResponse */
         AssistantResponse: {
@@ -1171,8 +1234,110 @@ export interface components {
          * @enum {string}
          */
         LintSeverity: "error" | "warning";
+        /** LlmCredential */
+        LlmCredential: {
+            /**
+             * Base Url
+             * @description Только для совместимого провайдера
+             */
+            base_url: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Default Model */
+            default_model: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Is Default */
+            is_default: boolean;
+            /**
+             * Key Hint
+             * @description Последние 4 символа ключа; пусто у коротких ключей
+             */
+            key_hint: string;
+            /** Label */
+            label: string;
+            /**
+             * Last Error
+             * @description Ошибка последнего использования ключа
+             */
+            last_error: string | null;
+            /** Last Used At */
+            last_used_at: string | null;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "anthropic" | "openai" | "openai_compatible";
+        };
+        /** LlmCredentialCreate */
+        LlmCredentialCreate: {
+            /**
+             * Api Key
+             * Format: password
+             * @description Принимается один раз; сохраняется зашифрованным
+             */
+            api_key: string;
+            /** Base Url */
+            base_url?: string | null;
+            /** Default Model */
+            default_model?: string | null;
+            /**
+             * Is Default
+             * @default false
+             */
+            is_default: boolean;
+            /** Label */
+            label?: string | null;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "anthropic" | "openai" | "openai_compatible";
+        };
+        /** LlmCredentialList */
+        LlmCredentialList: {
+            /** Items */
+            items: components["schemas"]["LlmCredential"][];
+            /**
+             * Storage Available
+             * @description false — на сервере не задан CREDENTIALS_ENCRYPTION_KEY, ключи не принимаются
+             */
+            storage_available: boolean;
+        };
+        /** LlmCredentialUpdate */
+        LlmCredentialUpdate: {
+            /** Default Model */
+            default_model?: string | null;
+            /** Is Default */
+            is_default?: boolean | null;
+            /** Label */
+            label?: string | null;
+        };
+        /** LlmModel */
+        LlmModel: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+        };
+        /** LlmModelList */
+        LlmModelList: {
+            /** Items */
+            items: components["schemas"]["LlmModel"][];
+        };
         /** LocalAssistantRequest */
         LocalAssistantRequest: {
+            /**
+             * Credential Id
+             * @description Свой ключ модели; не задан — ключ по умолчанию, затем сервер
+             */
+            credential_id?: string | null;
             /**
              * Diagram Xml
              * @default
@@ -1182,6 +1347,8 @@ export interface components {
             history?: components["schemas"]["AssistantTurn"][];
             /** Message */
             message: string;
+            /** Model */
+            model?: string | null;
             /** Project Title */
             project_title: string;
             /**
@@ -1487,6 +1654,11 @@ export interface components {
         /** Run */
         Run: {
             /**
+             * Credential Id
+             * @description Ключ пользователя, с которым запущен прогон; null — сервер
+             */
+            credential_id?: string | null;
+            /**
              * Error
              * @description Причина для `status=failed`
              */
@@ -1499,6 +1671,11 @@ export interface components {
              */
             id: string;
             mode: components["schemas"]["RunMode"];
+            /**
+             * Model
+             * @description Модель, на которой выполнен прогон
+             */
+            model?: string | null;
             /** Progress */
             progress: number;
             /**
@@ -1506,6 +1683,11 @@ export interface components {
              * Format: uuid
              */
             project_id: string;
+            /**
+             * Provider
+             * @description Провайдер модели: anthropic, openai, openai_compatible, mock
+             */
+            provider?: string | null;
             /** @description Текущий или последний этап; null — в очереди */
             stage: components["schemas"]["RunStage"] | null;
             /**
@@ -1539,8 +1721,18 @@ export interface components {
              * @description Голова, которую видит инициатор; устаревшая — 409
              */
             base_version_id?: string | null;
+            /**
+             * Credential Id
+             * @description Свой ключ модели; не задан — ключ по умолчанию, затем модель сервера
+             */
+            credential_id?: string | null;
             /** @description `analyze` — только вопросы, `build` — вопросы и схема */
             mode: components["schemas"]["RunMode"];
+            /**
+             * Model
+             * @description Модель; требует `credential_id`
+             */
+            model?: string | null;
             /**
              * Replace Manual
              * @description Осознанно пересобрать из источников вместо manual; требует актуальный base_version_id
@@ -2417,6 +2609,262 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Example"][];
+                };
+            };
+        };
+    };
+    list_llm_credentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmCredentialList"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_llm_credential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LlmCredentialCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmCredential"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Конфликт состояния */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Слишком много запросов; повторите через `Retry-After` секунд */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Сервис или помощник не настроен */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_llm_credential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    update_llm_credential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LlmCredentialUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmCredential"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_llm_models: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmModelList"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Слишком много запросов; повторите через `Retry-After` секунд */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

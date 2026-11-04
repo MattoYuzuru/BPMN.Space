@@ -38,9 +38,9 @@ from app.infra.events import InMemoryRunEventBus
 from app.infra.repositories.memory import InMemoryStore
 from app.infra.tasks import AsyncioTaskSpawner
 from app.llm.base import PipelineError
-from app.llm.openai_compatible import OpenAICompatiblePipeline
 from app.services.common import Runtime
 from app.services.runs import RunService
+from tests.llm_helpers import ScriptedPipeline
 from tests.test_graph_ir import SOURCE_ID, TEXT, graph_case
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -75,7 +75,7 @@ async def test_structural_paraphrase_is_repaired_without_becoming_false_evidence
         ],
         questions=[],
     )
-    draft = await OpenAICompatiblePipeline(api_key="recorded-only", complete=complete).structure(
+    draft = await ScriptedPipeline(api_key="recorded-only", complete=complete).structure(
         context, AnalysisResult()
     )
     assert len(prompts) == 2
@@ -175,7 +175,7 @@ async def test_manual_name_and_geometry_survive_and_conflict_is_visible(node_url
         current_is_manual=True,
         base_generated_xml=base_xml,
     )
-    pipeline = OpenAICompatiblePipeline(
+    pipeline = ScriptedPipeline(
         api_key="test-only", complete=lambda _s, _p: json.dumps(graph_case())
     )
     draft = await pipeline.structure(context, AnalysisResult())
@@ -214,7 +214,7 @@ async def test_explicit_replace_can_leave_opaque_manual_and_default_blocks_it():
         .replace('<bpmn:task id="Check"', '<bpmn:subProcess id="Check"')
         .replace("</bpmn:task>", "</bpmn:subProcess>", 1)
     )
-    pipeline = OpenAICompatiblePipeline(
+    pipeline = ScriptedPipeline(
         api_key="test-only", complete=lambda _s, _p: json.dumps(graph_case())
     )
     context = RunContext(
@@ -264,7 +264,7 @@ async def test_sources_recorded_ir_xml_version_roundtrip_and_audit(node_url):
     def complete(_system, prompt):
         return recorded_reply(prompt, "nested")
 
-    pipeline = OpenAICompatiblePipeline(api_key="test-only", complete=complete)
+    pipeline = ScriptedPipeline(api_key="test-only", complete=complete)
     spawner = AsyncioTaskSpawner()
     runs = RunService(
         repos,
@@ -384,7 +384,7 @@ async def test_changed_knowledge_does_not_publish_old_graph(node_url, change):
     ready = asyncio.Event()
     release = asyncio.Event()
 
-    class PausingPipeline(OpenAICompatiblePipeline):
+    class PausingPipeline(ScriptedPipeline):
         async def structure(self, context, analysis):
             result = await super().structure(context, analysis)
             ready.set()
@@ -487,7 +487,7 @@ async def test_manual_conflict_question_preserves_resolved_summary_and_bindings(
         current_is_manual=True,
         base_generated_xml=base_xml,
     )
-    pipeline = OpenAICompatiblePipeline(
+    pipeline = ScriptedPipeline(
         api_key="test-only", complete=lambda _s, prompt: recorded_reply(prompt)
     )
     draft = await pipeline.structure(context, AnalysisResult())

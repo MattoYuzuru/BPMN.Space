@@ -21,10 +21,10 @@ from app.infra.bpmn_tools import HttpBpmnTools
 from app.infra.events import InMemoryRunEventBus
 from app.infra.repositories.memory import InMemoryStore
 from app.infra.tasks import AsyncioTaskSpawner
-from app.llm.openai_compatible import OpenAICompatiblePipeline
 from app.services.common import Runtime
 from app.services.runs import RunService
 from app.services.versions import add_version
+from tests.llm_helpers import ScriptedPipeline
 from tests.test_graph_ir import SOURCE_ID, TEXT, graph_case
 from tests.test_graph_runtime import node_url, recorded_reply  # noqa: F401 — фикстура Node
 
@@ -51,7 +51,7 @@ async def test_rebuild_protects_only_manual_edit_and_remembers_removal(node_url)
         )
     )
     tools = HttpBpmnTools(node_url)
-    pipeline = OpenAICompatiblePipeline(
+    pipeline = ScriptedPipeline(
         api_key="test-only", complete=lambda _s, prompt: recorded_reply(prompt)
     )
     spawner = AsyncioTaskSpawner()

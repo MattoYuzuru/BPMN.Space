@@ -15,6 +15,7 @@ from typing import Any
 from uuid import UUID
 
 from app.domain.access import ProjectScope
+from app.domain.credentials import LlmCredential
 from app.domain.models import (
     LlmCall,
     Project,
@@ -51,6 +52,7 @@ class InMemoryStore:
     llm_calls: dict[UUID, LlmCall] = field(default_factory=dict[UUID, LlmCall])
     project_owners: dict[UUID, UUID] = field(default_factory=dict[UUID, UUID])
     public_projects: set[UUID] = field(default_factory=set[UUID])
+    llm_credentials: dict[UUID, LlmCredential] = field(default_factory=dict[UUID, LlmCredential])
     onboarding: dict[UUID, UserOnboarding] = field(default_factory=dict[UUID, UserOnboarding])
     onboarding_items: dict[tuple[UUID, ChecklistItem], CompletedItem] = field(
         default_factory=dict[tuple[UUID, ChecklistItem], CompletedItem]
@@ -82,6 +84,7 @@ class InMemoryStore:
             versions=InMemoryVersionRepository(self),
             llm_calls=InMemoryLlmCallRepository(self),
             onboarding=InMemoryOnboardingRepository(self),
+            llm_credentials=InMemoryLlmCredentialRepository(self),
         )
 
 
@@ -394,6 +397,39 @@ class InMemoryLlmCallRepository:
 
     async def add(self, call: LlmCall) -> None:
         self._items[call.id] = copy.deepcopy(call)
+
+
+class InMemoryLlmCredentialRepository:
+    def __init__(self, store: InMemoryStore) -> None:
+        self._items = store.llm_credentials
+
+    async def list_by_user(self, user_id: UUID) -> list[LlmCredential]:
+        own = [item for item in self._items.values() if item.user_id == user_id]
+        own.sort(key=lambda item: (not item.is_default, item.created_at, str(item.id)))
+        return [copy.deepcopy(item) for item in own]
+
+    async def get(self, credential_id: UUID) -> LlmCredential | None:
+        item = self._items.get(credential_id)
+        return copy.deepcopy(item) if item else None
+
+    async def count(self, user_id: UUID) -> int:
+        return sum(1 for item in self._items.values() if item.user_id == user_id)
+
+    async def save(self, credential: LlmCredential) -> None:
+        if credential.is_default:
+            for item in self._items.values():
+                if item.user_id == credential.user_id and item.id != credential.id:
+                    item.is_default = False
+        self._items[credential.id] = copy.deepcopy(credential)
+
+    async def delete(self, credential_id: UUID) -> bool:
+        return self._items.pop(credential_id, None) is not None
+
+    async def mark_used(self, credential_id: UUID, at: datetime, error: str | None) -> None:
+        item = self._items.get(credential_id)
+        if item is not None:
+            item.last_used_at = at
+            item.last_error = error[:500] if error else None
 
 
 class InMemoryOnboardingRepository:

@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from app.domain.access import ProjectMember, ProjectRole, ProjectScope, ResourceKind, ShareLink
+from app.domain.credentials import LlmCredential
 from app.domain.models import (
     LlmCall,
     Project,
@@ -296,6 +297,23 @@ class OnboardingRepository(Protocol):
         ...
 
 
+class LlmCredentialRepository(Protocol):
+    async def list_by_user(self, user_id: UUID) -> list[LlmCredential]:
+        """Ключи пользователя: по умолчанию первым, затем по времени создания."""
+        ...
+
+    async def get(self, credential_id: UUID) -> LlmCredential | None: ...
+    async def count(self, user_id: UUID) -> int: ...
+    async def save(self, credential: LlmCredential) -> None:
+        """Создаёт или обновляет; `is_default=True` снимает флаг с остальных ключей владельца."""
+        ...
+
+    async def delete(self, credential_id: UUID) -> bool: ...
+    async def mark_used(self, credential_id: UUID, at: datetime, error: str | None) -> None:
+        """Время последнего использования и текст последней ошибки (`None` — успех)."""
+        ...
+
+
 @dataclass(frozen=True, slots=True)
 class Repositories:
     projects: ProjectRepository
@@ -308,6 +326,8 @@ class Repositories:
     access: AccessRepository | None = None
     # None, если хранилище не умеет онбординг; обе реализации (SQL и in-memory) его дают.
     onboarding: OnboardingRepository | None = None
+    # None, если хранилище не умеет ключи моделей; SQL и in-memory его дают.
+    llm_credentials: LlmCredentialRepository | None = None
     # Открывает транзакцию PostgreSQL; None — репозитории и так атомарны (in-memory).
     transaction: Callable[[], AbstractAsyncContextManager["Repositories"]] | None = None
 

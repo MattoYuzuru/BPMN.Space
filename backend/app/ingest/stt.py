@@ -15,6 +15,7 @@ import asyncio
 import hashlib
 from dataclasses import dataclass
 from typing import Protocol
+from uuid import UUID
 
 _OPUS_BYTES_PER_SECOND = 4000  # ~32 кбит/с — типичный битрейт записи MediaRecorder
 _MAX_ESTIMATE_SEC = 3600.0
@@ -40,6 +41,7 @@ class Transcript:
     provider: str | None = None  # кто ответил: `deepgram`, `openai`, `groq`, `mock`…
     model: str | None = None  # модель провайдера, если известна
     cost_usd: float | None = None  # None — провайдер стоимость не сообщает
+    credential_id: UUID | None = None  # ключ пользователя, которым оплачен вызов
 
 
 class NoSpeechError(Exception):

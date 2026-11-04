@@ -21,6 +21,7 @@ def derivation_to_json(value: SourceDerivation | None) -> dict[str, Any] | None:
         "model": value.model,
         "params": dict(value.params),
         "cost_usd": value.cost_usd,
+        "credential_id": str(value.credential_id) if value.credential_id else None,
         "created_at": value.created_at.isoformat(),
     }
 
@@ -34,6 +35,9 @@ def derivation_from_json(value: dict[str, Any] | None) -> SourceDerivation | Non
         model=value.get("model"),
         params=dict(value.get("params") or {}),
         cost_usd=value.get("cost_usd"),
+        credential_id=UUID(credential_id)
+        if (credential_id := value.get("credential_id"))
+        else None,
         created_at=datetime.fromisoformat(value["created_at"]),
     )
 

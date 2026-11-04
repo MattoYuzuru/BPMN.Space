@@ -192,6 +192,9 @@ class SourceDerivation:
     model: str | None = None
     params: dict[str, Any] = field(default_factory=dict[str, Any])
     cost_usd: float | None = None  # None — стоимость неизвестна
+    # Ключ пользователя, которым оплачен вызов (`None` — серверный провайдер). Нужен, чтобы
+    # учитывать минуты/запросы по плательщику, когда появится расход по ключам.
+    credential_id: UUID | None = None
 
 
 @dataclass(slots=True, kw_only=True)

@@ -57,6 +57,11 @@ class DeepgramSttAdapter:
             raise CapabilityError(
                 ErrorClass.TRANSIENT, "Deepgram временно недоступен: повторите позже"
             ) from None
+        except ValueError as error:
+            raise CapabilityError(
+                ErrorClass.UNSUPPORTED,
+                f"Адрес провайдера отклонён проверкой безопасности: {error}",
+            ) from None
         if response.status_code >= HTTP_ERROR_STATUS:
             raise await provider_error(response, provider_label=_PROVIDER_LABEL)
         return "Ключ Deepgram действует"
@@ -79,6 +84,11 @@ class DeepgramSttAdapter:
         except (httpx.TimeoutException, httpx.TransportError):
             raise CapabilityError(
                 ErrorClass.TRANSIENT, "Deepgram временно недоступен: повторите позже"
+            ) from None
+        except ValueError as error:
+            raise CapabilityError(
+                ErrorClass.UNSUPPORTED,
+                f"Адрес провайдера отклонён проверкой безопасности: {error}",
             ) from None
         if response.status_code >= HTTP_ERROR_STATUS:
             raise await provider_error(response, provider_label=_PROVIDER_LABEL)
@@ -108,6 +118,7 @@ class DeepgramSttAdapter:
             utterances=_utterances(result),
             provider=self.provider,
             model=self.model,
+            credential_id=self.credential_id,
         )
 
 

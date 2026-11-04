@@ -20,6 +20,13 @@ class SourceDerivation(ApiModel):
         default_factory=dict[str, Any], description="Параметры обработки (сегменты, язык…)"
     )
     cost_usd: float | None = Field(default=None, description="Стоимость, если провайдер её сообщил")
+    credential_id: UUID | None = Field(
+        default=None,
+        description=(
+            "Ключ пользователя, которым оплачен вызов; null — серверный провайдер. "
+            "Нужен для учёта расхода по плательщику"
+        ),
+    )
     created_at: datetime
 
 

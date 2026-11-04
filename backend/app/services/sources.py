@@ -409,6 +409,7 @@ class SourceService:
                 transcript.derivation,
                 provider=job.provider or transcript.derivation.provider,
                 model=job.model or transcript.derivation.model,
+                credential_id=job.credential_id or transcript.derivation.credential_id,
                 cost_usd=job.cost_usd
                 if job.cost_usd is not None
                 else transcript.derivation.cost_usd,
@@ -446,6 +447,7 @@ class SourceService:
         return replace(
             transcript.derivation,
             provider=routing.provider or transcript.derivation.provider,
+            credential_id=routing.credential_id or transcript.derivation.credential_id,
             params={**transcript.derivation.params, "routing": routing.to_json()},
         )
 

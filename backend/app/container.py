@@ -134,6 +134,7 @@ def build_media_transcriber(settings: Settings, stt: SpeechToText) -> MediaTrans
         timeout_per_audio_sec=settings.stt_segment_timeout_per_audio_sec,
         max_concurrent_jobs=settings.media_max_concurrent_jobs,
         raw_fallback=settings.stt_provider.lower() == "mock",
+        routing_deadline_sec=settings.capability_run_deadline_sec,
         provider=settings.stt_provider.lower(),
         model=DEEPGRAM_MODEL if settings.stt_provider.lower() == "deepgram" else None,
     )
@@ -276,6 +277,8 @@ def build_container(
             breaker_threshold=settings.capability_breaker_threshold,
             breaker_cooldown_sec=settings.capability_breaker_cooldown_sec,
             quota_cooldown_sec=settings.capability_quota_cooldown_sec,
+            request_timeout_sec=settings.capability_request_timeout_sec,
+            run_deadline_sec=settings.capability_run_deadline_sec,
         ),
         allowed_private_hosts=tuple(settings.llm_allowed_private_hosts),
         transport=adapter_transport,

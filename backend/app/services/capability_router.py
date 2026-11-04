@@ -34,7 +34,7 @@ from app.domain.credentials import Credential
 from app.infra.crypto import CredentialCipher, CredentialCipherError
 from app.infra.repositories.base import Repositories
 from app.ingest.adapters import AdapterContext, AdapterRegistry
-from app.ingest.stt import SpeechToText, Transcript
+from app.ingest.stt import NoSpeechError, SpeechToText, Transcript
 from app.services.common import Runtime
 
 logger = logging.getLogger(__name__)
@@ -53,6 +53,11 @@ class RoutingPolicy:
     breaker_threshold: int = 3
     breaker_cooldown_sec: float = 60.0
     quota_cooldown_sec: float = 3600.0
+    # Один вызов адаптера (запрос к провайдеру) не дольше этого: иначе внешний дедлайн
+    # обработки записи оборвёт маршрутизатор до перехода к следующему ключу/серверу.
+    request_timeout_sec: float = 120.0
+    # Бюджет на весь перебор ключей и запасной путь; больше — отказ `transient`.
+    run_deadline_sec: float = 600.0
 
 
 @dataclass(slots=True)
@@ -146,10 +151,18 @@ class CapabilityRouter:
         """
         attempts = 0
         fatal = False
+        started = self._monotonic()
         last_error: CapabilityError | None = None
         last_credential: Credential | None = None
         fallback_error: CapabilityError | None = None
         for credential in await self._candidates(user_id, capability, self._rt.clock()):
+            remaining = self._remaining(started)
+            if remaining is not None and remaining <= 0:
+                last_error = CapabilityError(
+                    ErrorClass.TRANSIENT, "Перебор ключей занял слишком много времени"
+                )
+                last_credential = credential
+                break
             if self._breaker_open(credential.id):
                 # Предохранитель разомкнут: ключ временно не трогаем, но причину показываем.
                 last_error = CapabilityError(
@@ -158,7 +171,12 @@ class CapabilityRouter:
                 )
                 last_credential = credential
                 continue
-            tried = await self._attempt(credential, capability, invoke)
+            tried = await self._attempt(
+                credential,
+                capability,
+                invoke,
+                timeout_sec=self._call_timeout(remaining),
+            )
             attempts += tried.attempts
             if tried.found:
                 return cast(T, tried.value)
@@ -167,14 +185,22 @@ class CapabilityRouter:
                 fatal = True
                 break
         if fallback is not None and not fatal:
-            try:
-                value, used = await self._with_retries(fallback)
-            except CapabilityError as error:
-                attempts += error.attempts
-                fallback_error = error
+            remaining = self._remaining(started)
+            if remaining is not None and remaining <= 0:
+                fallback_error = CapabilityError(
+                    ErrorClass.TRANSIENT, "Обработка заняла слишком много времени"
+                )
             else:
-                attempts += used
-                return value
+                try:
+                    value, used = await self._with_retries(
+                        fallback, timeout_sec=self._call_timeout(remaining)
+                    )
+                except CapabilityError as error:
+                    attempts += error.attempts
+                    fallback_error = error
+                else:
+                    attempts += used
+                    return value
         done, remaining = progress() if progress is not None else (None, None)
         outcome = CapabilityOutcome(
             capability=capability,
@@ -185,6 +211,7 @@ class CapabilityRouter:
             alternatives=self._alternatives(capability, await self._all_credentials(user_id)),
             attempts=attempts,
             message=self._failure_message(capability, last_error, last_credential, fallback_error),
+            credential_id=last_credential.id if last_credential is not None else None,
         )
         raise CapabilityUnavailableError(outcome)
 
@@ -193,6 +220,8 @@ class CapabilityRouter:
         credential: Credential,
         capability: Capability,
         invoke: Callable[[Any], Awaitable[T]],
+        *,
+        timeout_sec: float | None,
     ) -> "_CredentialAttempt":
         """Один ключ: расшифровка, адаптер, повторы и пометка отказа по классу."""
         try:
@@ -220,8 +249,14 @@ class CapabilityRouter:
         except CapabilityError as error:
             await self._record_failure(credential, error)
             return _CredentialAttempt(error=error, fatal=error.error_class is ErrorClass.FATAL)
+        except Exception:
+            # Непредвиденная ошибка подготовки адаптера: причина одна, повтор бесполезен.
+            logger.exception("Не удалось подготовить адаптер возможности %s", capability.value)
+            failure = CapabilityError(ErrorClass.FATAL, "Не удалось подготовить адаптер провайдера")
+            await self._record_failure(credential, failure)
+            return _CredentialAttempt(error=failure, fatal=True)
         try:
-            value, used = await self._with_retries(lambda: invoke(adapter))
+            value, used = await self._with_retries(lambda: invoke(adapter), timeout_sec=timeout_sec)
         except CapabilityError as error:
             await self._record_failure(credential, error)
             return _CredentialAttempt(
@@ -274,13 +309,21 @@ class CapabilityRouter:
             if alternative in available
         )
 
-    async def _with_retries(self, call: Callable[[], Awaitable[T]]) -> tuple[T, int]:
-        """Вызов с повторами временных сбоев; возвращает результат и число попыток."""
+    async def _with_retries(
+        self, call: Callable[[], Awaitable[T]], *, timeout_sec: float | None = None
+    ) -> tuple[T, int]:
+        """Вызов с повторами временных сбоев; возвращает результат и число попыток.
+
+        `timeout_sec` ограничивает **один** вызов адаптера, а не весь перебор ключей: так
+        медленный ключ не обрывает маршрутизацию до перехода к следующему ключу или серверу.
+        """
         attempts = 0
         while True:
             attempts += 1
             try:
-                return await call(), attempts
+                if timeout_sec is None:
+                    return await call(), attempts
+                return await asyncio.wait_for(call(), timeout=timeout_sec), attempts
             except CapabilityError as error:
                 error.attempts = attempts
                 if error.error_class is not ErrorClass.TRANSIENT or attempts >= max(
@@ -296,6 +339,15 @@ class CapabilityRouter:
                 if attempts >= max(self._policy.max_attempts, 1):
                     raise error from None
                 await self._pause(attempts, None)
+            except NoSpeechError:
+                raise
+            except Exception:
+                # Непредвиденная ошибка адаптера не должна уходить как 500 и терять отказ:
+                # помечаем её фатальной, чтобы ключ получил `last_error_code`.
+                logger.exception("Адаптер возможности вернул непредвиденную ошибку")
+                raise CapabilityError(
+                    ErrorClass.FATAL, "Провайдер вернул непредвиденную ошибку"
+                ) from None
 
     async def _pause(self, attempt: int, retry_after_sec: float | None) -> None:
         """Экспоненциальная пауза с джиттером; `Retry-After` провайдера учитывается."""
@@ -309,6 +361,18 @@ class CapabilityRouter:
             delay += self._random() * delay * 0.25
         if delay > 0:
             await self._sleep(delay)
+
+    def _remaining(self, started: float) -> float | None:
+        """Сколько секунд осталось на перебор ключей; `None` — бюджет не задан."""
+        if self._policy.run_deadline_sec <= 0:
+            return None
+        return max(self._policy.run_deadline_sec - (self._monotonic() - started), 0.0)
+
+    def _call_timeout(self, remaining: float | None) -> float:
+        """Таймаут одного вызова адаптера: запрос провайдера и не больше остатка бюджета."""
+        if remaining is None:
+            return self._policy.request_timeout_sec
+        return max(min(self._policy.request_timeout_sec, remaining), 0.1)
 
     def _breaker_open(self, credential_id: UUID) -> bool:
         state = self._breakers.get(credential_id)

@@ -7,6 +7,7 @@
 
 import asyncio
 from collections.abc import Iterator
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -108,7 +109,8 @@ class _FakeAdapter:
         if isinstance(action, BaseException):
             raise action
         if isinstance(action, Transcript):
-            return action
+            # Адаптер всегда сообщает, чьим ключом оплачен вызов.
+            return replace(action, credential_id=action.credential_id or self.credential_id)
         return Transcript(text=f"речь {index}", duration_sec=600, provider="fake", model="fake-1")
 
     async def aclose(self) -> None:
@@ -215,7 +217,7 @@ class _Harness:
         return self
 
     async def _add_stt_credential(self) -> Credential:
-        credential = Credential(
+        credential = self.credential = Credential(
             id=uuid4(),
             user_id=self.user_id,
             provider="fake",
@@ -287,6 +289,8 @@ async def test_media_uses_initiator_key_and_writes_derivation_cost() -> None:
     assert derivation is not None
     assert derivation.capability == SPEECH_TO_TEXT
     assert derivation.provider == "fake"
+    # Кто платил: ключ инициатора записан в производную для учёта по плательщику.
+    assert derivation.credential_id == harness.credential.id
     assert derivation.model == "m"  # модель адаптера, а не статичная серверная
     assert derivation.cost_usd is None  # провайдер цену не сообщил
     assert derivation.params["minutes"] == 20.0

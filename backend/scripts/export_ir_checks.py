@@ -14,9 +14,27 @@ from app.domain.analysis import AnalysisResult, ContextSource, RunContext
 from app.domain.bpmn.xsd import require_valid_bpmn
 from app.domain.models import SourceKind
 from app.infra.bpmn_tools import HttpBpmnTools
-from app.llm.openai_compatible import OpenAICompatiblePipeline
+from app.llm.client import ModelInfo
+from app.llm.pipeline import LlmPipeline
 
 FIXTURES = Path(__file__).resolve().parents[1] / "app" / "fixtures" / "ir"
+
+
+class RecordedClient:
+    """Клиент без сети: на любой запрос отвечает записанным JSON."""
+
+    def __init__(self, recorded: str) -> None:
+        self._recorded = recorded
+
+    async def complete(self, system: str, user: str, *, json_mode: bool, max_tokens: int) -> str:
+        del system, user, json_mode, max_tokens  # сигнатура протокола `LlmClient`
+        return self._recorded
+
+    async def list_models(self) -> list[ModelInfo]:
+        return []
+
+    async def aclose(self) -> None:
+        return None
 
 
 async def export(url: str, output: Path) -> None:
@@ -43,9 +61,7 @@ async def export(url: str, output: Path) -> None:
                 content=await asyncio.to_thread(scenario_text.read_text),
                 created_at=source.created_at,
             )
-        pipeline = OpenAICompatiblePipeline(
-            api_key="recorded-never-sent", complete=lambda _s, _p, value=recorded: value
-        )
+        pipeline = LlmPipeline(RecordedClient(recorded), provider="recorded", model="recorded")
         draft = await pipeline.structure(
             RunContext(
                 project_id=uuid4(),

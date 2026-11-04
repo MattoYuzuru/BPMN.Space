@@ -17,6 +17,9 @@
 Полнота контекста, независимая смысловая сверка и повтор запуска после рестарта —
 [ADR-0008](docs/adr/0008-evidence-semantic-review-and-recovery.md); это не OCR и не распределённая очередь.
 
+Длинные документы, XLSX/PPTX, страницы PDF без текста и расшифровка записей:
+[ADR-0012](docs/adr/0012-long-documents-and-media.md), пределы — `docs/backend/generation-quality.md`.
+
 Удаление и выход участника: [ADR-0009](docs/adr/0009-project-deletion-and-leaving.md).
 `DELETE /projects/{id}` зависит от роли: owner удаляет для всех, участник выходит сам.
 

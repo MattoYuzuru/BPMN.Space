@@ -69,7 +69,7 @@ async def update_llm_credential(
     container: ContainerDep,
     user: OptionalUserDep,
 ) -> LlmCredential:
-    updated = await container.credentials.update(
+    updated = await container.credentials.update_llm(
         _account(user),
         credential_id,
         label=body.label,
@@ -87,7 +87,7 @@ async def update_llm_credential(
 async def delete_llm_credential(
     credential_id: UUID, container: ContainerDep, user: OptionalUserDep
 ) -> Response:
-    await container.credentials.delete(_account(user), credential_id)
+    await container.credentials.delete_llm(_account(user), credential_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

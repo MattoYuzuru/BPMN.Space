@@ -12,23 +12,22 @@ import {
   useTokenProjectChoices,
 } from '@/entities/api-token'
 import { errorMessage } from '@/shared/api/client'
-import { useCopy } from '@/shared/hooks/use-copy'
+import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import {
   Button,
   Card,
   Checkbox,
+  CopyField,
   Dialog,
   DialogContent,
   Field,
   Icon,
-  IconButton,
   Input,
   RadioGroup,
   RadioGroupItem,
   ScrollArea,
   Select,
   Skeleton,
-  Textarea,
 } from '@/shared/ui'
 
 const FORM_ID = 'create-api-token-form'
@@ -190,7 +189,7 @@ function ScopesField({
 }) {
   return (
     <fieldset className="flex flex-col gap-2.5">
-      <legend className="type-ui-strong mb-2 text-fg">Права</legend>
+      <legend className="type-ui font-medium mb-2 text-fg">Права</legend>
       {API_SCOPES.map((scope) => (
         <Checkbox
           key={scope.value}
@@ -227,7 +226,7 @@ function ProjectsField({
   const projects = useTokenProjectChoices()
   return (
     <fieldset className="flex flex-col gap-2.5">
-      <legend className="type-ui-strong mb-2 text-fg">Проекты</legend>
+      <legend className="type-ui font-medium mb-2 text-fg">Проекты</legend>
       <RadioGroup
         orientation="horizontal"
         value={mode}
@@ -276,55 +275,33 @@ function ProjectsField({
 
 /** Секрет и команда подключения — единственный показ. */
 function CreatedToken({ token }: { token: ApiTokenCreated }) {
-  const secret = useCopy('Токен скопирован')
-  const command = useCopy('Команда скопирована')
   const commandText = mcpCommand(window.location.origin, token.secret)
   return (
     <div className="flex flex-col gap-4">
-      <Field label="Токен" hint="Показывается один раз. Храните его как пароль.">
-        <Input
-          readOnly
-          value={token.secret}
-          leadingIcon="key"
-          className="font-mono"
-          onFocus={(event) => event.currentTarget.select()}
-          trailing={
-            <IconButton
-              icon={secret.copied ? 'check' : 'copy'}
-              size="sm"
-              label="Копировать токен"
-              onClick={() => void secret.copy(token.secret)}
-            />
-          }
-        />
-      </Field>
-      <Field
-        label="Команда для Claude Code"
-        aside={
-          <IconButton
-            icon={command.copied ? 'check' : 'copy'}
-            size="sm"
-            label="Копировать команду"
-            onClick={() => void command.copy(commandText)}
-          />
-        }
-      >
-        <Textarea
-          readOnly
-          minRows={2}
-          maxRows={4}
+      <CopyField
+        label="Токен"
+        value={token.secret}
+        copyMessage="Токен скопирован"
+        copyLabel="Копировать токен"
+        hint="Показывается один раз. Храните его как пароль."
+        leadingIcon="key"
+      />
+      <div {...tourAnchor(TOUR_ANCHORS.agentCopyCommand)}>
+        <CopyField
+          label="Команда для Claude Code"
           value={commandText}
-          className="font-mono"
-          spellCheck={false}
-          onFocus={(event) => event.currentTarget.select()}
+          copyMessage="Команда скопирована"
+          copyLabel="Копировать команду"
+          hint="MCP-сервер пока не запущен: команда заработает после обновления продукта."
+          multiline
         />
-      </Field>
+      </div>
       <Card variant="sunken" padding="sm" className="flex items-start gap-2">
         <Icon name="info" size={16} className="mt-0.5 shrink-0 text-fg-subtle" />
         <p className="type-caption text-fg-muted">
-          MCP-сервер появится позже. Пока токен работает с REST API{' '}
-          <span className="font-mono">/api/v1</span>: передавайте его в заголовке{' '}
-          <span className="font-mono">Authorization: Bearer</span>.
+          MCP-сервер пока не запущен — команда заработает после обновления. Уже сейчас токен
+          работает с REST API <span className="font-mono">/api/v1</span>: передавайте его в
+          заголовке <span className="font-mono">Authorization: Bearer</span>.
         </p>
       </Card>
     </div>

@@ -8,6 +8,7 @@ import {
   useTokenProjectChoices,
 } from '@/entities/api-token'
 import { formatCount, formatDate, formatRelative } from '@/shared/lib/format'
+import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import {
   Badge,
   Button,
@@ -33,7 +34,11 @@ export function AgentAccessSection() {
   const items = tokens.data ?? []
 
   return (
-    <section aria-labelledby="agents-title" className="flex flex-col gap-4">
+    <section
+      aria-labelledby="agents-title"
+      className="flex flex-col gap-4"
+      {...tourAnchor(TOUR_ANCHORS.agentTokens)}
+    >
       <div className="flex items-center gap-3">
         <h2
           id="agents-title"
@@ -43,7 +48,13 @@ export function AgentAccessSection() {
         >
           Доступ для агентов
         </h2>
-        <Button leadingIcon="plus" size="sm" variant="primary" onClick={() => setCreating(true)}>
+        <Button
+          leadingIcon="plus"
+          size="sm"
+          variant="primary"
+          onClick={() => setCreating(true)}
+          {...tourAnchor(TOUR_ANCHORS.agentCreateToken)}
+        >
           Создать токен
         </Button>
       </div>
@@ -135,7 +146,7 @@ export function TokenRow({
       <Icon name="key" size={20} className="mt-0.5 shrink-0 text-fg-subtle" />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="type-ui-strong truncate text-fg">{token.name}</span>
+          <span className="type-ui font-medium truncate text-fg">{token.name}</span>
           {token.expired && <Badge tone="danger">Истёк</Badge>}
         </div>
         <div className="type-caption flex flex-wrap items-center gap-x-2 text-fg-muted">

@@ -110,7 +110,8 @@ describe('Доступ для агентов', () => {
     const command = screen.getByLabelText('Команда для Claude Code') as HTMLTextAreaElement
     expect(command.value).toBe(mcpCommand(window.location.origin, SECRET))
     expect(command.value).toContain('/mcp --header "Authorization: Bearer bps_')
-    expect(screen.getByText(/MCP-сервер появится позже/)).toBeInTheDocument()
+    // Сервер появится в волне 2: команда показана, но текст честно говорит, что она пока не работает.
+    expect(screen.getAllByText(/MCP-сервер пока не запущен/).length).toBeGreaterThan(0)
 
     await user.click(screen.getByRole('button', { name: 'Готово' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())

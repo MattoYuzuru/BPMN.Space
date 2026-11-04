@@ -55,9 +55,19 @@ async def checkpoint_version(  # noqa: PLR0917 — зависимости FastAP
 ) -> Version:
     """Закрепить версию как контрольную точку: автосохранения в неё больше не вливаются."""
     await ensure_project_access(request, container, project_id, user, write=True)
-    return Version.model_validate(
-        await container.versions.checkpoint(project_id, version_id, label=body.label)
+    marked = await container.versions.checkpoint(project_id, version_id, label=body.label)
+    # Соавторы обновляют историю: сама схема не менялась, поэтому не `diagram.version`.
+    await container.realtime.publish(
+        project_id,
+        {
+            "type": "version.checkpoint",
+            "version_id": str(marked.id),
+            "number": marked.number,
+            "label": marked.label,
+            "actor": user.email if user else None,
+        },
     )
+    return Version.model_validate(marked)
 
 
 @router.get("/versions/{version_id}", responses=errors(401, 404, 410, 422))

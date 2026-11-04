@@ -12,6 +12,7 @@ from app.domain.api_tokens import ApiToken
 from app.domain.credentials import LlmCredential
 from app.domain.models import (
     LlmCall,
+    LlmCallTotals,
     Project,
     Question,
     QuestionStatus,
@@ -244,6 +245,14 @@ class VersionRepository(Protocol):
 
 class LlmCallRepository(Protocol):
     async def add(self, call: LlmCall) -> None: ...
+
+    async def list_by_run(self, run_id: UUID) -> list[LlmCall]:
+        """Вызовы прогона по названию этапа: времени вызова в записи нет."""
+        ...
+
+    async def totals(self, run_id: UUID) -> LlmCallTotals:
+        """Итог токенов, кеша и стоимости прогона с разбивкой по этапам."""
+        ...
 
 
 class AccessRepository(Protocol):

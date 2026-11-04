@@ -20,12 +20,14 @@ from app.api.auth import OptionalUserDep, OptionalUserStreamDep
 from app.api.deps import ContainerDep
 from app.api.ratelimit import limit_expensive
 from app.api.schemas.common import ApiModel, errors
+from app.api.schemas.estimate import RunEstimate, RunEstimateRequest
 from app.api.schemas.questions import Question
 from app.api.schemas.runs import (
     DoneEventData,
     ErrorEventData,
     QuestionEventData,
     Run,
+    RunCost,
     RunCreate,
     RunEvent,
     RunSummary,
@@ -34,6 +36,7 @@ from app.api.schemas.runs import (
 )
 from app.api.schemas.versions import Version
 from app.domain import models
+from app.domain.runs import RunCost as DomainRunCost
 from app.domain.runs import RunError, RunEventKind, StageProgress
 from app.domain.runs import RunEvent as DomainRunEvent
 
@@ -73,6 +76,35 @@ async def start_run(
     )
 
 
+@router.post(
+    "/projects/{project_id}/runs/estimate",
+    dependencies=[require_scope(ApiScope.PROJECTS_READ), Depends(limit_expensive)],
+    responses=errors(401, 403, 404, 410, 422, 429, 503),
+)
+async def estimate_run(
+    project_id: UUID,
+    body: RunEstimateRequest,
+    request: Request,
+    container: ContainerDep,
+    user: OptionalUserDep,
+) -> RunEstimate:
+    """Оценить прогон до запуска: запросы, токены, деньги и длительность диапазоном.
+
+    Профиль и модель — те же, что у запуска; ключ пользователя нужен только для бесплатного
+    `count_tokens` Anthropic. При неизвестных ценах модели `complete=false`, а `cost=null`.
+    """
+    await ensure_project_access(request, container, project_id, user, write=False)
+    estimate = await container.estimate.estimate(
+        project_id,
+        mode=body.mode,
+        created_by=user.id if user else None,
+        credential_id=body.credential_id,
+        model=body.model,
+        profile=body.profile.to_domain() if body.profile else None,
+    )
+    return RunEstimate.of(estimate, model=estimate.model, provider=estimate.provider)
+
+
 @router.get(
     "/runs/{run_id}",
     dependencies=[require_scope(ApiScope.PROJECTS_READ)],
@@ -87,7 +119,8 @@ async def get_run(
     await ensure_resource_access(
         request, container, run_id, user, resource=ResourceKind.RUN, write=False
     )
-    return Run.of(await container.runs.get(run_id))
+    run = await container.runs.get(run_id)
+    return Run.of(run, cost=await container.runs.cost(run_id))
 
 
 @router.post(
@@ -105,10 +138,13 @@ async def cancel_run(
     await ensure_resource_access(
         request, container, run_id, user, resource=ResourceKind.RUN, write=True
     )
-    return Run.of(await container.runs.cancel(run_id))
+    run = await container.runs.cancel(run_id)
+    return Run.of(run, cost=await container.runs.cost(run_id))
 
 
-def _event_data(event: DomainRunEvent) -> ApiModel:
+def _event_data(  # noqa: PLR0911 — по одному возврату на тип SSE-события
+    event: DomainRunEvent, *, cost: DomainRunCost | None = None
+) -> ApiModel:
     payload = event.payload
     match event.kind:
         case RunEventKind.STAGE if isinstance(payload, StageProgress):
@@ -121,8 +157,10 @@ def _event_data(event: DomainRunEvent) -> ApiModel:
             return RunSummary.model_validate(payload)
         case RunEventKind.VERSION if isinstance(payload, models.Version):
             return VersionEventData(version=Version.model_validate(payload))
+        case RunEventKind.USAGE if isinstance(payload, DomainRunCost):
+            return RunCost.of(payload)
         case RunEventKind.DONE if isinstance(payload, models.Run):
-            return DoneEventData(run=Run.of(payload))
+            return DoneEventData(run=Run.of(payload, cost=cost))
         case _ if isinstance(payload, RunError):
             return ErrorEventData(message=payload.message)
         case _:
@@ -176,8 +214,11 @@ async def run_events(
                 except StopAsyncIteration:
                     return
                 pending = None
+                cost = (
+                    await container.runs.cost(run_id) if event.kind is RunEventKind.DONE else None
+                )
                 yield ServerSentEvent(
-                    data=_event_data(event).model_dump_json(),
+                    data=_event_data(event, cost=cost).model_dump_json(),
                     event=event.kind.value,
                     id=str(event.id),
                 )

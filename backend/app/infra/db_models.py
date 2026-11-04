@@ -1,6 +1,7 @@
 """Реляционная схема хранения (RFC §5.7)."""
 
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -9,6 +10,7 @@ from fastapi_users_db_sqlalchemy.access_token import SQLAlchemyBaseAccessTokenTa
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -16,6 +18,7 @@ from sqlalchemy import (
     Index,
     Integer,
     LargeBinary,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -436,6 +439,12 @@ class LlmCallRow(Base):
     response: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     tokens_in: Mapped[int | None] = mapped_column(Integer)
     tokens_out: Mapped[int | None] = mapped_column(Integer)
+    # Кеш и стоимость по ценам справочника на момент вызова (RFC-0005, шаг 4).
+    cache_read_tokens: Mapped[int | None] = mapped_column(Integer)
+    cache_write_tokens: Mapped[int | None] = mapped_column(Integer)
+    cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 6))
+    price_checked_on: Mapped[date | None] = mapped_column(Date)
+    model: Mapped[str | None] = mapped_column(String(128))
     latency_ms: Mapped[int | None] = mapped_column(Integer)
 
 

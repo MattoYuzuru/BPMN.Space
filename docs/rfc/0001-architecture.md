@@ -484,7 +484,8 @@ erDiagram
 | PATCH / DELETE | `/api/v1/sources/{id}` | поправить название или текст, включить/выключить · удалить |
 | POST | `/api/v1/transcriptions` | аудио → `{text, duration_sec, language}` (аналитик правит перед отправкой) |
 | POST | `/api/v1/projects/{id}/runs` | запустить прогон `{mode: analyze \| build}` → `202 Run` (у `Run` есть `warnings`: например, контекст модели был обрезан); `409`, если прогон уже идёт или нет источников |
-| GET | `/api/v1/runs/{id}` · `/runs/{id}/events` | статус прогона · SSE: `stage`, `question`, `summary`, `version`, `error`, `done` |
+| POST | `/api/v1/projects/{id}/runs/estimate` | оценка до запуска `{mode, credential_id, model, profile}` → `200 RunEstimate` (диапазоны токенов, денег, длительности, разбивка по этапам, `complete=false` при неизвестных ценах) |
+| GET | `/api/v1/runs/{id}` · `/runs/{id}/events` | статус прогона с потраченным (`cost`: токены, кеш, деньги, этапы) · SSE: `stage`, `question`, `summary`, `version`, `usage`, `error`, `done` |
 | GET | `/api/v1/projects/{id}/questions?status=` | вопросы проекта |
 | POST | `/api/v1/questions/{id}/answer` | ответ текстом (голос — через `/transcriptions`) → источник `answer` |
 | POST | `/api/v1/questions/{id}/ignore` · `/reopen` | принять допущение · вернуть вопрос; недопустимый переход → `409` |

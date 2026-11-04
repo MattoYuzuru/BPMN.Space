@@ -6,6 +6,7 @@
 """
 
 import asyncio
+import math
 import random
 import re
 from collections.abc import Awaitable, Callable
@@ -113,11 +114,26 @@ class LlmClient(Protocol):
         """`effort` — уровень профиля прогона; адаптер переводит его в параметр провайдера."""
         ...
 
+    async def count_tokens(self, system: str, user: str) -> int:
+        """Сколько входных токенов займёт запрос — для оценки стоимости до запуска.
+
+        У Anthropic это бесплатный `messages.count_tokens`; остальные провайдеры такого
+        метода не дают, поэтому адаптер делит знаки на `chars_per_token` из справочника
+        (замер `prompt-eval` ещё не проводился, значение заведомо осторожное).
+        """
+        ...
+
     async def list_models(self) -> list[ModelInfo]:
         """Список моделей аккаунта; одновременно проверяет, что ключ рабочий."""
         ...
 
     async def aclose(self) -> None: ...
+
+
+def approximate_tokens(system: str, user: str, capabilities: ModelCapabilities) -> int:
+    """Оценка входных токенов по знакам и `chars_per_token` для провайдеров без счётчика."""
+    per_token = max(capabilities.chars_per_token, 0.5)
+    return max(math.ceil((len(system) + len(user)) / per_token), 1)
 
 
 @dataclass(slots=True)

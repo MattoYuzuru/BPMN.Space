@@ -76,14 +76,36 @@ class ProcessPipeline(Protocol):
 
 @dataclass(slots=True)
 class LlmUsage:
-    """Токены провайдера, накопленные за один шаг пайплайна (все его запросы к модели)."""
+    """Токены провайдера, накопленные за шаг пайплайна (все его запросы к модели).
+
+    `tokens_in` — все входные токены, включая чтение и запись кеша: так их считает провайдер.
+    `cache_read_tokens` и `cache_write_tokens` — части `tokens_in`, оплачиваемые по своим ценам
+    ([RFC-0005](../../../docs/rfc/0005-full-model-capacity-and-cost.md)); без них стоимость
+    завышалась бы по цене обычного входа.
+    """
 
     tokens_in: int = 0
     tokens_out: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
     requests: int = 0
+
+    @property
+    def uncached_in(self) -> int:
+        """Входные токены, оплачиваемые по обычной цене входа."""
+        return max(self.tokens_in - self.cache_read_tokens - self.cache_write_tokens, 0)
+
+    def add(self, other: "LlmUsage") -> None:
+        self.tokens_in += other.tokens_in
+        self.tokens_out += other.tokens_out
+        self.cache_read_tokens += other.cache_read_tokens
+        self.cache_write_tokens += other.cache_write_tokens
+        self.requests += other.requests
 
 
 _usage: ContextVar[LlmUsage | None] = ContextVar("llm_usage", default=None)
+# Накопитель за весь прогон (не сбрасывается на каждом шаге): нужен бюджету и итогу стоимости.
+_totals: ContextVar[LlmUsage | None] = ContextVar("llm_usage_totals", default=None)
 _deadline: ContextVar[float | None] = ContextVar("llm_deadline", default=None)
 
 
@@ -98,14 +120,40 @@ def track_usage() -> Iterator[LlmUsage]:
         _usage.reset(token)
 
 
-def record_usage(*, tokens_in: int | None, tokens_out: int | None) -> None:
+@contextmanager
+def track_run_usage() -> Iterator[LlmUsage]:
+    """Накопитель токенов за весь прогон: шаги пишут в него через `record_usage`."""
+    totals = LlmUsage()
+    token = _totals.set(totals)
+    try:
+        yield totals
+    finally:
+        _totals.reset(token)
+
+
+def usage_totals() -> LlmUsage | None:
+    """Токены, накопленные за прогон; `None` — вне `track_run_usage`."""
+    return _totals.get()
+
+
+def record_usage(
+    *,
+    tokens_in: int | None,
+    tokens_out: int | None,
+    cache_read: int | None = None,
+    cache_write: int | None = None,
+) -> None:
     """Вызывает адаптер после ответа провайдера; вне `track_usage` ничего не делает."""
-    usage = _usage.get()
-    if usage is None:
-        return
-    usage.requests += 1
-    usage.tokens_in += tokens_in or 0
-    usage.tokens_out += tokens_out or 0
+    read = cache_read or 0
+    write = cache_write or 0
+    for usage in (_usage.get(), _totals.get()):
+        if usage is None:
+            continue
+        usage.requests += 1
+        usage.tokens_in += tokens_in or 0
+        usage.tokens_out += tokens_out or 0
+        usage.cache_read_tokens += read
+        usage.cache_write_tokens += write
 
 
 @contextmanager

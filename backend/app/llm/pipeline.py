@@ -193,6 +193,10 @@ class LlmPipeline:
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    async def count_tokens(self, system: str, user: str) -> int:
+        """Сколько входных токенов займёт запрос: у Anthropic — точный бесплатный счётчик."""
+        return await self._client.count_tokens(system, user)
+
     async def analyze(self, context: RunContext) -> AnalysisResult:
         try:
             return await self._shrinking(context, self._question_analyzer.analyze)

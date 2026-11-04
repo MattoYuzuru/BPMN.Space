@@ -6,7 +6,7 @@
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Any
 from uuid import UUID
@@ -258,7 +258,12 @@ class Run:
 
 @dataclass(slots=True, kw_only=True)
 class LlmCall:
-    """Запись аудита одного этапа вызова модели (RFC §5.7)."""
+    """Запись аудита одного этапа вызова модели (RFC §5.7).
+
+    `tokens_in` — все входные токены этапа, включая кеш; `cache_read_tokens` и
+    `cache_write_tokens` — его части. `cost_usd` — цена по справочнику на момент вызова
+    (`price_checked_on`), `None` — цены модели неизвестны (совместимый провайдер, mock).
+    """
 
     id: UUID
     run_id: UUID
@@ -267,7 +272,51 @@ class LlmCall:
     response: dict[str, Any]
     tokens_in: int | None = None
     tokens_out: int | None = None
+    cache_read_tokens: int | None = None
+    cache_write_tokens: int | None = None
+    cost_usd: float | None = None
+    price_checked_on: date | None = None
+    model: str | None = None
     latency_ms: int | None = None
+
+
+@dataclass(slots=True, kw_only=True)
+class LlmCallTotals:
+    """Итог вызовов модели по прогону и по этапам (для стоимости в интерфейсе).
+
+    `priced_calls` — сколько вызовов имеет цену; `usage_calls` — сколько сообщило токены.
+    `complete` означает, что у каждого вызова известны и токены, и цена. `stages` — разбивка
+    по названию этапа пайплайна (analyze, structure, …).
+    """
+
+    calls: int = 0
+    usage_calls: int = 0
+    priced_calls: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    cost_usd: float = 0.0
+    stages: dict[str, "LlmCallTotals"] = field(default_factory=dict[str, "LlmCallTotals"])
+
+    @property
+    def complete(self) -> bool:
+        return self.calls > 0 and self.usage_calls == self.calls and self.priced_calls == self.calls
+
+    @classmethod
+    def of_stages(cls, stages: dict[str, "LlmCallTotals"]) -> "LlmCallTotals":
+        """Складывает итоги этапов в итог прогона, сохраняя разбивку."""
+        total = cls(stages=dict(stages))
+        for item in stages.values():
+            total.calls += item.calls
+            total.usage_calls += item.usage_calls
+            total.priced_calls += item.priced_calls
+            total.tokens_in += item.tokens_in
+            total.tokens_out += item.tokens_out
+            total.cache_read_tokens += item.cache_read_tokens
+            total.cache_write_tokens += item.cache_write_tokens
+            total.cost_usd += item.cost_usd
+        return total
 
 
 @dataclass(slots=True, kw_only=True)

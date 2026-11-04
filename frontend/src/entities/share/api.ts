@@ -14,10 +14,13 @@ import type {
   VersionSource,
   VersionSummary,
 } from '@/entities/version'
-import { api, errorMessage, unwrap } from '@/shared/api/client'
+import { api, errorMessage, type Schemas, unwrap } from '@/shared/api/client'
 import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
 import { toast } from '@/shared/ui'
 import type { SharedProject, ShareRole } from './model'
+
+export type AgentPrompt = Schemas['AgentPrompt']
+export type AgentTokenIssued = Schemas['AgentTokenIssued']
 
 /**
  * Ключи запросов. Ссылки и участники живут внутри проекта — его инвалидация обновляет и их;
@@ -27,6 +30,7 @@ export const shareKeys = {
   links: (projectId: string) => [...projectKeys.detail(projectId), 'share-links'] as const,
   members: (projectId: string) => [...projectKeys.detail(projectId), 'members'] as const,
   shared: (token: string) => ['shares', token] as const,
+  agentPrompt: (token: string) => [...shareKeys.shared(token), 'agent-prompt'] as const,
 }
 
 export function shareLinksQueryOptions(projectId: string) {
@@ -61,21 +65,29 @@ export function projectMembersQueryOptions(projectId: string) {
 interface CreateLinkInput {
   role: ShareRole
   days: number
+  /** Область проверки: только для `reviewer`; пусто — весь проект. */
+  laneIds?: string[]
 }
 
 /** Создать ссылку. Ошибка — тост; секрет приходит в ответе один раз и в кэш не кладётся. */
 export function useCreateShareLink(projectId: string) {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: async ({ role, days }: CreateLinkInput) =>
+    mutationFn: async ({ role, days, laneIds }: CreateLinkInput) =>
       unwrap(
         await api.POST('/api/v1/projects/{project_id}/share-links', {
           params: { path: { project_id: projectId } },
-          body: { role, expires_in_days: days },
+          body: {
+            role,
+            expires_in_days: days,
+            ...(role === 'reviewer' && laneIds?.length ? { lane_ids: laneIds } : {}),
+          },
         }),
       ),
-    onSuccess: () => {
+    onSuccess: (link) => {
       emitOnboardingSignal({ type: 'share.created' })
+      // Ссылка проверки — отдельный факт: по ней коллега подключит агента.
+      if (link.role === 'reviewer') emitOnboardingSignal({ type: 'share.reviewer.created' })
       return client.invalidateQueries({ queryKey: shareKeys.links(projectId) })
     },
     onError: (error) =>
@@ -231,5 +243,35 @@ export function useAcceptInvite(token: string) {
     onSuccess: () => client.invalidateQueries({ queryKey: projectKeys.lists() }),
     onError: (error) =>
       toast.error('Не удалось сохранить доступ к проекту', { description: errorMessage(error) }),
+  })
+}
+
+/**
+ * Готовый текст «проверь дорожку» для агента коллеги. Сервер отдаёт его без секрета ссылки,
+ * поэтому промпт можно вставить в любого агента. Ошибки показываются в окне, а не тостом.
+ */
+export function agentPromptQueryOptions(token: string) {
+  return queryOptions({
+    queryKey: shareKeys.agentPrompt(token),
+    queryFn: async ({ signal }): Promise<AgentPrompt> =>
+      unwrap(
+        await api.GET('/api/v1/shares/{token}/agent-prompt', {
+          params: { path: { token } },
+          signal,
+        }),
+      ),
+    retry: false,
+    staleTime: 60_000,
+  })
+}
+
+/**
+ * Токен агента по ссылке проверки: секрет приходит один раз и нигде не кэшируется.
+ * Ошибки (403 у просмотра, 401 у гостя) разбирает окно подключения.
+ */
+export function useIssueAgentToken(token: string) {
+  return useMutation({
+    mutationFn: async (): Promise<AgentTokenIssued> =>
+      unwrap(await api.POST('/api/v1/shares/{token}/agent-token', { params: { path: { token } } })),
   })
 }

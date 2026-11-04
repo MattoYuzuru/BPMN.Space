@@ -1,5 +1,11 @@
 import { useState } from 'react'
-import { QUESTION_KIND, type Question, SEVERITY, useQuestionAction } from '@/entities/question'
+import {
+  answerViaLabel,
+  QUESTION_KIND,
+  type Question,
+  SEVERITY,
+  useQuestionAction,
+} from '@/entities/question'
 import type { Source } from '@/entities/source'
 import { AnswerComposer } from '@/features/answer-question/answer-composer'
 import { cn } from '@/shared/lib/cn'
@@ -39,6 +45,7 @@ export function QuestionCard({ question, settling = false, fresh = false }: Ques
   const resolved = question.status === 'resolved' || settling
   const obsolete = question.status === 'obsolete'
   const hasElements = question.element_ids.length > 0
+  const answerVia = answerViaLabel(question.answer)
 
   return (
     <Card
@@ -124,10 +131,17 @@ export function QuestionCard({ question, settling = false, fresh = false }: Ques
 
         {question.status === 'answered' && question.answer && (
           <div className="flex flex-col gap-1 rounded-md bg-accent-subtle/60 px-3 py-2">
-            <span className="flex items-center gap-1.5 type-label text-accent-fg">
-              <Icon name="message-question" size={14} />
-              Ваш ответ
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="flex items-center gap-1.5 type-label text-accent-fg">
+                <Icon name="message-question" size={14} />
+                {answerVia ? 'Ответ агента' : 'Ваш ответ'}
+              </span>
+              {answerVia && (
+                <Badge tone="accent" variant="outline" icon="user">
+                  {answerVia}
+                </Badge>
+              )}
+            </div>
             <p className="line-clamp-4 type-ui text-fg">{question.answer.text}</p>
             <span className="type-caption text-fg-muted">Ответ учтётся при следующем анализе</span>
           </div>

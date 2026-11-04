@@ -1,4 +1,5 @@
 import {
+  answerViaLabel,
   countByGroup,
   isTechnical,
   QUESTION_ACTION,
@@ -85,6 +86,24 @@ describe('shiftSummary (оптимистичная сводка)', () => {
     expect(shiftSummary(empty, 'open', 'resolved')).toEqual({ ...empty, new: 0, resolved: 1 })
     expect(shiftSummary({ ...empty, new: 0 }, 'open', 'ignored').new).toBe(0)
     expect(shiftSummary(summary, 'open', 'open')).toBe(summary)
+  })
+})
+
+describe('ответ агента (RFC-0007)', () => {
+  it('человеческий ответ не помечается, агентский — с именем токена или ссылкой проверки', () => {
+    const answer = {
+      source_id: 's-1',
+      text: 'Ответ',
+    }
+    expect(answerViaLabel(null)).toBeNull()
+    expect(answerViaLabel(answer)).toBeNull()
+    expect(answerViaLabel({ ...answer, via: 'agent' })).toBe('Через агента')
+    expect(answerViaLabel({ ...answer, via: 'agent', via_name: 'Claude Code' })).toBe(
+      'Через агента: Claude Code',
+    )
+    expect(answerViaLabel({ ...answer, via: 'agent', share_link_id: 'link-1' })).toBe(
+      'Через агента по ссылке проверки',
+    )
   })
 })
 

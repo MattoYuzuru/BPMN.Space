@@ -2,6 +2,7 @@ import type { Schemas } from '@/shared/api/client'
 import type { BadgeTone, IconName } from '@/shared/ui'
 
 export type Question = Schemas['Question']
+export type Answer = Schemas['Answer']
 export type QuestionStatus = Schemas['QuestionStatus']
 // Бизнес-вопросы процесса и технические вопросы запуска (RFC-0006) живут в одном поле.
 export type QuestionKind = Schemas['QuestionKind'] | Schemas['TechnicalQuestionKind']
@@ -45,6 +46,17 @@ export const QUESTION_ACTION: Record<
 /** Технический вопрос касается материалов и запуска, а не процесса (RFC-0006). */
 export function isTechnical(question: Question): boolean {
   return question.category === 'technical'
+}
+
+/**
+ * Автор ответа словами: `via=agent` — ответ записал внешний агент, `via_name` — название
+ * токена, `share_link_id` — ответ пришёл по ссылке проверки. У человеческого ответа — null.
+ */
+export function answerViaLabel(answer: Answer | null | undefined): string | null {
+  if (answer?.via !== 'agent') return null
+  const name = answer.via_name?.trim()
+  if (name) return `Через агента: ${name}`
+  return answer.share_link_id ? 'Через агента по ссылке проверки' : 'Через агента'
 }
 
 /** Открытые технические вопросы: блокирующие важнее, дальше — по номеру. */

@@ -7,6 +7,7 @@ import {
   useRevokeApiToken,
   useTokenProjectChoices,
 } from '@/entities/api-token'
+import { useOnboardingUi } from '@/entities/onboarding'
 import { formatCount, formatDate, formatRelative } from '@/shared/lib/format'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import {
@@ -27,6 +28,7 @@ export function AgentAccessSection() {
   const tokens = useApiTokens()
   const projects = useTokenProjectChoices()
   const revoke = useRevokeApiToken()
+  const openAgentTour = useOnboardingUi((state) => state.openAgentTour)
   const [creating, setCreating] = useState(false)
   const [revoking, setRevoking] = useState<ApiToken | null>(null)
   const titleRef = useRef<HTMLHeadingElement>(null)
@@ -48,6 +50,9 @@ export function AgentAccessSection() {
         >
           Доступ для агентов
         </h2>
+        <Button leadingIcon="help" size="sm" onClick={openAgentTour}>
+          Как подключить
+        </Button>
         <Button
           leadingIcon="plus"
           size="sm"
@@ -77,6 +82,7 @@ export function AgentAccessSection() {
             backdrop="none"
             title="Токенов нет"
             description="Агенты пока не подключены."
+            action={<Button onClick={openAgentTour}>Как подключить агента</Button>}
           />
         </Card>
       )}

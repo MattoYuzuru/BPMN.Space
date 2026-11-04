@@ -1,69 +1,109 @@
-import type { ReactNode } from 'react'
+import { type ReactNode, useState } from 'react'
 import { emailInitialsName } from '@/entities/session'
 import {
   expiryOptions,
+  linkScopeText,
   type ProjectMember,
   SHARE_ROLE,
   SHARE_ROLES,
   type ShareLink,
   type ShareRole,
+  shareTokenFromPath,
 } from '@/entities/share'
+import { AgentPromptDialog } from '@/features/share-reviewer/agent-prompt-dialog'
 import { cn } from '@/shared/lib/cn'
 import { formatDate } from '@/shared/lib/format'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import {
   Avatar,
   Button,
+  Card,
+  Checkbox,
   ConfirmDialog,
   Field,
   IconButton,
   Input,
+  RadioGroup,
+  RadioGroupItem,
+  ScrollArea,
   SegmentedControl,
   Select,
+  Skeleton,
   Tag,
 } from '@/shared/ui'
-import { ROLE_HINT, useCopy } from './model'
+import { type ReviewScopeMode, ROLE_HINT, useCopy } from './model'
 
 const date = (iso: string) => formatDate(new Date(iso))
 
 export interface ShareCreateFormProps {
   role: ShareRole
   days: number
+  /** Область проверки: весь проект или отмеченные дорожки (только для `reviewer`). */
+  scope: ReviewScopeMode
+  /** Названия дорожек последней схемы; пусто — схемы ещё нет. */
+  lanes: readonly string[]
+  selectedLanes: readonly string[]
   onRoleChange: (role: ShareRole) => void
   onDaysChange: (days: number) => void
+  onScopeChange: (scope: ReviewScopeMode) => void
+  onLanesChange: (lanes: string[]) => void
   onCreate: () => void
   pending?: boolean
+  lanesLoading?: boolean
+  lanesError?: boolean
 }
 
-/** Новая ссылка: роль, срок и одна главная кнопка. Сроки зависят от роли. */
+/** Новая ссылка: роль, область проверки, срок и одна главная кнопка. */
 export function ShareCreateForm({
   role,
   days,
+  scope,
+  lanes,
+  selectedLanes,
   onRoleChange,
   onDaysChange,
+  onScopeChange,
+  onLanesChange,
   onCreate,
   pending,
+  lanesLoading = false,
+  lanesError = false,
 }: ShareCreateFormProps) {
+  const reviewer = role === 'reviewer'
+  const selectedEmpty = reviewer && scope === 'selected' && selectedLanes.length === 0
   return (
     <form
       className="flex flex-col gap-4"
       onSubmit={(event) => {
         event.preventDefault()
-        onCreate()
+        if (!selectedEmpty) onCreate()
       }}
     >
-      <Field label="Доступ" hint={ROLE_HINT[role]}>
-        <SegmentedControl
-          aria-label="Доступ"
-          options={SHARE_ROLES.map((value) => ({
-            value,
-            label: SHARE_ROLE[value].label,
-            icon: SHARE_ROLE[value].icon,
-          }))}
-          value={role}
-          onValueChange={onRoleChange}
+      <div {...tourAnchor(TOUR_ANCHORS.shareReviewer)}>
+        <Field label="Доступ" hint={ROLE_HINT[role]}>
+          <SegmentedControl
+            aria-label="Доступ"
+            options={SHARE_ROLES.map((value) => ({
+              value,
+              label: SHARE_ROLE[value].label,
+              icon: SHARE_ROLE[value].icon,
+            }))}
+            value={role}
+            onValueChange={onRoleChange}
+          />
+        </Field>
+      </div>
+      {reviewer && (
+        <ScopeField
+          scope={scope}
+          lanes={lanes}
+          selected={selectedLanes}
+          loading={lanesLoading}
+          error={lanesError}
+          onScopeChange={onScopeChange}
+          onSelectedChange={onLanesChange}
         />
-      </Field>
+      )}
       <div className="flex items-end gap-3">
         <Field label="Срок действия" className="flex-1">
           <Select
@@ -77,6 +117,7 @@ export function ShareCreateForm({
           variant="primary"
           leadingIcon="link"
           loading={pending}
+          disabled={selectedEmpty}
           {...tourAnchor(TOUR_ANCHORS.shareCreate)}
         >
           Создать ссылку
@@ -86,19 +127,111 @@ export function ShareCreateForm({
   )
 }
 
+/** Область проверки: весь проект (по умолчанию) или выбранные дорожки схемы. */
+function ScopeField({
+  scope,
+  lanes,
+  selected,
+  loading,
+  error,
+  onScopeChange,
+  onSelectedChange,
+}: {
+  scope: ReviewScopeMode
+  lanes: readonly string[]
+  selected: readonly string[]
+  loading: boolean
+  error: boolean
+  onScopeChange: (scope: ReviewScopeMode) => void
+  onSelectedChange: (lanes: string[]) => void
+}) {
+  const noLanes = !loading && lanes.length === 0
+  const unavailable = !loading && (error || lanes.length === 0)
+  return (
+    <fieldset className="flex flex-col gap-2.5">
+      <legend className="type-label mb-1 text-fg">Область проверки</legend>
+      <RadioGroup
+        orientation="horizontal"
+        value={scope}
+        onValueChange={(next) => onScopeChange(next as ReviewScopeMode)}
+        aria-label="Область проверки"
+      >
+        <RadioGroupItem value="all" label="Весь проект" />
+        <RadioGroupItem
+          value="selected"
+          label="Выбранные дорожки"
+          disabled={unavailable}
+          description={unavailable ? 'Список дорожек недоступен' : undefined}
+        />
+      </RadioGroup>
+      {loading && <Skeleton className="h-12 w-full rounded-md" />}
+      {noLanes && (
+        <p className="type-caption text-fg-muted">
+          {error
+            ? 'Список дорожек не загрузился: ссылка откроет весь проект.'
+            : 'Дорожек в схеме пока нет: ссылка откроет весь проект.'}
+        </p>
+      )}
+      {scope === 'selected' && lanes.length > 0 && (
+        <Card variant="sunken" padding="none">
+          <ScrollArea className="max-h-44" viewportClassName="max-h-44">
+            <div className="flex flex-col gap-2 p-3">
+              {lanes.map((lane) => (
+                <Checkbox
+                  key={lane}
+                  label={lane}
+                  checked={selected.includes(lane)}
+                  onCheckedChange={(checked) =>
+                    onSelectedChange(
+                      checked === true
+                        ? [...selected, lane]
+                        : selected.filter((item) => item !== lane),
+                    )
+                  }
+                />
+              ))}
+            </div>
+          </ScrollArea>
+        </Card>
+      )}
+      {scope === 'selected' && lanes.length > 0 && selected.length === 0 && (
+        <p role="alert" className="type-caption text-danger-fg">
+          Отметьте хотя бы одну дорожку или выберите «Весь проект».
+        </p>
+      )}
+      {scope === 'all' && (
+        <p className="type-caption text-fg-muted">
+          Коллега увидит все дорожки и общие вопросы проекта.
+        </p>
+      )}
+    </fieldset>
+  )
+}
+
 export interface ShareLinkResultProps {
   url: string
   access: ShareRole
   expiresAt: string | null
+  /** Область проверки: ids или названия дорожек из ответа сервера. */
+  laneIds?: string[]
   onAnother: () => void
 }
 
 /**
  * Только что созданная ссылка. Полный адрес сервер отдаёт один раз, поэтому показываем его
- * здесь с кнопкой копирования; в списке ссылок адреса уже не будет.
+ * здесь с кнопкой копирования; в списке ссылок адреса уже не будет. У проверки сразу доступен
+ * готовый запрос для агента — его можно скопировать до закрытия окна.
  */
-export function ShareLinkResult({ url, access, expiresAt, onAnother }: ShareLinkResultProps) {
+export function ShareLinkResult({
+  url,
+  access,
+  expiresAt,
+  laneIds,
+  onAnother,
+}: ShareLinkResultProps) {
   const { copied, copy } = useCopy()
+  const [promptOpen, setPromptOpen] = useState(false)
+  const token = shareTokenFromPath(url)
   return (
     <div className="flex flex-col gap-3">
       <Field label="Ссылка" hint="Адрес показывается один раз.">
@@ -118,15 +251,32 @@ export function ShareLinkResult({ url, access, expiresAt, onAnother }: ShareLink
           }
         />
       </Field>
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 type-caption text-fg-muted">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2 type-caption text-fg-muted">
           <Tag icon={SHARE_ROLE[access].icon}>{SHARE_ROLE[access].label}</Tag>
+          {access === 'reviewer' && <span>{linkScopeText(laneIds)}</span>}
           {expiresAt && <span>до {date(expiresAt)}</span>}
         </div>
-        <Button variant="ghost" size="sm" onClick={onAnother}>
-          Создать другую
-        </Button>
+        <div className="flex items-center gap-2">
+          {access === 'reviewer' && token && (
+            <Button
+              variant="secondary"
+              size="sm"
+              leadingIcon="copy"
+              onClick={() => setPromptOpen(true)}
+              {...tourAnchor(TOUR_ANCHORS.shareCopyPrompt)}
+            >
+              Скопировать запрос для агента
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" onClick={onAnother}>
+            Создать другую
+          </Button>
+        </div>
       </div>
+      {access === 'reviewer' && token && (
+        <AgentPromptDialog token={token} open={promptOpen} onOpenChange={setPromptOpen} />
+      )}
     </div>
   )
 }
@@ -137,23 +287,50 @@ const REVOKE_TEXT: Record<ShareRole, string> = {
   reviewer: 'Проверка закроется: ссылка и выданный по ней токен агента перестанут работать.',
 }
 
-/** Строка действующей ссылки: роль, срок, дата создания и отзыв с подтверждением. */
-export function ShareLinkRow({ link, onRevoke }: { link: ShareLink; onRevoke: () => void }) {
+/** Строка действующей ссылки: роль, область, срок, дата создания, копирование и отзыв. */
+export function ShareLinkRow({
+  link,
+  copyUrl,
+  onRevoke,
+}: {
+  link: ShareLink
+  /** Полный адрес, если ссылку создали в этом же открытом окне: сервер отдаёт его один раз. */
+  copyUrl?: string
+  onRevoke: () => void
+}) {
+  const { copied, copy } = useCopy()
   return (
     <Row
-      leading={<Tag icon={SHARE_ROLE[link.role].icon}>{SHARE_ROLE[link.role].label}</Tag>}
-      leadingClassName="w-36"
+      leading={
+        <div className="flex flex-col items-start gap-1">
+          <Tag icon={SHARE_ROLE[link.role].icon}>{SHARE_ROLE[link.role].label}</Tag>
+          {link.role === 'reviewer' && (
+            <span className="type-caption text-fg-subtle">{linkScopeText(link.lane_ids)}</span>
+          )}
+        </div>
+      }
+      leadingClassName="w-40"
       title={link.expires_at ? `До ${date(link.expires_at)}` : 'Бессрочно'}
       meta={`Создана ${date(link.created_at)}`}
       action={
-        <ConfirmDialog
-          trigger={<IconButton icon="trash" size="sm" tone="danger" label="Отозвать ссылку" />}
-          title="Отозвать ссылку?"
-          description={REVOKE_TEXT[link.role]}
-          confirmLabel="Отозвать"
-          tone="danger"
-          onConfirm={onRevoke}
-        />
+        <div className="flex items-center gap-0.5">
+          {copyUrl && (
+            <IconButton
+              icon={copied ? 'check' : 'copy'}
+              size="sm"
+              label="Копировать ссылку"
+              onClick={() => void copy(copyUrl)}
+            />
+          )}
+          <ConfirmDialog
+            trigger={<IconButton icon="trash" size="sm" tone="danger" label="Отозвать ссылку" />}
+            title="Отозвать ссылку?"
+            description={REVOKE_TEXT[link.role]}
+            confirmLabel="Отозвать"
+            tone="danger"
+            onConfirm={onRevoke}
+          />
+        </div>
       }
     />
   )

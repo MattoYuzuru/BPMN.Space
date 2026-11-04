@@ -1,4 +1,5 @@
 # Production overrides. The server keeps its secret configuration outside the release tree.
+# Resource limits, log rotation and PostgreSQL tuning come from compose.yaml.
 services:
   web:
     ports:

@@ -1,14 +1,14 @@
 """SQLAlchemy-репозитории PostgreSQL, сохраняющие публичные dataclass-ы domain."""
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import CursorResult, and_, delete, func, or_, select, update
+from sqlalchemy import CursorResult, and_, case, delete, func, or_, select, tuple_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import defer
@@ -54,7 +54,12 @@ from app.infra.db_models import (
     SourceRow,
 )
 from app.infra.repositories.access_sql import SqlAccessRepository
-from app.infra.repositories.base import ActiveRunConflictError, PageKey, Repositories
+from app.infra.repositories.base import (
+    ActiveRunConflictError,
+    PageKey,
+    ProjectStats,
+    Repositories,
+)
 from app.infra.repositories.onboarding_sql import SqlOnboardingRepository
 from app.infra.repositories.session import BoundSessions, SessionFactory
 from app.infra.version_codec import (
@@ -221,6 +226,93 @@ class SqlProjectRepository:
         async with self.sessions() as session:
             row = await session.get(ProjectRow, project_id)
             return _project(row) if row else None
+
+    async def stats(self, project_ids: Sequence[UUID]) -> dict[UUID, ProjectStats]:
+        ids = list(dict.fromkeys(project_ids))
+        if not ids:
+            return {}
+        answer = SourceKind.ANSWER.value
+        async with self.sessions() as session:
+            sources = {
+                row.project_id: (row.total, row.material)
+                for row in await session.execute(
+                    select(
+                        SourceRow.project_id,
+                        func.count().label("total"),
+                        func.count(
+                            case(
+                                (
+                                    and_(
+                                        SourceRow.active.is_(True),
+                                        SourceRow.status != SourceStatus.FAILED.value,
+                                    ),
+                                    1,
+                                )
+                            )
+                        ).label("material"),
+                    )
+                    .where(SourceRow.project_id.in_(ids), SourceRow.kind != answer)
+                    .group_by(SourceRow.project_id)
+                )
+            }
+            questions = {
+                (row.project_id, row.status): row.total
+                for row in await session.execute(
+                    select(QuestionRow.project_id, QuestionRow.status, func.count().label("total"))
+                    .where(
+                        QuestionRow.project_id.in_(ids),
+                        QuestionRow.status.in_(
+                            [QuestionStatus.OPEN.value, QuestionStatus.RESOLVED.value]
+                        ),
+                    )
+                    .group_by(QuestionRow.project_id, QuestionRow.status)
+                )
+            }
+            versions = {
+                row.project_id: (row.total, row.newest)
+                for row in await session.execute(
+                    select(
+                        DiagramVersionRow.project_id,
+                        func.count().label("total"),
+                        func.max(DiagramVersionRow.number).label("newest"),
+                    )
+                    .where(DiagramVersionRow.project_id.in_(ids))
+                    .group_by(DiagramVersionRow.project_id)
+                )
+            }
+            # Дорожки читаются только у последней версии каждого проекта.
+            newest = {pid: number for pid, (_, number) in versions.items()}
+            lanes: dict[UUID, list[str]] = {}
+            if newest:
+                for row in await session.execute(
+                    select(DiagramVersionRow.project_id, DiagramVersionRow.lanes).where(
+                        tuple_(DiagramVersionRow.project_id, DiagramVersionRow.number).in_(
+                            list(newest.items())
+                        )
+                    )
+                ):
+                    lanes[row.project_id] = list(row.lanes)
+            active = {
+                row.project_id: row.mode
+                for row in await session.execute(
+                    select(RunRow.project_id, RunRow.mode).where(
+                        RunRow.project_id.in_(ids),
+                        RunRow.status.in_([status.value for status in ACTIVE_STATUSES]),
+                    )
+                )
+            }
+        return {
+            pid: ProjectStats(
+                sources=sources.get(pid, (0, 0))[0],
+                has_material=sources.get(pid, (0, 0))[1] > 0,
+                questions_open=questions.get((pid, QuestionStatus.OPEN.value), 0),
+                questions_resolved=questions.get((pid, QuestionStatus.RESOLVED.value), 0),
+                versions=versions.get(pid, (0, 0))[0],
+                lanes=tuple(lanes.get(pid, ())),
+                active_run_mode=RunMode(active[pid]) if pid in active else None,
+            )
+            for pid in ids
+        }
 
     async def update(self, project: Project) -> None:
         async with self.sessions.begin() as session:
@@ -625,6 +717,18 @@ class SqlRunRepository:
                 )
             ).all()
             return [_run(row) for row in rows]
+
+    async def last_succeeded_id(self, project_id: UUID) -> UUID | None:
+        async with self.sessions() as session:
+            return await session.scalar(
+                select(RunRow.id)
+                .where(
+                    RunRow.project_id == project_id,
+                    RunRow.status == RunStatus.SUCCEEDED.value,
+                )
+                .order_by(RunRow.started_at.desc(), RunRow.id.desc())
+                .limit(1)
+            )
 
     async def active_for_project(self, project_id: UUID) -> Run | None:
         async with self.sessions() as session:

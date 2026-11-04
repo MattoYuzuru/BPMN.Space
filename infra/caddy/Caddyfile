@@ -1,3 +1,11 @@
+# За внешним reverse proxy (Caddy/nginx хоста) верим его X-Forwarded-For из частных сетей:
+# backend и лимиты частоты видят адрес клиента, а не адрес прокси.
+{
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
 # Общее приложение: статика фронтенда + прокси API.
 (app) {
 	encode zstd gzip
@@ -6,10 +14,13 @@
 	handle /api/* {
 		reverse_proxy backend:8000 {
 			flush_interval -1
+			header_up X-Forwarded-For {client_ip}
 		}
 	}
 	handle /health {
-		reverse_proxy backend:8000
+		reverse_proxy backend:8000 {
+			header_up X-Forwarded-For {client_ip}
+		}
 	}
 
 	# MCP-сервер внешних агентов (RFC-0007): Streamable HTTP, вход по Bearer-токену.
@@ -17,11 +28,13 @@
 	handle /mcp {
 		reverse_proxy backend:8000 {
 			flush_interval -1
+			header_up X-Forwarded-For {client_ip}
 		}
 	}
 	handle /mcp/* {
 		reverse_proxy backend:8000 {
 			flush_interval -1
+			header_up X-Forwarded-For {client_ip}
 		}
 	}
 
@@ -29,6 +42,8 @@
 		root * /srv
 		@assets path /assets/*
 		header @assets Cache-Control "public, max-age=31536000, immutable"
+		# Инструкция для ИИ-агентов (frontend/public/agents.md) — markdown, а не SPA.
+		header /agents.md Content-Type "text/markdown; charset=utf-8"
 		try_files {path} /index.html
 		file_server
 	}
@@ -40,6 +55,7 @@
 }
 
 # Caddy автоматически получает и обновляет Let's Encrypt сертификаты для домена.
-bpmn.space, www.bpmn.space {
+# SITE_ADDRESS задаёт compose.yaml; за внешним прокси с TLS — http://<домен>.
+{$SITE_ADDRESS:bpmn.space, www.bpmn.space} {
 	import app
 }

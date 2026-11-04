@@ -93,6 +93,41 @@ DEPLOY_HOST=<IP_VM> scripts/upload-server-env.sh
   БД: полный откат ниже волны 2 — только через `alembic downgrade` по инструкции выше.
   Резервная копия БД к этому моменту уже создана.
 
+## Стенд за внешним reverse proxy и выход через SSH-мост
+
+Если порты 80/443 на сервере уже заняты чужим Caddy или nginx, стек публикуется на loopback, а
+TLS завершает прокси хоста. В серверном окружении (`shared/.env`):
+
+```bash
+WEB_PORT=127.0.0.1:18100
+WEB_HTTP_PUBLISH=127.0.0.1:18101
+WEB_HTTPS_PUBLISH=127.0.0.1:18143
+SITE_ADDRESS=http://<домен>
+```
+
+Прокси хоста передаёт весь трафик домена на `127.0.0.1:18100` без буферизации (SSE прогона и
+`/mcp`), например в Caddy: `reverse_proxy 127.0.0.1:18100 { flush_interval -1 }`. Внутренний
+Caddy доверяет `X-Forwarded-For` из частных сетей, поэтому лимиты частоты видят адрес клиента;
+uvicorn доверяет `X-Forwarded-Proto` (`FORWARDED_ALLOW_IPS`), поэтому адрес MCP в выдаче токена —
+`https://`. Для `scripts/deploy.sh` задайте `DEPLOY_HEALTH_URL=http://127.0.0.1:18100/health`.
+
+Если провайдеры моделей и инструментов (Anthropic, OpenAI, Exa и др.) недоступны из сети
+сервера, backend ходит к ним через HTTP-прокси с CONNECT на другом сервере. Профиль `egress`
+поднимает контейнер с SSH-мостом (`infra/egress-relay`): он пробрасывает `egress:3128` на
+прокси за SSH. На сервере-выходе заведите отдельного пользователя только с
+`PermitOpen 127.0.0.1:3128` (без shell и других пробросов) и логин прокси. В серверном окружении:
+
+```bash
+COMPOSE_PROFILES=egress
+EGRESS_TARGET=<пользователь>@<сервер-выход>
+EGRESS_SSH_DIR=/home/deploy/arkhitektor/shared/egress   # id_ed25519 и known_hosts, владелец uid 10110
+HTTPS_PROXY=http://<логин>:<пароль>@egress:3128
+```
+
+Прокси используют только провайдеры с фиксированным адресом. Адреса пользователей
+(совместимые провайдеры со своим `base_url`) идут напрямую: SSRF-guard закрепляет проверенный IP
+и намеренно не доверяет прокси из окружения.
+
 ## Ресурсы контейнеров
 
 `compose.yaml` (его же использует production через `compose.prod.yaml`) рассчитан на VPS с 4 ГБ RAM.

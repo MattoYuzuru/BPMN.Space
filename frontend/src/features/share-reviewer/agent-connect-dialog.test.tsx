@@ -87,15 +87,16 @@ describe('AgentConnectDialog', () => {
     await user.click(await screen.findByRole('button', { name: 'Подключить агента' }))
 
     expect(await screen.findByLabelText('Токен агента')).toHaveValue(SECRET)
-    expect(screen.getByLabelText('Команда для Claude Code')).toHaveValue(COMMAND)
-    expect(screen.getByLabelText('Адрес MCP-сервера')).toHaveValue('https://arch.example/mcp')
+    expect(screen.getByLabelText('Настройка для Claude Code')).toHaveValue(COMMAND)
+    const message = screen.getByLabelText('Сообщение для агента') as HTMLTextAreaElement
+    expect(message.value).toContain('https://arch.example/agents.md')
     expect(screen.getByText('Продажи')).toBeInTheDocument()
     expect(screen.getByText(/Показывается один раз/)).toBeInTheDocument()
     expect(calls.find((call) => call.method === 'POST')?.path).toBe(
       '/api/v1/shares/tok/agent-token',
     )
 
-    await user.click(screen.getByRole('button', { name: 'Копировать команду' }))
+    await user.click(screen.getByRole('button', { name: 'Копировать настройку' }))
     expect(await navigator.clipboard.readText()).toBe(COMMAND)
     expect(signals).toContain('agent.command.copied')
     unsubscribe()

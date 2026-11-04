@@ -8,10 +8,15 @@ export {
   useTokenProjectChoices,
 } from './api'
 export {
+  type AgentClient,
+  type AgentClientSetup,
   API_SCOPES,
   type ApiScope,
   type ApiToken,
   type ApiTokenCreated,
+  agentClientSetups,
+  agentGuideUrl,
+  agentSetupMessage,
   DEFAULT_EXPIRY_DAYS,
   DEFAULT_SCOPES,
   EXPIRY_OPTIONS,

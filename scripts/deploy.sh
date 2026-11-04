@@ -7,6 +7,8 @@ cd "$repo_root"
 deploy_host="${DEPLOY_HOST:-}"
 deploy_user="${DEPLOY_USER:-deploy}"
 remote_root="${DEPLOY_PATH:-/home/$deploy_user/arkhitektor}"
+# За внешним reverse proxy веб-порт стенда не 80: задайте адрес healthcheck на VM.
+health_url="${DEPLOY_HEALTH_URL:-http://127.0.0.1/health}"
 ref="${1:-}"
 
 if [[ -z "$deploy_host" || -z "$ref" ]]; then
@@ -15,6 +17,10 @@ if [[ -z "$deploy_host" || -z "$ref" ]]; then
 fi
 if [[ ! "$deploy_host" =~ ^[A-Za-z0-9.-]+$ || ! "$deploy_user" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]]; then
   echo "Некорректный DEPLOY_HOST или DEPLOY_USER." >&2
+  exit 2
+fi
+if [[ ! "$health_url" =~ ^http://[A-Za-z0-9.:-]+/health$ ]]; then
+  echo "DEPLOY_HEALTH_URL должен иметь вид http://<host[:port]>/health." >&2
   exit 2
 fi
 if [[ ! "$remote_root" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
@@ -95,7 +101,7 @@ fi
 
 healthy=false
 for _ in $(seq 1 40); do
-  if ssh "$deploy_user@$deploy_host" "curl -fsS --max-time 3 http://127.0.0.1/health >/dev/null"; then
+  if ssh "$deploy_user@$deploy_host" "curl -fsS --max-time 3 '$health_url' >/dev/null"; then
     healthy=true
     break
   fi

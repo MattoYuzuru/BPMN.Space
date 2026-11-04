@@ -1,9 +1,11 @@
 export {
+  toolCatalogQueryOptions,
   toolCredentialKeys,
   toolCredentialsQueryOptions,
   useCheckToolCredential,
   useCreateToolCredential,
   useDeleteToolCredential,
+  useToolCatalog,
   useToolCredentials,
   useUpdateToolCredential,
 } from './api'
@@ -11,6 +13,7 @@ export {
   availableProviders,
   CAPABILITY,
   type CapabilityCard,
+  type CatalogHint,
   CREDENTIAL_ERROR,
   CREDENTIAL_KIND,
   type Credential,
@@ -23,6 +26,7 @@ export {
   type CredentialUpdate,
   capabilityInfo,
   capabilityState,
+  catalogHints,
   credentialErrorLabel,
   isExhausted,
   isUsable,
@@ -36,4 +40,7 @@ export {
   type ProviderHint,
   providerLabel,
   providersText,
+  type ToolCatalog,
+  type ToolCatalogCapability,
+  type ToolCatalogProvider,
 } from './model'

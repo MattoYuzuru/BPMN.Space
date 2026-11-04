@@ -5,6 +5,7 @@ import {
   CREDENTIAL_ERROR,
   type Credential,
   capabilityState,
+  catalogHints,
   credentialErrorLabel,
   isExhausted,
   isUsable,
@@ -103,5 +104,57 @@ describe('ключи инструментов', () => {
     expect(capabilityState(card())).toBe('ready')
     expect(capabilityState(card({ keys: 0 }))).toBe('empty')
     expect(capabilityState(card({ keys: 0, last_error_code: 'auth' }))).toBe('error')
+  })
+})
+
+describe('каталог провайдеров', () => {
+  it('собирает подсказки по выбранным типам задач и сохраняет флаги', () => {
+    const catalog = {
+      checked_on: '2026-11-04',
+      capabilities: [
+        {
+          capability: 'llm' as const,
+          label: 'Модели',
+          description: '',
+          tool: 'chat',
+          kinds: ['llm' as const],
+          providers: [
+            {
+              id: 'anthropic',
+              label: 'Anthropic',
+              key_url: 'https://claude.ai',
+              free_tier: null,
+              notes: null,
+              rf: false,
+              supported: true,
+              model_covers: false,
+            },
+          ],
+        },
+        {
+          capability: 'ocr' as const,
+          label: 'OCR',
+          description: '',
+          tool: 'ocr',
+          kinds: ['ocr' as const],
+          providers: [
+            {
+              id: 'yandex',
+              label: 'Yandex Vision',
+              key_url: null,
+              free_tier: '4000 ₽',
+              notes: null,
+              rf: true,
+              supported: false,
+              model_covers: false,
+            },
+          ],
+        },
+      ],
+    }
+    const hints = catalogHints(catalog, ['ocr'])
+    expect(hints.map((hint) => hint.id)).toEqual(['yandex'])
+    expect(hints[0]).toMatchObject({ rf: true, supported: false, capabilityLabel: 'OCR' })
+    expect(catalogHints(undefined, ['llm'])).toEqual([])
   })
 })

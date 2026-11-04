@@ -14,4 +14,4 @@ export {
   agentTourSteps,
   FIRST_AGENT_STEP,
 } from './steps'
-export { isAgentTourStepKey, startAgentTour } from './store'
+export { AGENT_TOUR_ID, isAgentTourStepKey, startAgentTour } from './store'

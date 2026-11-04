@@ -4,6 +4,7 @@ import { useOnboardingUi } from '@/entities/onboarding'
 import {
   AGENT_CHAPTERS,
   AGENT_COPY,
+  AGENT_TOUR_ID,
   type AgentTourContext,
   agentTourPersistence,
   agentTourSteps,
@@ -35,6 +36,7 @@ export default function AgentTourGate() {
       persistence={agentTourPersistence}
       chapters={AGENT_CHAPTERS}
       restore={false}
+      tourId={AGENT_TOUR_ID}
       onEnd={(reason) => {
         if (reason === 'completed') toast.success(AGENT_COPY.finishToast)
       }}

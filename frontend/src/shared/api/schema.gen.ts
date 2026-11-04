@@ -555,8 +555,10 @@ export interface paths {
         put?: never;
         /**
          * Create File Source
-         * @description Документ. `.txt`/`.md`/`.csv` готовы сразу; `.docx`/`.pdf` приходят в `processing`
-         *     и становятся `ready` или `failed` в фоне — обновляйте проект, пока есть `processing`.
+         * @description Документ или запись. `.txt`/`.md`/`.csv` готовы сразу; `.docx`/`.xlsx`/`.pptx`/`.pdf` и
+         *     аудио/видео приходят в `processing` и становятся `ready` или `failed` в фоне — обновляйте
+         *     проект, пока есть `processing`. Страницы PDF без текста дают `ready` с `warning`.
+         *     Записи пишутся на диск потоком (лимит `MAX_MEDIA_BYTES`), документы — `MAX_UPLOAD_BYTES`.
          */
         post: operations["create_file_source"];
         delete?: never;
@@ -995,7 +997,7 @@ export interface components {
         Body_create_file_source: {
             /**
              * File
-             * @description .txt, .md, .csv, .docx или .pdf
+             * @description .txt, .md, .csv, .docx, .xlsx, .pptx, .pdf или аудио/видео (.mp3 .wav .ogg .opus .m4a .flac .aac .webm .mp4 .mov .mkv)
              */
             file: string;
             /** Title */
@@ -1818,6 +1820,16 @@ export interface components {
             status: components["schemas"]["SourceStatus"];
             /** Title */
             title: string;
+            /**
+             * Unreadable Pages
+             * @description Номера страниц PDF без текстового слоя (сканы): их текст не извлечён
+             */
+            unreadable_pages?: number[];
+            /**
+             * Warning
+             * @description Для `status=ready`: источник прочитан не полностью (см. `unreadable_pages`)
+             */
+            warning?: string | null;
         };
         /**
          * SourceKind

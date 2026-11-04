@@ -126,6 +126,9 @@ class Source:
     duration_sec: float | None = None
     question_id: UUID | None = None
     error: str | None = None
+    # Источник готов, но прочитан не полностью (страницы без текстового слоя, обрезанные листы).
+    warning: str | None = None
+    unreadable_pages: list[int] = field(default_factory=list[int])
     file_key: str | None = None  # внутреннее: ключ файла в хранилище (infra/storage)
     digest: str | None = None  # внутреннее: кэш дайджеста источника для контекстного окна
 

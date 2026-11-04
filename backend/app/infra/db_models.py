@@ -138,6 +138,8 @@ class SourceRow(Base):
     error: Mapped[str | None] = mapped_column(Text)
     file_key: Mapped[str | None] = mapped_column(String(1024))
     digest: Mapped[str | None] = mapped_column(Text)
+    warning: Mapped[str | None] = mapped_column(Text)
+    unreadable_pages: Mapped[list[int] | None] = mapped_column(JSONB)
 
 
 class RunRow(Base):

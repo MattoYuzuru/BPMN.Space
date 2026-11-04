@@ -207,7 +207,16 @@ class InMemorySourceRepository:
         *,
         only_status: SourceStatus | None = None,
     ) -> bool:
-        unknown = set(changes) - {"title", "content", "status", "active", "error"}
+        unknown = set(changes) - {
+            "title",
+            "content",
+            "status",
+            "active",
+            "error",
+            "warning",
+            "unreadable_pages",
+            "duration_sec",
+        }
         if unknown:
             raise ValueError(f"Поля источника нельзя менять точечно: {sorted(unknown)}")
         stored = self._items.get(source_id)

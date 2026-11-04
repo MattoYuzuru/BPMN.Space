@@ -50,7 +50,14 @@ async def test_invented_quote_is_rejected():
 
 
 async def test_mixed_pdf_cannot_silently_skip_scanned_page():
-    with pytest.raises(DocumentParseError, match="страницах 2"):
-        await LocalDocumentParser().parse(
-            file_name="mixed.pdf", data=_make_pdf(["Valid process", ""])
-        )
+    """Скан среди читаемых страниц не отбрасывает документ, но виден: пометка, номера, warning."""
+    parsed = await LocalDocumentParser().parse_document(
+        file_name="mixed.pdf", data=_make_pdf(["Valid process", ""])
+    )
+    assert parsed.unreadable_pages == (2,)
+    assert "[Страница 2]\n[Текст этой страницы не извлечён" in parsed.text
+    assert "Valid process" in parsed.text
+    assert parsed.warning is not None
+    assert "страницах: 2" in parsed.warning
+    with pytest.raises(DocumentParseError, match="не найден текстовый слой"):
+        await LocalDocumentParser().parse(file_name="scan.pdf", data=_make_pdf(["", ""]))

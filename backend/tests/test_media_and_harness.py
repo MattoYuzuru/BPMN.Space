@@ -529,6 +529,8 @@ async def test_ffmpeg_command_has_no_shell_and_safe_arguments(
     args = [str(a) for a in captured[0]]
     assert args[0] == "ffmpeg" and "-nostdin" in args and "-vn" in args
     assert args[args.index("-i") + 1] == "/data/in put.mp4"  # один аргумент, без shell-разбора
+    assert args[args.index("-protocol_whitelist") + 1] == "file"
+    assert args.index("-format_whitelist") < args.index("-i")  # входные опции — до `-i`
     assert args[args.index("-segment_time") + 1] == "600"
     assert args[args.index("-ac") + 1] == "1" and args[args.index("-ar") + 1] == "16000"
 
@@ -656,3 +658,24 @@ def test_unsupported_extension_lists_documents_and_media(client: TestClient) -> 
     assert response.status_code == 415
     detail = response.json()["detail"]
     assert ".xlsx" in detail and ".mp4" in detail
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="ffmpeg и ffprobe не установлены",
+)
+async def test_real_ffmpeg_accepts_containers_but_not_hls_playlist(tmp_path: Path) -> None:
+    secret = tmp_path / "secret.txt"
+    secret.write_bytes(b"\x00" * 64)
+    playlist = tmp_path / "disguised.mp3"
+    playlist.write_text(f"#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\n{secret}\n")
+    runner = FfmpegRunner(ffmpeg="ffmpeg", ffprobe="ffprobe", timeout_sec=30)
+    with pytest.raises(MediaError):
+        await runner.probe(playlist)
+    for name in ("a.mp3", "a.m4a", "a.ogg", "a.flac", "a.webm"):
+        target = tmp_path / name
+        subprocess.run(  # noqa: S603 — фиксированная команда теста
+            ["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "sine=d=1", str(target)],
+            check=True,
+        )
+        assert (await runner.probe(target)).has_audio, name

@@ -23,6 +23,14 @@ logger = logging.getLogger(__name__)
 
 AUDIO_EXTENSIONS = (".mp3", ".wav", ".ogg", ".opus", ".m4a", ".flac", ".aac", ".webm")
 VIDEO_EXTENSIONS = (".mp4", ".mov", ".mkv")
+# Входные опции ffmpeg/ffprobe: только локальный файл и контейнеры из допустимых расширений.
+# Без них плейлист HLS под видом .mp3 мог бы читать другие файлы или ходить по сети.
+INPUT_GUARD = (
+    "-protocol_whitelist",
+    "file",
+    "-format_whitelist",
+    "mp3,wav,ogg,flac,aac,matroska,webm,mov,mp4,m4a,3gp,3g2,mj2",
+)
 MEDIA_EXTENSIONS = (*AUDIO_EXTENSIONS, *VIDEO_EXTENSIONS)
 
 _SEGMENT_MIME = "audio/ogg"
@@ -101,6 +109,7 @@ class FfmpegRunner:
                 "json",
                 "-show_entries",
                 "format=duration:stream=codec_type",
+                *INPUT_GUARD,
                 str(source),
             ],
             timeout_sec=min(self._timeout, 120.0),
@@ -125,6 +134,7 @@ class FfmpegRunner:
                 "-loglevel",
                 "error",
                 "-y",
+                *INPUT_GUARD,
                 "-i",
                 str(source),
                 "-vn",

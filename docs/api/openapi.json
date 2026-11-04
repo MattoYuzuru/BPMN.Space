@@ -4368,6 +4368,182 @@
         "title": "TechnicalQuestionKind",
         "type": "string"
       },
+      "ToolCatalogCapability": {
+        "description": "Карточка возможности: что делает, каким инструментом видит модель и чем закрыть.",
+        "properties": {
+          "capability": {
+            "enum": [
+              "llm",
+              "speech_to_text",
+              "ocr",
+              "vision",
+              "video_understanding",
+              "web_search",
+              "web_fetch",
+              "tts"
+            ],
+            "title": "Capability",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "kinds": {
+            "description": "Типы ключей, закрывающие возможность",
+            "items": {
+              "enum": [
+                "llm",
+                "speech_to_text",
+                "ocr",
+                "vision",
+                "video",
+                "web_search",
+                "web_fetch",
+                "tts"
+              ],
+              "type": "string"
+            },
+            "title": "Kinds",
+            "type": "array"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "model_coverage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Что закрывает ключ модели без отдельного ключа",
+            "title": "Model Coverage"
+          },
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/ToolCatalogProvider"
+            },
+            "title": "Providers",
+            "type": "array"
+          },
+          "tool": {
+            "description": "Имя инструмента, которое увидит модель",
+            "title": "Tool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability",
+          "label",
+          "description",
+          "tool",
+          "kinds",
+          "providers"
+        ],
+        "title": "ToolCatalogCapability",
+        "type": "object"
+      },
+      "ToolCatalogProvider": {
+        "description": "Провайдер: где взять ключ, бесплатный уровень и поддержка в коде.",
+        "properties": {
+          "free_tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Что даёт бесплатный уровень",
+            "title": "Free Tier"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Страница, где взять ключ; null — ключ и адрес выдаёт ваш сервер",
+            "title": "Key Url"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "model_covers": {
+            "description": "Возможность закрывает ключ модели, отдельный ключ не нужен",
+            "title": "Model Covers",
+            "type": "boolean"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ограничения и особенности провайдера",
+            "title": "Notes"
+          },
+          "rf": {
+            "description": "Данные размещаются в РФ",
+            "title": "Rf",
+            "type": "boolean"
+          },
+          "supported": {
+            "description": "Есть адаптер в коде: такой ключ можно добавить",
+            "title": "Supported",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "rf",
+          "model_covers",
+          "supported"
+        ],
+        "title": "ToolCatalogProvider",
+        "type": "object"
+      },
+      "ToolCatalogResponse": {
+        "description": "Каталог провайдеров с датой проверки; дополняет карточки `/me/credentials`.",
+        "properties": {
+          "capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/ToolCatalogCapability"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "checked_on": {
+            "description": "Дата проверки цен, бесплатных уровней и ссылок",
+            "format": "date",
+            "title": "Checked On",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checked_on",
+          "capabilities"
+        ],
+        "title": "ToolCatalogResponse",
+        "type": "object"
+      },
       "ToolUnavailableErrorResponse": {
         "description": "Возможность не выполнена (RFC-0006): причина, прогресс и альтернативы.\n\nТекст провайдера в сообщение не входит — только класс причины и структурный прогресс.",
         "properties": {
@@ -6087,7 +6263,7 @@
     },
     "/api/v1/me/credentials/{credential_id}/check": {
       "post": {
-        "description": "Проверка ключа для каждого типа: отказ провайдера — `ok=false` с понятной причиной.\n\nУспешная проверка снимает отметку ошибки и снова включает ключ, отключённый после отказа\nпровайдера. Для возможностей волны 3 проверка честно отвечает, что пока недоступна.",
+        "description": "Проверка ключа для каждого типа: отказ провайдера — `ok=false` с понятной причиной.\n\nУспешная проверка снимает отметку ошибки и снова включает ключ, отключённый после отказа\nпровайдера. Для vision/OCR/видео/озвучки проверка честно отвечает, что пока недоступна:\nвеб-поиск и чтение страниц проверяются настоящим запросом провайдера.",
         "operationId": "check_credential",
         "parameters": [
           {
@@ -6902,6 +7078,43 @@
         "summary": "Restart Tour",
         "tags": [
           "onboarding"
+        ]
+      }
+    },
+    "/api/v1/me/tool-catalog": {
+      "get": {
+        "description": "Возможности, провайдеры, где взять ключ и что закрывает модель (данные на 04.11.2026).",
+        "operationId": "tool_catalog",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolCatalogResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Tool Catalog",
+        "tags": [
+          "tools"
         ]
       }
     },

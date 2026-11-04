@@ -52,7 +52,9 @@ from app.services.samples import SampleService
 from app.services.sharing import SharingService
 from app.services.sources import SourceService
 from app.services.technical_questions import TechnicalQuestionService
+from app.services.tool_catalog import ToolCatalogService
 from app.services.versions import VersionService
+from app.services.web_tools import WebTools
 
 
 def _server_pipeline(settings: Settings, transport: httpx.AsyncBaseTransport | None):
@@ -157,6 +159,8 @@ class Container:
     assistant: AssistantService
     estimate: EstimateService
     credentials: CredentialService
+    tool_catalog: ToolCatalogService
+    web_tools: WebTools
     api_tokens: ApiTokenService
     access: AccessService
     sharing: SharingService
@@ -293,6 +297,10 @@ def build_container(
     )
     media = build_media_transcriber(settings, stt)
     technical_questions = TechnicalQuestionService(repos, runtime=runtime)
+    # Отказы инструментов (речь, веб-поиск, чтение страниц) — в технические вопросы (RFC-0006).
+    incident_sink = TechnicalQuestionIncidentSink(technical_questions, repos)
+    tool_catalog = ToolCatalogService(registry)
+    web_tools = WebTools(router, incident_sink=incident_sink, runtime=runtime)
     sources = SourceService(
         repos,
         parser=LocalDocumentParser(
@@ -304,7 +312,7 @@ def build_container(
         ),
         media=media,
         stt_for_user=routed_stt.for_user,
-        incident_sink=TechnicalQuestionIncidentSink(technical_questions, repos),
+        incident_sink=incident_sink,
         max_media_bytes=settings.max_media_bytes,
         storage=storage,
         runtime=runtime,
@@ -364,6 +372,8 @@ def build_container(
         ),
         assistant=AssistantService(repos, resolver=resolver),
         estimate=EstimateService(repos, resolver=resolver, settings=settings, runtime=runtime),
+        tool_catalog=tool_catalog,
+        web_tools=web_tools,
         credentials=CredentialService(
             repos,
             cipher=cipher,

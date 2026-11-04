@@ -2,8 +2,9 @@
 
 Адаптер создаётся на время одного вызова по расшифрованному ключу пользователя (или ключу
 оператора) и закрывается после. Реестр отвечает на два вопроса: какие провайдеры поддержаны
-для возможности и как создать адаптер. Волна 1 знает только `speech_to_text`; заготовки
-vision/ocr/video/web/tts описаны контрактами, но в реестре не зарегистрированы.
+для возможности и как создать адаптер. Волна 2 добавила `speech_to_text`, волна 3 — веб-поиск
+и чтение страниц; заготовки vision/ocr/video/tts описаны контрактами, но в реестре не
+зарегистрированы.
 """
 
 from collections.abc import Callable, Iterable
@@ -17,6 +18,11 @@ from app.ingest.adapters.base import CapabilityAdapter
 from app.ingest.adapters.http import AdapterClientFactory
 from app.ingest.adapters.stt_deepgram import DeepgramSttAdapter
 from app.ingest.adapters.stt_openai import OpenAISttAdapter
+from app.ingest.adapters.web_brave import BraveSearchAdapter
+from app.ingest.adapters.web_exa import ExaSearchAdapter
+from app.ingest.adapters.web_firecrawl import FirecrawlFetchAdapter
+from app.ingest.adapters.web_jina import JinaReaderAdapter
+from app.ingest.adapters.web_tavily import TavilySearchAdapter
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,10 +142,41 @@ def register_stt_providers(registry: AdapterRegistry) -> None:
     )
 
 
+def register_web_providers(registry: AdapterRegistry) -> None:
+    """Веб-поиск: Tavily, Brave, Exa. Чтение страниц: Jina Reader, Firecrawl (RFC-0006, шаг 6)."""
+
+    def factory(adapter_type):
+        def build(context: AdapterContext) -> CapabilityAdapter:
+            return adapter_type(
+                context.api_key,
+                transport=context.transport,
+                client_factory=context.client_factory,
+                timeout_sec=context.timeout_sec,
+                credential_id=context.credential_id,
+            )
+
+        return build
+
+    registry.register(
+        AdapterSpec(Capability.WEB_SEARCH, "tavily", "Tavily", factory(TavilySearchAdapter))
+    )
+    registry.register(
+        AdapterSpec(Capability.WEB_SEARCH, "brave", "Brave Search", factory(BraveSearchAdapter))
+    )
+    registry.register(AdapterSpec(Capability.WEB_SEARCH, "exa", "Exa", factory(ExaSearchAdapter)))
+    registry.register(
+        AdapterSpec(Capability.WEB_FETCH, "jina", "Jina Reader", factory(JinaReaderAdapter))
+    )
+    registry.register(
+        AdapterSpec(Capability.WEB_FETCH, "firecrawl", "Firecrawl", factory(FirecrawlFetchAdapter))
+    )
+
+
 def build_default_registry(extra: Iterable[AdapterSpec] = ()) -> AdapterRegistry:
     """Реестр по умолчанию: ключи по типам задач, которые уже поддержаны."""
     registry = AdapterRegistry()
     for spec in extra:
         registry.register(spec)
     register_stt_providers(registry)
+    register_web_providers(registry)
     return registry

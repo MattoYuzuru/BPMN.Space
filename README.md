@@ -4,6 +4,10 @@
 
 <h1 align="center">BPMN.Space</h1>
 
+<p align="center">
+  <a href="https://github.com/MattoYuzuru/BPMN.Space/actions/workflows/ci.yml"><img src="https://github.com/MattoYuzuru/BPMN.Space/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+</p>
+
 <p align="center">От описания процесса до понятной BPMN-схемы.</p>
 
 <p align="center">

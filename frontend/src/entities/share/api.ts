@@ -1,4 +1,5 @@
 import {
+  infiniteQueryOptions,
   type QueryKey,
   queryOptions,
   useMutation,
@@ -6,7 +7,13 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import { type ProjectDetail, projectKeys } from '@/entities/project'
-import type { Version, VersionDetail, VersionSource } from '@/entities/version'
+import type {
+  VersionDetail,
+  VersionPage,
+  VersionPagesData,
+  VersionSource,
+  VersionSummary,
+} from '@/entities/version'
 import { api, errorMessage, unwrap } from '@/shared/api/client'
 import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
 import { toast } from '@/shared/ui'
@@ -173,9 +180,18 @@ export function shareVersionSource(token: string, detail: ProjectDetail): Versio
         staleTime: Number.POSITIVE_INFINITY,
       }),
     list: (projectId) =>
-      queryOptions<Version[], Error, Version[], QueryKey>({
+      queryOptions<VersionSummary[], Error, VersionSummary[], QueryKey>({
         queryKey: [...shareKeys.shared(token), 'versions', projectId],
         queryFn: async () => (latest ? [latest] : []),
+        staleTime: Number.POSITIVE_INFINITY,
+      }),
+    // Истории по ссылке нет (`history: false`), панель её не открывает.
+    pages: (projectId) =>
+      infiniteQueryOptions<VersionPage, Error, VersionPagesData, QueryKey, number | undefined>({
+        queryKey: [...shareKeys.shared(token), 'version-pages', projectId],
+        initialPageParam: undefined,
+        queryFn: async () => ({ items: latest ? [latest] : [], next_before: null }),
+        getNextPageParam: () => undefined,
         staleTime: Number.POSITIVE_INFINITY,
       }),
     xmlUrl: xmlPath,

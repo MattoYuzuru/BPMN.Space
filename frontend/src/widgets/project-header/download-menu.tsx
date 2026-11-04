@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useReportOnboardingEvent } from '@/entities/onboarding'
-import type { Version } from '@/entities/version'
+import type { VersionSummary } from '@/entities/version'
 import { versionLabel } from '@/entities/version'
 import { EXPORT_FORMATS, exportDiagram } from '@/features/export-diagram/export'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
@@ -20,7 +20,7 @@ import { useWorkspace, useWorkspaceUi } from '@/widgets/workspace/model'
  * Скачивание схемы (.bpmn, .svg, .png) и переход к отчёту проверки. Общая для шапки проекта
  * и шапки публичного просмотра: адрес .bpmn берётся из источника версий рабочего места.
  */
-export function DownloadMenu({ version, extra }: { version: Version; extra?: ReactNode }) {
+export function DownloadMenu({ version, extra }: { version: VersionSummary; extra?: ReactNode }) {
   const { project, editorRef, versions } = useWorkspace()
   const setSheet = useWorkspaceUi((state) => state.setSheet)
   const report = useReportOnboardingEvent()

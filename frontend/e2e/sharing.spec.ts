@@ -80,7 +80,7 @@ test('ссылка на просмотр: гость видит схему и н
   await guest.waitForTimeout(600)
   await dragElement(guest, 'Task_Inspection', 40, 30)
   await guest.waitForTimeout(2500)
-  await expect(guest.getByText(/Схема сохранена|Сохраняется|Сохранено/)).toHaveCount(0)
+  await expect(guest.getByText(/Сохраняется|Сохранено/)).toHaveCount(0)
   // Закрытые экраны гостю по-прежнему закрыты.
   await guest.goto(`/projects/${id}`)
   await expect(guest).toHaveURL(/\/login\?redirect=/)
@@ -126,7 +126,7 @@ test('приглашение редактора: регистрация, при�
   await guest.getByRole('button', { name: 'Вписать в окно' }).click()
   await guest.waitForTimeout(600)
   await dragElement(guest, 'Task_Inspection', 40, 30)
-  await expect(guest.getByText('Схема сохранена')).toBeVisible({ timeout: 15_000 })
+  await expect(guest.getByText('Сохранено', { exact: true })).toBeVisible({ timeout: 15_000 })
 
   // В списке проект лежит в «Общих» и не удаляется.
   await guest.goto('/projects')

@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
 import { isRunning, projectStatusView, useRenameProject } from '@/entities/project'
 import { useRunView, useStartRun } from '@/entities/run'
-import { VERSION_ORIGIN, versionLabel } from '@/entities/version'
+import { RECENT_VERSIONS, VERSION_ORIGIN, versionLabel } from '@/entities/version'
 import { RebuildFromSources } from '@/features/run-analysis/rebuild-from-sources'
 import { ShareProjectButton } from '@/features/share-project/share-project-button'
 import { formatRelative } from '@/shared/lib/format'
@@ -139,7 +139,13 @@ function HeaderActions({ running }: { running: boolean }) {
   const versionList = useQuery({ ...versions.list(project.id), enabled: !!latest })
   const noSources = project.sources.length === 0
   const viewedId = viewedVersionId ?? latest?.id
-  const viewed = versionList.data?.find((item) => item.id === viewedId) ?? latest
+  const listed = versionList.data?.find((item) => item.id === viewedId)
+  // Просматриваемая старая версия может не попасть в короткий список.
+  const loaded = useQuery({
+    ...versions.detail(viewedId ?? ''),
+    enabled: !!viewedId && !listed && viewedId !== latest?.id,
+  })
+  const viewed = listed ?? loaded.data ?? latest
 
   return (
     <>
@@ -194,7 +200,7 @@ function HeaderActions({ running }: { running: boolean }) {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-72">
               <DropdownMenuLabel>Версии схемы</DropdownMenuLabel>
-              {(versionList.data ?? [latest]).slice(0, 6).map((version, index) => (
+              {(versionList.data ?? [latest]).slice(0, RECENT_VERSIONS).map((version, index) => (
                 <DropdownMenuItem
                   key={version.id}
                   icon={VERSION_ORIGIN[version.origin].icon}

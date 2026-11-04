@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { type FormEvent, useState } from 'react'
 import { VERSION_ORIGIN, type VersionDetail, versionLabel } from '@/entities/version'
 import { cn } from '@/shared/lib/cn'
 import { formatRelative } from '@/shared/lib/format'
@@ -6,13 +6,17 @@ import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import {
   Badge,
   Button,
+  Dialog,
+  DialogContent,
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuLabel,
   DropdownMenuTrigger,
+  Field,
   Icon,
   IconButton,
+  Input,
   Tooltip,
 } from '@/shared/ui'
 import { useWorkspace, useWorkspaceUi } from '@/widgets/workspace/model'
@@ -22,14 +26,20 @@ export interface MarkerToggles {
   added: boolean
 }
 
+/** Состояние автосохранения: `conflict` — коллега сохранил схему раньше, ваша правка не записана. */
+export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error' | 'conflict'
+
 export interface DiagramToolbarProps {
   version?: VersionDetail
   latestNumber: number
   isLatest: boolean
   simulationActive?: boolean
   ready: boolean
-  saving: boolean
-  saved: boolean
+  saveStatus: SaveStatus
+  onRetry?: () => void
+  /** Показать «Сохранить версию»; `onCheckpoint` вернёт true, если версия закреплена. */
+  canCheckpoint?: boolean
+  onCheckpoint?: (label: string) => Promise<boolean>
   markers: MarkerToggles
   onMarkersChange: (markers: MarkerToggles) => void
   propertiesOpen: boolean
@@ -45,8 +55,10 @@ export function DiagramToolbar({
   isLatest,
   ready,
   simulationActive,
-  saving,
-  saved,
+  saveStatus,
+  onRetry,
+  canCheckpoint,
+  onCheckpoint,
   markers,
   onMarkersChange,
   propertiesOpen,
@@ -82,7 +94,7 @@ export function DiagramToolbar({
               onClick={() => setSheet('versions')}
               className="text-fg-muted"
             >
-              {origin.label}
+              {version.checkpoint ? (version.label ?? 'Контрольная точка') : origin.label}
               <span className="hidden font-normal text-fg-subtle @3xl:inline" data-numeric>
                 {formatRelative(new Date(version.created_at))}
               </span>
@@ -104,24 +116,9 @@ export function DiagramToolbar({
             </Button>
           </>
         )}
-        {isLatest && (saving || saved) && (
-          <span
-            key={saving ? 'saving' : 'saved'}
-            className="flex items-center gap-1.5 type-caption text-fg-subtle animate-fade-in"
-            aria-live="polite"
-          >
-            {saving ? (
-              <>
-                <span className="size-1.5 animate-breathe rounded-full bg-accent" />
-                Сохраняется
-              </>
-            ) : (
-              <>
-                <Icon name="check" size={14} className="text-success" />
-                Сохранено
-              </>
-            )}
-          </span>
+        {isLatest && <SaveIndicator status={saveStatus} onRetry={onRetry} />}
+        {isLatest && canCheckpoint && onCheckpoint && (
+          <CheckpointButton onCheckpoint={onCheckpoint} />
         )}
       </div>
 
@@ -224,4 +221,87 @@ export function DiagramToolbar({
 
 function Divider() {
   return <span aria-hidden="true" className="mx-1 h-4 w-px bg-border" />
+}
+
+const SAVE_TEXT: Record<Exclude<SaveStatus, 'idle'>, string> = {
+  saving: 'Сохраняется…',
+  saved: 'Сохранено',
+  error: 'Не сохранено',
+  conflict: 'Не сохранено: схема изменена',
+}
+
+/** Индикатор автосохранения. Область озвучивания постоянная: меняется только её текст. */
+function SaveIndicator({ status, onRetry }: { status: SaveStatus; onRetry?: () => void }) {
+  return (
+    <span className="flex items-center gap-1.5 type-caption text-fg-subtle">
+      <span role="status" aria-live="polite" className="flex items-center gap-1.5">
+        {status === 'saving' && (
+          <span className="size-1.5 animate-breathe rounded-full bg-accent" />
+        )}
+        {status === 'saved' && <Icon name="check" size={14} className="text-success" />}
+        {(status === 'error' || status === 'conflict') && (
+          <Icon name="alert-circle" size={14} className="text-danger" />
+        )}
+        {status !== 'idle' && SAVE_TEXT[status]}
+      </span>
+      {status === 'error' && onRetry && (
+        <Button size="sm" variant="ghost" onClick={onRetry}>
+          Повторить
+        </Button>
+      )}
+    </span>
+  )
+}
+
+/** «Сохранить версию»: закрепляет текущую схему как контрольную точку с необязательным именем. */
+function CheckpointButton({ onCheckpoint }: { onCheckpoint: (label: string) => Promise<boolean> }) {
+  const [open, setOpen] = useState(false)
+  const [label, setLabel] = useState('')
+  const [busy, setBusy] = useState(false)
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    setBusy(true)
+    try {
+      if (await onCheckpoint(label)) {
+        setOpen(false)
+        setLabel('')
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <Tooltip content="Закрепить текущую схему в истории" side="bottom">
+        <Button size="sm" variant="ghost" leadingIcon="flag" onClick={() => setOpen(true)}>
+          <span className="hidden @3xl:inline">Сохранить версию</span>
+          <span className="sr-only @3xl:hidden">Сохранить версию</span>
+        </Button>
+      </Tooltip>
+      <DialogContent
+        size="sm"
+        title="Сохранить версию"
+        description="Версия останется в истории отдельной точкой, дальнейшие правки пойдут в новую."
+      >
+        <form onSubmit={submit} className="flex flex-col gap-4">
+          <Field label="Название" optional>
+            <Input
+              value={label}
+              maxLength={120}
+              placeholder="Например, согласовано с заказчиком"
+              onChange={(event) => setLabel(event.target.value)}
+            />
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
+              Отмена
+            </Button>
+            <Button type="submit" loading={busy}>
+              Сохранить
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
 }

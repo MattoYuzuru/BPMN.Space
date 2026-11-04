@@ -84,6 +84,18 @@ class Settings(BaseSettings):
     # Сколько независимых запросов порций к модели одновременно (анализ, извлечение, сверка).
     llm_parallel_requests: int = Field(default=4, ge=1, le=32)
 
+    # --- Агентный режим (RFC-0004): модель сама читает источники инструментами ---
+    # Выключен по умолчанию: режим включает оператор. Агент доступен только моделям с
+    # инструментами; профиль прогона с mode=agent иначе получает 422.
+    llm_agent_mode: bool = False
+    # Потолок ходов агента на прогон: профиль может попросить меньше, но не больше.
+    llm_agent_max_steps: int = Field(default=24, ge=1, le=200)
+    # Сколько символов источника агент читает за один вызов read_source.
+    llm_agent_read_max_chars: int = Field(default=12_000, ge=1_000, le=40_000)
+    # Сколько совпадений и какой длины фрагменты отдаёт search_sources.
+    llm_agent_search_limit: int = Field(default=5, ge=1, le=20)
+    llm_agent_search_snippet_chars: int = Field(default=400, ge=100, le=1_200)
+
     # --- Ограничения загрузок ---
     # Документы (.txt .md .csv .docx .xlsx .pptx .pdf).
     max_upload_bytes: int = 50 * _MB

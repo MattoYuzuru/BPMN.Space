@@ -17,6 +17,7 @@ from app.domain.runs import stage_label
 from app.llm.capabilities import RunProfile as DomainRunProfile
 
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
+AgentMode = Literal["pipeline", "agent"]
 
 
 class RunProfile(ApiModel):
@@ -39,12 +40,30 @@ class RunProfile(ApiModel):
             "в `waiting` с блокирующим техническим вопросом"
         ),
     )
+    mode: AgentMode | None = Field(
+        default=None,
+        description=(
+            "Режим прогона: `pipeline` — фиксированный конвейер, `agent` — модель сама читает "
+            "источники инструментами (RFC-0004). `agent` доступен только с ключом оператора "
+            "LLM_AGENT_MODE и моделью с инструментами; иначе 422"
+        ),
+    )
+    max_steps: int | None = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Лимит ходов агента (только с mode=agent); не больше серверного LLM_AGENT_MAX_STEPS. "
+            "Достигнутый лимит — мягкая остановка `waiting` с вопросом budget_reached"
+        ),
+    )
 
     def to_domain(self) -> DomainRunProfile:
         return DomainRunProfile(
             effort=self.effort,
             semantic_review=self.semantic_review,
             budget=self.budget.to_domain() if self.budget is not None else None,
+            mode=self.mode,
+            max_steps=self.max_steps,
         )
 
     @classmethod

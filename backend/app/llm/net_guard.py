@@ -59,14 +59,16 @@ def normalize_base_url(raw: str, *, allowed_private_hosts: Iterable[str] = ()) -
     return value.rstrip("/")
 
 
-async def ensure_public_host(base_url: str, *, allowed_private_hosts: Iterable[str] = ()) -> None:
-    """Разрешает имя хоста и отклоняет закрытые адреса, если хост не в явном списке."""
-    allowed = {host.lower() for host in allowed_private_hosts}
-    parsed = urlsplit(base_url)
-    host = (parsed.hostname or "").lower()
-    if host in allowed:
-        return
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+async def resolve_public_addresses(
+    host: str, port: int, *, allowed_private_hosts: Iterable[str] = ()
+) -> list[IpAddress]:
+    """Разрешает имя хоста и отклоняет закрытые адреса, если хост не в явном списке.
+
+    Возвращает проверенные адреса: именно к ним и надо подключаться (иначе повторное разрешение
+    имени при соединении позволит подменить ответ DNS между проверкой и запросом).
+    """
+    host = host.lower()
+    allowed = {item.lower() for item in allowed_private_hosts}
     try:
         literal: IpAddress | None = ipaddress.ip_address(host)
     except ValueError:
@@ -81,8 +83,21 @@ async def ensure_public_host(base_url: str, *, allowed_private_hosts: Iterable[s
         except OSError:
             raise UnsafeBaseUrlError("Не удалось найти адрес провайдера") from None
         addresses = [ipaddress.ip_address(info[4][0]) for info in infos]
+    if host in allowed:
+        return addresses
     if not addresses or not all(is_public_ip(address) for address in addresses):
         raise UnsafeBaseUrlError(
             "Адрес провайдера указывает на закрытую сеть. Для локальной модели администратор "
             "должен добавить хост в LLM_ALLOWED_PRIVATE_HOSTS"
         )
+    return addresses
+
+
+async def ensure_public_host(base_url: str, *, allowed_private_hosts: Iterable[str] = ()) -> None:
+    """Предварительная проверка адреса: понятная ошибка до запроса."""
+    parsed = urlsplit(base_url)
+    host = (parsed.hostname or "").lower()
+    if host in {item.lower() for item in allowed_private_hosts}:
+        return
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    await resolve_public_addresses(host, port, allowed_private_hosts=allowed_private_hosts)

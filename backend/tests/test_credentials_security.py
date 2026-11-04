@@ -4,12 +4,16 @@ import asyncio
 import socket
 from uuid import uuid4
 
+import httpcore
+import httpx
 import pytest
 from cryptography.fernet import Fernet
 from pydantic import SecretStr
 
 from app.infra.crypto import CredentialCipher, CredentialCipherError
+from app.llm.client import LlmConfig
 from app.llm.net_guard import UnsafeBaseUrlError, ensure_public_host, normalize_base_url
+from app.llm.openai_compatible import OpenAICompatibleClient
 
 SECRET = "sk-ant-api03-PLAINTEXT-SECRET-1234"  # noqa: S105
 
@@ -126,3 +130,108 @@ async def test_public_address_passes(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(asyncio.BaseEventLoop, "getaddrinfo", fake)
     await ensure_public_host("https://api.example.com/v1")
+
+
+def _resolver_script(monkeypatch: pytest.MonkeyPatch, answers: list[str]) -> list[str]:
+    """Каждый вызов DNS отдаёт следующий ответ; последний повторяется."""
+    calls: list[str] = []
+
+    async def fake(_self, host: str, port: int, **_kw):
+        address = answers[min(len(calls), len(answers) - 1)]
+        calls.append(address)
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, port))]
+
+    monkeypatch.setattr(asyncio.BaseEventLoop, "getaddrinfo", fake)
+    return calls
+
+
+def _record_connects(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    hosts: list[str] = []
+
+    async def fake_connect(_self, host: str, port: int, **_kw):
+        hosts.append(host)
+        raise httpcore.ConnectError("test: сети нет")
+
+    monkeypatch.setattr(httpcore.AnyIOBackend, "connect_tcp", fake_connect)
+    return hosts
+
+
+def _guarded_client(**kw: object) -> OpenAICompatibleClient:
+    config = LlmConfig(
+        provider="openai_compatible",
+        model="m",
+        api_key=SecretStr("sk-test"),
+        base_url="https://rebind.example.com/v1",
+        max_retries=0,
+        **kw,  # type: ignore[arg-type]
+    )
+    return OpenAICompatibleClient(config, guard_host=True)
+
+
+async def test_connection_goes_to_the_vetted_ip_not_the_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _resolver_script(monkeypatch, ["93.184.216.34"])
+    hosts = _record_connects(monkeypatch)
+    client = _guarded_client()
+    with pytest.raises(RuntimeError, match="связаться"):
+        await client.list_models()
+    assert hosts == ["93.184.216.34"]
+
+
+async def test_dns_rebinding_between_check_and_connect_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Первый ответ проходит проверку, второй (при соединении) указывает на метаданные облака.
+    _resolver_script(monkeypatch, ["93.184.216.34", "169.254.169.254"])
+    hosts = _record_connects(monkeypatch)
+    client = _guarded_client()
+    with pytest.raises(RuntimeError, match="закрытую сеть"):
+        await client.list_models()
+    assert hosts == []
+    await client.aclose()
+
+
+async def test_response_over_the_cap_is_aborted_for_chat_and_models() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"x" * 5000)
+
+    config = LlmConfig(
+        provider="openai_compatible",
+        model="m",
+        api_key=SecretStr("sk-test"),
+        base_url="https://llm.example.test/v1",
+        max_retries=0,
+        max_response_bytes=1024,
+    )
+    client = OpenAICompatibleClient(config, transport=httpx.MockTransport(handler))
+    with pytest.raises(RuntimeError, match="слишком большой"):
+        await client.complete("s", "u", json_mode=False, max_tokens=10)
+    with pytest.raises(RuntimeError, match="слишком большой"):
+        await client.list_models()
+
+
+async def test_chunked_response_without_length_is_aborted_mid_stream() -> None:
+    sent = 0
+
+    async def body():
+        nonlocal sent
+        for _ in range(1000):
+            sent += 1
+            yield b"y" * 1024
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=body())
+
+    config = LlmConfig(
+        provider="openai_compatible",
+        model="m",
+        api_key=SecretStr("sk-test"),
+        base_url="https://llm.example.test/v1",
+        max_retries=0,
+        max_response_bytes=4096,
+    )
+    client = OpenAICompatibleClient(config, transport=httpx.MockTransport(handler))
+    with pytest.raises(RuntimeError, match="слишком большой"):
+        await client.list_models()
+    assert sent < 10

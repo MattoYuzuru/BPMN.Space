@@ -144,6 +144,8 @@ class Settings(BaseSettings):
     # Хосты закрытых сетей, к которым разрешено ходить совместимым провайдерам пользователей
     # (локальный vLLM/Ollama в dev). Пусто — только публичные адреса по HTTPS.
     llm_allowed_private_hosts: Annotated[list[str], NoDecode] = []
+    # Потолок тела ответа сервера модели (чат и /models): защита памяти от чужого сервера.
+    llm_max_response_bytes: int = Field(default=8 * _MB, ge=1024)
     # Сколько секунд хранить список моделей аккаунта пользователя.
     llm_models_cache_sec: float = 300.0
     # Старые имена оставлены для плавного перехода production .env с DeepSeek.
@@ -262,9 +264,9 @@ class Settings(BaseSettings):
             return self.session_cookie_secure
         return self.is_production
 
-    def context_budget_chars(self, provider_max: int | None = None) -> int:
-        """Бюджет контекста: провайдер с большим окном может задать своё значение явно."""
-        return provider_max if provider_max is not None else self.llm_context_budget_chars
+    def context_budget_chars(self) -> int:
+        """Бюджет контекста; для моделей с большим окном увеличьте `LLM_CONTEXT_BUDGET_CHARS`."""
+        return self.llm_context_budget_chars
 
     def run_deadline(self, total_chars: int = 0) -> float | None:
         """Срок прогона: `run_deadline_sec` — нижняя граница, плюс время на объём источников.

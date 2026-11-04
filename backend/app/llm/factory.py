@@ -78,4 +78,5 @@ def call_knobs(settings: Settings) -> dict[str, float | int | bool | str | None]
         "json_mode": settings.llm_json_mode,
         "json_temperature": settings.llm_json_temperature,
         "effort": settings.llm_anthropic_effort,
+        "max_response_bytes": settings.llm_max_response_bytes,
     }

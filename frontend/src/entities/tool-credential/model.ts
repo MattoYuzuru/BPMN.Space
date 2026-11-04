@@ -174,6 +174,17 @@ export function kindLabel(kind: CredentialKind): string {
   return CREDENTIAL_KIND[kind]?.label ?? kind
 }
 
+/** Провайдеры, которые закрывают выбранные типы задач (по видам из карточек возможностей). */
+export function providersForKinds(
+  capabilities: readonly CapabilityCard[],
+  kinds: readonly CredentialKind[],
+): CredentialProvider[] {
+  const wanted = new Set(kinds)
+  return availableProviders(
+    capabilities.filter((card) => card.kinds.some((kind) => wanted.has(kind))),
+  )
+}
+
 export function providerLabel(providers: readonly CredentialProvider[], id: string): string {
   return providers.find((provider) => provider.id === id)?.label ?? id
 }

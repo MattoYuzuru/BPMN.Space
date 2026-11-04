@@ -1744,9 +1744,12 @@ async def test_llm_call_totals_are_aggregated_from_postgres(sql_store) -> None:
     assert totals.stages["analyze"].calls == 2
 
     listed = await repos.llm_calls.list_by_run(run.id)
+    # Этапы упорядочены, а порядок вызовов внутри этапа не гарантирован (id — случайный UUID),
+    # поэтому стоимость первого вызова проверяем множеством, а не позицией.
     assert [call.stage for call in listed] == ["analyze", "analyze", "structure"]
     # Внутри одного этапа порядок задаёт id: сравниваем состав, а не случайный порядок.
-    assert {call.cost_usd for call in listed[:2]} == {0.25, 0.05}
+    assert {call.cost_usd for call in listed if call.stage == "analyze"} == {0.25, 0.05}
+    assert listed[2].cost_usd is None
 
 
 @pytest.mark.asyncio

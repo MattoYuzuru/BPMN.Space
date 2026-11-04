@@ -11,11 +11,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import httpx2
@@ -45,6 +46,18 @@ from app.domain.models import (
     SourceTrust,
 )
 from app.infra.db_models import ApiTokenRow
+from app.llm.estimate import (
+    CostRange as DomainCostRange,
+)
+from app.llm.estimate import (
+    IntRange as DomainIntRange,
+)
+from app.llm.estimate import (
+    RunEstimate as DomainRunEstimate,
+)
+from app.llm.estimate import (
+    StageEstimate as DomainStageEstimate,
+)
 from app.mcp import build_mcp
 from app.mcp.auth import (
     PROMPT_POLICIES,
@@ -55,8 +68,11 @@ from app.mcp.auth import (
 )
 from app.mcp.estimate import (
     ESTIMATE_UNAVAILABLE_MESSAGE,
+    ServiceEstimator,
     TicketSigner,
     UnavailableEstimator,
+    _from_domain,
+    build_estimator,
 )
 from app.mcp.serializers import question_view, run_view, source_view
 from app.mcp.tools import MAX_READ_CHARS, _profile_json
@@ -242,6 +258,98 @@ async def test_estimator_absent_is_explicit() -> None:
             project_id=uuid4(), mode=RunMode.ANALYZE, profile=None, user_id=uuid4()
         )
     assert caught.value.message == ESTIMATE_UNAVAILABLE_MESSAGE
+
+
+def _domain_estimate(*, cost: DomainCostRange | None) -> DomainRunEstimate:
+    """Ответ сервиса оценки 2A для проверки адаптера (RFC-0005)."""
+    return DomainRunEstimate(
+        tokens=DomainIntRange(min=1000, max=4000),
+        calls=DomainIntRange(min=2, max=6),
+        cost=cost,
+        duration_sec=DomainIntRange(min=30, max=120),
+        breakdown=[
+            DomainStageEstimate(
+                stage="analyze",
+                label="Сверка вопросов",
+                calls=DomainIntRange(min=1, max=3),
+                tokens_in=DomainIntRange(min=500, max=2000),
+                tokens_out=DomainIntRange(min=100, max=400),
+                cost=cost,
+            )
+        ],
+        complete=cost is not None,
+        priced_on=None,
+        notes=["Запросы к модели не входят в обработку медиа"],
+        model="claude-opus-5",
+        provider="anthropic",
+    )
+
+
+async def test_service_estimator_maps_real_estimate() -> None:
+    seen: dict[str, Any] = {}
+
+    class FakeService:
+        async def estimate(self, project_id: Any, **kwargs: Any) -> DomainRunEstimate:
+            seen.update({"project_id": project_id, **kwargs})
+            return _domain_estimate(cost=DomainCostRange(min_usd=0.5, max_usd=2.5, currency="USD"))
+
+    project, user = uuid4(), uuid4()
+    mapped = await ServiceEstimator(FakeService()).estimate(
+        project_id=project,
+        mode=RunMode.BUILD,
+        profile={"effort": "high", "semantic_review": False},
+        user_id=user,
+    )
+    assert seen["project_id"] == project
+    assert seen["mode"] is RunMode.BUILD
+    assert seen["created_by"] == user
+    assert seen["profile"] is not None
+    assert seen["profile"].effort == "high"
+    assert seen["profile"].semantic_review is False
+
+    body = mapped.to_json()
+    assert body["tokens"] == {"min": 1000, "max": 4000}
+    assert body["calls"] == {"min": 2, "max": 6}
+    assert body["duration_sec"] == {"min": 30, "max": 120}
+    assert body["cost"] == {"min": 0.5, "max": 2.5, "currency": "USD"}
+    assert body["complete"] is True
+    assert body["model"] == "claude-opus-5"
+    assert body["provider"] == "anthropic"
+    assert body["breakdown"][0]["stage"] == "analyze"
+    assert body["notes"]
+
+
+async def test_service_estimator_is_honest_when_prices_unknown() -> None:
+    class FakeService:
+        async def estimate(self, project_id: Any, **kwargs: Any) -> DomainRunEstimate:
+            return _domain_estimate(cost=None)
+
+    mapped = await ServiceEstimator(FakeService()).estimate(
+        project_id=uuid4(), mode=RunMode.ANALYZE, profile=None, user_id=uuid4()
+    )
+    body = mapped.to_json()
+    assert body["cost"] is None
+    assert body["complete"] is False
+    assert body["tokens"]["max"] >= body["tokens"]["min"]
+
+
+def test_from_domain_drops_partial_cost_and_marks_incomplete() -> None:
+    estimate = _domain_estimate(cost=DomainCostRange(min_usd=None, max_usd=2.0))
+    mapped = _from_domain(estimate)
+    assert mapped.cost is None
+    assert mapped.complete is False
+    assert mapped.to_json()["cost"] is None
+
+
+def test_build_estimator_uses_container_service() -> None:
+    marker = object()
+    assert isinstance(build_estimator(cast(Any, _FakeContainer(marker))), ServiceEstimator)
+    assert isinstance(build_estimator(cast(Any, _FakeContainer(None))), UnavailableEstimator)
+
+
+class _FakeContainer:
+    def __init__(self, estimate: Any) -> None:
+        self.estimate = estimate
 
 
 def test_agent_cannot_raise_budget_or_smuggle_profile_fields() -> None:
@@ -621,36 +729,141 @@ async def test_mcp_diagram_read_save_and_conflict(stack: Stack) -> None:
         assert "изменена" in _error(stale).lower()
 
 
-async def test_mcp_estimate_and_start_run_are_gated(stack: Stack) -> None:
+async def test_mcp_estimate_returns_real_estimate_and_starts_run(stack: Stack) -> None:
     owner = await stack.user("mcp-runs@example.com")
     finished = await _finished_project(owner)
+    project_id = finished["project"]
     secret, _ = await _issue_token(owner, scopes=["projects:read", "runs:start"])
     async with _mcp_server(stack) as connect:
         session = await connect(secret)
-        estimate = await _call(
-            session, "estimate_run", {"project_id": finished["project"], "kind": "build"}
+        estimated = _payload(
+            await _call(
+                session,
+                "estimate_run",
+                {
+                    "project_id": project_id,
+                    "kind": "build",
+                    "profile": {"effort": "high", "semantic_review": True},
+                },
+            )
         )
-        assert estimate.is_error
-        assert "Оценка" in _error(estimate)
-        assert "estimate_run" in _error(estimate)
+        estimate = estimated["estimate"]
+        assert estimate["tokens"]["min"] <= estimate["tokens"]["max"]
+        assert estimate["calls"]["max"] >= estimate["calls"]["min"] >= 1
+        assert 0 < estimate["duration_sec"]["min"] <= estimate["duration_sec"]["max"]
+        assert estimate["breakdown"]
+        assert estimate["model"]
+        # Mock-провайдер без цен: оценка честно неполная, деньги не выдумываются.
+        assert estimated["complete"] is False
+        assert estimated["cost_known"] is False
+        assert estimate["cost"] is None
+        assert estimated["estimate_token"]
 
-        # Без оценки запуск отклоняется: тикет не подделать.
+        # Профиль сверяется с возможностями: неизвестный effort — понятная ошибка.
+        bad_profile = await _call(
+            session, "estimate_run", {"project_id": project_id, "profile": {"effort": "turbo"}}
+        )
+        assert bad_profile.is_error
+        assert "effort" in _error(bad_profile)
+
+        # Без свежей оценки запуск отклоняется: тикет не подделать.
         forged = await _call(
-            session,
-            "start_run",
-            {"project_id": finished["project"], "estimate_token": "bps_fake"},
+            session, "start_run", {"project_id": project_id, "estimate_token": "bps_fake"}
         )
         assert forged.is_error
         assert "устарела" in _error(forged).lower()
 
-        # Бюджет агент задать не может даже в профиле оценки.
+        # Свежий тикет запускает прогон; оценка была неполной, но запуск легален.
+        started = _payload(
+            await _call(
+                session,
+                "start_run",
+                {"project_id": project_id, "estimate_token": estimated["estimate_token"]},
+            )
+        )
+        run_id = started["run"]["id"]
+        assert started["run"]["mode"] == "build"
+        assert started["run"]["project_id"] == project_id
+        run: dict[str, Any] = started["run"]
+        for _ in range(100):
+            if run["status"] not in {"queued", "running"}:
+                break
+            await asyncio.sleep(0.05)
+            run = _payload(await _call(session, "get_run", {"run_id": run_id}))["run"]
+        assert run["status"] == "succeeded", run
+        assert run["version_id"]
+        # Потрачено: mock без цен даёт complete=false и cost_usd=null, но журнал вызовов есть.
+        spent = _payload(await _call(session, "get_run", {"run_id": run_id}))["cost"]
+        assert spent is not None
+        assert spent["calls"] >= 1
+        assert spent["by_stage"]
+        assert spent["complete"] is False
+        assert spent["cost_usd"] is None
+
+        # Один тикет — только для своего проекта.
+        other = await owner.post("/projects", json={"title": "Другой проект"})
+        assert other.status_code == 201, other.text
+        mismatch = await _call(
+            session,
+            "start_run",
+            {"project_id": other.json()["id"], "estimate_token": estimated["estimate_token"]},
+        )
+        assert mismatch.is_error
+        assert "не совпадает" in _error(mismatch)
+
+
+async def test_mcp_estimate_rejects_empty_project_and_budget(stack: Stack) -> None:
+    owner = await stack.user("mcp-estimate-guard@example.com")
+    finished = await _finished_project(owner)
+    project_id = finished["project"]
+    secret, _ = await _issue_token(owner, scopes=["projects:read", "runs:start"])
+    async with _mcp_server(stack) as connect:
+        session = await connect(secret)
+        # Пустой проект оценить нельзя: сервис отвечает понятной причиной, не выдумкой.
+        empty = await owner.post("/projects", json={"title": "Пустой"})
+        assert empty.status_code == 201, empty.text
+        no_sources = await _call(session, "estimate_run", {"project_id": empty.json()["id"]})
+        assert no_sources.is_error
+        assert "источник" in _error(no_sources).lower()
+
+        # Бюджет агент задать не может (настройку бюджета добавит волна 2B).
         budget = await _call(
             session,
             "estimate_run",
-            {"project_id": finished["project"], "profile": {"budget_cost_usd": 100}},
+            {"project_id": project_id, "profile": {"budget_cost_usd": 100}},
         )
         assert budget.is_error
         assert "Бюджет" in _error(budget)
+
+
+async def test_mcp_viewer_can_estimate_but_not_start(stack: Stack) -> None:
+    owner = await stack.user("mcp-viewer-est-owner@example.com")
+    finished = await _finished_project(owner)
+    project_id = finished["project"]
+    stranger = await stack.user("mcp-viewer-est@example.com")
+    viewer_secret, _ = await _issue_token(stranger, scopes=["projects:read", "runs:start"])
+    link = await owner.post(
+        f"/projects/{project_id}/share-links", json={"role": "viewer", "expires_in_days": 7}
+    )
+    assert link.status_code == 201, link.text
+    share_token = link.json()["url_path"].rsplit("/", 1)[-1]
+    assert (await stranger.post(f"/shares/{share_token}/accept")).status_code in {200, 204}
+    async with _mcp_server(stack) as connect:
+        viewer = await connect(viewer_secret)
+        viewer_estimate = await _call(
+            viewer, "estimate_run", {"project_id": project_id, "kind": "analyze"}
+        )
+        assert not viewer_estimate.is_error, _error(viewer_estimate)
+        viewer_start = await _call(
+            viewer,
+            "start_run",
+            {
+                "project_id": project_id,
+                "estimate_token": _payload(viewer_estimate)["estimate_token"],
+            },
+        )
+        assert viewer_start.is_error
+        assert "редактора" in _error(viewer_start)
 
 
 async def test_mcp_resources_return_xml_and_questions(stack: Stack) -> None:
@@ -712,6 +925,7 @@ async def test_mcp_responses_do_not_leak_secrets(stack: Stack) -> None:
             ("list_sources", {"project_id": finished["project"]}),
             ("list_questions", {"project_id": finished["project"]}),
             ("get_run", {"run_id": finished["run"]}),
+            ("estimate_run", {"project_id": finished["project"]}),
             ("get_diagram", {"project_id": finished["project"]}),
         ):
             result = await _call(session, tool, arguments)

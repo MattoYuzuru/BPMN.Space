@@ -1,9 +1,11 @@
 """Диалоговый помощник проекта на базе настроенного LLM-провайдера."""
 
+from typing import cast
 from uuid import UUID
 
 from app.domain.models import QuestionStatus, SourceStatus
 from app.infra.repositories.base import Repositories
+from app.llm.pipeline import LlmPipeline
 from app.services.common import get_project
 from app.services.model_resolver import ModelResolver
 
@@ -100,7 +102,9 @@ class AssistantService:
             user_id, credential_id=credential_id, model=model, allow_mock=False
         )
         try:
-            answer = await resolved.pipeline.chat(
+            answer = await cast(
+                LlmPipeline, resolved.pipeline
+            ).chat(  # allow_mock=False: всегда реальный
                 project_title=project_title,
                 project_description=project_description,
                 sources=sources,

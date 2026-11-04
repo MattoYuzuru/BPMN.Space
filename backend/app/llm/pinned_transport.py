@@ -6,7 +6,7 @@
 """
 
 from collections.abc import Awaitable, Callable, Iterable, Sequence
-from typing import Any
+from typing import Any, cast
 
 import httpcore
 import httpx
@@ -28,7 +28,9 @@ class PinnedNetworkBackend(httpcore.AsyncNetworkBackend):
     ) -> None:
         self._allowed = tuple(allowed_private_hosts)
         self._resolver = resolver
-        self._backend = backend or httpcore.AnyIOBackend()
+        self._backend: httpcore.AsyncNetworkBackend = backend or cast(
+            httpcore.AsyncNetworkBackend, httpcore.AnyIOBackend()
+        )
 
     async def _resolve(self, host: str, port: int) -> Sequence[IpAddress]:
         if self._resolver is not None:

@@ -28,6 +28,7 @@ from app.infra.bpmn_tools import MockBpmnTools
 from app.infra.db_models import DiagramVersionRow
 from app.infra.repositories.base import Repositories
 from app.infra.repositories.memory import InMemoryStore
+from app.infra.repositories.sql import SqlVersionRepository
 from app.infra.version_maintenance import maintain
 from app.services.common import Runtime
 from app.services.errors import InvalidInputError, NotFoundError, StaleVersionError
@@ -341,7 +342,7 @@ async def test_restore_maintenance_materializes_inherited_metadata() -> None:
     async with sql_test_store() as (store, sessions):
         state = Setup(store.repositories())
         await _inherited_setup(state)
-        repository = store.repositories().versions
+        repository = SqlVersionRepository(sessions)
         assert await repository.materialize_inherited_batch(state.project_id, limit=2) == 2
         assert await repository.materialize_inherited_batch(state.project_id, limit=2) == 1
         assert await repository.materialize_inherited_batch(state.project_id, limit=2) == 0

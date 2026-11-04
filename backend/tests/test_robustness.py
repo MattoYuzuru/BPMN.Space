@@ -97,11 +97,11 @@ async def test_manual_save_during_active_run_is_conflict(service_container: Cont
 
     with pytest.raises(ConflictError, match="идёт сборка"):
         await service_container.versions.save_manual(project_id, xml=xml)
-    assert await service_container.versions.list(project_id) == []
+    assert (await service_container.versions.list_page(project_id, limit=100))[0] == []
 
     gate.set()
     await service_container.spawner.wait_idle()
-    latest = (await service_container.versions.list(project_id))[0]
+    latest = (await service_container.versions.list_page(project_id, limit=100))[0][0]
     saved = await service_container.versions.save_manual(
         project_id, xml=xml, base_version_id=latest.id
     )

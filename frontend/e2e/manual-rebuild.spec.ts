@@ -35,7 +35,7 @@ test('ручная правка → новый источник → обычна
   await expect(inspector).toBeHidden()
   await editor.fill('Подать проверенную заявку')
   await page.getByRole('button', { name: 'Вписать в окно' }).click()
-  await expect(page.getByText('Схема сохранена')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText('Сохранено', { exact: true })).toBeVisible({ timeout: 15_000 })
   await element.click()
   await expect(inspector).toBeVisible()
   await dragElement(page, 'Task_SubmitApplication', 35, 0)
@@ -44,7 +44,7 @@ test('ручная правка → новый источник → обычна
   const detail = async () => await (await request.get(`/api/v1/projects/${projectId}`)).json()
   await expect
     .poll(async () => (await detail()).latest_version.number, { timeout: 15_000 })
-    .toBeGreaterThanOrEqual(3)
+    .toBeGreaterThanOrEqual(2)
   const manual = (await detail()).latest_version
   expect(manual.trace.Task_SubmitApplication).toBeUndefined()
   const saved = await (await request.get(`/api/v1/versions/${manual.id}/xml`)).text()
@@ -79,7 +79,7 @@ test('ручная правка → новый источник → обычна
   expect(bounds(repeatedXml)).toBe(bounds(saved))
   expect(repeated.trace.Task_SubmitApplication).toBeUndefined()
   const history = await (await request.get(`/api/v1/projects/${projectId}/versions`)).json()
-  expect(history.some((version: { id: string }) => version.id === manual.id)).toBe(true)
+  expect(history.items.some((version: { id: string }) => version.id === manual.id)).toBe(true)
 
   await page.getByRole('button', { name: 'Скачать схему' }).click()
   const download = page.waitForEvent('download')

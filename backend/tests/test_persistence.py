@@ -89,8 +89,8 @@ from tests.test_graph_ir import SOURCE_ID, TEXT, graph_case
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
 
 
-@pytest.fixture
-async def sql_store() -> AsyncIterator[tuple[SqlStore, async_sessionmaker[AsyncSession]]]:
+@asynccontextmanager
+async def sql_test_store() -> AsyncIterator[tuple[SqlStore, async_sessionmaker[AsyncSession]]]:
     url = os.getenv("TEST_DATABASE_URL")
     if not url:
         pytest.skip("TEST_DATABASE_URL не задан; PostgreSQL-интеграционный тест пропущен")
@@ -119,6 +119,12 @@ async def sql_store() -> AsyncIterator[tuple[SqlStore, async_sessionmaker[AsyncS
         async with admin_engine.begin() as connection:
             await connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
         await admin_engine.dispose()
+
+
+@pytest.fixture
+async def sql_store() -> AsyncIterator[tuple[SqlStore, async_sessionmaker[AsyncSession]]]:
+    async with sql_test_store() as stored:
+        yield stored
 
 
 def test_postgres_schema_has_domain_tables_and_active_run_constraint() -> None:
@@ -1499,10 +1505,12 @@ async def test_compact_storage_downgrade_requires_lossless_restore(sql_store) ->
         config.attributes["connection"] = connection
         command.downgrade(config, "0010_merge_heads")
 
-    async with sessions.begin() as session:
+    # Отказ откатывается целиком: DDL более новых миграций (0013, 0012) не должен остаться.
+    async with sessions() as session:
         connection = await session.connection()
         with pytest.raises(RuntimeError, match="restore"):
             await connection.run_sync(downgrade)
+        await session.rollback()
     assert await repos.versions.get(version.id) == version
     assert await repos.versions.maintain_batch(project.id, restore=True) == 1
     async with sessions.begin() as session:

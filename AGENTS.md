@@ -20,6 +20,7 @@
 Длинные документы, XLSX/PPTX, страницы PDF без текста и расшифровка записей:
 [ADR-0012](docs/adr/0012-long-documents-and-media.md), пределы — `docs/backend/generation-quality.md`.
 
+Сессии правок и контрольные точки (автосохранения сливаются в версию): [ADR-0010](docs/adr/0010-editing-sessions-and-checkpoints.md).
 Удаление и выход участника: [ADR-0009](docs/adr/0009-project-deletion-and-leaving.md).
 `DELETE /projects/{id}` зависит от роли: owner удаляет для всех, участник выходит сам.
 

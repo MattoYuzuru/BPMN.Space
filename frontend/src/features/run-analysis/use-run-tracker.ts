@@ -12,7 +12,7 @@ import {
   useRunStore,
 } from '@/entities/run'
 import { needsLogin, sessionQueryOptions } from '@/entities/session'
-import { type Version, versionKeys, versionLabel } from '@/entities/version'
+import { cacheVersion, type VersionSummary, versionLabel } from '@/entities/version'
 import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
 import { toast } from '@/shared/ui'
 
@@ -42,6 +42,7 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
     if (!runId) return
     if (activeRun) track(activeRun)
     let finished = false
+    let built: VersionSummary | undefined
     let disposed = false
     const isCurrentRun = () => !disposed && useRunStore.getState().views[projectId]?.runId === runId
     let poller: ReturnType<typeof setInterval> | undefined
@@ -66,9 +67,8 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
           upsertQuestion(client, projectId, event.data.question)
           break
         case 'version':
-          client.setQueryData<Version[]>(versionKeys.list(projectId), (list) =>
-            list ? [event.data.version, ...list] : list,
-          )
+          built = event.data.version
+          cacheVersion(client, projectId, event.data.version)
           break
         case 'error':
           toast.error('Прогон остановился с ошибкой', {
@@ -109,9 +109,7 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
       })
       if (run.status !== 'succeeded') return
       const labels = RUN_MODE_LABEL[run.mode]
-      const version = client
-        .getQueryData<Version[]>(versionKeys.list(projectId))
-        ?.find((item) => item.id === run.version_id)
+      const version = built?.id === run.version_id ? built : undefined
       const parts = [run.summary ? formatSummary(run.summary) : null]
       if (run.mode === 'build' && version) parts.push(versionLabel(version))
       toast.success(labels.done, {

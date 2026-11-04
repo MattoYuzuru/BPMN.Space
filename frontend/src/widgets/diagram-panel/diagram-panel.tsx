@@ -1,13 +1,21 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, m } from 'motion/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useReportOnboardingEvent } from '@/entities/onboarding'
 import { projectKeys } from '@/entities/project'
 import { useRunView } from '@/entities/run'
-import { addedElementIds, diagramElements, useSaveDiagram, versionKeys } from '@/entities/version'
+import {
+  addedElementIds,
+  comparisonBase,
+  diagramElements,
+  useCheckpointVersion,
+  useSaveDiagram,
+  versionKeys,
+  versionLabel,
+} from '@/entities/version'
 import { CollaboratorOverlay } from '@/features/project-collaboration/collaborator-overlay'
 import { useProjectCollaboration } from '@/features/project-collaboration/use-project-collaboration'
-import { ApiError } from '@/shared/api/client'
+import { ApiError, errorMessage } from '@/shared/api/client'
 import { useDebouncedCallback } from '@/shared/hooks/use-debounced'
 import { cn } from '@/shared/lib/cn'
 import { floatingPanel } from '@/shared/lib/motion'
@@ -17,7 +25,7 @@ import { type DiagramEditorHandle, LazyDiagramEditor } from '@/widgets/diagram-e
 import { RunProgress } from '@/widgets/run-progress/run-progress'
 import { useWorkspace } from '@/widgets/workspace/model'
 import { DiagramEmpty } from './diagram-empty'
-import { DiagramToolbar, type MarkerToggles } from './diagram-toolbar'
+import { DiagramToolbar, type MarkerToggles, type SaveStatus } from './diagram-toolbar'
 import { ElementInspector } from './element-inspector'
 
 /** Пауза после последней правки перед сохранением новой версии. */
@@ -46,7 +54,8 @@ export function DiagramPanel() {
   const latest = project.latest_version
   const versionId = viewedVersionId ?? latest?.id
   const version = useQuery({ ...versions.detail(versionId ?? ''), enabled: !!versionId })
-  const versionList = useQuery({ ...versions.list(project.id), enabled: !!latest })
+  // История нужна только для базы сравнения «добавлено в версии»; страница общая с боковой панелью.
+  const history = useInfiniteQuery({ ...versions.pages(project.id), enabled: !!latest })
   const run = useRunView(project.id)
   const isLatest = !viewedVersionId || viewedVersionId === latest?.id
   // Анализ схему не меняет — править можно; сборка заменит схему, поэтому на её время только просмотр.
@@ -64,7 +73,11 @@ export function DiagramPanel() {
   const propertiesRef = useRef<HTMLDivElement>(null)
   const [propertiesOpen, setPropertiesOpen] = useState(false)
 
-  const save = useSaveDiagram(project.id)
+  const { mutateAsync: saveDiagram } = useSaveDiagram(project.id)
+  const checkpoint = useCheckpointVersion(project.id)
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
+  const retryRef = useRef<() => void>(() => undefined)
+  const savingRef = useRef(false)
   const lastSaved = useRef<string | null>(null)
   const canvasXmlRef = useRef<string | null>(null)
   const headVersionRef = useRef<string | null>(latest?.id ?? null)
@@ -93,15 +106,22 @@ export function DiagramPanel() {
       saveQueueRef.current = saveQueueRef.current
         .catch(() => undefined)
         .then(async () => {
-          if (
-            epoch !== draftEpochRef.current ||
-            xml === lastSaved.current ||
-            remoteUpdateRef.current
-          ) {
+          if (epoch !== draftEpochRef.current) return
+          if (remoteUpdateRef.current) {
+            setSaveStatus('conflict')
             return
           }
+          if (xml === lastSaved.current) {
+            if (draftXmlRef.current === xml && !serializationPendingRef.current) {
+              draftXmlRef.current = null
+              setSaveStatus('saved')
+            }
+            return
+          }
+          setSaveStatus('saving')
+          savingRef.current = true
           try {
-            const version = await save.mutateAsync({
+            const version = await saveDiagram({
               xml,
               baseVersionId: headVersionRef.current,
             })
@@ -109,22 +129,93 @@ export function DiagramPanel() {
             lastSaved.current = xml
             if (draftXmlRef.current === xml && !serializationPendingRef.current) {
               draftXmlRef.current = null
+              setSaveStatus('saved')
             }
           } catch (error) {
             if (error instanceof ApiError && error.code === 'stale_version') {
+              setSaveStatus('conflict')
               markRemoteUpdate({
                 id: error.headVersionId ?? undefined,
                 number: error.headVersionNumber ?? undefined,
               })
+              return
             }
+            setSaveStatus('error')
+            toast.error('Правка не сохранена', {
+              id: 'diagram-save',
+              description: errorMessage(error),
+              // Повтор идёт через ту же очередь: она обновляет базу и последнее сохранённое.
+              action: { label: 'Повторить', onClick: () => retryRef.current() },
+              duration: 10_000,
+            })
+          } finally {
+            savingRef.current = false
           }
         })
     },
-    [markRemoteUpdate, save],
+    [markRemoteUpdate, saveDiagram],
   )
+  retryRef.current = () => {
+    const draft = draftXmlRef.current
+    if (draft) enqueueSave(draft)
+  }
   const debouncedSave = useDebouncedCallback((xml: string) => {
     enqueueSave(xml)
   }, SAVE_DEBOUNCE_MS)
+
+  // Несохранённую правку уводим на сервер, когда вкладку скрывают, и предупреждаем при закрытии.
+  useEffect(() => {
+    const hasUnsaved = () => !!draftXmlRef.current || serializationPendingRef.current
+    const flush = () => {
+      if (document.visibilityState === 'hidden') debouncedSave.flush()
+    }
+    const guard = (event: BeforeUnloadEvent) => {
+      debouncedSave.flush()
+      if (!hasUnsaved()) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    document.addEventListener('visibilitychange', flush)
+    window.addEventListener('pagehide', debouncedSave.flush)
+    window.addEventListener('beforeunload', guard)
+    return () => {
+      document.removeEventListener('visibilitychange', flush)
+      window.removeEventListener('pagehide', debouncedSave.flush)
+      window.removeEventListener('beforeunload', guard)
+    }
+  }, [debouncedSave.flush])
+
+  // «Сохранить версию»: сначала доводим черновик до сервера, затем закрепляем версию.
+  const createCheckpoint = useCallback(
+    async (label: string) => {
+      try {
+        if (serializationPendingRef.current) {
+          const pending = await editorRef.current?.exportXml()
+          if (pending) enqueueSave(pending)
+        } else {
+          debouncedSave.flush()
+        }
+        await saveQueueRef.current.catch(() => undefined)
+        if (draftXmlRef.current || remoteUpdateRef.current || !headVersionRef.current) {
+          toast.error('Версия не сохранена', {
+            description: 'Правки ещё не записаны на сервер. Подождите или нажмите «Повторить».',
+          })
+          return false
+        }
+        const saved = await checkpoint.mutateAsync({
+          versionId: headVersionRef.current,
+          label,
+        })
+        headVersionRef.current = saved.id
+        toast.success('Версия сохранена', { description: label.trim() || versionLabel(saved) })
+        return true
+      } catch (error) {
+        toast.error('Версия не сохранена', { description: errorMessage(error) })
+        return false
+      }
+    },
+    [checkpoint.mutateAsync, debouncedSave.flush, editorRef, enqueueSave],
+  )
 
   // Инвалидация проекта из другого канала не должна импортировать серверный XML поверх черновика.
   const hasLocalChanges = !!draftXmlRef.current || serializationPendingRef.current
@@ -157,7 +248,7 @@ export function DiagramPanel() {
     if (typeof eventVersionId !== 'string' || eventVersionId === headVersionRef.current) return
     // Событие собственного сохранения может обогнать HTTP-ответ. После ответа сравним точный id;
     // одинаковый actor не различает вкладки одного аккаунта и локальные вкладки без авторизации.
-    if (save.isPending) return
+    if (savingRef.current) return
     if (draftXmlRef.current || serializationPendingRef.current) {
       const id = eventVersionId
       if (remoteUpdate?.id !== id) {
@@ -174,15 +265,8 @@ export function DiagramPanel() {
       return
     }
     void queryClient.invalidateQueries({ queryKey: projectKeys.detail(project.id) })
-    void queryClient.invalidateQueries({ queryKey: versionKeys.list(project.id) })
-  }, [
-    collaboration.event,
-    markRemoteUpdate,
-    project.id,
-    queryClient,
-    remoteUpdate?.id,
-    save.isPending,
-  ])
+    void queryClient.invalidateQueries({ queryKey: versionKeys.all(project.id) })
+  }, [collaboration.event, markRemoteUpdate, project.id, queryClient, remoteUpdate?.id])
 
   const lastCursor = useRef<{ x: number; y: number } | null>(null)
   const dragStart = useRef<{
@@ -327,8 +411,9 @@ export function DiagramPanel() {
       serializationPendingRef.current = false
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: projectKeys.detail(project.id) }),
-        queryClient.invalidateQueries({ queryKey: versionKeys.list(project.id) }),
+        queryClient.invalidateQueries({ queryKey: versionKeys.all(project.id) }),
       ])
+      setSaveStatus('idle')
     } finally {
       setOpeningRemote(false)
     }
@@ -336,8 +421,16 @@ export function DiagramPanel() {
 
   const elements = useMemo(() => diagramElements(xml), [xml])
 
-  // Предыдущая версия нужна только для маркера «добавлено».
-  const previous = versionList.data?.find((item) => item.number === (version.data?.number ?? 0) - 1)
+  // База маркера «добавлено» — ближайшая более ранняя контрольная точка или сборка, а не номер − 1:
+  // правки одной сессии сливаются в одну версию.
+  const previous = useMemo(
+    () =>
+      comparisonBase(
+        history.data?.pages.flatMap((page) => page.items) ?? [],
+        version.data?.number ?? 0,
+      ),
+    [history.data, version.data?.number],
+  )
   const previousXml = useQuery({
     ...versions.detail(previous?.id ?? ''),
     enabled: markers.added && !!previous && (version.data?.diff.added ?? 0) > 0,
@@ -416,6 +509,7 @@ export function DiagramPanel() {
       // не импортировалась поверх ещё не сохранённой модели.
       draftXmlRef.current = next
       canvasXmlRef.current = next
+      setSaveStatus((status) => (status === 'conflict' ? status : 'saving'))
       debouncedSave.run(next)
     },
     [readOnly, debouncedSave],
@@ -465,9 +559,11 @@ export function DiagramPanel() {
         latestNumber={latest.number}
         isLatest={isLatest}
         ready={ready}
-        saving={save.isPending}
+        saveStatus={saveStatus}
+        onRetry={() => retryRef.current()}
+        canCheckpoint={canEdit && !readOnly}
+        onCheckpoint={createCheckpoint}
         simulationActive={simulationActive}
-        saved={save.isSuccess}
         markers={markers}
         onMarkersChange={setMarkers}
         propertiesOpen={propertiesOpen}
@@ -528,7 +624,10 @@ export function DiagramPanel() {
           <span hidden data-viewport-revision={viewportRevision} />
 
           {remoteUpdate && (
-            <div className="absolute inset-x-3 top-11 z-30 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber/40 bg-surface px-3 py-2 shadow-md">
+            <div
+              role="status"
+              className="absolute inset-x-3 top-11 z-30 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber/40 bg-surface px-3 py-2 shadow-md"
+            >
               <p className="type-caption text-fg">
                 {remoteUpdate.number
                   ? `Коллега сохранил версию ${remoteUpdate.number}. Ваши несохранённые изменения пока остаются в этом окне.`

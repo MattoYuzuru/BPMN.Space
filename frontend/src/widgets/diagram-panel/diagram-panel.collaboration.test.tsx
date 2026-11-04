@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { type ProjectDetail, projectKeys } from '@/entities/project'
 import { projectVersionSource, type VersionDetail, versionKeys } from '@/entities/version'
 import { ApiError } from '@/shared/api/client'
+import { toast } from '@/shared/ui'
 import type { DiagramEditorHandle } from '@/widgets/diagram-editor'
 import { type WorkspaceApi, WorkspaceContext } from '@/widgets/workspace/model'
 import { DiagramPanel } from './diagram-panel'
@@ -80,13 +81,23 @@ const version = (id = 'v-1', xml = '<initial/>'): VersionDetail => ({
   report: { xsd_valid: true, lint: [], assumptions: [] },
   trace: {},
   lanes: [],
+  label: null,
+  checkpoint: false,
+  session_started_at: '2026-10-07T10:00:00Z',
+  updated_at: '2026-10-07T10:00:00Z',
+  saved_count: 1,
+  lint_count: 0,
+  assumption_count: 0,
 })
 
 function mount() {
   const initial = version()
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } })
   client.setQueryData(versionKeys.detail(initial.id), initial)
-  client.setQueryData(versionKeys.list('p-1'), [initial])
+  client.setQueryData(versionKeys.pages('p-1'), {
+    pages: [{ items: [initial], next_before: null }],
+    pageParams: [undefined],
+  })
   const invalidate = vi.spyOn(client, 'invalidateQueries').mockResolvedValue()
   const project = {
     id: 'p-1',
@@ -139,7 +150,7 @@ it.each(['owner@example.com', null])(
     transport.event = { type: 'diagram.version', version_id: 'v-2', actor }
     panel.refresh()
     expect(panel.invalidate).toHaveBeenCalledWith({ queryKey: projectKeys.detail('p-1') })
-    expect(panel.invalidate).toHaveBeenCalledWith({ queryKey: versionKeys.list('p-1') })
+    expect(panel.invalidate).toHaveBeenCalledWith({ queryKey: versionKeys.all('p-1') })
   },
 )
 
@@ -235,12 +246,16 @@ it('собственная новая голова с ожидающим detail 
   vi.stubGlobal('fetch', () => new Promise(() => {}))
   const panel = mount()
   const canvas = screen.getByTestId('canvas-xml')
+  // Как в `useSaveDiagram.onSuccess`: проект получает новую голову раньше, чем ответ дойдёт до панели.
+  transport.save.mutateAsync.mockImplementationOnce(async () => {
+    panel.workspace.project = {
+      ...panel.workspace.project,
+      latest_version: version('v-own', '<draft/>'),
+    }
+    return version('v-own', '<draft/>')
+  })
   fireEvent.click(screen.getByRole('button', { name: 'Изменить схему' }))
   await act(async () => vi.advanceTimersByTimeAsync(1600))
-  panel.workspace.project = {
-    ...panel.workspace.project,
-    latest_version: version('v-own', '<draft/>'),
-  }
   panel.refresh()
   expect(screen.getByTestId('canvas-xml')).toBe(canvas)
   expect(canvas).toHaveTextContent('<draft/>')
@@ -280,4 +295,42 @@ it('сигнал ранней правки не обходит режим тол
   expect(panel.invalidate).toHaveBeenCalled()
   expect(screen.queryByRole('button', { name: 'Открыть новую версию' })).not.toBeInTheDocument()
   expect(transport.save.mutateAsync).not.toHaveBeenCalled()
+})
+
+it('«Повторить» после ошибки идёт через очередь: следующая правка основана на новой версии', async () => {
+  const error = vi.spyOn(toast, 'error').mockReturnValue('t')
+  mount()
+  transport.save.mutateAsync.mockReset()
+  transport.save.mutateAsync
+    .mockRejectedValueOnce(new Error('Сеть недоступна'))
+    .mockResolvedValue(version('v-own', '<draft/>'))
+  fireEvent.click(screen.getByRole('button', { name: 'Изменить схему' }))
+  await act(async () => vi.advanceTimersByTimeAsync(1600))
+  const options = error.mock.calls[0]?.[1] as { action: { onClick: () => void } }
+  await act(async () => options.action.onClick())
+  expect(transport.save.mutateAsync).toHaveBeenLastCalledWith({
+    xml: '<draft/>',
+    baseVersionId: 'v-1',
+  })
+
+  transport.nextXml = '<second/>'
+  fireEvent.click(screen.getByRole('button', { name: 'Изменить схему' }))
+  await act(async () => vi.advanceTimersByTimeAsync(1600))
+  expect(transport.save.mutateAsync).toHaveBeenLastCalledWith({
+    xml: '<second/>',
+    baseVersionId: 'v-own',
+  })
+  expect(screen.queryByText(/Коллега сохранил/)).not.toBeInTheDocument()
+})
+
+it('пока правка не сохранена, закрытие вкладки требует подтверждения', async () => {
+  mount()
+  fireEvent.click(screen.getByRole('button', { name: 'Изменить схему' }))
+  const unsaved = new Event('beforeunload', { cancelable: true })
+  window.dispatchEvent(unsaved)
+  expect(unsaved.defaultPrevented).toBe(true)
+  await act(async () => vi.advanceTimersByTimeAsync(0))
+  const saved = new Event('beforeunload', { cancelable: true })
+  window.dispatchEvent(saved)
+  expect(saved.defaultPrevented).toBe(false)
 })

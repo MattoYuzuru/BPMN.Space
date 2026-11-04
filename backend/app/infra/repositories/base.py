@@ -19,6 +19,7 @@ from app.domain.models import (
     Source,
     SourceStatus,
     Version,
+    VersionSummary,
 )
 from app.domain.onboarding import (
     ChecklistItem,
@@ -210,6 +211,32 @@ class VersionRepository(Protocol):
         ...
 
     async def latest(self, project_id: UUID) -> Version | None: ...
+    async def by_number(self, project_id: UUID, number: int) -> Version | None: ...
+
+    async def list_page(
+        self, project_id: UUID, *, limit: int, before: int | None = None
+    ) -> list[VersionSummary]:
+        """Лёгкая страница истории: без XML, цитат и отчёта (только счётчики проверки).
+
+        Версии по убыванию номера строго ниже `before`. Чтобы узнать, есть ли следующая
+        страница, вызывающий запрашивает `limit + 1`.
+        """
+        ...
+
+    async def replace(self, old_id: UUID, version: Version) -> None:
+        """Заменить последнюю версию новой строкой с тем же номером (сессия правок).
+
+        Только под блокировкой проекта и только для версии без зависимых (`has_dependants`).
+        """
+        ...
+
+    async def has_dependants(self, version_id: UUID) -> bool:
+        """Версия служит базой дельты другой версии или на неё ссылается прогон."""
+        ...
+
+    async def mark_checkpoint(self, version_id: UUID, label: str | None) -> Version | None:
+        """Закрепить версию как контрольную точку (идемпотентно); имя заменяется, если задано."""
+        ...
 
 
 class LlmCallRepository(Protocol):

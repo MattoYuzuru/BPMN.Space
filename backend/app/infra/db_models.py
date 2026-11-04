@@ -306,6 +306,30 @@ class DiagramVersionRow(Base):
     run_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("runs.id", ondelete="SET NULL")
     )
+    # ADR-0010: сессии правок и контрольные точки.
+    label: Mapped[str | None] = mapped_column(String(120))
+    checkpoint: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    session_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    saved_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default=text("1")
+    )
+    # Цитаты не изменились с прошлой версии: `trace` пуст, читаются у ближайшего владельца.
+    trace_inherited: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    # То же для отчёта; счётчики хранятся отдельно, чтобы список истории не читал JSONB.
+    report_inherited: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    lint_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    assumption_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
 
 
 class UserLlmCredentialRow(Base):

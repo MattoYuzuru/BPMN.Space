@@ -4,6 +4,7 @@ import {
   capabilityLabel,
   countSourceTree,
   derivationCost,
+  derivationDetails,
   derivationLabel,
   descendantIds,
   findQuoteRanges,
@@ -11,6 +12,7 @@ import {
   isAgentSource,
   knownSourceTrust,
   limitParts,
+  parseTimecode,
   quoteReferences,
   SOURCE_TRUST,
   type Source,
@@ -19,6 +21,7 @@ import {
   sourceTrustInfo,
   splitByRanges,
   splitTimecodes,
+  timecodeBefore,
   unreadablePagesLabel,
   unreadablePagesText,
 } from './model'
@@ -255,5 +258,60 @@ describe('возможности, доверие и дополнительные
     expect(tree).toHaveLength(3)
     expect(countSourceTree(tree)).toBe(4)
     expect(countSourceTree([])).toBe(0)
+  })
+})
+
+describe('медиа-метки производных узлов', () => {
+  it('понимает длинные минуты [105:20] и ищет таймкод перед цитатой', () => {
+    expect(parseTimecode('[105:20]')).toBe(6320)
+    expect(parseTimecode('[01:02:03]')).toBe(3723)
+    expect(parseTimecode('[105:99]')).toBe(null)
+    expect(timecodeBefore('вступление [00:10] середина [105:20] конец', 20)).toBe(10)
+    expect(timecodeBefore('текст [105:20] цитата', 25)).toBe(6320)
+    expect(timecodeBefore('без меток', 5)).toBe(null)
+  })
+
+  it('считает ключевые кадры из массива params.frames и переводит провайдеров', () => {
+    const detail = {
+      id: 'f1',
+      project_id: 'p1',
+      kind: 'file',
+      title: 'Ключевые кадры',
+      content: '00:00 кадр 1',
+      status: 'ready',
+      active: true,
+      trust: 'observed',
+      edited_by_human: false,
+      created_at: '2026-11-04T10:00:00Z',
+      origin: 'derived',
+      parent_id: 's1',
+      derivation: {
+        capability: 'frames',
+        provider: 'ffmpeg',
+        created_at: '2026-11-04T10:00:00Z',
+        params: { frames: [{ index: 1 }, { index: 2 }, { index: 3 }] },
+      },
+    } as Source
+    expect(derivationDetails(detail)[0]).toMatch(/3\s+кадра/)
+    const feed = {
+      id: 'f2',
+      project_id: 'p1',
+      kind: 'file',
+      title: 'Общая лента',
+      content: '',
+      status: 'ready',
+      active: true,
+      trust: 'observed',
+      edited_by_human: false,
+      created_at: '2026-11-04T10:00:00Z',
+      origin: 'derived',
+      parent_id: 's1',
+      derivation: {
+        capability: 'media_feed',
+        provider: 'code',
+        created_at: '2026-11-04T10:00:00Z',
+      },
+    } as Source
+    expect(derivationLabel(feed)).toBe('Код сервера')
   })
 })

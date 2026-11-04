@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import type { Source } from '@/entities/source'
 import { stubApi } from '@/test/api-stub'
 import { renderUi } from '@/test/render'
@@ -248,4 +248,14 @@ it('плеер записи: реплики и перемотка по тайм�
   expect(await screen.findByText('Иван')).toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: 'Перемотать к 00:30' }))
   expect(screen.getByRole('slider', { name: 'Позиция записи' })).toBeInTheDocument()
+})
+
+it('фильтр «Исходные» скрывает производные узлы дерева', async () => {
+  const { user } = renderPanel([record, transcript, rules])
+  const region = screen.getByRole('region', { name: 'Источники' })
+  expect(within(region).getByText('3')).toBeInTheDocument()
+  expect(screen.getByText('Deepgram, nova-3')).toBeInTheDocument()
+  await user.click(screen.getByRole('radio', { name: 'Исходные' }))
+  await waitFor(() => expect(within(region).getByText('2')).toBeInTheDocument())
+  expect(screen.queryByText('Deepgram, nova-3')).toBeNull()
 })

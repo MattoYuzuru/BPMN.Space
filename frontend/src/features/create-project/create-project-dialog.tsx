@@ -3,7 +3,13 @@ import { useNavigate } from '@tanstack/react-router'
 import { type FormEvent, useEffect, useState } from 'react'
 import { examplesQueryOptions } from '@/entities/example'
 import { useCreateProjectFromExample } from '@/entities/project'
-import { ACCEPTED_FILES, ACCEPTED_FILES_HINT } from '@/entities/source'
+import {
+  ACCEPTED_FILES,
+  ACCEPTED_FILES_HINT,
+  isMediaFile,
+  MEDIA_PROFILES,
+  type MediaProfile,
+} from '@/entities/source'
 import { appendDictation, VoiceDictation } from '@/features/voice-record/voice-dictation'
 import { errorMessage } from '@/shared/api/client'
 import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
@@ -83,6 +89,7 @@ function BlankForm() {
   const [description, setDescription] = useState('')
   const [dictating, setDictating] = useState(false)
   const [files, setFiles] = useState<File[]>([])
+  const [mediaProfile, setMediaProfile] = useState<MediaProfile>('sparse')
   const [error, setError] = useState<string>()
   const create = useCreateProjectFlow()
   const openProject = useOpenProject()
@@ -96,7 +103,7 @@ function BlankForm() {
     }
     // `mutateAsync`, а не `mutate` с колбэками: если диалог закрыли посреди создания, колбэки
     // `mutate` не сработают, а переход в проект и уведомление должны состояться.
-    create.mutateAsync({ title: name, description, files, onboarding }).then(
+    create.mutateAsync({ title: name, description, files, onboarding, mediaProfile }).then(
       (result) => {
         emitOnboardingSignal({ type: 'project.created', id: result.projectId })
         if (result.failures.length > 0) {
@@ -170,6 +177,25 @@ function BlankForm() {
               title="Перетащите документы"
               hint={ACCEPTED_FILES_HINT}
             />
+            {files.some((file) => isMediaFile(file.name)) && (
+              <div className="flex flex-col gap-1.5">
+                <span className="type-label text-fg-muted">Профиль обработки записи</span>
+                <SegmentedControl<MediaProfile>
+                  aria-label="Профиль обработки записи"
+                  size="sm"
+                  value={mediaProfile}
+                  onValueChange={setMediaProfile}
+                  options={MEDIA_PROFILES.map((item) => ({
+                    value: item.value,
+                    label: item.label,
+                  }))}
+                />
+                <span className="type-caption text-fg-subtle">
+                  Профиль уйдёт в форму загрузки. Оценка минуты распознавания и кадров появится в
+                  проекте: до создания проекта сервер не считает.
+                </span>
+              </div>
+            )}
             {files.length > 0 && (
               <ul className="flex flex-wrap gap-1.5" aria-label="Выбранные документы">
                 {files.map((file) => (

@@ -63,7 +63,8 @@ export function SourcesPanel({ onCollapse }: { onCollapse: () => void }) {
   // Дерево материалов (RFC-0006): исходные файлы и вложенные производные узлы.
   const materials = project.sources.filter((source) => source.kind !== 'answer')
   const tree = buildSourceTree(materials)
-  const shownTree = scope === 'sources' ? tree.filter((node) => !node.source.parent_id) : tree
+  // «Исходные» — корни без вложенных производных: дерево отдаёт их в children, а не отдельно.
+  const shownTree = scope === 'sources' ? tree.map((node) => ({ ...node, children: [] })) : tree
   const answers = project.sources.filter((source) => source.kind === 'answer')
 
   return (

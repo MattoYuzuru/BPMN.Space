@@ -43,15 +43,18 @@ export function MediaProfileDialog({
       .then(async (loaded) => {
         if (cancelled) return
         setInfos(loaded)
+        // Длительность 0 — браузер не узнал метаданные: не шлём выдуманную секунду и цену.
         const results = await Promise.all(
           loaded.map((info) =>
-            estimate
-              .mutateAsync({
-                duration_sec: Math.max(1, Math.round(info.durationSec)),
-                has_video: info.hasVideo,
-                media_profile: profile,
-              })
-              .catch(() => null),
+            info.durationSec > 0
+              ? estimate
+                  .mutateAsync({
+                    duration_sec: Math.ceil(info.durationSec),
+                    has_video: info.hasVideo,
+                    media_profile: profile,
+                  })
+                  .catch(() => null)
+              : Promise.resolve(null),
           ),
         )
         if (!cancelled) setEstimates(results)
@@ -140,8 +143,12 @@ export function MediaProfileDialog({
                           item.currency,
                         )}
                       </span>
-                    ) : (
+                    ) : info.durationSec > 0 ? (
                       <span className="type-caption text-fg-subtle">Оценка недоступна</span>
+                    ) : (
+                      <span className="type-caption text-fg-subtle">
+                        Длительность не определилась — загрузка без оценки
+                      </span>
                     )}
                   </div>
                 )
@@ -150,6 +157,12 @@ export function MediaProfileDialog({
               <span className="type-caption text-fg-muted" data-numeric>
                 Итого: {formatMoneyRange(total, totalMax)}
                 {estimates[0]?.note ? ` \u00B7 ${estimates[0].note}` : ''}
+              </span>
+            )}
+            {!estimating && infos.length > 0 && infos.every((info) => info.durationSec <= 0) && (
+              <span className="type-caption text-fg-muted">
+                Длительность записи не определилась: профиль применится, но оценку до загрузки
+                сервер не даст. Файл всё равно загрузится.
               </span>
             )}
           </div>

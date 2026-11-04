@@ -15,7 +15,8 @@ export function useCreateProjectFlow() {
       runCreateFlow(input, {
         createProject,
         addText: addTextSource,
-        uploadFile: (projectId, file) => uploadFileSource(projectId, { file }),
+        uploadFile: (projectId, file, mediaProfile) =>
+          uploadFileSource(projectId, { file, mediaProfile }),
         startBuild: (projectId) => startRun(projectId, 'build'),
         fetchProject: (projectId) =>
           client.fetchQuery({ ...projectQueryOptions(projectId), staleTime: 0 }),

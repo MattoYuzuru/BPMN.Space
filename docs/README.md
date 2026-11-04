@@ -4,6 +4,9 @@
 - [Совместная работа в реальном времени](rfc/0002-realtime-collaboration.md)
 - [Воспроизведение BPMN и модель бизнес-времени](rfc/0003-process-playback-and-timing.md)
 - [Агентный режим: инструменты для чтения источников](rfc/0004-agent-mode.md)
+- [Полная мощность модели: возможности, профиль запуска и стоимость](rfc/0005-full-model-capacity-and-cost.md)
+- [Инструменты, ключи по типам задач и производные источники](rfc/0006-tools-connectors-and-derived-sources.md)
+- [Внешние агенты: MCP-сервер, токены доступа и проверка коллегой](rfc/0007-external-agents-mcp.md)
 - Backend:
   - [Аккаунты и общий доступ к проектам](backend/auth-and-sharing.md)
   - [Постоянное хранение данных](backend/persistence.md)
@@ -15,6 +18,7 @@
 - [Frontend: принципы и устройство](frontend/README.md)
 - [Деплой на VM](deployment.md)
 - [Приоритеты развития и границы поддержки BPMN](research/product-priorities-2026-10.md)
+- [Каталог провайдеров для ключей пользователя](research/tool-providers-2026-11.md)
 - ADR:
   - [Cookie-сессии и роли доступа к проектам](adr/0001-auth-and-project-sharing.md)
   - [Ограничение частоты запросов и Secure-cookie](adr/0002-rate-limits-and-secure-cookies.md)

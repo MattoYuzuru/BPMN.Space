@@ -4,7 +4,10 @@
 - Статус: предложено, не реализовано
 - Связано: [RFC-0001](0001-architecture.md) §5, [ADR-0006](../adr/0006-generation-quality.md),
   [ADR-0008](../adr/0008-evidence-semantic-review-and-recovery.md),
-  [ADR-0011](../adr/0011-user-llm-credentials.md), [ADR-0012](../adr/0012-long-documents-and-media.md)
+  [ADR-0011](../adr/0011-user-llm-credentials.md), [ADR-0012](../adr/0012-long-documents-and-media.md);
+  продолжение — [RFC-0005](0005-full-model-capacity-and-cost.md) (профиль запуска и бюджет),
+  [RFC-0006](0006-tools-connectors-and-derived-sources.md) (инструменты и рабочие модели),
+  [RFC-0007](0007-external-agents-mcp.md) (внешние агенты)
 
 ## Зачем
 

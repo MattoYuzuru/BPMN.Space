@@ -205,12 +205,12 @@ class RunService:
         self._start_lock = asyncio.Lock()
 
     @property
-    def _pipeline(self) -> ProcessPipeline | None:
+    def _pipeline(self) -> Any:
         """Модель сервера (запасной путь); подмена нужна тестам, которые ставят свой пайплайн."""
         return self._resolver.server_pipeline
 
     @_pipeline.setter
-    def _pipeline(self, value: ProcessPipeline) -> None:
+    def _pipeline(self, value: Any) -> None:
         self._resolver.server_pipeline = value
 
     async def start(

@@ -592,7 +592,7 @@ DEEPGRAM_API_KEY=...
 ```
 
 - Отдельной папки `ai/` нет. Скиллы лежат в `.claude/skills/`, оттуда их находит Claude Code; другие агенты находят их через `AGENTS.md`. Скрипты прогонов — в `scripts/` и `backend/scripts/`, записанные данные — в `backend/app/fixtures/`. Общий каталог `evals/` пока не реализован.
-- **Промпты** — код продукта: `backend/app/llm/question_analysis.py`, `graph_generation.py`, `openai_compatible.py`. Схемы ответов проверяются Pydantic; `fixtures/ir` хранит записанные тестовые графы.
+- **Промпты** — код продукта: `backend/app/llm/question_analysis.py`, `graph_generation.py`, `pipeline.py`. Схемы ответов проверяются Pydantic; `fixtures/ir` хранит записанные тестовые графы.
 - **Авторизация приложения** — аккаунт email/пароль и серверная cookie-сессия; Caddy Basic Auth может дополнительно закрывать демо-контур. Изменяющие API-запросы из браузера требуют CSRF cookie и заголовок `X-CSRF-Token`.
 
 ## 9. Качество без CI

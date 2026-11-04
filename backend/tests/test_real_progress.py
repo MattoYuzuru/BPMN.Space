@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock
 
 import pytest
+from pydantic import SecretStr
 
 from app.config import Settings
 from app.container import _mock_pace, build_container
@@ -53,7 +54,7 @@ def test_real_document_parser_has_no_demo_delay(provider, delay) -> None:
         database_url=None,
         seed_demo_data=False,
         llm_provider=provider,
-        llm_api_key="test-only",
+        llm_api_key=SecretStr("test-only"),
         llm_model="test-model",
         llm_base_url="https://llm.example.test/v1",
         mock_delay_scale=1,

@@ -10,6 +10,7 @@ import httpx
 import pytest
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from app.config import Settings
 from app.container import Container, build_container
@@ -26,6 +27,7 @@ from tests.llm_helpers import json_transport, ok_chat
 API = "/api/v1"
 KEY_A = "sk-ant-api03-ALICE-SECRET-0001"
 KEY_B = "sk-proj-BOB-SECRET-0002"
+_NO_HASH: Any = SimpleNamespace(source_snapshot_hash=None)
 ALICE = SimpleNamespace(id=uuid4(), email="alice@example.com")
 BOB = SimpleNamespace(id=uuid4(), email="bob@example.com")
 
@@ -55,7 +57,7 @@ def _settings(**extra: Any) -> Settings:
         "mock_delay_scale": 0,
         "auth_enabled": False,
         "seed_demo_data": True,
-        "credentials_encryption_key": Fernet.generate_key().decode(),
+        "credentials_encryption_key": SecretStr(Fernet.generate_key().decode()),
         "rate_limit_enabled": False,
         "llm_models_cache_sec": 300,
     }
@@ -70,7 +72,7 @@ def stack() -> Iterator[Stack]:
         yield s
 
 
-def _call(stack: Stack, method: str, path: str, **kw: Any) -> httpx.Response:
+def _call(stack: Stack, method: str, path: str, **kw: Any) -> Any:
     with TestClient(stack.app) as client:
         return client.request(method, f"{API}{path}", **kw)
 
@@ -198,8 +200,10 @@ def test_models_are_cached_between_requests(stack: Stack) -> None:
     stack.user = BOB
     created = _create(stack)
     before = len(stack.requests)
-    for _ in range(3):
-        models = _call(stack, "get", f"/me/llm-credentials/{created['id']}/models").json()
+    responses = [
+        _call(stack, "get", f"/me/llm-credentials/{created['id']}/models").json() for _ in range(3)
+    ]
+    models = responses[-1]
     assert [m["id"] for m in models["items"]] == ["gpt-4o", "o3"]
     assert len(stack.requests) == before  # список запомнен при создании
 
@@ -223,11 +227,11 @@ def test_storage_is_refused_in_production_without_encryption_key() -> None:
             bpmn_tools_url="http://127.0.0.1:1",
             credentials_encryption_key=None,
             llm_provider="openai_compatible",
-            llm_api_key="server-key-1234",
+            llm_api_key=SecretStr("server-key-1234"),
             llm_base_url="https://llm.example.test/v1",
             llm_model="m",
             stt_provider="deepgram",
-            deepgram_api_key="x",
+            deepgram_api_key=SecretStr("x"),
         )
     )
     s.user = BOB
@@ -248,7 +252,7 @@ def test_production_refuses_mock_stt_and_mock_llm_without_user_keys() -> None:
             Settings(
                 app_env="production",
                 stt_provider="deepgram",
-                deepgram_api_key="x",
+                deepgram_api_key=SecretStr("x"),
                 llm_provider="mock",
             )
         )
@@ -312,7 +316,7 @@ async def test_production_without_any_key_asks_to_add_one() -> None:
             app_env="production",
             bpmn_tools_url="http://127.0.0.1:1",
             stt_provider="deepgram",
-            deepgram_api_key="x",
+            deepgram_api_key=SecretStr("x"),
             llm_provider="mock",
         )
     )
@@ -439,15 +443,12 @@ async def test_recovery_rejects_changed_model_or_provider(stack: Stack) -> None:
     execution.pop("source_snapshot_hash", None)
     run.model = "другая-модель"
     with pytest.raises(PipelineError, match="Модель изменилась"):
-        runs._check_recovered_input(
-            run, SimpleNamespace(source_snapshot_hash=None), execution, state
-        )  # type: ignore[arg-type]
+        runs._check_recovered_input(run, _NO_HASH, execution, state)
+    assert state.pipeline is not None
     run.model = state.pipeline.model_name
     execution["provider"] = "anthropic"
     with pytest.raises(PipelineError, match="Провайдер"):
-        runs._check_recovered_input(
-            run, SimpleNamespace(source_snapshot_hash=None), execution, state
-        )  # type: ignore[arg-type]
+        runs._check_recovered_input(run, _NO_HASH, execution, state)
 
 
 def test_error_text_never_contains_the_key(stack: Stack) -> None:

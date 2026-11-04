@@ -5,7 +5,7 @@
 """
 
 import json
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 import httpx
@@ -33,6 +33,7 @@ from app.llm.client import (
     token_count,
     with_retries,
 )
+from app.llm.multimodal import MediaAttachment, MediaUnsupportedError
 from app.llm.net_guard import UnsafeBaseUrlError, ensure_public_host, normalize_base_url
 from app.llm.pinned_transport import Resolver, pinned_transport
 
@@ -108,7 +109,9 @@ class OpenAICompatibleClient:
         json_mode: bool,
         max_tokens: int,
         effort: str | None = None,
+        content: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
+        """Тело Chat Completions; `content` — мультимодальные части вместо строки (vision)."""
         config = self._config
         body: dict[str, Any] = {
             "model": config.model,
@@ -116,7 +119,7 @@ class OpenAICompatibleClient:
             self.token_param: max_tokens,
             "messages": [
                 {"role": "system", "content": system},
-                {"role": "user", "content": user},
+                {"role": "user", "content": content if content is not None else user},
             ],
         }
         if json_mode and config.json_mode:
@@ -167,6 +170,78 @@ class OpenAICompatibleClient:
         limit = max_tokens if json_mode else min(max_tokens, _CHAT_MAX_TOKENS)
         body = self.build_body(system, user, json_mode=json_mode, max_tokens=limit, effort=effort)
         raw = await self._post("/chat/completions", body)
+        return self.parse_completion(raw)
+
+    async def complete_vision(
+        self,
+        system: str,
+        user: str,
+        *,
+        images: Sequence[MediaAttachment],
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> str:
+        """Изображения уходят `image_url` с data-URL (RFC-0006): отдельный файл не нужен."""
+        limit = max_tokens if json_mode else min(max_tokens, _CHAT_MAX_TOKENS)
+        content: list[dict[str, Any]] = [{"type": "text", "text": user}]
+        content.extend(
+            {"type": "image_url", "image_url": {"url": image.data_url()}} for image in images
+        )
+        body = self.build_body(
+            system,
+            user,
+            json_mode=json_mode,
+            max_tokens=limit,
+            effort=effort,
+            content=content,
+        )
+        raw = await self._post("/chat/completions", body)
+        return self.parse_completion(raw)
+
+    async def complete_document(
+        self,
+        system: str,
+        user: str,
+        *,
+        document: MediaAttachment,
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> str:
+        """PDF в Chat Completions: только если модель заявляет `pdf_input`.
+
+        Иначе — `MediaUnsupportedError`: вызывающий код переходит на изображения страниц или
+        отдельного OCR-провайдера и показывает технический вопрос, а не роняет материал.
+        """
+        if not self.capabilities().pdf_input:
+            raise MediaUnsupportedError(
+                "Модель не принимает PDF: выберите модель с чтением PDF или OCR-провайдера"
+            )
+        limit = max_tokens if json_mode else min(max_tokens, _CHAT_MAX_TOKENS)
+        content: list[dict[str, Any]] = [
+            {"type": "text", "text": user},
+            {
+                "type": "file",
+                "file": {
+                    "filename": document.label or "document.pdf",
+                    "file_data": document.data_url(),
+                },
+            },
+        ]
+        body = self.build_body(
+            system,
+            user,
+            json_mode=json_mode,
+            max_tokens=limit,
+            effort=effort,
+            content=content,
+        )
+        raw = await self._post("/chat/completions", body)
+        return self.parse_completion(raw)
+
+    def parse_completion(self, raw: bytes) -> str:
+        """Разбор ответа Chat Completions: usage, отказ, обрезка и пустой ответ."""
         try:
             payload = json.loads(raw)
             choice = payload["choices"][0]

@@ -15,6 +15,7 @@ import httpx
 from app.domain.capabilities import Capability, CapabilityError, ErrorClass
 from app.ingest.adapters.base import CapabilityAdapter
 from app.ingest.adapters.http import AdapterClientFactory
+from app.ingest.adapters.ocr import OCR_PROVIDERS, ContractOcrAdapter
 from app.ingest.adapters.stt_deepgram import DeepgramSttAdapter
 from app.ingest.adapters.stt_openai import OpenAISttAdapter
 
@@ -136,10 +137,28 @@ def register_stt_providers(registry: AdapterRegistry) -> None:
     )
 
 
+def register_ocr_providers(registry: AdapterRegistry) -> None:
+    """Контракты внешних OCR-провайдеров (RFC-0006, шаг 4).
+
+    Вызовы не реализованы: страницы-сканы в волне 3 распознаёт модель с чтением PDF. Ключ
+    Mistral/Yandex можно сохранить заранее — провайдер появится в настройках возможности.
+    """
+
+    def factory(provider: str):
+        def build(context: AdapterContext) -> CapabilityAdapter:
+            return ContractOcrAdapter(provider=provider, credential_id=context.credential_id)
+
+        return build
+
+    for provider, label in OCR_PROVIDERS:
+        registry.register(AdapterSpec(Capability.OCR, provider, label, factory(provider)))
+
+
 def build_default_registry(extra: Iterable[AdapterSpec] = ()) -> AdapterRegistry:
     """Реестр по умолчанию: ключи по типам задач, которые уже поддержаны."""
     registry = AdapterRegistry()
     for spec in extra:
         registry.register(spec)
     register_stt_providers(registry)
+    register_ocr_providers(registry)
     return registry

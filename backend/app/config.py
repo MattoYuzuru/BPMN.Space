@@ -119,6 +119,23 @@ class Settings(BaseSettings):
     stt_segment_timeout_base_sec: float = Field(default=60.0, gt=0)
     stt_segment_timeout_per_audio_sec: float = Field(default=0.3, ge=0)
 
+    # --- Производные узлы записи и сканов (RFC-0006, шаги 4–5, волна 3) ---
+    # Кадры: ширина сохранённого JPEG, порог дедупликации dhash (бит) и предел числа кадров.
+    # Профиль обработки задаёт шаг и порог смены сцены (`ingest/frames.py`), здесь — общие
+    # пределы сервера: они защищают диск и память на слабой VPS.
+    media_frame_width: int = Field(default=768, ge=320, le=1920)
+    media_frame_dedup_bits: int = Field(default=8, ge=0, le=64)
+    media_frame_max_frames: int = Field(default=600, ge=1, le=2000)
+    media_frame_ffmpeg_timeout_sec: float = Field(default=900.0, gt=0)
+    # Описание кадров vision-моделью: кадров в одном запросе и потолок ответа.
+    media_vision_batch_size: int = Field(default=4, ge=1, le=16)
+    media_vision_max_tokens: int = Field(default=2048, ge=256, le=32_768)
+    # Краткое содержание записи (trust=summary): потолок ответа модели.
+    media_summary_max_tokens: int = Field(default=800, ge=64, le=8192)
+    # OCR сканов PDF: страниц в одном запросе к модели с чтением PDF и потолок ответа.
+    ocr_pages_per_request: int = Field(default=10, ge=1, le=100)
+    ocr_max_tokens: int = Field(default=4096, ge=256, le=32_768)
+
     # --- Mock-реализация (#2): задержки имитируют работу модели и STT ---
     # Множитель всех задержек: 0 — мгновенно (тесты), 1 — как в демо.
     mock_delay_scale: float = 1.0

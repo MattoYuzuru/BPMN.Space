@@ -11,7 +11,7 @@ mock (только вне production). Ключ расшифровывается
 """
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from uuid import UUID
 
@@ -25,9 +25,11 @@ from app.llm.capabilities import (
     ModelCapabilities,
     RunProfile,
     UnsupportedEffortError,
+    capabilities_for,
     checked_profile,
 )
 from app.llm.client import PROVIDER_MOCK, LlmConfig, redact_secrets
+from app.llm.multimodal import MediaAttachment
 from app.llm.pipeline import LlmPipeline
 from app.services.common import Runtime
 from app.services.errors import InvalidInputError, NotFoundError, UnavailableError
@@ -85,6 +87,78 @@ def pipeline_budget(pipeline: object) -> int | None:
     """Бюджет источников, рассчитанный из окна модели; `None` — у mock и тестовых пайплайнов."""
     budget = getattr(pipeline, "context_budget_chars", None)
     return budget if isinstance(budget, int) and not isinstance(budget, bool) else None
+
+
+def media_ready(capabilities: ModelCapabilities, *, need_pdf: bool) -> bool:
+    """Модель годится для мультимодальной задачи: изображения и, если нужно, PDF.
+
+    Отдельного «профиля-рабочей-модели» пока нет (`RunProfile` не содержит модели): берётся
+    модель ключа по умолчанию или модель сервера. Если capabilities неизвестны, отказ честнее
+    попытки: пользователь увидит технический вопрос, а не ошибку провайдера.
+    """
+    return capabilities.vision and (capabilities.pdf_input if need_pdf else True)
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedMediaModel:
+    """Модель для OCR и описания кадров вне прогона (RFC-0006, волна 3).
+
+    Оборачивает пайплайн с мультимодальными методами (`LlmPipeline` или mock): сервис
+    обработки материалов не знает, чей это ключ и какой провайдер. `release()` закрывает
+    соединения клиента пользователя; общий пайплайн сервера остаётся жить.
+    """
+
+    pipeline: object
+    provider: str
+    model: str
+    capabilities: ModelCapabilities
+    credential_id: UUID | None
+    source: str
+
+    async def complete_text(self, system: str, user: str, *, max_tokens: int | None = None) -> str:
+        complete = getattr(self.pipeline, "complete_text", None)
+        if complete is None:
+            raise UnavailableError("Модель не умеет текстовые запросы")
+        return await complete(system, user, max_tokens=max_tokens)
+
+    async def complete_vision(
+        self,
+        system: str,
+        user: str,
+        *,
+        images: Sequence[MediaAttachment],
+        json_mode: bool,
+        max_tokens: int,
+    ) -> str:
+        complete = getattr(self.pipeline, "complete_vision", None)
+        if complete is None:
+            raise UnavailableError("Модель не принимает изображения")
+        return await complete(
+            system, user, images=images, json_mode=json_mode, max_tokens=max_tokens
+        )
+
+    async def complete_document(
+        self,
+        system: str,
+        user: str,
+        *,
+        document: MediaAttachment,
+        json_mode: bool,
+        max_tokens: int,
+    ) -> str:
+        complete = getattr(self.pipeline, "complete_document", None)
+        if complete is None:
+            raise UnavailableError("Модель не читает PDF")
+        return await complete(
+            system, user, document=document, json_mode=json_mode, max_tokens=max_tokens
+        )
+
+    async def release(self) -> None:
+        if self.source != SOURCE_USER:
+            return
+        aclose = getattr(self.pipeline, "aclose", None)
+        if aclose is not None:
+            await aclose()
 
 
 class ModelResolver:
@@ -215,6 +289,65 @@ class ModelResolver:
         if isinstance(restored.pipeline, LlmPipeline) and isinstance(limits, dict):
             return replace(restored, pipeline=restored.pipeline.restored(limits))
         return restored
+
+    async def resolve_media(
+        self, user_id: UUID | None, *, need_pdf: bool, allow_mock: bool = True
+    ) -> ResolvedMediaModel | None:
+        """Модель для OCR/vision вне прогона: ключ пользователя, затем ключ сервера.
+
+        Перебираются ключи моделей пользователя по приоритету: первый, чья модель умеет
+        изображения (и PDF, если `need_pdf`), становится исполнителем. Иначе используется
+        модель сервера; в демо-режиме — mock (он принимает изображения и PDF). `None` —
+        возможности нет: вызывающий код создаёт технический вопрос `capability_missing`,
+        а не падает.
+        """
+        repo = self._repos.credentials if self._repos else None
+        if user_id is not None and repo is not None:
+            candidates = [
+                item
+                for item in await repo.list_by_user(user_id)
+                if item.is_llm and item.enabled and not item.is_exhausted(self._rt.clock())
+            ]
+            candidates.sort(key=lambda item: (item.priority, item.created_at, str(item.id)))
+            for credential in candidates:
+                model = credential.default_model
+                if not model or self._cipher is None or self._factory is None:
+                    continue
+                capabilities = capabilities_for(
+                    credential.provider, model, base_url=credential.base_url
+                )
+                if not media_ready(capabilities, need_pdf=need_pdf):
+                    continue
+                try:
+                    resolved = self._for_credential(credential, model)
+                except (InvalidInputError, UnavailableError):
+                    continue
+                return ResolvedMediaModel(
+                    resolved.pipeline,
+                    resolved.provider,
+                    model,
+                    capabilities,
+                    credential.id,
+                    SOURCE_USER,
+                )
+        server = self._server
+        if server is None:
+            return None
+        provider = pipeline_provider(server)
+        if provider == PROVIDER_MOCK:
+            if self._production or not allow_mock:
+                return None
+            # Mock принимает изображения и PDF, чтобы демо и тесты проходили без сети.
+            capabilities = ModelCapabilities(vision=True, pdf_input=True, known=True)
+            return ResolvedMediaModel(
+                server, provider, pipeline_model(server), capabilities, None, SOURCE_MOCK
+            )
+        capabilities = pipeline_capabilities(server)
+        if not media_ready(capabilities, need_pdf=need_pdf):
+            return None
+        return ResolvedMediaModel(
+            server, provider, pipeline_model(server), capabilities, None, SOURCE_SERVER
+        )
 
     async def _with_profile(
         self, resolved: ResolvedModel, profile: RunProfile | None, *, validate: bool

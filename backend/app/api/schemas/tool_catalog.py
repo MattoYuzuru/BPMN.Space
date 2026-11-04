@@ -28,7 +28,9 @@ class ToolCatalogProvider(ApiModel):
     model_covers: bool = Field(
         description="Возможность закрывает ключ модели, отдельный ключ не нужен"
     )
-    supported: bool = Field(description="Есть адаптер в коде: такой ключ можно добавить")
+    supported: bool = Field(
+        description="Адаптер выполняет рабочие вызовы: ключом можно пользоваться уже сейчас"
+    )
 
     @classmethod
     def of(cls, provider: CatalogProvider) -> "ToolCatalogProvider":

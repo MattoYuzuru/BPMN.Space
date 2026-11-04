@@ -3436,7 +3436,7 @@ export interface components {
             rf: boolean;
             /**
              * Supported
-             * @description Есть адаптер в коде: такой ключ можно добавить
+             * @description Адаптер выполняет рабочие вызовы: ключом можно пользоваться уже сейчас
              */
             supported: boolean;
         };

@@ -17,6 +17,7 @@ RFC-0006: тот появится вместе с узлами дерева ма
 
 import ipaddress
 import logging
+import socket
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any
@@ -25,10 +26,12 @@ from uuid import UUID
 
 from app.domain.capabilities import (
     Capability,
+    CapabilityError,
     CapabilityIncident,
     CapabilityIncidentSink,
     CapabilityOutcome,
     CapabilityUnavailableError,
+    ErrorClass,
 )
 from app.domain.models import SourceOrigin, SourceTrust
 from app.ingest.adapters.web import (
@@ -120,13 +123,55 @@ def checked_limit(limit: int) -> int:
     return max(MIN_RESULTS, min(int(limit), MAX_RESULTS))
 
 
+def _looks_numeric_host(host: str) -> bool:
+    """Похож ли хост на нестандартную числовую запись IPv4 (2130706433, 0x7f…, 0177…).
+
+    Такие записи разные библиотеки и сервисы понимают по-разному — это классический приём
+    обхода SSRF-проверки: `ipaddress` видит домен, а `inet_aton`/браузер провайдера — loopback.
+    """
+    labels = host.split(".")
+    if all(label.isdigit() for label in labels):
+        return True  # целое число (2130706433) и короткая запись (127.1)
+    if host.lower().startswith("0x"):
+        return True
+    for label in labels:
+        lowered = label.lower()
+        if lowered.startswith("0x"):
+            return True
+        if label.isdigit() and len(label) > 1 and label.startswith("0"):
+            return True
+    return False
+
+
+def _numeric_host_ip(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """IP-адрес хоста, включая нестандартные записи IPv4, которые понимает `inet_aton`.
+
+    `ipaddress` принимает только каноническую запись, поэтому целое число (`2130706433`),
+    hex (`0x7f000001`), короткая (`127.1`) и восьмеричная (`0177.0.0.1`) формы иначе остались
+    бы «доменом» и ушли провайдеру.
+    """
+    try:
+        return ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    if not _looks_numeric_host(host):
+        return None
+    try:
+        return ipaddress.ip_address(socket.inet_aton(host))
+    except OSError:
+        return None
+
+
 def checked_page_url(raw: str) -> str:
     """Адрес страницы для `read_url`: только публичный http(s) без логина и служебных имён.
 
     Сервер не скачивает страницу сам (это делает провайдер по ключу), но закрытые адреса
     отклоняются до вызова: незачем отправлять чужому сервису `localhost`, приватные диапазоны и
     метаданные облака. Проверка литералов (127.0.0.1, 10.x, 169.254.169.254, [::1]) — та же,
-    что в SSRF-защите моделей (ADR-0011).
+    что в SSRF-защите моделей (ADR-0011). Нестандартные числовые формы IPv4 (`2130706433`,
+    `0x7f000001`, `127.1`, `0177.0.0.1`) нормализуются через `inet_aton` и отклоняются, если
+    указывают на закрытую сеть; в остальных случаях такие формы тоже запрещены — парсер
+    провайдера может понять их иначе.
     """
     value = (raw or "").strip()
     if not value:
@@ -147,29 +192,36 @@ def checked_page_url(raw: str) -> str:
             "Закрытые адреса читать нельзя: укажите публичную страницу, а материалы "
             "за логином приносит внешний агент (RFC-0007)"
         )
-    try:
-        literal: ipaddress.IPv4Address | ipaddress.IPv6Address | None = ipaddress.ip_address(host)
-    except ValueError:
-        literal = None
+    literal = _numeric_host_ip(host)
     if literal is not None and not is_public_ip(literal):
         raise InvalidInputError(
             "Адрес страницы указывает на закрытую сеть: укажите публичную страницу"
         )
+    if _looks_numeric_host(host):
+        raise InvalidInputError(
+            "Числовые формы адреса (целое число, 16-ричная запись, ведущие нули) не "
+            "принимаются: укажите обычное имя или канонический IP"
+        )
     return value
 
 
-def safe_canonical_url(candidate: str | None, fallback: str) -> str:
-    """Канонический адрес от провайдера: только публичный http(s), иначе нормализованный исходный.
+def provider_canonical_url(candidate: str | None, fallback: str) -> str:
+    """Канонический адрес из метаданных провайдера; недопустимый — отказ, а не подмена.
 
-    Провайдеру доверяем не больше, чем странице: закрытый или битый адрес в метаданных не должен
-    попасть в провенанс производного источника.
+    Если провайдер сообщил закрытый или битый адрес, текст страницы отдавать нельзя: провенанс
+    производного источника должен вести на публичный адрес, а не на внутреннюю сеть или
+    метаданные облака. Поэтому сервис возвращает структурный отказ без текста.
     """
-    if candidate:
-        try:
-            return canonical_page_url(checked_page_url(candidate))
-        except InvalidInputError:
-            pass
-    return canonical_page_url(fallback)
+    if candidate is None or not candidate.strip():
+        return canonical_page_url(fallback)
+    try:
+        checked = checked_page_url(candidate)
+    except InvalidInputError:
+        raise CapabilityError(
+            ErrorClass.FATAL,
+            "Провайдер вернул недопустимый канонический адрес страницы: текст не принят",
+        ) from None
+    return canonical_page_url(checked)
 
 
 def canonical_page_url(raw: str) -> str:
@@ -460,11 +512,24 @@ class WebTools:
             await self._report(project_id, Capability.WEB_FETCH, error.outcome)
             return failure
         body = page.text if isinstance(page.text, str) else ""
+        try:
+            canonical_url = provider_canonical_url(page.canonical_url, page.url)
+        except CapabilityError as error:
+            # Провайдер ушёл на закрытый адрес: текст не принимаем, возвращаем структурный отказ.
+            outcome = CapabilityOutcome(
+                capability=Capability.WEB_FETCH,
+                status="failed",
+                reason=error.error_class.value,
+                provider=provider.get("used") or None,
+                message=error.message,
+            )
+            await self._report(project_id, Capability.WEB_FETCH, outcome)
+            return self._page_failure(requested, canonical, outcome)
         truncated = len(body) > MAX_PAGE_CHARS
         result = WebPageResult(
             status="ok",
             url=requested,
-            canonical_url=safe_canonical_url(page.canonical_url, page.url),
+            canonical_url=canonical_url,
             text=body[:MAX_PAGE_CHARS],
             title=page.title,
             published_at=page.published_at,
@@ -577,5 +642,5 @@ __all__ = [
     "checked_page_url",
     "checked_query",
     "checked_recency",
-    "safe_canonical_url",
+    "provider_canonical_url",
 ]

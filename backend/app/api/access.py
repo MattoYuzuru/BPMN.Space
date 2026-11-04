@@ -172,9 +172,16 @@ async def ensure_resource_access(
     if not is_review_token(request):
         require_account(request, user)
     project_id = await container.access.resource_project_id(resource, resource_id)
-    return await ensure_project_access(
+    role = await ensure_project_access(
         request, container, project_id, user, write=write, allow_reviewer=allow_reviewer
     )
+    if role is ProjectRole.REVIEWER and resource is ResourceKind.RUN:
+        # Прогоны содержат вопросы и этапы всего проекта: поток или журнал раскрыл бы
+        # проверяющему чужие дорожки. Ссылка проверки даёт схему, вопросы области и ответы.
+        raise ForbiddenError(
+            "Ссылка проверки не даёт доступа к прогонам: доступны схема, вопросы области и ответы"
+        )
+    return role
 
 
 async def get_active_share_link(container: Container, token: str) -> ShareLink:

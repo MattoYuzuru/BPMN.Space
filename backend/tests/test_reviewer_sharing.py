@@ -164,7 +164,10 @@ async def test_migration_0023_adds_reviewer_role_and_drops_it_on_downgrade() -> 
     user_id, project_id, link_id = uuid4(), uuid4(), uuid4()
     try:
         async with engine.begin() as connection:
-            await connection.run_sync(migrate(lambda cfg: command.upgrade(cfg, "head")))
+            # Проверяем саму 0023 в её ветке: после неё есть 0024/0025 других волн.
+            await connection.run_sync(
+                migrate(lambda cfg: command.upgrade(cfg, "0023_reviewer_role"))
+            )
             role_check = await connection.scalar(
                 text(
                     "select pg_get_constraintdef(oid) from pg_constraint "
@@ -174,6 +177,24 @@ async def test_migration_0023_adds_reviewer_role_and_drops_it_on_downgrade() -> 
             )
             assert role_check is not None
             assert "reviewer" in role_check
+            on_delete = await connection.scalar(
+                text(
+                    "select confdeltype from pg_constraint where "
+                    "conname = 'fk_api_tokens_share_link_id' and "
+                    "conrelid = 'api_tokens'::regclass"
+                )
+            )
+            # CASCADE: токен проверки умирает вместе со ссылкой, а не становится обычным.
+            assert on_delete in {b"c", "c"}
+            indexes = {
+                row[0]
+                for row in await connection.execute(
+                    text("select indexname from pg_indexes where schemaname = :schema"),
+                    {"schema": schema},
+                )
+            }
+            assert "ix_api_tokens_share_link_id" in indexes
+            assert "ix_questions_answer_share_link_id" in indexes
             await connection.execute(
                 text(
                     "INSERT INTO users (id, email, hashed_password, is_active, is_superuser, "
@@ -199,10 +220,15 @@ async def test_migration_0023_adds_reviewer_role_and_drops_it_on_downgrade() -> 
             await connection.run_sync(
                 migrate(lambda cfg: command.downgrade(cfg, "0022_merge_wave2_heads"))
             )
-            role = await connection.scalar(
-                text("select role from project_share_links where id = :id"), {"id": link_id}
-            )
-            assert role == "viewer"  # откат превращает проверку в просмотр, CHECK не падает
+            downgraded = (
+                await connection.execute(
+                    text("select role, revoked_at from project_share_links where id = :id"),
+                    {"id": link_id},
+                )
+            ).one()
+            # Откат гасит ссылку проверки, а не понижает её до просмотра всего проекта.
+            assert downgraded[0] == "viewer"
+            assert downgraded[1] is not None
             columns = await connection.execute(
                 text(
                     "select column_name from information_schema.columns where "
@@ -319,14 +345,21 @@ async def test_agent_prompt_has_scope_questions_and_no_secret(stack: Stack) -> N
     assert body["lane_ids"] == [scope["scoped_lane"]]
     assert body["whole_project"] is False
 
-    # Редакторская ссылка без входа — 401, как и открытие проекта.
+    # Промпт — сценарий проверки: у viewer и editor его нет (403).
+    viewer_link = await owner.post(
+        f"/projects/{finished['project']}/share-links", json={"role": "viewer"}
+    )
+    viewer_prompt = await (await stack.guest()).get(
+        f"/shares/{_secret(viewer_link.json()['url_path'])}/agent-prompt"
+    )
+    assert viewer_prompt.status_code == 403
     editor_link = await owner.post(
         f"/projects/{finished['project']}/share-links", json={"role": "editor"}
     )
     editor_prompt = await (await stack.guest()).get(
         f"/shares/{_secret(editor_link.json()['url_path'])}/agent-prompt"
     )
-    assert editor_prompt.status_code == 401
+    assert editor_prompt.status_code == 403
 
 
 # ---------- токен агента, права и отзыв ----------
@@ -604,3 +637,165 @@ async def test_share_role_matrix_viewer_editor_reviewer(stack: Stack) -> None:
     assert issued.status_code == 201, issued.text
     assert (await account.post(f"/shares/{viewer_secret}/agent-token")).status_code == 403
     assert (await account.post(f"/shares/{editor_secret}/agent-token")).status_code == 403
+
+
+async def test_guest_answers_by_review_link_with_provenance(stack: Stack) -> None:
+    """Гость с reviewer-ссылкой отвечает на вопросы области — без аккаунта и токена."""
+    owner = await stack.user("guest-answer-owner@example.com")
+    finished = await _finished_project(owner)
+    scope = await _scope_fixture(stack, owner, finished)
+    project_id = scope["project_id"]
+    secret = scope["secret"]
+    guest = await stack.guest()
+
+    answered = await guest.post(
+        f"/shares/{secret}/questions/{scope['inside'].id}/answer",
+        json={"text": "Согласует начальник отдела"},
+    )
+    assert answered.status_code == 200, answered.text
+    body = answered.json()
+    assert body["status"] == "answered"
+    answer = body["answer"]
+    assert answer["via"] == "review"
+    assert answer["share_link_id"] == scope["link"]["id"]
+    short = str(scope["link"]["id"]).replace("-", "")[:8]
+    assert short in answer["via_name"]
+    assert "Проверка" in answer["via_name"]
+
+    outside = await guest.post(
+        f"/shares/{secret}/questions/{scope['outside'].id}/answer",
+        json={"text": "Не моя дорожка"},
+    )
+    assert outside.status_code == 404
+
+    viewer_link = await owner.post(f"/projects/{project_id}/share-links", json={"role": "viewer"})
+    viewer_answer = await guest.post(
+        f"/shares/{_secret(viewer_link.json()['url_path'])}/questions/"
+        f"{scope['inside_second'].id}/answer",
+        json={"text": "Просмотр не отвечает"},
+    )
+    assert viewer_answer.status_code == 403
+
+    # Ответ по ссылке виден в журнале активности как ответ проверяющего.
+    activity = await owner.get(f"/projects/{project_id}/agent-activity")
+    events = [item for item in activity.json()["items"] if item["kind"] == "answer_added"]
+    event = next(item for item in events if item["share_link_id"] == scope["link"]["id"])
+    assert event["token_name"] == answer["via_name"]
+
+    # Отозванная ссылка больше не принимает ответы (404, без раскрытия).
+    await owner.delete(f"/projects/{project_id}/share-links/{scope['link']['id']}")
+    after_revoke = await guest.post(
+        f"/shares/{secret}/questions/{scope['inside_second'].id}/answer",
+        json={"text": "Поздно"},
+    )
+    assert after_revoke.status_code == 404
+
+
+async def test_reviewer_cannot_see_runs_or_events(stack: Stack) -> None:
+    """SSE и карточка прогона содержат вопросы всего проекта — проверяющему их не видно."""
+    owner = await stack.user("review-runs-owner@example.com")
+    finished = await _finished_project(owner)
+    scope = await _scope_fixture(stack, owner, finished)
+    run_id = finished["run"]
+    stranger = await stack.user("review-runs-stranger@example.com")
+    issued = await _agent_token(stranger, str(scope["secret"]))
+    agent = Agent(stack, str(issued["secret"]))
+
+    assert (await agent.get(f"/runs/{run_id}")).status_code == 403
+    assert (await agent.get(f"/runs/{run_id}/events")).status_code == 403
+
+    async with _mcp_server(stack) as connect:
+        session = await connect(str(issued["secret"]))
+        result = await _call(session, "get_run", {"run_id": str(run_id)})
+        assert result.is_error
+        assert "прогон" in _error(result).lower()
+
+
+async def test_mcp_diagram_shows_evidence_for_whole_project_and_common_questions(
+    stack: Stack,
+) -> None:
+    owner = await stack.user("review-diagram-owner@example.com")
+    finished = await _finished_project(owner)
+    scope = await _scope_fixture(stack, owner, finished)
+    project_id = scope["project_id"]
+    # Общий вопрос без привязки к схеме: при области он должен оставаться видимым.
+    common = await _add_question(stack, project_id, code="Q-950", element_ids=[])
+    stranger = await stack.user("review-diagram-stranger@example.com")
+
+    scoped_token = await _agent_token(stranger, str(scope["secret"]))
+    async with _mcp_server(stack) as connect:
+        session = await connect(str(scoped_token["secret"]))
+        diagram = _payload(await _call(session, "get_diagram", {"project_id": project_id}))
+        codes = {question["code"] for question in diagram["questions"]}
+        assert "Q-950" in codes  # общий вопрос области не выбрасывается
+        assert "Q-903" not in codes
+        assert diagram["evidence"]
+
+    # Ссылка проверки на весь проект: основания и вопросы должны быть непустыми.
+    whole = await _review_link(owner, project_id, [])
+    whole_secret = _secret(str(whole["url_path"]))
+    whole_token = await _agent_token(stranger, whole_secret)
+    async with _mcp_server(stack) as connect:
+        session = await connect(str(whole_token["secret"]))
+        diagram = _payload(await _call(session, "get_diagram", {"project_id": project_id}))
+        assert diagram["review_scope"] == []
+        assert diagram["evidence"]
+        codes = {question["code"] for question in diagram["questions"]}
+        assert {"Q-950", "Q-903"} <= codes  # весь проект: и общий, и «чужая» дорожка
+        assert common.code in codes
+
+
+async def test_review_ignore_denied_and_review_labels_distinguish_links(stack: Stack) -> None:
+    owner = await stack.user("review-label-owner@example.com")
+    finished = await _finished_project(owner)
+    scope = await _scope_fixture(stack, owner, finished)
+    project_id = scope["project_id"]
+    stranger = await stack.user("review-label-stranger@example.com")
+
+    second_link = await _review_link(owner, project_id, [scope["scoped_lane"]])
+    first_token = await _agent_token(stranger, str(scope["secret"]))
+    second_token = await _agent_token(stranger, _secret(str(second_link["url_path"])))
+    # Названия проверок различаются коротким id ссылки — коллеги больше не сливаются.
+    assert first_token["name"] != second_token["name"]
+    first_short = str(scope["link"]["id"]).replace("-", "")[:8]
+    second_short = str(second_link["id"]).replace("-", "")[:8]
+    assert first_short in str(first_token["name"])
+    assert second_short in str(second_token["name"])
+
+    # «Не применимо» (ignore) — решение владельца процесса: проверяющему недоступно.
+    agent = Agent(stack, str(first_token["secret"]))
+    ignored = await agent.post(f"/questions/{scope['inside_second'].id}/ignore")
+    assert ignored.status_code == 403
+
+
+async def test_review_cards_count_only_scoped_questions(stack: Stack) -> None:
+    owner = await stack.user("review-counters-owner@example.com")
+    finished = await _finished_project(owner)
+    scope = await _scope_fixture(stack, owner, finished)
+    project_id = scope["project_id"]
+    stranger = await stack.user("review-counters-stranger@example.com")
+    issued = await _agent_token(stranger, str(scope["secret"]))
+    agent = Agent(stack, str(issued["secret"]))
+
+    full_card = next(
+        item for item in (await owner.get("/projects")).json()["items"] if item["id"] == project_id
+    )
+    scoped_card = next(
+        item for item in (await agent.get("/projects")).json()["items"] if item["id"] == project_id
+    )
+    # Карточка проверки считает ровно вопросы области (Q-903 — чужая дорожка, его нет).
+    scoped_questions = (
+        await (await stack.guest()).get(f"/shares/{scope['secret']}/questions")
+    ).json()
+    expected_open = sum(1 for q in scoped_questions if q["status"] == "open")
+    expected_resolved = sum(1 for q in scoped_questions if q["status"] == "resolved")
+    assert scoped_card["counts"]["questions_open"] == expected_open
+    assert scoped_card["counts"]["questions_resolved"] == expected_resolved
+    assert scoped_card["counts"]["questions_open"] < full_card["counts"]["questions_open"]
+    assert scoped_card["access"] == "reviewer"
+
+    async with _mcp_server(stack) as connect:
+        session = await connect(str(issued["secret"]))
+        listed = _payload(await _call(session, "list_projects"))
+        mcp_card = next(item for item in listed["items"] if item["id"] == project_id)
+        assert mcp_card["counts"]["questions_open"] == scoped_card["counts"]["questions_open"]

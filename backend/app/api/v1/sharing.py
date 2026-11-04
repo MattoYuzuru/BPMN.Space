@@ -10,7 +10,7 @@ from app.api.deps import ContainerDep
 from app.api.responses import bpmn_attachment
 from app.api.schemas.common import errors
 from app.api.schemas.projects import ProjectDetail as ProjectDetailSchema
-from app.api.schemas.questions import Question
+from app.api.schemas.questions import Question, QuestionAnswerCreate
 from app.api.schemas.sharing import (
     AgentPrompt,
     AgentTokenIssued,
@@ -25,6 +25,7 @@ from app.api.schemas.sharing import (
     ShareRole,
 )
 from app.container import Container
+from app.domain.models import ANSWER_VIA_REVIEW
 from app.domain.onboarding import ChecklistItem
 from app.services.auth import UserRow
 from app.services.errors import ForbiddenError, NotFoundError, UnauthorizedError
@@ -295,6 +296,42 @@ async def read_shared_questions(
     return [Question.model_validate(question) for question in questions]
 
 
+@router.post(
+    "/shares/{token}/questions/{question_id}/answer",
+    response_model=Question,
+    responses=errors(401, 403, 404, 409, 410, 422),
+)
+async def answer_shared_question(
+    token: str,
+    question_id: UUID,
+    body: QuestionAnswerCreate,
+    container: ContainerDep,
+) -> Question:
+    """Ответить на вопрос области по ссылке проверки (гостю тоже).
+
+    Ссылка и есть удостоверение проверяющего: отдельный аккаунт не нужен. Ответ получает
+    провенанс `via=review`, название проверки (проект + короткий id ссылки) и
+    `share_link_id`. Область ограничена дорожками ссылки; другие права ссылка не даёт.
+    """
+    link = await get_active_share_link(container, token)
+    if ShareRole(link.role) is not ShareRole.REVIEWER:
+        raise ForbiddenError("Отвечать на вопросы по ссылке может только проверяющий")
+    question = await container.questions.get(question_id)
+    if question.project_id != link.project_id:
+        raise NotFoundError("Вопрос не найден")
+    if not await container.review.question_in_scope(link.project_id, question, link.lane_ids):
+        raise NotFoundError("Вопрос не найден")
+    label = await container.review.review_label(link)
+    answered = await container.questions.answer(
+        question_id,
+        text=body.text,
+        via=ANSWER_VIA_REVIEW,
+        via_name=label,
+        share_link_id=link.id,
+    )
+    return Question.model_validate(answered)
+
+
 @router.get(
     "/shares/{token}/agent-prompt",
     response_model=AgentPrompt,
@@ -303,7 +340,6 @@ async def read_shared_questions(
 async def read_agent_prompt(
     token: str,
     container: ContainerDep,
-    user: OptionalUserDep,
 ) -> AgentPrompt:
     """Готовый текст «проверь дорожку» для агента коллеги.
 
@@ -311,8 +347,10 @@ async def read_agent_prompt(
     """
     link = await get_active_share_link(container, token)
     role = ShareRole(link.role)
-    if role is ShareRole.EDITOR and user is None:
-        raise UnauthorizedError("Войдите, чтобы открыть ссылку редактора")
+    if role is not ShareRole.REVIEWER:
+        # Промпт предлагает токен агента и ответы на вопросы области — это сценарий
+        # проверки; у ссылок просмотра и приглашения редактора его нет.
+        raise ForbiddenError("Готовый промпт для агента доступен только по ссылке проверки")
     prompt = await container.review.agent_prompt(link)
     return AgentPrompt(
         text=prompt.text,

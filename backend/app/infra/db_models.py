@@ -298,9 +298,11 @@ class QuestionRow(Base):
     answer_via: Mapped[str | None] = mapped_column(String(32))
     answer_via_name: Mapped[str | None] = mapped_column(String(80))
     # Ответ дан по ссылке проверки (RFC-0007 шаг 3).
+    # Провенанс ответа по ссылке проверки; ссылки не удаляются, но индекс нужен для выборок.
     answer_share_link_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("project_share_links.id", ondelete="SET NULL"),
+        index=True,
     )
     run_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("runs.id", ondelete="SET NULL")
@@ -469,9 +471,11 @@ class ApiTokenRow(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Токен проверки (RFC-0007 шаг 3): выдан по ссылке reviewer, ограничен её областью.
+    # Токен проверки умирает вместе со ссылкой (CASCADE), а не становится обычным токеном.
     share_link_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
-        ForeignKey("project_share_links.id", ondelete="SET NULL"),
+        ForeignKey("project_share_links.id", ondelete="CASCADE"),
+        index=True,
     )
     lane_ids: Mapped[list[str] | None] = mapped_column(JSONB)
 

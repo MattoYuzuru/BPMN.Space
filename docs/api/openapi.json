@@ -264,7 +264,7 @@
                 "type": "null"
               }
             ],
-            "description": "`agent` — ответ записал внешний агент владельца токена (MCP, RFC-0007); null — человек в интерфейсе",
+            "description": "`agent` — ответ записал внешний агент владельца токена (MCP, RFC-0007); `review` — проверяющий ответил по ссылке проверки; null — человек в интерфейсе",
             "title": "Via"
           },
           "via_name": {
@@ -11367,11 +11367,6 @@
             "description": "Некорректные данные"
           }
         },
-        "security": [
-          {
-            "APIKeyCookie": []
-          }
-        ],
         "summary": "Read Agent Prompt",
         "tags": [
           "sharing"
@@ -11660,6 +11655,119 @@
           }
         ],
         "summary": "Read Shared Questions",
+        "tags": [
+          "sharing"
+        ]
+      }
+    },
+    "/api/v1/shares/{token}/questions/{question_id}/answer": {
+      "post": {
+        "description": "Ответить на вопрос области по ссылке проверки (гостю тоже).\n\nСсылка и есть удостоверение проверяющего: отдельный аккаунт не нужен. Ответ получает\nпровенанс `via=review`, название проверки (проект + короткий id ссылки) и\n`share_link_id`. Область ограничена дорожками ссылки; другие права ссылка не даёт.",
+        "operationId": "answer_shared_question",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "question_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Question Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuestionAnswerCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Question"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Конфликт состояния"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "summary": "Answer Shared Question",
         "tags": [
           "sharing"
         ]

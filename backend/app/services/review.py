@@ -40,6 +40,8 @@ logger = logging.getLogger(__name__)
 
 #: Токен по бессрочной ссылке проверки живёт не дольше обычного токена доступа (год).
 MAX_REVIEW_TOKEN_DAYS = 365
+#: Предел названия токена (колонка `api_tokens.name`) и подписи в via_name.
+MAX_REVIEW_LABEL_CHARS = 80
 #: Сколько вопросов и цитат попадает в готовый промпт: контекст агента не раздуваем.
 MAX_PROMPT_QUESTIONS = 12
 MAX_PROMPT_QUOTES = 24
@@ -188,24 +190,44 @@ class ReviewerService:
     async def filter_detail(
         self, project_id: UUID, detail: ProjectDetail, lane_ids: tuple[str, ...]
     ) -> ProjectDetail:
-        """Проект для ссылки проверки: вопросы и счётчики только по области."""
-        if not lane_ids:
-            return detail
+        """Проект для ссылки проверки: вопросы и счётчики только области.
+
+        Пустая область (`lane_ids=()`) — весь проект, но по-прежнему только бизнес-вопросы:
+        технические решаются действием и проверяющему не показываются.
+        """
         questions = await self.filter_questions(project_id, detail.questions, lane_ids)
         view = detail.view
         counts = view.counts
-        counts = ProjectCounts(
+        scoped_counts = ProjectCounts(
             sources=counts.sources,
             questions_open=sum(1 for q in questions if q.status is QuestionStatus.OPEN),
             questions_resolved=sum(1 for q in questions if q.status is QuestionStatus.RESOLVED),
             versions=counts.versions,
         )
+        latest_run_id = await self._repos.runs.last_succeeded_id(project_id)
         return replace(
             detail,
             questions=questions,
-            view=replace(view, counts=counts),
-            summary=project_summary(questions, latest_run_id=None),
+            view=replace(view, counts=scoped_counts),
+            summary=project_summary(questions, latest_run_id=latest_run_id),
         )
+
+    async def scoped_counts(self, project_id: UUID, lane_ids: tuple[str, ...]) -> tuple[int, int]:
+        """Суженные счётчики вопросов проекта для карточки списка: (открыто, решено)."""
+        questions = await self.filter_questions(
+            project_id,
+            await self._repos.questions.list_by_project(project_id),
+            lane_ids,
+        )
+        return (
+            sum(1 for q in questions if q.status is QuestionStatus.OPEN),
+            sum(1 for q in questions if q.status is QuestionStatus.RESOLVED),
+        )
+
+    async def review_label(self, link: ShareLink) -> str:
+        """Подпись проверки: название проекта и короткий id ссылки — коллеги различимы."""
+        project = await get_project(self._repos, link.project_id)
+        return review_label(link, project.title)
 
     async def question_in_scope(
         self, project_id: UUID, question: Question, lane_ids: tuple[str, ...]
@@ -288,7 +310,7 @@ class ReviewerService:
         expires_at = link.expires_at or (now + timedelta(days=MAX_REVIEW_TOKEN_DAYS))
         token, secret = await self._api_tokens.create_review_token(
             user_id,
-            name=f"Проверка: {project.title}",
+            name=review_label(link, project.title),
             project_id=link.project_id,
             lane_ids=link.lane_ids,
             share_link_id=link.id,
@@ -318,7 +340,8 @@ class ReviewerService:
             )
         for question in await self._repos.questions.list_by_project(project_id):
             answer = question.answer
-            if answer is None or answer.via != "agent":
+            # Ответ агента и ответ проверяющего по ссылке — обе строки журнала.
+            if answer is None or answer.via not in {"agent", "review"}:
                 continue
             events.append(
                 AgentEvent(
@@ -336,6 +359,16 @@ class ReviewerService:
             key=lambda event: (event.at, str(event.source_id or event.question_id)), reverse=True
         )
         return events
+
+
+def review_label(link: ShareLink, project_title: str) -> str:
+    """Единая подпись проверки для названия токена и провенанса ответа.
+
+    Короткий id ссылки различает коллег с одинаковыми проектами: «Проверка: Договоры · 1a2b3c4d».
+    """
+    short = link.id.hex[:8]
+    label = f"Проверка: {project_title} · {short}"
+    return label[:MAX_REVIEW_LABEL_CHARS]
 
 
 def _token_name(params: dict[str, Any]) -> str | None:

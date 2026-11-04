@@ -248,13 +248,21 @@ def register_tools(  # noqa: PLR0915 — регистрация всех инс�
                 [view.project.id for view in page.items], identity.user.id
             )
             default_role = "reviewer" if review else "viewer"
-            return {
-                "items": [
-                    project_card(view, roles.get(view.project.id, default_role))
-                    for view in page.items
-                ],
-                "total": page.total,
-            }
+            review_lanes = review_scope(identity) or ()
+            items = []
+            for view in page.items:
+                card = project_card(view, roles.get(view.project.id, default_role))
+                if review:
+                    opened, resolved = await container.review.scoped_counts(
+                        view.project.id, review_lanes
+                    )
+                    card["counts"] = {
+                        **card["counts"],
+                        "questions_open": opened,
+                        "questions_resolved": resolved,
+                    }
+                items.append(card)
+            return {"items": items, "total": page.total}
 
     @server.tool(
         name="get_project",
@@ -747,9 +755,11 @@ def register_tools(  # noqa: PLR0915 — регистрация всех инс�
                 raise InvalidInputError("Дорожка вне области проверки")
             if selection is not None:
                 element_ids: set[str] | None = set(selection.element_ids)
-            elif scope is not None:
+            elif scope:
+                # Непустая область проверки: основания только по её дорожкам.
                 element_ids = _scope_element_ids(document, scope)
             else:
+                # Весь проект (пустая область или обычный токен): все основания.
                 element_ids = None
             evidence = [
                 {
@@ -760,10 +770,15 @@ def register_tools(  # noqa: PLR0915 — регистрация всех инс�
                 for element_id, quote in version.trace.items()
                 if element_ids is None or element_id in element_ids
             ]
+            # Вопросы берём из уже суженного detail: область-дорожки, общие вопросы и бизнес-
+            # категория учтены в `review.filter_detail`; не пересекаем их повторно с
+            # `element_ids`, иначе общие вопросы без привязки к схеме пропадали бы.
             questions = detail.questions
-            if element_ids is not None:
+            if selection is not None:
                 questions = [
-                    question for question in questions if element_ids & set(question.element_ids)
+                    question
+                    for question in questions
+                    if set(selection.element_ids) & set(question.element_ids)
                 ]
             return {
                 "project_id": str(pid),

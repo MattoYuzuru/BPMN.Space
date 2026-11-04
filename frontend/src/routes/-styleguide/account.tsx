@@ -1,12 +1,14 @@
 import { useState } from 'react'
+import type { ApiToken } from '@/entities/api-token'
 import type { LlmCredential } from '@/entities/llm-credential'
 import type { AuthMode } from '@/entities/session'
 import { AccountMenuFor } from '@/features/account-menu/account-menu'
+import { TokenRow } from '@/features/api-tokens/agent-access-section'
 import { CredentialRow } from '@/features/llm-credentials/credentials-section'
 import { PickerBody } from '@/features/model-picker/model-picker'
 import { SignInForm } from '@/features/sign-in/sign-in-form'
 import { generatePassword } from '@/shared/lib/password'
-import { Badge, BrandMark, Card, Field, IconButton, Input, Tag } from '@/shared/ui'
+import { Badge, BrandMark, Card, CopyField, Field, IconButton, Input, Tag } from '@/shared/ui'
 import { Section, Specimen } from './kit'
 
 /** Поле пароля регистрации: ключ создаёт пароль и показывает его (как в SignInForm). */
@@ -49,6 +51,20 @@ function PasswordGeneratorDemo() {
     </div>
   )
 }
+
+const DEMO_TOKEN: ApiToken = {
+  id: 't1',
+  name: 'Claude Code на ноутбуке',
+  token_prefix: 'bps_tttttt',
+  scopes: ['projects:read', 'questions:answer'],
+  project_ids: null,
+  expires_at: '2026-12-04T00:00:00Z',
+  created_at: '2026-11-04T00:00:00Z',
+  last_used_at: null,
+  expired: false,
+}
+
+const DEMO_SECRET = 'bps_ttttttttttttttttttttttttttttttttttttttttttt'
 
 const DEMO_CREDENTIALS: LlmCredential[] = [
   {
@@ -125,6 +141,28 @@ export function AccountSection() {
       <Specimen title="Выбор модели при запуске" note="Popover, два Select, RadioGroup уровня">
         <div className="w-80 rounded-lg border border-border bg-surface p-4 shadow-sm">
           <PickerBody items={DEMO_CREDENTIALS} loading={false} choice={null} onChange={() => {}} />
+        </div>
+      </Specimen>
+      <Specimen title="Доступ для агентов" note="TokenRow, CopyField, одноразовый секрет">
+        <div className="flex flex-col gap-4">
+          <TokenRow token={DEMO_TOKEN} projects={undefined} onRevoke={() => {}} />
+          <CopyField
+            label="Токен"
+            value={DEMO_SECRET}
+            copyLabel="Копировать токен"
+            hint="Показывается один раз. Храните его как пароль."
+          />
+          <CopyField
+            label="Команда для Claude Code"
+            value={`claude mcp add --transport http bpmn-space https://bpmn.space/mcp --header "Authorization: Bearer ${DEMO_SECRET}"`}
+            copyLabel="Копировать команду"
+            multiline
+            hint="MCP-сервер пока не запущен: команда заработает после обновления продукта."
+          />
+          <p className="type-caption text-fg-muted">
+            Токен действует от имени владельца и только в пределах выбранных прав, проектов и срока.
+            Отзыв мгновенный; секрет показывается один раз.
+          </p>
         </div>
       </Specimen>
       <Specimen title="Только просмотр">

@@ -11,6 +11,8 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
+from app.domain.media import NAVIGATION_CAPABILITIES
+
 
 class ProjectStatus(StrEnum):
     EMPTY = "empty"
@@ -243,11 +245,16 @@ class Source:
 
     @property
     def feeds_model(self) -> bool:
-        """Идёт ли текст в контекст прогона: активный, готовый, с текстом и не краткое содержание.
+        """Идёт ли текст в контекст прогона.
 
-        Родитель-запись без текста не идёт: её текст лежит в производной расшифровке, и
-        цитаты оснований ссылаются на неё.
+        Условия: активный, готовый, с текстом; не краткое содержание (`trust=summary` — только
+        навигация) и не навигационный производный узел. «Ключевые кадры» — таймкоды без
+        содержания, а «Общая лента» дублирует расшифровку и описание экрана, поэтому оба
+        остаются в дереве для человека, но не в контексте модели и не могут быть цитатой.
+        Родитель-запись без текста не идёт: её текст лежит в производной расшифровке.
         """
+        if self.derivation is not None and self.derivation.capability in NAVIGATION_CAPABILITIES:
+            return False
         return (
             self.active
             and self.status is SourceStatus.READY

@@ -1,4 +1,4 @@
-import { isAcceptedFile } from '@/entities/source'
+import { isAcceptedFile, type MediaProfile } from '@/entities/source'
 
 /** Что нужно сценарию «Новый проект» от сервера: каждый шаг — отдельный запрос. */
 export interface CreateFlowDeps {
@@ -7,7 +7,7 @@ export interface CreateFlowDeps {
     projectId: string,
     body: { kind: 'text'; title: string; content: string },
   ) => Promise<unknown>
-  uploadFile: (projectId: string, file: File) => Promise<unknown>
+  uploadFile: (projectId: string, file: File, mediaProfile?: MediaProfile) => Promise<unknown>
   startBuild: (projectId: string) => Promise<unknown>
   /** Свежее состояние проекта: нужны только статусы источников. */
   fetchProject: (projectId: string) => Promise<{ sources: { status: string }[] }>
@@ -20,6 +20,8 @@ export interface CreateFlowInput {
   /** Описание процесса: станет первым текстовым источником. */
   description: string
   files: File[]
+  /** Профиль обработки записей (аудио/видео) для всех медиафайлов сценария. */
+  mediaProfile?: MediaProfile
   /** Проект создаётся в обучении: только для логов, на сервер не уходит. */
   onboarding?: boolean
   /** Отмена ожидания разбора документов (проект к этому моменту уже создан). */
@@ -123,7 +125,7 @@ export async function runCreateFlow(
       continue
     }
     try {
-      await deps.uploadFile(project.id, file)
+      await deps.uploadFile(project.id, file, input.mediaProfile)
       result.sources += 1
       uploaded += 1
     } catch {

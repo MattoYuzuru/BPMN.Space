@@ -1,6 +1,7 @@
 import { isRunning } from '@/entities/project'
 import { isTechnical } from '@/entities/question'
 import { ACCEPTED_FILES } from '@/entities/source'
+import { MediaProfileDialog } from '@/features/add-source/media-profile-dialog'
 import { useFileUploads } from '@/features/add-source/use-file-uploads'
 import { Button, EmptyState, GridBackdrop, Icon, type IconName } from '@/shared/ui'
 import { useWorkspace, useWorkspaceUi } from '@/widgets/workspace/model'
@@ -59,7 +60,7 @@ export function DiagramEmpty() {
 function Onboarding() {
   const { project } = useWorkspace()
   const setDialog = useWorkspaceUi((state) => state.setDialog)
-  const { upload } = useFileUploads(project.id)
+  const { upload, pendingMedia, confirmMedia, cancelMedia } = useFileUploads(project.id)
 
   const pickFile = () => {
     const input = document.createElement('input')
@@ -72,6 +73,14 @@ function Onboarding() {
 
   return (
     <div className="@container relative isolate flex h-full flex-col items-center justify-center gap-8 px-8">
+      {pendingMedia && (
+        <MediaProfileDialog
+          projectId={project.id}
+          files={pendingMedia}
+          onCancel={cancelMedia}
+          onConfirm={confirmMedia}
+        />
+      )}
       <GridBackdrop pattern="grid" glow />
       <div className="flex max-w-lg flex-col items-center gap-2 text-center">
         <h2 className="type-title text-fg">С чего начнём</h2>

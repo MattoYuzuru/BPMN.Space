@@ -221,12 +221,12 @@ async def test_search_returns_dated_results_and_caches(harness: Harness) -> None
     assert result.provider == "tavily"
     assert len(result.results) == 2
     first = result.results[0]
-    assert first.url == "https://example.com/reg"
+    assert first.url == "https://example.com/reg?utm_source=mail#top"
     assert first.published_at == datetime(2026, 10, 30, tzinfo=UTC)
     assert first.source == "tavily"
     assert first.trust.value == "external"
     assert [item.url for item in result.results] == [
-        "https://example.com/reg",
+        "https://example.com/reg?utm_source=mail#top",
         "https://example.com/second",
     ]
     body = result.to_json()
@@ -350,15 +350,24 @@ async def test_read_url_uses_provider_url_source_as_canonical(harness: Harness) 
     assert "Заявка согласуется" in result.text
 
 
-async def test_read_url_ignores_private_provider_canonical(harness: Harness) -> None:
-    """Метаданные провайдера не довереннее страницы: закрытый canonical не попадает в провенанс."""
+async def test_read_url_refuses_private_provider_canonical(harness: Harness) -> None:
+    """Закрытый canonical от провайдера — отказ без текста, а не подмена адреса."""
     await harness.add_credential("firecrawl", (CredentialKind.WEB_FETCH,))
-    harness.providers.firecrawl_canonical = "http://127.0.0.1/internal"
+    harness.providers.firecrawl_canonical = "http://169.254.169.254/latest/meta-data/"
 
-    result = await harness.tools.read_url(user_id=USER_ID, url=PAGE_URL)
+    result = await harness.tools.read_url(user_id=USER_ID, url=PAGE_URL, project_id=PROJECT_ID)
 
-    assert result.ok
+    assert result.ok is False
+    assert result.status == "failed"
+    assert result.reason == "fatal"
+    assert result.provider == "firecrawl"
+    assert result.text == ""
     assert result.canonical_url == "https://example.com/process"
+    assert result.message is not None
+    assert "канонический" in result.message
+    sink = harness.sink
+    assert isinstance(sink, FakeSink)
+    assert sink.incidents[-1].reason == "fatal"
 
 
 async def test_read_url_caches_page(harness: Harness) -> None:
@@ -399,6 +408,13 @@ async def test_read_url_truncates_long_page(harness: Harness) -> None:
         "http://metadata.google.internal/computeMetadata/v1/",
         "http://[::1]/",
         "http://0.0.0.0/",
+        # Нестандартные числовые записи IPv4: ipaddress видит «домен», провайдер — loopback.
+        "http://2130706433/",
+        "http://0x7f000001/",
+        "http://127.1/",
+        "http://0177.0.0.1/",
+        "http://0x7f.0.0.1/",
+        "http://1.2.3.04/",
         "https://internal.corp/process",
         "file:///etc/passwd",
         "ftp://example.com/process",

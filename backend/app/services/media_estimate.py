@@ -32,6 +32,17 @@ STT_USD_PER_MINUTE: tuple[tuple[str, str, float], ...] = (
 # Сколько токенов примерно занимает один кадр у vision-модели: изображение и короткий ответ.
 VISION_INPUT_TOKENS_PER_FRAME = 500
 VISION_OUTPUT_TOKENS_PER_FRAME = 200
+# Сводка — один запрос по началу записи: оценка входа/выхода (она не основание, а навигация).
+SUMMARY_INPUT_TOKENS = 4_000
+SUMMARY_OUTPUT_TOKENS = 800
+# Ориентировочные цены OpenAI за 1 млн токенов (вход, выход) на 2026-11: в справочнике моделей
+# цен OpenAI пока нет, поэтому диапазон оценён по публичному прайсу gpt-4o/mini и gpt-5.
+OPENAI_VISION_PRICES: tuple[tuple[float, float], ...] = (
+    (0.15, 0.60),  # gpt-4o-mini
+    (1.25, 10.0),  # gpt-5
+    (2.00, 8.00),  # gpt-4.1
+    (2.50, 10.0),  # gpt-4o
+)
 # Ожидаемые смены сцены в минуту для нижней/верхней границы числа кадров, если профиль
 # не задаёт их явно: реальное число зависит от записи, поэтому диапазон широкий.
 SCENE_CHANGES_PER_MINUTE = 3.0
@@ -56,37 +67,50 @@ class MediaEstimate:
     frames_max: int
     vision_requests: int
     vision_cost: MoneyRange
+    summary_cost: MoneyRange
     total_cost: MoneyRange
     priced_on: date
     note: str
 
 
 def _vision_prices() -> tuple[float, float, float, float]:
-    """Цены 1 млн токенов: (вход min, выход min, вход max, выход max) по vision-моделям."""
-    prices = [
-        entry.prices
+    """Цены 1 млн токенов: (вход min, выход min, вход max, выход max) по vision-моделям.
+
+    Диапазон объединяет справочник Claude и ориентировочные цены OpenAI: ключ пользователя
+    может оказаться любым из поддержанных, а оценка должна покрывать все варианты.
+    """
+    pairs = [
+        (entry.prices.input, entry.prices.output)
         for entry in ANTHROPIC_CATALOG.values()
         if entry.vision and entry.prices is not None
     ]
-    if not prices:
+    pairs.extend(OPENAI_VISION_PRICES)
+    if not pairs:
         return 0.0, 0.0, 0.0, 0.0
     return (
-        min(item.input for item in prices),
-        min(item.output for item in prices),
-        max(item.input for item in prices),
-        max(item.output for item in prices),
+        min(input_price for input_price, _ in pairs),
+        min(output_price for _, output_price in pairs),
+        max(input_price for input_price, _ in pairs),
+        max(output_price for _, output_price in pairs),
     )
 
 
-def _frame_bounds(duration_sec: float, profile: MediaProfile) -> tuple[int, int]:
-    """Нижняя и верхняя границы числа кадров: периодические кадры + возможные смены сцены."""
+def _frame_bounds(
+    duration_sec: float, profile: MediaProfile, *, frame_max_cap: int
+) -> tuple[int, int]:
+    """Нижняя и верхняя границы числа кадров: периодические кадры + возможные смены сцены.
+
+    Верхний предел — и профиль, и серверная настройка `MEDIA_FRAME_MAX_FRAMES`: обработка
+    никогда не сохранит больше кадров, чем разрешает сервер.
+    """
     if profile is MediaProfile.AUDIO:
         return 0, 0
     frames = FRAME_PROFILES[profile]
+    limit = min(frames.max_frames, max(frame_max_cap, 1))
     periodic = int(duration_sec // frames.min_interval_sec) + 1
     scenes = math.ceil(duration_sec / 60.0 * SCENE_CHANGES_PER_MINUTE)
-    low = min(periodic, frames.max_frames)
-    high = min(periodic + scenes, frames.max_frames)
+    low = min(periodic, limit)
+    high = min(periodic + scenes, limit)
     return low, max(high, low)
 
 
@@ -96,6 +120,7 @@ def estimate_media(
     media_profile: str | None,
     has_video: bool,
     vision_batch_size: int = 4,
+    frame_max_cap: int = 600,
 ) -> MediaEstimate:
     """Оценка по длительности и профилю; не обращается к сети и не создаёт записей в БД."""
     profile = _profile(media_profile)
@@ -103,7 +128,7 @@ def estimate_media(
     minutes = max(duration_sec, 0.0) / 60.0
     stt_min = round(minutes * min(price for _, _, price in STT_USD_PER_MINUTE), 6)
     stt_max = round(minutes * max(price for _, _, price in STT_USD_PER_MINUTE), 6)
-    frames_min, frames_max = _frame_bounds(duration_sec, profile)
+    frames_min, frames_max = _frame_bounds(duration_sec, profile, frame_max_cap=frame_max_cap)
     if not has_video:
         frames_min = frames_max = 0
     batch = max(vision_batch_size, 1)
@@ -117,6 +142,18 @@ def estimate_media(
     ) / 1_000_000
     vision_min = round(frames_min * per_frame_min, 6)
     vision_max = round(frames_max * per_frame_max, 6)
+    # Краткое содержание создаётся только для видео с кадрами (профили sparse/detailed).
+    if frames_max:
+        summary_min = round(
+            (SUMMARY_INPUT_TOKENS * input_min + SUMMARY_OUTPUT_TOKENS * output_min) / 1_000_000,
+            6,
+        )
+        summary_max = round(
+            (SUMMARY_INPUT_TOKENS * input_max + SUMMARY_OUTPUT_TOKENS * output_max) / 1_000_000,
+            6,
+        )
+    else:
+        summary_min = summary_max = 0.0
     return MediaEstimate(
         duration_sec=round(duration_sec, 3),
         media_profile=profile.value,
@@ -127,7 +164,11 @@ def estimate_media(
         frames_max=frames_max,
         vision_requests=requests,
         vision_cost=MoneyRange(vision_min, vision_max),
-        total_cost=MoneyRange(round(stt_min + vision_min, 6), round(stt_max + vision_max, 6)),
+        summary_cost=MoneyRange(summary_min, summary_max),
+        total_cost=MoneyRange(
+            round(stt_min + vision_min + summary_min, 6),
+            round(stt_max + vision_max + summary_max, 6),
+        ),
         priced_on=STT_PRICES_CHECKED_ON,
         note=(
             "Ориентировочно по каталогу цен: фактическая стоимость зависит от подключённых ключей "

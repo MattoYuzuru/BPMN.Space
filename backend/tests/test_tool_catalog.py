@@ -68,7 +68,7 @@ def test_provider_ids_are_unique_and_urls_https() -> None:
 
 
 def test_support_flags_do_not_divorce_adapter_registry() -> None:
-    """`supported=true` подтверждается реестром, а каждый адаптер из кода есть в каталоге."""
+    """`supported=true` — рабочие вызовы адаптера, а каждый провайдер из кода есть в каталоге."""
     registry = build_default_registry()
     catalog = _catalog().catalog()
     listed = {
@@ -81,13 +81,26 @@ def test_support_flags_do_not_divorce_adapter_registry() -> None:
             continue  # у моделей своя проверка провайдера (ADR-0011), не реестр адаптеров
         for provider in card.providers:
             if provider.supported:
-                assert registry.supports(card.capability, provider.id), provider.id
+                assert registry.implements(card.capability, provider.id), provider.id
     for capability in Capability:
         for provider_id, _ in registry.providers(capability):
             if provider_id == "openai_compatible":
                 # Адрес и ключ выдаёт сам совместимый сервер: страницы «где взять» нет.
                 continue
             assert (capability, provider_id) in listed, (capability, provider_id)
+
+
+def test_contract_providers_are_not_marked_supported() -> None:
+    """Контракты без вызовов: ключ сохранить можно, но каталог не выдаёт их за рабочие."""
+    registry = build_default_registry()
+    by_capability = {card.capability: card for card in _catalog().catalog().capabilities}
+    ocr = {provider.id: provider for provider in by_capability[Capability.OCR].providers}
+    for provider_id in ("mistral", "yandex"):
+        assert provider_id in ocr
+        assert ocr[provider_id].supported is False
+        # Ключ можно добавить заранее (регистрация есть), но рабочих вызовов нет.
+        assert registry.supports(Capability.OCR, provider_id) is True
+        assert registry.implements(Capability.OCR, provider_id) is False
 
 
 def test_web_capabilities_have_working_providers() -> None:
@@ -172,6 +185,7 @@ def test_tool_catalog_http_returns_cards() -> None:
     assert tavily["free_tier"]
     assert tavily["rf"] is False
     assert cards["web_fetch"]["providers"]
+    assert all(not provider["supported"] for provider in cards["ocr"]["providers"])
 
 
 def test_tool_catalog_requires_session() -> None:

@@ -1296,7 +1296,11 @@ export interface paths {
         post?: never;
         delete?: never;
         options?: never;
-        head?: never;
+        /**
+         * Head Source Media
+         * @description HEAD для плеера: те же метаданные и права, без тела — `200`/`304`/`404`/`416` не нужен.
+         */
+        head: operations["head_source_media"];
         patch?: never;
         trace?: never;
     };
@@ -2372,6 +2376,8 @@ export interface components {
              */
             priced_on: string;
             stt: components["schemas"]["MediaEstimateStt"];
+            /** @description Краткое содержание: один запрос, только для видео с кадрами */
+            summary_cost_usd?: components["schemas"]["MoneyRange"] | null;
             total_cost_usd: components["schemas"]["MoneyRange"];
         };
         /** MediaEstimateFrames */
@@ -3703,7 +3709,7 @@ export interface components {
             rf: boolean;
             /**
              * Supported
-             * @description Есть адаптер в коде: такой ключ можно добавить
+             * @description Адаптер выполняет рабочие вызовы: ключом можно пользоваться уже сейчас
              */
             supported: boolean;
         };
@@ -8586,6 +8592,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    head_source_media: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
                 };
             };
             /** @description Validation Error */

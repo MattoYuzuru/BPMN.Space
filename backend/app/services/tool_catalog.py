@@ -7,9 +7,10 @@
 бесплатные уровни меняются, поэтому дата проверки — часть ответа API.
 
 Это не дубль `GET /me/credentials`: карточки там отвечают «что у меня уже подключено», а каталог
-— «чем это можно закрыть и куда идти за ключом». Список поддержанных в коде провайдеров берётся
-из `AdapterRegistry` (LLM — из `USER_PROVIDERS`): если адаптер ещё не реализован, провайдер
-остаётся подсказкой на будущее (`supported=false`), и интерфейс не предлагает его как рабочий.
+— «чем это можно закрыть и куда идти за ключом». Признак `supported` берётся из
+`AdapterRegistry.implements` (LLM — из `USER_PROVIDERS`): у контрактов провайдеров (Mistral OCR,
+Yandex Vision) ключ можно сохранить, но вызовов ещё нет, поэтому каталог показывает их как
+неподдержанные, и интерфейс не предлагает их как рабочие.
 """
 
 from dataclasses import dataclass, replace
@@ -396,10 +397,14 @@ class ToolCatalogService:
         return ToolCatalog(checked_on=CATALOG_CHECKED_ON, capabilities=tuple(cards))
 
     def _supported(self, capability: Capability, provider: str) -> bool:
-        """Поддержан ли провайдер для возможности: LLM — особым списком, остальное — реестром."""
+        """Есть ли рабочие вызовы провайдера: LLM — особым списком, остальное — реестром.
+
+        У контрактов (Mistral OCR, Yandex Vision) ключ можно сохранить, но вызовов нет: для
+        каталога это `supported=false`, иначе интерфейс предложил бы неработающий инструмент.
+        """
         if capability is Capability.LLM:
             return provider in USER_PROVIDERS
-        return self._registry.supports(capability, provider)
+        return self._registry.implements(capability, provider)
 
 
 __all__ = [

@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { isAcceptedFile, isMediaFile, useAddFileSource } from '@/entities/source'
+import { isAcceptedFile, isMediaFile, type MediaProfile, useAddFileSource } from '@/entities/source'
 import { toast } from '@/shared/ui'
 
 export interface UploadItem {
@@ -19,7 +19,7 @@ export function useFileUploads(projectId: string) {
   const [pendingMedia, setPendingMedia] = useState<File[] | null>(null)
 
   const send = useCallback(
-    (files: File[], mediaProfile?: 'audio' | 'sparse' | 'detailed') => {
+    (files: File[], mediaProfile?: MediaProfile) => {
       for (const file of files) {
         const id = `${file.name}-${file.size}-${Date.now()}`
         setUploads((list) => [...list, { id, name: file.name, progress: 0 }])
@@ -57,7 +57,7 @@ export function useFileUploads(projectId: string) {
   )
 
   const confirmMedia = useCallback(
-    (profile: 'audio' | 'sparse' | 'detailed') => {
+    (profile: MediaProfile) => {
       if (pendingMedia) send(pendingMedia, profile)
       setPendingMedia(null)
     },

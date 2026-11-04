@@ -43,16 +43,32 @@ export interface MediaPlayerProps {
 
 const clamp = (value: number, max: number) => Math.min(Math.max(value, 0), Math.max(max, 0))
 
-/** jsdom и старые браузеры могут не вернуть Promise; играем, не падая на реализации. */
-function tryPlay(media: HTMLMediaElement | null, onError: () => void) {
+/**
+ * jsdom и старые браузеры могут не вернуть Promise; играем, не падая на реализации.
+ * `AbortError` — норма: play() прерван перемоткой/паузой/сменой источника, это не сбой загрузки.
+ */
+function tryPlay(
+  media: HTMLMediaElement | null,
+  onError: (error: unknown) => void,
+  onAbort?: () => void,
+) {
   if (!media) return
+  const handle = (error: unknown) => {
+    if (typeof error === 'object' && error !== null && 'name' in error) {
+      if ((error as { name?: string }).name === 'AbortError') {
+        onAbort?.()
+        return
+      }
+    }
+    onError(error)
+  }
   try {
     const result = media.play()
     if (result && typeof result.catch === 'function') {
-      void result.catch(() => onError())
+      void result.catch(handle)
     }
-  } catch {
-    onError()
+  } catch (error) {
+    handle(error)
   }
 }
 
@@ -79,29 +95,46 @@ export function MediaPlayer({
   const [attempt, setAttempt] = useState(0)
   const [current, setCurrent] = useState(initialTime)
   const [duration, setDuration] = useState(durationSec ?? 0)
+  /** Перемотка до `loadedmetadata`: применим после того, как браузер узнает длительность. */
+  const pendingSeekRef = useRef<number | null>(null)
 
   const applyTime = useCallback(
     (seconds: number) => {
       const media = mediaRef.current
-      const next = clamp(seconds, duration)
+      // До загрузки метаданных длительность неизвестна: не обрезаем желаемую секунду до 0.
+      const next = duration > 0 ? clamp(seconds, duration) : Math.max(0, seconds)
       setCurrent(next)
+      if (!ready) {
+        pendingSeekRef.current = next
+        return
+      }
       if (media) media.currentTime = next
     },
-    [duration],
+    [duration, ready],
   )
 
   useImperativeHandle(ref, () => ({
     seek: (seconds) => {
       applyTime(seconds)
-      onSeek?.(clamp(seconds, duration))
-      tryPlay(mediaRef.current, () => setFailed(true))
+      onSeek?.(duration > 0 ? clamp(seconds, duration) : Math.max(0, seconds))
+      tryPlay(
+        mediaRef.current,
+        () => setFailed(true),
+        () => setPlaying(false),
+      )
     },
-    play: () => tryPlay(mediaRef.current, () => setFailed(true)),
+    play: () =>
+      tryPlay(
+        mediaRef.current,
+        () => setFailed(true),
+        () => setPlaying(false),
+      ),
     pause: () => mediaRef.current?.pause(),
     currentTime: () => current,
   }))
 
-  // Смена записи — сбрасываем состояние плеера.
+  // Смена записи сбрасывает состояние, а обновление durationSec из опроса проекта — нет:
+  // иначе каждые 1,5 с появлялась бы вечная «Загрузка» без нового loadedmetadata.
   // biome-ignore lint/correctness/useExhaustiveDependencies: источник задаёт начальную позицию
   useEffect(() => {
     setCurrent(initialTime)
@@ -109,7 +142,19 @@ export function MediaPlayer({
     setReady(false)
     setFailed(false)
     setPlaying(false)
-  }, [src, initialTime, durationSec])
+    pendingSeekRef.current = null
+  }, [src, initialTime])
+
+  useEffect(() => {
+    if (!durationSec || !Number.isFinite(durationSec) || durationSec <= 0) return
+    setDuration((currentDuration) => (currentDuration > 0 ? currentDuration : durationSec))
+  }, [durationSec])
+
+  const handlePlayError = (error: unknown) => {
+    setPlaying(false)
+    // AbortError уже отфильтрован в tryPlay; всё остальное — настоящая ошибка файла.
+    if (error) setFailed(true)
+  }
 
   const toggle = () => {
     const media = mediaRef.current
@@ -119,16 +164,14 @@ export function MediaPlayer({
       setPlaying(false)
     } else {
       setPlaying(true)
-      tryPlay(media, () => {
-        setPlaying(false)
-        setFailed(true)
-      })
+      tryPlay(media, handlePlayError, () => setPlaying(false))
     }
   }
 
   const retry = () => {
     setFailed(false)
     setReady(false)
+    pendingSeekRef.current = null
     setAttempt((value) => value + 1)
   }
 
@@ -138,8 +181,16 @@ export function MediaPlayer({
     onLoadedMetadata: (event: React.SyntheticEvent<HTMLMediaElement>) => {
       const media = event.currentTarget
       setReady(true)
-      if (Number.isFinite(media.duration)) setDuration(media.duration)
-      if (initialTime > 0) media.currentTime = clamp(initialTime, media.duration)
+      const known = Number.isFinite(media.duration) ? media.duration : (durationSec ?? 0)
+      if (known > 0) setDuration(known)
+      const pending = pendingSeekRef.current
+      pendingSeekRef.current = null
+      if (pending !== null) {
+        setCurrent(pending)
+        media.currentTime = pending
+      } else if (initialTime > 0) {
+        media.currentTime = clamp(initialTime, known)
+      }
     },
     onTimeUpdate: (event: React.SyntheticEvent<HTMLMediaElement>) => {
       const seconds = event.currentTarget.currentTime

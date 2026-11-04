@@ -256,6 +256,7 @@ async def estimate_media_source(
         media_profile=body.media_profile,
         has_video=body.has_video,
         vision_batch_size=container.settings.media_vision_batch_size,
+        frame_max_cap=container.settings.media_frame_max_frames,
     )
     return _estimate_response(data)
 
@@ -306,6 +307,29 @@ async def stream_source_media(
         media_type=info.mime,
         headers=headers,
     )
+
+
+@router.head(
+    "/sources/{source_id}/media",
+    dependencies=[require_scope(ApiScope.PROJECTS_READ)],
+    responses=errors(401, 403, 404, 410),
+)
+async def head_source_media(
+    source_id: UUID,
+    request: Request,
+    container: ContainerDep,
+    user: OptionalUserDep,
+) -> Response:
+    """HEAD для плеера: те же метаданные и права, без тела — `200`/`304`/`404`/`416` не нужен."""
+    await ensure_resource_access(
+        request, container, source_id, user, resource=ResourceKind.SOURCE, write=False
+    )
+    info = await container.sources.media_file(source_id)
+    headers = media_headers(info.size, info.etag, info.last_modified)
+    if _not_modified(request, info.etag, info.last_modified):
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=headers)
+    headers["Content-Length"] = str(info.size)
+    return Response(status_code=status.HTTP_200_OK, headers=headers)
 
 
 @router.get(
@@ -364,6 +388,8 @@ async def retry_source_ocr(
     await ensure_resource_access(
         request, container, source_id, user, resource=ResourceKind.SOURCE, write=True
     )
+    # OCR — платная работа на ключе пользователя: токену нужно ещё право запусков.
+    require_token_scope(request, ApiScope.RUNS_START)
     node = await container.sources.retry_ocr(
         source_id, initiator_id=user.id if user is not None else None
     )
@@ -493,6 +519,14 @@ def _estimate_response(data: MediaEstimateData) -> MediaEstimate:
             count_max=data.frames_max,
             vision_requests=data.vision_requests,
             cost_usd=MoneyRange(min_usd=data.vision_cost.min_usd, max_usd=data.vision_cost.max_usd),
+        ),
+        summary_cost_usd=(
+            MoneyRange(
+                min_usd=data.summary_cost.min_usd,
+                max_usd=data.summary_cost.max_usd,
+            )
+            if data.summary_cost.max_usd
+            else None
         ),
         total_cost_usd=MoneyRange(min_usd=data.total_cost.min_usd, max_usd=data.total_cost.max_usd),
         priced_on=data.priced_on,

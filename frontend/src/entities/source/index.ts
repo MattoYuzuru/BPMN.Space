@@ -74,6 +74,7 @@ export {
   sourceTrustInfo,
   splitByRanges,
   splitTimecodes,
+  timecodeBefore,
   trustNotice,
   unreadablePagesLabel,
   unreadablePagesText,

@@ -20,6 +20,7 @@ from app.domain.models import (
 from app.domain.pagination import Cursor, InvalidCursorError
 from app.domain.projects import default_source_title, derive_status
 from app.domain.questions import project_summary
+from app.domain.sources import derivation_frame_keys
 from app.domain.versions import rechecked_version
 from app.fixtures import read_text
 from app.fixtures.types import Example
@@ -248,7 +249,11 @@ class ProjectService:
         return await self._view(project)
 
     async def delete(self, project_id: UUID) -> None:
-        """Удаляет проект одной транзакцией; файлы источников — после её фиксации."""
+        """Удаляет проект одной транзакцией; файлы источников и кадры — после её фиксации.
+
+        Кадры производных узлов лежат в uploads отдельными файлами (не в `file_key`), поэтому
+        их нужно удалить явно: иначе после удаления проекта остаются данные в хранилище.
+        """
         async with self._repos.atomic() as repos:
             if await repos.projects.lock(project_id) is None:
                 raise NotFoundError("Проект не найден")
@@ -262,3 +267,8 @@ class ProjectService:
                     await self._storage.delete(source.file_key)
                 except OSError:
                     logger.warning("Не удалён файл %s удалённого проекта", source.file_key)
+            for frame_key in derivation_frame_keys(source):
+                try:
+                    await self._storage.delete(frame_key)
+                except OSError:
+                    logger.warning("Не удалён кадр %s удалённого проекта", frame_key)

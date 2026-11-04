@@ -14,7 +14,7 @@
 import json
 import re
 from collections.abc import AsyncIterator, Iterable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Protocol
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -243,7 +243,11 @@ def parse_published(value: object) -> datetime | None:
 
 
 def normalize_url(raw: object) -> str | None:
-    """Ссылка результата без якоря и меток слежения; `None` — если это не http(s)-адрес."""
+    """Ключ дедупликации ссылки: адрес результата без якоря и меток слежения.
+
+    Наружу (в выдачу модели) уходит исходный адрес провайдера, а нормализованный адрес — только
+    ключ: `None`, если это не http(s)-адрес.
+    """
     if not isinstance(raw, str):
         return None
     value = raw.strip()
@@ -274,15 +278,19 @@ def normalize_url(raw: object) -> str | None:
 
 
 def dedupe_hits(hits: Iterable[WebSearchHit], *, limit: int) -> tuple[WebSearchHit, ...]:
-    """Ссылки без повторов по нормализованному адресу, не больше `limit`."""
+    """Ссылки без повторов, не больше `limit`; адрес в выдаче остаётся исходным.
+
+    Нормализованный адрес — только ключ дедупликации: переписывать ссылки провайдера нельзя,
+    иначе модель и провенанс получают адрес, которого в выдаче не было.
+    """
     found: list[WebSearchHit] = []
     seen: set[str] = set()
     for hit in hits:
-        url = normalize_url(hit.url)
-        if url is None or url in seen:
+        key = normalize_url(hit.url)
+        if key is None or key in seen:
             continue
-        seen.add(url)
-        found.append(replace(hit, url=url))
+        seen.add(key)
+        found.append(hit)
         if len(found) >= limit:
             break
     return tuple(found)

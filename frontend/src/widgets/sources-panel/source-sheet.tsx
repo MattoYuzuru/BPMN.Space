@@ -19,6 +19,7 @@ import {
   sourceTrustInfo,
   splitByRanges,
   splitTimecodes,
+  timecodeBefore,
   trustNotice,
   unreadablePagesText,
   useUpdateSource,
@@ -100,7 +101,8 @@ function SourceDetail({
   // Запись без своего текста: её содержимое — в производных узлах (расшифровка), RFC-0006.
   const derivedNodes = project.sources.filter((item) => item.parent_id === source.id)
   const container = derivedNodes.length > 0 && !source.content
-  const timed = source.derivation?.capability === 'speech_to_text'
+  // Таймкоды кликабельны везде, где есть плеер: расшифровка, лента, описание экрана.
+  const timed = Boolean(playback)
   const editable =
     canEdit &&
     source.kind !== 'answer' &&
@@ -127,6 +129,12 @@ function SourceDetail({
     const [hit] = findQuoteRanges(source.content, [{ quote: mark, kind: 'about', ref: 'target' }])
     return hit
   }, [mark, source.content])
+
+  // Цитата ведёт к таймкоду, если перед ней в тексте он есть: плеер открывается на этом месте.
+  const initialTime = useMemo(
+    () => (target ? (timecodeBefore(source.content, target.start) ?? 0) : 0),
+    [target, source.content],
+  )
 
   // Выбранная цитата важнее перекрывающей её подсветки: показываем весь фрагмент из ссылки.
   const ranges = useMemo(() => {
@@ -358,7 +366,12 @@ function SourceDetail({
             </div>
           )}
           {playback && (
-            <SourceMedia source={source} sources={project.sources} playerRef={playerRef} />
+            <SourceMedia
+              source={source}
+              sources={project.sources}
+              playerRef={playerRef}
+              initialTime={initialTime}
+            />
           )}
           <SourceOcrAction
             source={source}

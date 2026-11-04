@@ -22,6 +22,10 @@ from app.ingest.adapters.web import (
 
 FIRECRAWL_BASE_URL = "https://api.firecrawl.dev"
 _PROVIDER_LABEL = "Firecrawl"
+# Таймаут задания у провайдера меньше клиентского (30 с) с запасом: Firecrawl успевает вернуть
+# понятную ошибку, а не оборвать соединение. После таймаута маршрутизатор может повторить
+# запрос, и повтор не должен оплачивать кредит за уже отменённое задание.
+FIRECRAWL_PROVIDER_TIMEOUT_MS = 20_000
 
 
 class FirecrawlFetchAdapter:
@@ -81,7 +85,7 @@ class FirecrawlFetchAdapter:
                 "url": url,
                 "formats": ["markdown"],
                 "onlyMainContent": True,
-                "timeout": int(WEB_REQUEST_TIMEOUT_SEC * 1000),
+                "timeout": FIRECRAWL_PROVIDER_TIMEOUT_MS,
             },
             headers=provider_headers(
                 Authorization=f"Bearer {self._api_key}",
@@ -118,4 +122,4 @@ def _text(value: object) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
-__all__ = ["FIRECRAWL_BASE_URL", "FirecrawlFetchAdapter"]
+__all__ = ["FIRECRAWL_BASE_URL", "FIRECRAWL_PROVIDER_TIMEOUT_MS", "FirecrawlFetchAdapter"]

@@ -267,13 +267,17 @@ class AnthropicClient:
         max_tokens: int,
         effort: str | None,
     ) -> dict[str, object]:
-        """Запрос с нетекстовыми блоками: параметры те же, что у `build_request`."""
+        """Запрос с нетекстовыми блоками: параметры те же, что у `build_request`.
+
+        Без `cache_control`: OCR и описание кадров — разовые запросы без повторяющегося
+        префикса, а запись кеша стоит 1,25× цены входа. Кеш остаётся только у прогонов, где
+        порции источников повторяют один system + схему.
+        """
         request: dict[str, object] = {
             "model": self._config.model,
             "max_tokens": max_tokens if json_mode else min(max_tokens, _CHAT_MAX_TOKENS),
             "system": [{"type": "text", "text": system + (_JSON_ONLY if json_mode else "")}],
             "messages": [{"role": "user", "content": content}],
-            "cache_control": {"type": "ephemeral"},
         }
         level = self.effort_for(effort)
         if level is not None:

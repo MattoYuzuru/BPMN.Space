@@ -212,6 +212,11 @@ export function unreadablePagesText(pages: readonly number[] | null | undefined)
 
 const PROVIDER: Record<string, string> = {
   deepgram: 'Deepgram',
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  openai_compatible: 'Совместимый с OpenAI',
+  ffmpeg: 'Извлечение кадров',
+  code: 'Код сервера',
   mock: 'Демо-распознавание',
 }
 
@@ -381,13 +386,25 @@ export function descendantIds(sources: readonly Source[], rootId: string): Set<s
 
 /** Время из таймкода `[мм:сс]` или `[ч:мм:сс]` — в секунды; не таймкод — null. */
 export function parseTimecode(text: string): number | null {
-  const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(text.trim().replace(/^\[|\]$/g, ''))
+  const match = /^(\d+):(\d{2})(?::(\d{2}))?$/.exec(text.trim().replace(/^\[|\]$/g, ''))
   if (!match) return null
   const first = Number(match[1])
   const second = Number(match[2])
   const third = match[3] === undefined ? null : Number(match[3])
   if (second >= 60 || (third !== null && third >= 60)) return null
   return third === null ? first * 60 + second : first * 3600 + second * 60 + third
+}
+
+/** Последний таймкод `[мм:сс]` перед позицией `position` — для открытия плеера на цитате. */
+export function timecodeBefore(text: string, position: number): number | null {
+  const pattern = /\[(\d+):(\d{2})(?::(\d{2}))?\]/g
+  let found: number | null = null
+  for (const match of text.matchAll(pattern)) {
+    if ((match.index ?? 0) > position) break
+    const seconds = parseTimecode(match[0])
+    if (seconds !== null) found = seconds
+  }
+  return found
 }
 
 /** Исходная запись для плеера: сама запись или корень дерева, у которого есть медиа. */
@@ -428,10 +445,15 @@ export function sourcePlayback(sources: readonly Source[], source: Source): Sour
 }
 
 const DERIVATION_EXTRA: Record<string, (params: Record<string, unknown>) => string | null> = {
-  frames: (params) =>
-    typeof params.frames === 'number'
-      ? `${formatCount(params.frames, ['кадр', 'кадра', 'кадров'])}`
-      : null,
+  frames: (params) => {
+    // В params.frames сервер хранит список кадров (index/at_sec/key), старые данные — число.
+    const count = Array.isArray(params.frames)
+      ? params.frames.length
+      : typeof params.frames === 'number'
+        ? params.frames
+        : null
+    return count === null ? null : formatCount(count, ['кадр', 'кадра', 'кадров'])
+  },
   media_feed: (params) => {
     const total = typeof params.total_frames === 'number' ? params.total_frames : null
     return total ? `${formatCount(total, ['кадр', 'кадра', 'кадров'])} в ленте` : null

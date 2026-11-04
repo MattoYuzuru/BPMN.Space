@@ -3,10 +3,12 @@
 Mock: ждёт `mock_transcription_delay_sec` и возвращает примерную, заранее заготовленную
 расшифровку на тему энергетики (выбор детерминирован по содержимому файла), а не распознаёт
 загруженный звук; длительность оценивается по размеру.
-Боевой адаптер — Deepgram (`deepgram.py`, `STT_PROVIDER=deepgram`): один синхронный запрос.
+Боевой адаптер — Deepgram (`deepgram.py`, `STT_PROVIDER=deepgram`): один синхронный запрос
+на запись или сегмент. Длинные файлы и видео режет на сегменты `media.py` (ffmpeg).
 TODO(real): #6 RFC §5.2 предполагает Yandex SpeechKit: `ffmpeg` перепаковывает webm/opus в
 OGG_OPUS mono; запись ≤ 30 с и ≤ 1 МБ — STT v1 синхронно, длиннее — v3 `recognizeFileAsync` +
-опрос `getRecognition`. У Deepgram-адаптера нет ffmpeg и асинхронной обработки длинных записей.
+опрос `getRecognition`. Deepgram-адаптер не делает асинхронную обработку: длинные записи
+режет `media.py`.
 """
 
 import asyncio
@@ -19,10 +21,20 @@ _MAX_ESTIMATE_SEC = 3600.0
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class TimedText:
+    """Реплика с временем начала от начала записи (секунды)."""
+
+    start_sec: float
+    text: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class Transcript:
     text: str
     duration_sec: float
     language: str = "ru-RU"
+    # Реплики с таймкодами, если провайдер их вернул; нужны для `[мм:сс]` в длинных записях.
+    utterances: tuple[TimedText, ...] = ()
 
 
 class NoSpeechError(Exception):

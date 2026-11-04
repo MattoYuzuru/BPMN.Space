@@ -4,7 +4,6 @@ import asyncio
 from dataclasses import dataclass
 
 from app.config import Settings
-from app.domain.analysis import MAX_SOURCE_TEXT_CHARS
 from app.domain.models import RunStage
 from app.fixtures import read_bpmn
 from app.fixtures.examples import EXAMPLES
@@ -18,9 +17,11 @@ from app.infra.repositories.memory import InMemoryStore
 from app.infra.seed import build_seed
 from app.infra.storage import InMemoryFileStorage, LocalFileStorage
 from app.infra.tasks import AsyncioTaskSpawner
+from app.ingest.context import configure_llm_limits
 from app.ingest.deepgram import DeepgramSpeechToText
+from app.ingest.media import FfmpegRunner, MediaTranscriber
 from app.ingest.parsers import LocalDocumentParser
-from app.ingest.stt import MockSpeechToText
+from app.ingest.stt import MockSpeechToText, SpeechToText
 from app.llm.deepseek import OpenAICompatiblePipeline
 from app.llm.mock import MockPipeline
 from app.services.access import AccessService
@@ -60,6 +61,40 @@ def build_bpmn_tools(settings: Settings):
     if settings.app_env.lower() in {"prod", "production"}:
         raise ValueError("Production требует BPMN_TOOLS_URL для настоящей проверки схем")
     return MockBpmnTools()
+
+
+def build_stt(settings: Settings) -> SpeechToText:
+    match settings.stt_provider.lower():
+        case "mock":
+            return MockSpeechToText(
+                delay_sec=settings.mock_delay(settings.mock_transcription_delay_sec)
+            )
+        case "deepgram":
+            if not settings.deepgram_api_key:
+                raise ValueError("STT_PROVIDER=deepgram требует DEEPGRAM_API_KEY в .env")
+            return DeepgramSpeechToText(
+                settings.deepgram_api_key, timeout_sec=settings.deepgram_timeout_sec
+            )
+        case provider:
+            raise ValueError(f"Неизвестный STT_PROVIDER: {provider}")
+
+
+def build_media_transcriber(settings: Settings, stt: SpeechToText) -> MediaTranscriber:
+    return MediaTranscriber(
+        stt,
+        FfmpegRunner(
+            ffmpeg=settings.ffmpeg_path,
+            ffprobe=settings.ffprobe_path,
+            timeout_sec=settings.media_ffmpeg_timeout_sec,
+        ),
+        segment_sec=settings.media_segment_sec,
+        parallel_segments=settings.stt_parallel_segments,
+        max_duration_sec=settings.media_max_duration_sec,
+        timeout_base_sec=settings.stt_segment_timeout_base_sec,
+        timeout_per_audio_sec=settings.stt_segment_timeout_per_audio_sec,
+        max_concurrent_jobs=settings.media_max_concurrent_jobs,
+        raw_fallback=settings.stt_provider.lower() == "mock",
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,31 +187,28 @@ def build_container(
         case provider:
             raise ValueError(f"Неизвестный LLM_PROVIDER: {provider}")
 
-    match settings.stt_provider.lower():
-        case "mock":
-            stt = MockSpeechToText(
-                delay_sec=settings.mock_delay(settings.mock_transcription_delay_sec)
-            )
-        case "deepgram":
-            if not settings.deepgram_api_key:
-                raise ValueError("STT_PROVIDER=deepgram требует DEEPGRAM_API_KEY в .env")
-            stt = DeepgramSpeechToText(settings.deepgram_api_key)
-        case provider:
-            raise ValueError(f"Неизвестный STT_PROVIDER: {provider}")
+    stt = build_stt(settings)
 
     onboarding = OnboardingService(
         repos,
         runtime=runtime,
         enabled=settings.auth_enabled and settings.onboarding_enabled,
     )
+    configure_llm_limits(
+        parallel_requests=settings.llm_parallel_requests, chunk_chars=settings.llm_chunk_chars
+    )
+    media = build_media_transcriber(settings, stt)
     sources = SourceService(
         repos,
         parser=LocalDocumentParser(
-            max_text_chars=min(settings.max_text_chars, MAX_SOURCE_TEXT_CHARS),
+            max_text_chars=settings.max_text_chars,
             max_pdf_chars=settings.max_text_chars,
             max_pdf_pages=settings.max_pdf_pages,
+            max_sheet_rows=settings.max_sheet_rows,
             timeout_sec=settings.parse_timeout_sec,
         ),
+        media=media,
+        max_media_bytes=settings.max_media_bytes,
         storage=storage,
         runtime=runtime,
         max_text_chars=settings.max_text_chars,
@@ -206,8 +238,9 @@ def build_container(
             runtime=runtime,
             max_concurrent=settings.max_concurrent_runs,
             pace=_mock_pace(settings),
-            context_budget_chars=settings.llm_context_budget_chars,
+            context_budget_chars=settings.context_budget_chars(),
             deadline_sec=settings.run_deadline_sec,
+            deadline_for=settings.run_deadline,
             progress=onboarding,
             broadcast=realtime.publish,
         ),

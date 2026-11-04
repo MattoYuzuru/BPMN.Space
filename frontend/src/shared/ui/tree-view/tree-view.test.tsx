@@ -1,4 +1,5 @@
 import { screen } from '@testing-library/react'
+import { useState } from 'react'
 import { renderUi } from '@/test/render'
 import { Badge } from '../badge/badge'
 import { type TreeItem, TreeView } from './tree-view'
@@ -27,6 +28,19 @@ const ITEMS: TreeItem[] = [
 ]
 
 const item = (name: string | RegExp) => screen.getByRole('treeitem', { name })
+
+/** Дерево приходит асинхронно: сначала пусто, потом данные. */
+function AsyncHarness() {
+  const [items, setItems] = useState<TreeItem[]>([])
+  return (
+    <div>
+      <button type="button" onClick={() => setItems(ITEMS)}>
+        Загрузить материалы
+      </button>
+      <TreeView label="Материалы" items={items} emptyLabel="Материалов пока нет" />
+    </div>
+  )
+}
 
 describe('TreeView', () => {
   it('это дерево: уровни, раскрытие и дополнительная метка в строке', () => {
@@ -80,6 +94,33 @@ describe('TreeView', () => {
     await user.click(chevron as Element)
     expect(item(/Ключевые кадры/)).toHaveAttribute('aria-expanded', 'true')
     expect(onSelect).toHaveBeenCalledTimes(1)
+  })
+
+  it('после клика мышью стрелки продолжают от выбранной строки', async () => {
+    const { user } = renderUi(<TreeView label="Материалы" items={ITEMS} />)
+    await user.click(item(/Регламент/))
+    await user.keyboard('{ArrowUp}')
+    expect(document.activeElement).toBe(item(/Описание экрана/))
+    await user.keyboard('{ArrowDown}')
+    expect(document.activeElement).toBe(item(/Регламент/))
+    await user.click(item(/Ключевые кадры/))
+    await user.keyboard('{ArrowRight}')
+    expect(document.activeElement).toBe(item(/Описание экрана/))
+  })
+
+  it('асинхронные данные: Tab попадает в дерево, новые ветки раскрываются', async () => {
+    const { user } = renderUi(<AsyncHarness />)
+    expect(screen.getByText('Материалов пока нет')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Загрузить материалы' }))
+    // Ветки, пришедшие с данными, раскрыты — видны все пять строк.
+    expect(screen.getAllByRole('treeitem')).toHaveLength(5)
+    expect(item('встреча.mp4')).toHaveAttribute('aria-expanded', 'true')
+    expect(item('встреча.mp4')).toHaveAttribute('tabindex', '0')
+    screen.getByRole('button', { name: 'Загрузить материалы' }).focus()
+    await user.tab()
+    expect(document.activeElement).toBe(item('встреча.mp4'))
+    await user.keyboard('{ArrowDown}')
+    expect(document.activeElement).toBe(item(/Расшифровка/))
   })
 
   it('Enter выбирает и раскрывает ветку', async () => {

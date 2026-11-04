@@ -55,6 +55,10 @@ function flatten(items: readonly TreeItem[], expanded: ReadonlySet<string>): Row
   return rows
 }
 
+function allIds(items: readonly TreeItem[]): string[] {
+  return items.flatMap((item) => [item.id, ...allIds(childrenOf(item))])
+}
+
 function withChildrenIds(items: readonly TreeItem[]): string[] {
   return items.flatMap((item) => [
     ...(childrenOf(item).length > 0 ? [item.id] : []),
@@ -87,16 +91,42 @@ export function TreeView({
   )
   const rows = useMemo(() => flatten(items, expanded), [items, expanded])
   const visibleIds = useMemo(() => rows.map((row) => row.item.id), [rows])
-  const [focusedId, setFocusedId] = useState<string | null>(
-    () => selectedId ?? visibleIds[0] ?? null,
-  )
+  const [focusedId, setFocusedId] = useState<string | null>(null)
+  // Дерево может прийти асинхронно: до первого фокуса активная строка вычисляется на рендере,
+  // иначе при пустых данных у всех строк tabIndex=-1 и в дерево нельзя попасть с клавиатуры.
+  const activeId = focusedId ?? selectedId ?? visibleIds[0] ?? null
   const refs = useRef(new Map<string, HTMLDivElement>())
   const pendingFocus = useRef(false)
+  const knownIds = useRef<ReadonlySet<string>>(new Set())
+  const mounted = useRef(false)
 
   // Узел могли свернуть или убрать: фокус переезжает на первую видимую строку.
   useEffect(() => {
-    if (focusedId && !visibleIds.includes(focusedId)) setFocusedId(visibleIds[0] ?? null)
-  }, [focusedId, visibleIds])
+    if (focusedId && visibleIds.includes(focusedId)) return
+    const next =
+      selectedId && visibleIds.includes(selectedId) ? selectedId : (visibleIds[0] ?? null)
+    if (next !== focusedId) setFocusedId(next)
+  }, [focusedId, selectedId, visibleIds])
+
+  // Дерево материалов приходит частями: новые ветки раскрываем, уже свёрнутые пользователем — нет.
+  useEffect(() => {
+    const ids = new Set(allIds(items))
+    if (!mounted.current) {
+      mounted.current = true
+      knownIds.current = ids
+      return
+    }
+    const fresh = new Set([...ids].filter((id) => !knownIds.current.has(id)))
+    knownIds.current = ids
+    if (controlled || fresh.size === 0) return
+    const expandable = withChildrenIds(items).filter((id) => fresh.has(id))
+    if (expandable.length === 0) return
+    setOwnExpanded((previous) => {
+      const next = new Set(previous)
+      for (const id of expandable) next.add(id)
+      return next
+    })
+  }, [items, controlled])
 
   // Фокус ставим после перерисовки: строка могла только что появиться.
   useEffect(() => {
@@ -126,9 +156,11 @@ export function TreeView({
   const rowAt = (id: string | null) => rows.find((row) => row.item.id === id)
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!focusedId) return
-    const index = visibleIds.indexOf(focusedId)
-    const row = rowAt(focusedId)
+    // Строка берётся из события: клик мышью мог ещё не перерисовать состояние фокуса.
+    const currentId = event.currentTarget.dataset.treeId ?? activeId
+    if (!currentId) return
+    const index = visibleIds.indexOf(currentId)
+    const row = rowAt(currentId)
     if (!row) return
     switch (event.key) {
       case 'ArrowDown':
@@ -178,7 +210,7 @@ export function TreeView({
     <div role="tree" aria-label={label} className={cn('flex w-full flex-col gap-0.5', className)}>
       {rows.map((row) => {
         const selected = selectedId === row.item.id
-        const focused = focusedId === row.item.id
+        const focused = activeId === row.item.id
         return (
           <div
             key={row.item.id}
@@ -187,6 +219,7 @@ export function TreeView({
             aria-selected={selected}
             aria-expanded={row.hasChildren ? row.expanded : undefined}
             aria-disabled={row.item.disabled || undefined}
+            data-tree-id={row.item.id}
             data-state={row.expanded ? 'open' : 'closed'}
             data-selected={selected || undefined}
             tabIndex={focused ? 0 : -1}
@@ -195,6 +228,7 @@ export function TreeView({
               else refs.current.delete(row.item.id)
             }}
             onKeyDown={handleKeyDown}
+            onFocus={() => setFocusedId(row.item.id)}
             onClick={(event) => {
               if (row.item.disabled) return
               // Стрелка раскрывает ветку, клик по остальной строке выбирает узел.

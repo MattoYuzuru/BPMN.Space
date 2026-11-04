@@ -10,7 +10,10 @@ from __future__ import annotations
 from typing import Annotated
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.context import Context
 from pydantic import Field
+
+from app.mcp.auth import begin_operation, prompt_policy
 
 __all__ = ["register_prompts"]
 
@@ -27,6 +30,7 @@ def register_prompts(server: MCPServer) -> None:
         ),
     )
     async def collect_process_materials(
+        ctx: Context,
         project: Annotated[str, Field(description="Проект: название или UUID из list_projects")],
         sources: Annotated[
             str,
@@ -42,6 +46,7 @@ def register_prompts(server: MCPServer) -> None:
             Field(description="Что должно получиться: вопросы, схема, конкретная дорожка"),
         ] = None,
     ) -> str:
+        begin_operation(ctx, prompt_policy("collect_process_materials"))
         goal_line = f"Цель: {goal}.\n" if goal else ""
         return (
             "Ты — агент аналитика BPMN-процессов. Собери материалы по процессу для BPMN Space.\n"
@@ -74,9 +79,11 @@ def register_prompts(server: MCPServer) -> None:
         ),
     )
     async def review_my_lane(
+        ctx: Context,
         project_id: Annotated[str, Field(description="UUID проекта")],
         lane: Annotated[str, Field(description="Название дорожки схемы")],
     ) -> str:
+        begin_operation(ctx, prompt_policy("review_my_lane"))
         return (
             "Ты — агент коллеги-аналитика. Проверь свою часть схемы BPMN и ответь на вопросы "
             "по ней.\n"

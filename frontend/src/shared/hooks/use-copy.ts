@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { toast } from '@/shared/ui'
+// Прямой импорт модуля, а не индекса: индекс дизайн-системы сам рендерит CopyField,
+// который использует этот хук, — импорт из индекса замкнул бы цикл shared/ui → shared/hooks → shared/ui.
+import { toast } from '../ui/toast/toast'
 
 /**
  * Копирование в буфер с подтверждением: `copied` на пару секунд включает галочку на кнопке;

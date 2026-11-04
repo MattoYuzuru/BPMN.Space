@@ -93,3 +93,33 @@ export function formatDuration(ms: number): string {
   if (minutes === 0) return `${seconds} с`
   return `${minutes} мин ${String(seconds).padStart(2, '0')} с`
 }
+
+const CURRENCY_SYMBOL: Record<string, string> = { USD: '$', EUR: '€', RUB: '₽' }
+
+/**
+ * Стоимость в валюте прогона: «$1,8», «$2,71», «$0,004». Символ валюты стоит перед числом —
+ * так короче в метке шапки и в оценке; незнакомая валюта остаётся кодом.
+ */
+export function formatMoney(value: number, currency = 'USD'): string {
+  const amount = Math.abs(value)
+  const digits = amount > 0 && amount < 1 ? 3 : amount >= 1000 ? 0 : 2
+  const formatted = new Intl.NumberFormat(LOCALE, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: digits,
+  }).format(value)
+  return `${CURRENCY_SYMBOL[currency] ?? `${currency} `}${formatted}`
+}
+
+/** Диапазон стоимости: «$1,8–3,2»; одинаковые границы схлопываются в одно число. */
+export function formatMoneyRange(min: number, max: number, currency = 'USD'): string {
+  if (min === max) return formatMoney(min, currency)
+  const symbol = CURRENCY_SYMBOL[currency]
+  return symbol
+    ? `${formatMoney(min, currency)}–${formatMoney(max, currency).slice(symbol.length)}`
+    : `${formatMoney(min, currency)}–${formatMoney(max, currency)}`
+}
+
+/** Проценты без десятых: «64 %». */
+export function formatPercent(value: number): string {
+  return `${formatNumber(Math.round(value))}\u00A0%`
+}

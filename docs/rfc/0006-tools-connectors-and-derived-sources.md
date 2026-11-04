@@ -262,7 +262,8 @@ params)`. Повторный прогон и повтор после техни�
 - **OCR сканов PDF.** Страницы из `unreadable_pages` читает модель с `pdf_input` (Anthropic
   `document` block: до 32 МБ и 600 страниц на запрос, крупный скан режется по страницам);
   результат — производный узел `capability=ocr`, `trust=extracted`, а у родителя сокращается
-  `unreadable_pages` и обновляется предупреждение. `POST /sources/{id}/ocr` — повтор.
+  `unreadable_pages` и обновляется предупреждение; чистый скан без текстового слоя после
+  успешного OCR переводится из `failed` в `ready`. `POST /sources/{id}/ocr` — повтор.
 - **Плеер.** `GET /sources/{id}/media` с HTTP Range (`206`/`416`), `ETag`/`Last-Modified`;
   `GET /sources/{id}/segments` — отрезки расшифровки для перемотки к таймкоду.
 - **Отказы.** Нет модели/ключа — неблокирующий технический вопрос `capability_missing` через

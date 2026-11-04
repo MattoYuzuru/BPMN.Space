@@ -9,6 +9,11 @@ ffmpeg делает два прохода: кадры смены сцены (`se
 Временная папка удаляется всегда, даже при ошибке и отмене. Если кадров нет (нет видеопотока
 или ffmpeg недоступен), вызывающий код оставляет расшифровку и предупреждение, а не роняет
 запись: звук — главный источник, кадры — дополнение.
+
+Одновременных извлечений на процесс — не больше `max_concurrent_extractions`: каждая запись
+запускает 2–3 процесса ffmpeg, и без ограничения несколько загрузок на слабой VPS делят CPU.
+Состояние кадров (stderr, время кадров) живёт только внутри одного вызова: экстрактор общий
+для всех задач, поэтому общий атрибут смешал бы время кадров параллельных записей.
 """
 
 import asyncio
@@ -31,6 +36,7 @@ _HASH_BYTES = _HASH_SIDE * _HASH_SIDE
 _FRAME_QUALITY = 3
 # Два кадра ближе этого интервала — один и тот же момент (сцена и периодический кадр совпали).
 _MIN_FRAME_GAP_SEC = 0.5
+_NOTHING_WRITTEN = "Nothing was written"
 
 
 class MediaProfile(StrEnum):
@@ -128,11 +134,23 @@ class ExtractedFrame:
 
 
 class FrameExtractionError(MediaError):
-    """Кадры не извлечены; расшифровка при этом может остаться готовой."""
+    """Кадры не извлечены; расшифровка при этом может остаться готовой.
+
+    `stderr` — вывод ffmpeg для диагностики; наружу (в сообщение пользователю) он не уходит,
+    но нужен, чтобы отличить «кадров нет» (`Nothing was written`) от настоящего сбоя.
+    """
+
+    def __init__(self, message: str, *, stderr: str = "") -> None:
+        super().__init__(message)
+        self.stderr = stderr
 
 
 class FrameExtractor:
-    """ffmpeg + dhash: сцены, периодические кадры и дедупликация без Pillow."""
+    """ffmpeg + dhash: сцены, периодические кадры и дедупликация без Pillow.
+
+    Состояние одного извлечения (stderr, пути, время кадров) — только локальные переменные:
+    экстрактор используется несколькими задачами одновременно (разные загрузки записей).
+    """
 
     def __init__(
         self,
@@ -142,13 +160,16 @@ class FrameExtractor:
         frame_width: int = 768,
         dedup_bits: int = 8,
         max_frames_cap: int = 600,
+        max_concurrent_extractions: int = 1,
     ) -> None:
         self._ffmpeg = ffmpeg
         self._timeout = timeout_sec
         self._width = max(frame_width, 64)
         self._dedup_bits = max(dedup_bits, 0)
         self._max_frames = max(max_frames_cap, 1)
-        self._last_stderr = ""
+        self._max_concurrent = max(max_concurrent_extractions, 1)
+        # Семафор создаётся лениво: он привязан к event loop, а экстрактор собирается в контейнере.
+        self._semaphore: asyncio.Semaphore | None = None
 
     @property
     def available(self) -> bool:
@@ -159,10 +180,20 @@ class FrameExtractor:
         """Ширина сохранённого кадра: записывается в `derivation.params`."""
         return self._width
 
+    def _limit(self) -> asyncio.Semaphore:
+        if self._semaphore is None:
+            self._semaphore = asyncio.Semaphore(self._max_concurrent)
+        return self._semaphore
+
     async def extract(self, source: Path, profile: FrameProfile) -> list[ExtractedFrame]:
         """Кадры записи по профилю; порядок — по времени, номера с 1."""
         if not self.available:
             raise FrameExtractionError("На сервере недоступен ffmpeg: кадры не извлечены")
+        # Ограничение на процесс: несколько записей не запускают десятки ffmpeg одновременно.
+        async with self._limit():
+            return await self._extract(source, profile)
+
+    async def _extract(self, source: Path, profile: FrameProfile) -> list[ExtractedFrame]:
         workdir = Path(await asyncio.to_thread(tempfile.mkdtemp, prefix="frames-"))
         try:
             # Проходы независимы: сбой одного (битый фрагмент, фильтр) не отменяет другой.
@@ -243,8 +274,9 @@ class FrameExtractor:
         else:
             selector = f"fps=1/{profile.min_interval_sec:g}"
         filters = f"{selector},scale={self._width}:-2,showinfo"
+        stderr = ""
         try:
-            await self._run(
+            _, stderr = await self._run(
                 [
                     self._ffmpeg,
                     "-nostdin",
@@ -265,17 +297,18 @@ class FrameExtractor:
                     str(pattern),
                 ]
             )
-        except FrameExtractionError:
+        except FrameExtractionError as error:
             # Видео без смен сцены — нормальный случай: ffmpeg пишет «Nothing was written» и
             # выходит с ошибкой. Это не сбой материала, кадров просто нет.
             paths = await asyncio.to_thread(lambda: sorted(out_dir.glob("frame_*.jpg")))
-            if not paths and "Nothing was written" in self._last_stderr:
+            if not paths and _NOTHING_WRITTEN in error.stderr:
                 return []
             if not paths:
                 raise
+            stderr = error.stderr
         paths = await asyncio.to_thread(lambda: sorted(out_dir.glob("frame_*.jpg")))
         # showinfo пишет PTS в stderr на каждый выбранный кадр — порядок совпадает с файлами.
-        times = [float(value) for value in _PTS.findall(self._last_stderr)]
+        times = [float(value) for value in _PTS.findall(stderr)]
         if not paths:
             return []
         if len(times) < len(paths):
@@ -287,36 +320,53 @@ class FrameExtractor:
             for index, path in enumerate(paths)
         ]
 
-    async def _hashes(self, candidates: list[FrameCandidate]) -> list[int | None]:
-        """dhash всех кадров: ffmpeg один раз на каждую папку, затем попиксельное сравнение.
+    async def _hashes(self, candidates: list[FrameCandidate]) -> dict[Path, int]:
+        """dhash каждого кадра: словарь «путь → хеш».
 
-        Сцены и периодические кадры лежат в разных папках, поэтому хешируются последовательности
-        по отдельности; результат сопоставляется по порядку кандидатов. Сбой хеширования не
-        отменяет кадры: дедупликация просто не сработает.
+        Кандидаты приходят из двух папок и потом сортируются по времени, поэтому список хешей
+        по порядку путей сравнивал бы не те кадры. Ключ — путь: дедупликация всегда сверяет
+        хеш именно того кадра, который рассматривает. Сбой хеширования не отменяет кадры:
+        дедупликация просто не сработает.
         """
-        hashes: list[int | None] = []
-        for directory in _directories(candidates):
-            subset = [item for item in candidates if item.path.parent == directory]
-            try:
-                values = await self._hash_sequence(directory, len(subset))
-            except FrameExtractionError as error:
-                logger.warning("Не удалось посчитать dhash кадров: %s", error)
-                values = []
-            hashes.extend(values if len(values) == len(subset) else [None] * len(subset))
-        return hashes
+        if not candidates:
+            return {}
+        try:
+            values = await self._hash_sequence([item.path for item in candidates])
+        except FrameExtractionError as error:
+            logger.warning("Не удалось посчитать dhash кадров: %s", error)
+            return {}
+        if len(values) != len(candidates):
+            return {}
+        return {
+            candidate.path: value
+            for candidate, value in zip(candidates, values, strict=True)
+            if value is not None
+        }
 
-    async def _hash_sequence(self, directory: Path, count: int) -> list[int | None]:
-        if count <= 0:
+    async def _hash_sequence(self, paths: list[Path]) -> list[int | None]:
+        """rawvideo gray 16×16 для каждого файла: по 256 байт на кадр.
+
+        Кадры могут лежать в разных папках и называться по-разному (сцены, периодические,
+        первый кадр), поэтому вход собирается concat-списком в порядке путей.
+        """
+        if not paths:
             return []
-        raw = await self._run(
+        list_file = paths[0].parent / "hash_inputs.txt"
+        lines = "\n".join(f"file '{path.as_posix()}'" for path in paths)
+        await asyncio.to_thread(list_file.write_text, lines, "utf-8")
+        raw, _ = await self._run(
             [
                 self._ffmpeg,
                 "-nostdin",
                 "-hide_banner",
                 "-loglevel",
                 "error",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
                 "-i",
-                str(directory / "frame_%05d.jpg"),
+                str(list_file),
                 "-vf",
                 f"scale={_HASH_SIDE}:{_HASH_SIDE},format=gray",
                 "-f",
@@ -325,14 +375,16 @@ class FrameExtractor:
             ],
             capture=True,
         )
-        expected = count * _HASH_BYTES
+        expected = len(paths) * _HASH_BYTES
         if len(raw) < expected:
-            return [None] * count
+            raise FrameExtractionError("ffmpeg вернул неполный набор dhash-кадров")
         return [
-            _dhash(raw[index * _HASH_BYTES : (index + 1) * _HASH_BYTES]) for index in range(count)
+            _dhash(raw[index * _HASH_BYTES : (index + 1) * _HASH_BYTES])
+            for index in range(len(paths))
         ]
 
-    async def _run(self, args: list[str], *, capture: bool = False) -> bytes:
+    async def _run(self, args: list[str], *, capture: bool = False) -> tuple[bytes, str]:
+        """Запуск ffmpeg: возвращает (stdout при `capture`, stderr); текст ошибки — в исключении."""
         try:
             process = await asyncio.create_subprocess_exec(
                 *args,
@@ -344,9 +396,10 @@ class FrameExtractor:
             raise FrameExtractionError(
                 "На сервере недоступен ffmpeg: кадры не извлечены"
             ) from error
-        self._last_stderr = ""
         try:
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=self._timeout)
+            stdout, raw_stderr = await asyncio.wait_for(
+                process.communicate(), timeout=self._timeout
+            )
         except TimeoutError:
             process.kill()
             await process.wait()
@@ -355,33 +408,39 @@ class FrameExtractor:
             process.kill()
             await process.wait()
             raise
-        self._last_stderr = stderr.decode(errors="replace")
+        stderr = raw_stderr.decode(errors="replace")
         if process.returncode != 0:
-            level = logging.DEBUG if "Nothing was written" in self._last_stderr else logging.WARNING
+            level = logging.DEBUG if _NOTHING_WRITTEN in stderr else logging.WARNING
             logger.log(
                 level,
                 "ffmpeg (кадры) завершился с кодом %s: %s",
                 process.returncode,
-                self._last_stderr[-_STDERR_LOG_LIMIT:],
+                stderr[-_STDERR_LOG_LIMIT:],
             )
-            raise FrameExtractionError("Не удалось извлечь кадры записи")
-        return stdout if capture else b""
+            raise FrameExtractionError("Не удалось извлечь кадры записи", stderr=stderr)
+        return (stdout if capture else b""), stderr
 
     # --- дедупликация -------------------------------------------------------------------
 
     def _dedupe(
         self,
         candidates: list[FrameCandidate],
-        hashes: list[int | None],
+        hashes: dict[Path, int],
         *,
         limit: int,
     ) -> list[FrameCandidate]:
-        """Оставляет непохожие кадры; при переполнении — равномерно по всей записи."""
+        """Оставляет непохожие кадры; при переполнении — равномерно по всей записи.
+
+        `hashes` — словарь «путь → dhash», а не список по порядку: кандидаты отсортированы по
+        времени и приходят из двух проходов, поэтому позиционное сопоставление сравнивало бы
+        хеши чужих кадров (и теряло отличающиеся, оставляя дубли).
+        """
         kept: list[FrameCandidate] = []
         kept_hashes: list[int] = []
-        for candidate, value in zip(candidates, hashes, strict=True):
+        for candidate in candidates:
             if kept and candidate.at_sec - kept[-1].at_sec < _MIN_FRAME_GAP_SEC:
                 continue
+            value = hashes.get(candidate.path)
             if value is not None and any(
                 _hamming(value, existing) <= self._dedup_bits for existing in kept_hashes
             ):
@@ -397,14 +456,6 @@ class FrameExtractor:
             return [kept[0]]
         last = len(kept) - 1
         return [kept[round(index * last / (limit - 1))] for index in range(limit)]
-
-
-def _directories(candidates: list[FrameCandidate]) -> list[Path]:
-    seen: list[Path] = []
-    for item in candidates:
-        if item.path.parent not in seen:
-            seen.append(item.path.parent)
-    return seen
 
 
 def _dhash(raw: bytes) -> int:

@@ -246,6 +246,28 @@ def test_parsed_document_warning_joins_parts() -> None:
     assert ParsedDocument(text="x", warnings=("a.", "b.")).warning == "a. b."
 
 
+def test_scan_only_pdf_is_ocrd_and_source_becomes_ready(client: TestClient) -> None:
+    """Чистый скан: раньше источник был `failed` без возможности OCR — теперь распознаётся."""
+    project_id = create_project(client)
+    response = client.post(
+        f"{API}/projects/{project_id}/sources/file",
+        files={"file": ("scan.pdf", _make_pdf(["", "", ""]), "application/pdf")},
+    )
+    assert response.status_code == 201
+    project = client.get(f"{API}/projects/{project_id}").json()
+    source = next(s for s in project["sources"] if s["file_name"] == "scan.pdf")
+    assert source["status"] == "ready"
+    assert source["error"] is None
+    assert source["unreadable_pages"] == []
+    ocr = next(item for item in project["sources"] if item["parent_id"] == source["id"])
+    assert ocr["status"] == "ready"
+    assert ocr["origin"] == "derived"
+    assert ocr["trust"] == "extracted"
+    assert ocr["derivation"]["capability"] == "ocr"
+    assert "[Страница 1]" in ocr["content"]
+    assert "[Страница 3]" in ocr["content"]
+
+
 def test_mixed_pdf_upload_is_ocr_derived_and_context_sees_it(client: TestClient) -> None:
     """Страницы-сканы читает модель (RFC-0006, шаг 4): текст — в производном узле OCR.
 

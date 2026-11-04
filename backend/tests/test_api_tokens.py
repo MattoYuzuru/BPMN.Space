@@ -292,6 +292,7 @@ EXPECTED_POLICIES: dict[tuple[str, str], str] = {
     ("POST", "/api/v1/projects/{project_id}/sources/sample"): "sources:write",
     ("POST", "/api/v1/projects/{project_id}/sources/media/estimate"): "projects:read",
     ("GET", "/api/v1/sources/{source_id}/media"): "projects:read",
+    ("HEAD", "/api/v1/sources/{source_id}/media"): "projects:read",
     ("GET", "/api/v1/sources/{source_id}/segments"): "projects:read",
     ("POST", "/api/v1/sources/{source_id}/ocr"): "sources:write",
     ("PATCH", "/api/v1/sources/{source_id}"): "sources:write",

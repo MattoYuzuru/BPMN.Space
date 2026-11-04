@@ -144,7 +144,10 @@ _ANTHROPIC_NO_EFFORT = ("claude-haiku-4", "claude-haiku-3", "claude-3")
 # Рассуждающие модели OpenAI: только температура по умолчанию, глубина — `reasoning_effort`.
 _OPENAI_REASONING = ("o1", "o3", "o4", "gpt-5")
 # Модели OpenAI с приёмом изображений в Chat Completions (по префиксу имени).
-_OPENAI_VISION = ("gpt-4o", "gpt-4.1", "gpt-5", "o1", "o3", "o4", "chatgpt-4o")
+# `o1` — текстовая модель без изображений; `o3`/`o4` изображения принимают.
+_OPENAI_VISION = ("gpt-4o", "gpt-4.1", "gpt-5", "o3", "o4", "chatgpt-4o")
+# Модели OpenAI, принимающие PDF `file`-блоком в Chat Completions.
+_OPENAI_PDF = ("gpt-4o", "gpt-4.1", "gpt-5", "o3", "o4")
 
 # Уточнения из Models API провайдера. Процессный кеш по `(провайдер, модель)`, а не по ключу:
 # допущение — окно и уровни модели одинаковы для всех ключей провайдера (описано в
@@ -222,16 +225,20 @@ def _unknown_claude(name: str) -> ModelCapabilities:
 
 def _openai(name: str) -> ModelCapabilities:
     vision = name.startswith(_OPENAI_VISION)
+    pdf_input = name.startswith(_OPENAI_PDF)
     if name.startswith(_OPENAI_REASONING):
         return ModelCapabilities(
             vision=vision,
+            pdf_input=pdf_input,
             effort_levels=_BASIC_EFFORTS,
             effort_default="medium",
             accepts_temperature=False,
         )
     # Температуру 0 для JSON принимают классические gpt-4*; остальным её не шлём.
     return ModelCapabilities(
-        vision=vision, accepts_temperature=name.startswith(("gpt-4", "chatgpt-4"))
+        vision=vision,
+        pdf_input=pdf_input,
+        accepts_temperature=name.startswith(("gpt-4", "chatgpt-4")),
     )
 
 

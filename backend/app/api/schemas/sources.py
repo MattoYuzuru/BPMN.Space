@@ -166,6 +166,9 @@ class MediaEstimate(ApiModel):
     media_profile_label: str
     stt: MediaEstimateStt
     frames: MediaEstimateFrames
+    summary_cost_usd: MoneyRange | None = Field(
+        default=None, description="Краткое содержание: один запрос, только для видео с кадрами"
+    )
     total_cost_usd: MoneyRange
     currency: str = Field(default="USD")
     priced_on: date = Field(description="Дата проверки цен каталога")

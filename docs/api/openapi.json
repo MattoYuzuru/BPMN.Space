@@ -2008,6 +2008,17 @@
           "stt": {
             "$ref": "#/components/schemas/MediaEstimateStt"
           },
+          "summary_cost_usd": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MoneyRange"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Краткое содержание: один запрос, только для видео с кадрами"
+          },
           "total_cost_usd": {
             "$ref": "#/components/schemas/MoneyRange"
           }
@@ -11284,6 +11295,91 @@
           }
         ],
         "summary": "Stream Source Media",
+        "tags": [
+          "sources"
+        ]
+      },
+      "head": {
+        "description": "HEAD для плеера: те же метаданные и права, без тела — `200`/`304`/`404`/`416` не нужен.",
+        "operationId": "head_source_media",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Head Source Media",
         "tags": [
           "sources"
         ]

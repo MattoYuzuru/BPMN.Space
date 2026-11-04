@@ -11,7 +11,7 @@ import io
 import json
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -32,7 +32,8 @@ from app.domain.models import (
 from app.domain.sources import derivation_frame_keys
 from app.infra.repositories.memory import InMemoryStore
 from app.infra.storage import InMemoryFileStorage
-from app.llm.base import record_usage
+from app.ingest.context import build_run_context
+from app.llm.base import OutputTruncatedError, record_usage
 from app.llm.capabilities import ModelCapabilities, ModelPrices
 from app.llm.client import LlmAuthError
 from app.llm.multimodal import prompt_data
@@ -51,7 +52,12 @@ NOW = datetime(2026, 11, 4, 12, 0, tzinfo=UTC)
 
 
 class FakeModel:
-    """Мультимодальная модель без сети: ответы по JSON-данным промпта и учёт токенов."""
+    """Мультимодальная модель без сети: ответы по JSON-данным промпта и учёт токенов.
+
+    Как настоящий клиент, после `release()` не принимает запросы: так тест ловит порядок
+    «сводка до закрытия клиента». `truncate_first` имитирует `OutputTruncatedError` на
+    многостраничной части — сервис должен разделить её, а не потерять страницы.
+    """
 
     provider = "anthropic"
     model = "claude-sonnet-5-5"
@@ -63,6 +69,7 @@ class FakeModel:
         pdf_input: bool = True,
         document_error: Exception | None = None,
         vision_error: Exception | None = None,
+        truncate_first: bool = False,
         summary: str = "Краткое содержание: обсудили заявку и согласование.",
     ) -> None:
         self.capabilities = ModelCapabilities(
@@ -70,11 +77,30 @@ class FakeModel:
         )
         self.document_error = document_error
         self.vision_error = vision_error
+        self.truncate_first = truncate_first
         self.summary = summary
         self.document_calls: list[dict[str, Any]] = []
         self.vision_calls: list[dict[str, Any]] = []
         self.text_calls: list[str] = []
         self.released = 0
+        self.closed = False
+        self.calls_after_release = 0
+
+    def spawn(self) -> "FakeModel":
+        """Новый экземпляр с теми же настройками: `release()` одного не закрывает остальные."""
+        return FakeModel(
+            vision=self.capabilities.vision,
+            pdf_input=self.capabilities.pdf_input,
+            document_error=self.document_error,
+            vision_error=self.vision_error,
+            truncate_first=self.truncate_first,
+            summary=self.summary,
+        )
+
+    def _ensure_open(self) -> None:
+        if self.closed:
+            self.calls_after_release += 1
+            raise RuntimeError("Клиент модели закрыт до запроса")
 
     @staticmethod
     def _data(user: str) -> dict[str, Any]:
@@ -88,11 +114,23 @@ class FakeModel:
     async def complete_document(
         self, system: str, user: str, *, document: Any, json_mode: bool, max_tokens: int
     ) -> str:
-        self.document_calls.append({"bytes": len(document.data), "max_tokens": max_tokens})
+        self._ensure_open()
+        self.document_calls.append(
+            {
+                "bytes": len(document.data),
+                "max_tokens": max_tokens,
+                "pages": len(self._data(user).get("pages") or []),
+            }
+        )
         if self.document_error is not None:
             raise self.document_error
-        record_usage(tokens_in=1_000, tokens_out=500)
         pages = self._data(user).get("pages") or [1]
+        if self.truncate_first and len(pages) > 1:
+            self.truncate_first = False
+            raise OutputTruncatedError(
+                "Ответ модели обрезан по лимиту длины: результат неполный и не применён"
+            )
+        record_usage(tokens_in=1_000, tokens_out=500)
         return json.dumps({"pages": {str(page): f"Текст страницы {page}" for page in pages}})
 
     async def complete_vision(
@@ -104,6 +142,7 @@ class FakeModel:
         json_mode: bool,
         max_tokens: int,
     ) -> str:
+        self._ensure_open()
         self.vision_calls.append({"images": len(images), "max_tokens": max_tokens})
         if self.vision_error is not None:
             raise self.vision_error
@@ -125,24 +164,33 @@ class FakeModel:
         )
 
     async def complete_text(self, system: str, user: str, *, max_tokens: int | None = None) -> str:
+        self._ensure_open()
         self.text_calls.append(user)
         record_usage(tokens_in=3_000, tokens_out=300)
         return self.summary
 
     async def release(self) -> None:
         self.released += 1
+        self.closed = True
 
 
 class FakeResolver:
+    """Выдаёт свежий экземпляр модели на каждый `resolve_media` (как настоящий клиент ключа)."""
+
     def __init__(self, model: FakeModel | None) -> None:
         self.model = model
         self.requests: list[bool] = []
+        self.instances: list[FakeModel] = []
 
     async def resolve_media(
         self, user_id: UUID | None, *, need_pdf: bool, allow_mock: bool = True
     ) -> FakeModel | None:
         self.requests.append(need_pdf)
-        return self.model
+        if self.model is None:
+            return None
+        instance = self.model.spawn()
+        self.instances.append(instance)
+        return instance
 
 
 class FakeSink:
@@ -232,16 +280,25 @@ def _service(
     sink: FakeSink | None = None,
     ocr_pages_per_request: int = 10,
 ) -> MediaDerivationService:
-    return MediaDerivationService(
+    resolver = FakeResolver(model)
+    service = MediaDerivationService(
         repos,
         storage=storage,
         runtime=runtime,
-        resolver=FakeResolver(model),  # type: ignore[arg-type]
+        resolver=resolver,  # type: ignore[arg-type]
         incident_sink=sink,  # type: ignore[arg-type]
         frames=frames,
         vision_batch_size=2,
         ocr_pages_per_request=ocr_pages_per_request,
     )
+    cast(Any, service).test_resolver = resolver
+    return service
+
+
+def _instances(service: MediaDerivationService) -> list[FakeModel]:
+    """Экземпляры модели, выданные резолвером: настоящий клиент закрывается после работы."""
+    resolver = cast(Any, service).test_resolver
+    return list(resolver.instances)
 
 
 # --- OCR сканов ---------------------------------------------------------------------------
@@ -282,6 +339,19 @@ async def test_ocr_creates_derived_source_and_clears_warning() -> None:
     assert sink.incidents == []
 
 
+async def test_prepare_ocr_reuses_processing_node() -> None:
+    """Параллельный POST /ocr не создаёт второй платный узел: пока идёт обработка — тот же."""
+    repos, project, runtime = await _repos()
+    storage = InMemoryFileStorage()
+    source = await _pdf_source(repos, storage, project, runtime, unreadable_pages=[1, 3])
+    service = _service(repos, storage, runtime, FakeModel())
+    first = await service.prepare_ocr(source, initiator_id=None)
+    second = await service.prepare_ocr(source, initiator_id=None)
+    assert first is not None
+    assert second is not None
+    assert first.id == second.id
+
+
 async def test_ocr_without_pdf_capable_model_reports_incident() -> None:
     repos, project, runtime = await _repos()
     storage = InMemoryFileStorage()
@@ -316,6 +386,103 @@ async def test_ocr_partial_failure_keeps_remaining_pages_and_incident() -> None:
     assert finished.status is SourceStatus.FAILED
     assert parent is not None
     assert parent.unreadable_pages == [1, 3]
+    assert "не распознаны" in (parent.warning or "")
+    assert len(sink.incidents) == 1
+    assert sink.incidents[0].reason == "auth"
+
+
+async def test_ocr_translates_sequential_fragment_pages_to_original() -> None:
+    """Модель видит фрагмент 1..N: нарезка [2, 3] не должна превращаться в «страницу 1»."""
+    repos, project, runtime = await _repos()
+    storage = InMemoryFileStorage()
+    source = await _pdf_source(repos, storage, project, runtime, unreadable_pages=[2, 3])
+    service = _service(repos, storage, runtime, FakeModel())
+    node = await service.prepare_ocr(source, initiator_id=None)
+    assert node is not None
+    await service.run_ocr(source.id, node.id, initiator_id=None)
+    finished = await repos.sources.get(node.id)
+    parent = await repos.sources.get(source.id)
+    assert finished is not None
+    assert "[Страница 2]\nТекст страницы 1" in finished.content
+    assert "[Страница 3]\nТекст страницы 2" in finished.content
+    assert "[Страница 1]" not in finished.content
+    assert parent is not None
+    assert parent.unreadable_pages == []
+    assert finished.derivation is not None
+    assert finished.derivation.params["pages_done"] == 2
+
+
+async def test_ocr_truncated_answer_is_split_not_lost() -> None:
+    """Обрезанный ответ на часть из двух страниц делится: страницы не теряются."""
+    repos, project, runtime = await _repos()
+    storage = InMemoryFileStorage()
+    source = await _pdf_source(
+        repos, storage, project, runtime, unreadable_pages=[1, 2], pdf_pages=2
+    )
+    model = FakeModel(truncate_first=True)
+    service = _service(repos, storage, runtime, model)
+    node = await service.prepare_ocr(source, initiator_id=None)
+    assert node is not None
+    await service.run_ocr(source.id, node.id, initiator_id=None)
+    finished = await repos.sources.get(node.id)
+    parent = await repos.sources.get(source.id)
+    assert finished is not None
+    assert finished.status is SourceStatus.READY
+    assert "[Страница 1]" in finished.content
+    assert "[Страница 2]" in finished.content
+    assert parent is not None
+    assert parent.unreadable_pages == []
+    instance = _instances(service)[-1]
+    assert len(instance.document_calls) == 3  # часть → две половинки
+    assert instance.document_calls[0]["max_tokens"] >= 1_200
+
+
+async def test_failed_ocr_retry_keeps_already_recognized_pages() -> None:
+    """Повтор OCR после отказа не уводит узел в failed: распознанное остаётся в контексте."""
+    repos, project, runtime = await _repos()
+    storage = InMemoryFileStorage()
+    source = await _pdf_source(repos, storage, project, runtime, unreadable_pages=[3])
+    old_text = "[Страница 1]\nСтарый распознанный текст"
+    node = Source(
+        id=runtime.new_id(),
+        project_id=project.id,
+        kind=SourceKind.TEXT,
+        title="OCR: Регламент",
+        content=old_text,
+        status=SourceStatus.PROCESSING,
+        active=True,
+        created_at=runtime.clock(),
+        origin=SourceOrigin.DERIVED,
+        parent_id=source.id,
+        trust=SourceTrust.EXTRACTED,
+        derivation=SourceDerivation(
+            capability="ocr",
+            provider="anthropic",
+            model="claude-sonnet-5-5",
+            created_at=runtime.clock(),
+            params={"pages": [1]},
+            cost_usd=0.01,
+        ),
+    )
+    await repos.sources.add(node)
+    sink = FakeSink()
+    service = _service(
+        repos,
+        storage,
+        runtime,
+        FakeModel(document_error=LlmAuthError("ключ отклонён")),
+        sink=sink,
+    )
+    await service.run_ocr(source.id, node.id, initiator_id=None)
+    finished = await repos.sources.get(node.id)
+    parent = await repos.sources.get(source.id)
+    assert finished is not None
+    assert finished.status is SourceStatus.READY
+    assert "Старый распознанный текст" in finished.content
+    assert finished.derivation is not None
+    assert finished.derivation.cost_usd == pytest.approx(0.01)  # неудача не обнуляет траты
+    assert parent is not None
+    assert parent.unreadable_pages == [3]
     assert "не распознаны" in (parent.warning or "")
     assert len(sink.incidents) == 1
     assert sink.incidents[0].reason == "auth"
@@ -422,8 +589,41 @@ async def test_video_derivation_creates_all_nodes() -> None:
     assert summary.derivation.model == "claude-sonnet-5-5"
     assert summary.derivation.cost_usd == pytest.approx(0.0135)
     assert not summary.feeds_model, "краткое содержание не идёт в контекст модели"
-    assert model.released >= 1
+    # Regression: клиент закрывается только после сводки; иначе complete_text падает с
+    # RuntimeError и «Краткое содержание» молча не создаётся.
+    instances = _instances(service)
+    assert instances
+    assert instances[-1].closed
+    assert instances[-1].calls_after_release == 0
+    assert instances[-1].text_calls, "сводка должна успеть до release()"
+    # «Ключевые кадры» и лента — навигация, а не основание для цитат.
+    assert not key_frames.feeds_model
+    assert not feed.feeds_model
+    assert screen.feeds_model
     assert sink.incidents == []
+
+
+async def test_derived_video_navigation_is_not_sent_to_model() -> None:
+    """В контекст идут расшифровка и описание экрана; кадры/лента/сводка — только навигация."""
+    repos, project, runtime = await _repos()
+    storage = InMemoryFileStorage()
+    source, transcript = await _media_source(repos, storage, project, runtime)
+    service = _service(repos, storage, runtime, FakeModel(), frames=FakeFrames(_frames()))
+    await service.derive_media(source, transcript, profile_name="sparse", initiator_id=None)
+    created = await _all_sources(repos, project)
+    by_capability = {
+        node.derivation.capability: node for node in created if node.derivation is not None
+    }
+    context = build_run_context(
+        project=project, sources=created, questions=[], versions=[], budget_chars=120_000
+    )
+    included = {item.id for item in context.sources}
+    assert transcript.id in included
+    assert by_capability["vision"].id in included
+    assert by_capability["frames"].id not in included
+    assert by_capability["media_feed"].id not in included
+    summary = next(node for node in created if node.trust is SourceTrust.SUMMARY)
+    assert summary.id not in included
 
 
 async def test_video_derivation_without_vision_model_keeps_frames_and_asks() -> None:
@@ -538,7 +738,15 @@ def _add_transcript(container: Any, project_id: str, parent_id: str) -> str:
     return asyncio.run(run())
 
 
-def _add_pdf_source(container: Any, project_id: str, *, unreadable: list[int]) -> str:
+def _add_pdf_source(
+    container: Any,
+    project_id: str,
+    *,
+    unreadable: list[int],
+    status: SourceStatus = SourceStatus.READY,
+    content: str = "[Страница 2]\nТекст",
+    error: str | None = None,
+) -> str:
     async def run() -> str:
         data = _pdf_bytes(3)
         key = await container.storage.save(
@@ -549,8 +757,9 @@ def _add_pdf_source(container: Any, project_id: str, *, unreadable: list[int]) -
             project_id=UUID(project_id),
             kind=SourceKind.FILE,
             title="Регламент",
-            content="[Страница 2]\nТекст",
-            status=SourceStatus.READY,
+            content=content,
+            error=error,
+            status=status,
             active=True,
             created_at=NOW,
             file_name="scan.pdf",
@@ -558,7 +767,7 @@ def _add_pdf_source(container: Any, project_id: str, *, unreadable: list[int]) -
             size_bytes=len(data),
             file_key=key,
             unreadable_pages=unreadable,
-            warning="Нет текстового слоя на страницах: 1, 3",
+            warning="Нет текстового слоя на страницах: 1, 3" if unreadable else None,
         )
         await container.repos.sources.add(source)
         return str(source.id)
@@ -583,6 +792,46 @@ def test_ocr_retry_endpoint_runs_ocr_and_clears_pages(client: TestClient, contai
     assert parent["warning"] is None
     # Повторять нечего: все страницы уже распознаны.
     assert client.post(f"{API}/sources/{source_id}/ocr").status_code == 409
+
+
+def test_ocr_endpoint_recovers_failed_scan_source(client: TestClient, container: Any) -> None:
+    """Скан без текстового слоя: источник `failed`, но POST /ocr его восстанавливает."""
+    project_id = create_project(client)
+    source_id = _add_pdf_source(
+        container,
+        project_id,
+        unreadable=[1, 2, 3],
+        status=SourceStatus.FAILED,
+        content="",
+        error="В PDF нет текстового слоя: это скан",
+    )
+    started = client.post(f"{API}/sources/{source_id}/ocr")
+    assert started.status_code == 202, started.text
+    detail = client.get(f"{API}/projects/{project_id}").json()
+    source = next(item for item in detail["sources"] if item["id"] == source_id)
+    assert source["status"] == "ready"
+    assert source["error"] is None
+    assert source["unreadable_pages"] == []
+    ocr = next(item for item in detail["sources"] if item["parent_id"] == source_id)
+    assert ocr["status"] == "ready"
+    assert "[Страница 1]" in ocr["content"]
+
+
+def test_ocr_endpoint_conflicts_when_nothing_to_recognize(
+    client: TestClient, container: Any
+) -> None:
+    project_id = create_project(client)
+    source_id = _add_pdf_source(
+        container,
+        project_id,
+        unreadable=[],
+        status=SourceStatus.FAILED,
+        content="",
+        error="PDF повреждён",
+    )
+    conflict = client.post(f"{API}/sources/{source_id}/ocr")
+    assert conflict.status_code == 409
+    assert "нет страниц" in conflict.json()["detail"]
 
 
 def test_media_estimate_endpoint(client: TestClient) -> None:
@@ -681,3 +930,71 @@ def test_segments_endpoint_returns_timecodes(client: TestClient, container: Any)
         f"{API}/projects/{project_id}/sources/text", json={"content": "Без записи"}
     ).json()
     assert client.get(f"{API}/sources/{text_payload['id']}/segments").status_code == 409
+
+
+def test_media_head_returns_metadata_without_body(client: TestClient, container: Any) -> None:
+    project_id = create_project(client)
+    source_id = _add_media_source(container, project_id)
+    head = client.head(f"{API}/sources/{source_id}/media")
+    assert head.status_code == 200
+    assert head.content == b""
+    assert head.headers["content-length"] == "10"
+    assert head.headers["accept-ranges"] == "bytes"
+    cached = client.head(
+        f"{API}/sources/{source_id}/media", headers={"If-None-Match": head.headers["etag"]}
+    )
+    assert cached.status_code == 304
+    assert client.head(f"{API}/sources/{uuid4()}/media").status_code == 404
+
+
+def test_project_deletion_removes_derived_frames(client: TestClient, container: Any) -> None:
+    project_id = create_project(client)
+    source_id = _add_media_source(container, project_id)
+    frame_key = asyncio.run(
+        container.storage.save(
+            project_id=UUID(project_id), file_name="frame_00001.jpg", data=b"jpeg"
+        )
+    )
+
+    async def add_node() -> None:
+        node = Source(
+            id=uuid4(),
+            project_id=UUID(project_id),
+            kind=SourceKind.TEXT,
+            title="Ключевые кадры: Демо",
+            content="[00:00] кадр 1",
+            status=SourceStatus.READY,
+            active=True,
+            created_at=NOW,
+            origin=SourceOrigin.DERIVED,
+            parent_id=UUID(source_id),
+            trust=SourceTrust.OBSERVED,
+            derivation=SourceDerivation(
+                capability="frames",
+                provider="ffmpeg",
+                created_at=NOW,
+                params={"frames": [{"index": 1, "at_sec": 0.0, "key": frame_key}]},
+            ),
+        )
+        await container.repos.sources.add(node)
+
+    asyncio.run(add_node())
+    deleted = client.delete(f"{API}/projects/{project_id}")
+    assert deleted.status_code == 204
+    with pytest.raises(KeyError):
+        asyncio.run(container.storage.load(frame_key))
+
+
+def test_estimate_includes_summary_for_video_only(client: TestClient) -> None:
+    project_id = create_project(client)
+    video = client.post(
+        f"{API}/projects/{project_id}/sources/media/estimate",
+        json={"duration_sec": 600, "has_video": True, "media_profile": "sparse"},
+    ).json()
+    assert video["summary_cost_usd"] is not None
+    assert video["summary_cost_usd"]["min_usd"] is not None
+    audio = client.post(
+        f"{API}/projects/{project_id}/sources/media/estimate",
+        json={"duration_sec": 600, "has_video": True, "media_profile": "audio"},
+    ).json()
+    assert audio["summary_cost_usd"] is None

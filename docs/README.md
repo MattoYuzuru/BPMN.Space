@@ -16,6 +16,7 @@
   - [Runtime layout/lint: запуск и пределы Node-сервиса](../infra/bpmn-tools/README.md)
   - [Что ещё заглушено и что нужно для настоящей реализации](backend/mock.md)
   - [Подключение моделей, ключей и распознавания речи](backend/подключение-провайдеров.md)
+  - [MCP-сервер для внешних агентов](backend/mcp.md)
 - [Frontend: принципы и устройство](frontend/README.md)
 - [Деплой на VM](deployment.md)
 - [Приоритеты развития и границы поддержки BPMN](research/product-priorities-2026-10.md)

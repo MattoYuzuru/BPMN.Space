@@ -326,14 +326,66 @@ def context_budget_chars(
 
 
 @dataclass(frozen=True, slots=True)
+class Budget:
+    """Бюджет прогона (RFC-0005, шаг 5): мягкая остановка по токенам и/или деньгам.
+
+    Проверяется перед каждым запросом к модели по накопителю прогона; достигнутый бюджет
+    переводит прогон в `waiting` с блокирующим техническим вопросом, а не в ошибку.
+    """
+
+    tokens: int | None = None
+    cost_usd: float | None = None
+
+    def describe(self) -> str:
+        """Короткая подпись для вопроса пользователю: «10 $», «50 000 токенов», «и то, и другое»."""
+        parts: list[str] = []
+        if self.cost_usd is not None:
+            parts.append(f"${self.cost_usd:g}")
+        if self.tokens is not None:
+            parts.append(f"{self.tokens} токенов")
+        return " и ".join(parts) if parts else "не задан"
+
+    def to_json(self) -> dict[str, Any]:
+        return {"tokens": self.tokens, "cost_usd": self.cost_usd}
+
+    @classmethod
+    def from_json(cls, value: object) -> "Budget | None":
+        """Только положительные значения; пустой или испорченный бюджет — `None`."""
+        if not isinstance(value, dict):
+            return None
+        raw_tokens = value.get("tokens")
+        raw_cost = value.get("cost_usd")
+        tokens = (
+            raw_tokens
+            if isinstance(raw_tokens, int) and not isinstance(raw_tokens, bool) and raw_tokens > 0
+            else None
+        )
+        cost_usd = (
+            float(raw_cost)
+            if isinstance(raw_cost, (int, float))
+            and not isinstance(raw_cost, bool)
+            and raw_cost > 0
+            else None
+        )
+        if tokens is None and cost_usd is None:
+            return None
+        return cls(tokens=tokens, cost_usd=cost_usd)
+
+
+@dataclass(frozen=True, slots=True)
 class RunProfile:
     """Профиль одного прогона: `None` — умолчание сервера и модели. Ключей не содержит."""
 
     effort: Effort | None = None
     semantic_review: bool | None = None
+    budget: Budget | None = None
 
     def to_json(self) -> dict[str, Any]:
-        return {"effort": self.effort, "semantic_review": self.semantic_review}
+        return {
+            "effort": self.effort,
+            "semantic_review": self.semantic_review,
+            "budget": self.budget.to_json() if self.budget is not None else None,
+        }
 
     @classmethod
     def from_json(cls, value: object) -> "RunProfile":
@@ -344,6 +396,7 @@ class RunProfile:
         return cls(
             effort=effort if effort in EFFORT_LEVELS else None,
             semantic_review=review if isinstance(review, bool) else None,
+            budget=Budget.from_json(value.get("budget")),
         )
 
 

@@ -27,6 +27,7 @@ from app.llm.client import (
     ModelInfo,
     RetryPolicy,
     TransientLlmError,
+    approximate_tokens,
     auth_message,
     timeout_message,
     token_count,
@@ -170,9 +171,14 @@ class OpenAICompatibleClient:
             payload = json.loads(raw)
             choice = payload["choices"][0]
             usage = payload.get("usage") or {}
+            cache_read = _cache_read_tokens(usage)
+            cache_write = _cache_write_tokens(usage)
             record_usage(
+                # `prompt_tokens` у OpenAI и DeepSeek включает и попадания в кеш.
                 tokens_in=token_count(usage.get("prompt_tokens")),
                 tokens_out=token_count(usage.get("completion_tokens")),
+                cache_read=cache_read,
+                cache_write=cache_write,
             )
             if choice.get("finish_reason") == "length":
                 raise OutputTruncatedError(
@@ -201,6 +207,10 @@ class OpenAICompatibleClient:
         except (json.JSONDecodeError, KeyError, TypeError):
             raise RuntimeError("Сервис модели вернул ответ неизвестной структуры") from None
         return [ModelInfo(id=name, label=name) for name in ids if self.is_chat_model(name)]
+
+    async def count_tokens(self, system: str, user: str) -> int:
+        """Chat Completions не умеет считать токены бесплатно — делится на `chars_per_token`."""
+        return approximate_tokens(system, user, self.capabilities())
 
     def is_chat_model(self, model_id: str) -> bool:  # noqa: ARG002
         return True
@@ -294,3 +304,31 @@ class OpenAICompatibleClient:
 def _operator_url(raw: str) -> str:
     """Адрес из настроек оператора: HTTPS, либо HTTP для localhost (как раньше)."""
     return normalize_base_url(raw, allowed_private_hosts=("localhost", "127.0.0.1", "::1"))
+
+
+def _cache_read_tokens(usage: dict[str, Any]) -> int:
+    """Токены, прочитанные из кеша: OpenAI, DeepSeek и совместимые называют их по-разному."""
+    details = usage.get("prompt_tokens_details")
+    if isinstance(details, dict):
+        cached = token_count(details.get("cached_tokens"))
+        if cached:
+            return cached
+    for key in ("prompt_cache_hit_tokens", "cache_read_input_tokens", "cached_tokens"):
+        value = token_count(usage.get(key))
+        if value is not None:
+            return value
+    return 0
+
+
+def _cache_write_tokens(usage: dict[str, Any]) -> int:
+    """Токены, записанные в кеш (у большинства совместимых провайдеров их нет)."""
+    details = usage.get("prompt_tokens_details")
+    if isinstance(details, dict):
+        written = token_count(details.get("cache_write_tokens"))
+        if written:
+            return written
+    for key in ("cache_creation_input_tokens",):
+        value = token_count(usage.get(key))
+        if value is not None:
+            return value
+    return 0

@@ -16,6 +16,8 @@ const question: Question = {
   text: 'Кто готовит акт?',
   assumption: 'Акт готовит бухгалтер.',
   element_ids: [],
+  category: 'business',
+  blocking: false,
   answer: { source_id: 'answer-source', text: 'Акт готовит инженер.' },
   created_at: '2026-10-01T10:00:00Z',
   updated_at: '2026-10-01T10:00:00Z',

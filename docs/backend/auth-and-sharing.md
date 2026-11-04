@@ -119,11 +119,11 @@ SSE прогона принимает токен и закрывается по�
 
 | Право | Маршруты |
 |---|---|
-| `projects:read` | `GET /projects` (с ограничением проектами список и `total` сужаются), `GET /projects/{id}`, вопросы, версии и XML, `GET /runs/{id}`, `GET /runs/{id}/events` |
+| `projects:read` | `GET /projects` (с ограничением проектами список и `total` сужаются), `GET /projects/{id}`, вопросы, версии и XML, `GET /runs/{id}`, `GET /runs/{id}/events`, оценка прогона `POST /projects/{id}/runs/estimate` (бесплатная, только `count_tokens`) |
 | `projects:write` | `POST /projects`, `POST /projects/from-example` (только токен без ограничения проектами), `PATCH /projects/{id}`, `PUT /projects/{id}/diagram`, контрольная точка версии |
 | `sources:write` | `POST /projects/{id}/sources/{text,file,sample}`, `PATCH /sources/{id}`; загрузка аудио или видео в `sources/file` — ещё и `runs:start` (запись расшифровывает платный провайдер) |
 | `sources:delete` | `DELETE /sources/{id}` |
-| `runs:start` | `POST /projects/{id}/runs`, `POST /runs/{id}/cancel`, помощник (`/projects/{id}/assistant`, `/assistant/chat`), `POST /transcriptions` — платные вызовы на ключах вызывающего пользователя |
+| `runs:start` | `POST /projects/{id}/runs`, `POST /runs/{id}/cancel`, `POST /runs/{id}/resume`, помощник (`/projects/{id}/assistant`, `/assistant/chat`), `POST /transcriptions` — платные вызовы на ключах вызывающего пользователя |
 | `questions:answer` | `POST /questions/{id}/{answer,ignore,reopen}` |
 | любой действующий токен | `GET /auth/me`, `GET /auth/session` |
 
@@ -151,8 +151,21 @@ curl -s -X POST https://example.org/api/v1/questions/QUESTION_ID/answer \
   -d '{"text": "Согласует начальник отдела"}'
 ```
 
-Пока нет (следующие шаги RFC-0007): MCP-сервер, пометка «через агента» у ответов и источников,
-журнал действий агента в проекте, отдельный от аккаунта бюджет `expensive` на токен.
+**MCP-сервер** (шаг 2 RFC-0007). Там же на `/mcp` работает MCP-сервер (Streamable HTTP) для
+внешних агентов: те же токены, та же модель прав, но инструменты вместо маршрутов. Подключение,
+список инструментов/ресурсов/подсказок, ограничения v1 и точки стыковки с оценкой прогона —
+[docs/backend/mcp.md](mcp.md). Cookie-сессии, CSRF и браузерные правила REST к `/mcp` не
+применяются: вход только по `Authorization: Bearer bps_…`, ошибки `401`/`403`/`404` те же.
+
+**Пометка «через агента».** Материал, добавленный по MCP, — источник `origin=agent`,
+`trust=agent`, провенанс в `derivation` (`capability=agent`, `provider=mcp`, название токена,
+ссылка первоисточника). Ответ на вопрос через MCP записывается как ответ владельца токена с
+`answer.via=agent` и `answer.via_name=<название токена>` (миграция `0021_agent_answer_provenance`);
+в REST-модели вопроса это поля `answer.via`/`answer.via_name`. Сервер не может проверить, читал
+ли человек ответ перед отправкой, и не делает вид, что может.
+
+Пока нет (следующие шаги RFC-0007): журнал действий агента в проекте, отдельный от аккаунта
+бюджет `expensive` на токен, роль ссылки `reviewer`, OAuth для MCP.
 
 ## Долгоживущие соединения
 

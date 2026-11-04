@@ -18,7 +18,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "0020_user_credentials"
-down_revision = "0017_api_tokens"
+down_revision = "0019_technical_questions"
 branch_labels = None
 depends_on = None
 

@@ -19,6 +19,7 @@ from app.domain.api_tokens import ApiToken
 from app.domain.credentials import MAX_ERROR_CHARS, Credential
 from app.domain.models import (
     LlmCall,
+    LlmCallTotals,
     Project,
     Question,
     QuestionStatus,
@@ -443,6 +444,27 @@ class InMemoryLlmCallRepository:
 
     async def add(self, call: LlmCall) -> None:
         self._items[call.id] = copy.deepcopy(call)
+
+    async def list_by_run(self, run_id: UUID) -> list[LlmCall]:
+        items = [call for call in self._items.values() if call.run_id == run_id]
+        items.sort(key=lambda call: (call.stage, str(call.id)))
+        return [copy.deepcopy(call) for call in items]
+
+    async def totals(self, run_id: UUID) -> LlmCallTotals:
+        stages: dict[str, LlmCallTotals] = {}
+        for call in self._items.values():
+            if call.run_id != run_id:
+                continue
+            item = stages.setdefault(call.stage, LlmCallTotals())
+            item.calls += 1
+            item.usage_calls += int(call.tokens_in is not None)
+            item.priced_calls += int(call.cost_usd is not None)
+            item.tokens_in += call.tokens_in or 0
+            item.tokens_out += call.tokens_out or 0
+            item.cache_read_tokens += call.cache_read_tokens or 0
+            item.cache_write_tokens += call.cache_write_tokens or 0
+            item.cost_usd += call.cost_usd or 0.0
+        return LlmCallTotals.of_stages(stages)
 
 
 class InMemoryCredentialRepository:

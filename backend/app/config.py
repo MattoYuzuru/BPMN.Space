@@ -47,6 +47,16 @@ class Settings(BaseSettings):
     rate_limit_expensive_per_min: int = 60  # прогоны, помощник, расшифровка, загрузка, на аккаунт
     rate_limit_expensive_ip_per_min: int = 120  # те же вызовы суммарно с одного IP (все аккаунты)
 
+    # --- MCP-сервер внешних агентов (RFC-0007, шаг 2) ---
+    # Секрет HMAC-подписи `estimate_token` (допуск на запуск после оценки). Пусто — случайный
+    # на процесс: после перезапуска старые оценки потребуют повторного `estimate_run`.
+    mcp_estimate_secret: str | None = None
+    # Срок жизни оценки прогона (секунды): `start_run` без свежей оценки отклоняется.
+    mcp_estimate_ttl_sec: float = Field(default=900.0, gt=0, le=86_400)
+    # Дорогие вызовы MCP (`start_run`) на токен в минуту: отдельная таблица, потому что
+    # IP-лимиты `/api/v1` путь `/mcp` не покрывают.
+    mcp_expensive_per_min: int = 30
+
     # В Compose всегда настоящий внутренний Node-сервис. None — ограниченный локальный mock.
     bpmn_tools_url: str | None = None
     bpmn_tools_timeout_sec: float = Field(default=20.0, gt=0, le=120)

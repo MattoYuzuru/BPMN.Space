@@ -192,8 +192,9 @@ def build_run_context(
     for s in sources:
         if s.feeds_model and s.warning:
             warnings.append(f"Источник «{s.title[:80]}» прочитан не полностью: {s.warning}")
-    # Запись с производными представлена ими: её сбой уже виден на расшифровке, не считаем дважды.
-    parents = {s.parent_id for s in sources if s.parent_id is not None}
+    # Запись с активными производными представлена ими: её сбой уже виден на расшифровке, не
+    # считаем дважды. Если все производные выключены, сбой записи остаётся в полноте контекста.
+    parents = {s.parent_id for s in sources if s.parent_id is not None and s.active}
     unavailable = [
         s
         for s in sources

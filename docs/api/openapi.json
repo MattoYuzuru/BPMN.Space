@@ -8488,7 +8488,7 @@
     },
     "/api/v1/sources/{source_id}": {
       "delete": {
-        "description": "Удалить источник вместе с производными (`parent_id`). Удаление ответа возвращает\nотвеченный вопрос в `open`.",
+        "description": "Удалить источник вместе с производными (`parent_id`). Удаление ответа возвращает\nотвеченный вопрос в `open`. Производный источник, который ещё `processing`, удалить\nнельзя (409): запись удаляется целиком или после окончания обработки.",
         "operationId": "delete_source",
         "parameters": [
           {
@@ -8535,6 +8535,16 @@
               }
             },
             "description": "Не найдено"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Конфликт состояния"
           },
           "410": {
             "content": {

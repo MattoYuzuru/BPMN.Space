@@ -59,6 +59,13 @@ class MediaProbe:
     has_video: bool = False
 
 
+@dataclass(slots=True)
+class MediaJob:
+    """Что обработка записи узнала по пути: дорожки из ffprobe (None — без ffmpeg)."""
+
+    probe: MediaProbe | None = None
+
+
 class FfmpegRunner:
     """Тонкая обёртка над ffmpeg/ffprobe: аргументы списком, таймаут, без shell."""
 
@@ -237,22 +244,21 @@ class MediaTranscriber:
             "ffmpeg": self._runner.available,
         }
 
-    async def probe(self, source: Path) -> MediaProbe | None:
-        """Дорожки и длительность записи; None — ffmpeg не установлен (только mock)."""
-        if not self._runner.available:
-            return None
-        return await self._runner.probe(source)
-
-    async def transcribe(self, source: Path, *, probe: MediaProbe | None = None) -> Transcript:
+    async def transcribe(self, source: Path, *, job: MediaJob | None = None) -> Transcript:
         """Расшифровка файла записи; `MediaError` / `NoSpeechError` при неудаче.
 
-        `probe` — уже выполненный `probe()`, чтобы не звать ffprobe дважды.
+        ffprobe, ffmpeg и STT идут одной задачей под общим семафором (`max_concurrent_jobs`).
+        `job.probe` получает дорожки записи, как только ffprobe их прочитал, — и при сбое
+        расшифровки тоже.
         """
         if self._semaphore is None:
             self._semaphore = asyncio.Semaphore(self._jobs)
         async with self._semaphore:
             if not self._runner.available:
                 return await self._without_ffmpeg(source)
+            probe = await self._runner.probe(source)
+            if job is not None:
+                job.probe = probe
             return await self._with_ffmpeg(source, probe)
 
     async def _without_ffmpeg(self, source: Path) -> Transcript:
@@ -265,8 +271,7 @@ class MediaTranscriber:
         data = await asyncio.to_thread(source.read_bytes)
         return await self._stt.transcribe(data, mime=None)
 
-    async def _with_ffmpeg(self, source: Path, probe: MediaProbe | None) -> Transcript:
-        probe = probe or await self._runner.probe(source)
+    async def _with_ffmpeg(self, source: Path, probe: MediaProbe) -> Transcript:
         if not probe.has_audio:
             raise MediaError("В файле нет звуковой дорожки")
         if probe.duration_sec > self._max_duration:

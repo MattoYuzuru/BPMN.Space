@@ -25,7 +25,7 @@ from app.infra.storage import ChunkReader, FileStorage, UploadTooLargeError
 from app.ingest.media import (
     MEDIA_EXTENSIONS,
     MediaError,
-    MediaProbe,
+    MediaJob,
     MediaTranscriber,
     is_media,
 )
@@ -49,6 +49,7 @@ from app.services.errors import (
 logger = logging.getLogger(__name__)
 
 MAX_SOURCE_TITLE = 200
+TRANSCRIPT_MISSING = "Расшифровка записи удалена до окончания обработки. Загрузите запись заново"
 
 
 def _format_duration(seconds: float) -> str:
@@ -310,11 +311,11 @@ class SourceService:
         Сбой виден на обоих узлах с одной причиной; дорожки записи сохраняются, если ffprobe
         успел их прочитать.
         """
-        probe: MediaProbe | None = None
+        job = MediaJob()
 
         def failed(error: str) -> tuple[dict[str, Any], dict[str, Any]]:
             parent: dict[str, Any] = {"status": SourceStatus.FAILED, "error": error}
-            if probe is not None:
+            if (probe := job.probe) is not None:
                 parent["media"] = MediaInfo(has_audio=probe.has_audio, has_video=probe.has_video)
                 parent["duration_sec"] = probe.duration_sec
             return parent, {"status": SourceStatus.FAILED, "error": error}
@@ -323,8 +324,7 @@ class SourceService:
             return failed("Обработка аудио и видео не включена")
         try:
             async with self._storage.local_file(source.file_key) as path:
-                probe = await self._media.probe(path)
-                result = await self._media.transcribe(path, probe=probe)
+                result = await self._media.transcribe(path, job=job)
         except MediaError as error:
             return failed(str(error))
         except NoSpeechError:
@@ -334,6 +334,7 @@ class SourceService:
                 f"Расшифровка превышает лимит {self._max_text} символов. "
                 "Разделите запись на части и загрузите их отдельно"
             )
+        probe = job.probe
         media = MediaInfo(
             has_audio=probe.has_audio if probe else None,
             has_video=probe.has_video if probe else None,
@@ -373,6 +374,13 @@ class SourceService:
             ),
             None,
         )
+        if transcript is None:
+            # Расшифровки нет — распознавать некуда: не тратим STT, запись помечается сбоем.
+            parent = {"status": SourceStatus.FAILED, "error": TRANSCRIPT_MISSING}
+            async with self._repos.atomic() as repos:
+                await repos.projects.lock(source.project_id)
+                await repos.sources.patch(source.id, parent, only_status=SourceStatus.PROCESSING)
+            return
         try:
             parent, child = await self._media_changes(source, transcript)
         except Exception:
@@ -383,9 +391,9 @@ class SourceService:
         async with self._repos.atomic() as repos:
             await repos.projects.lock(source.project_id)
             await repos.sources.patch(source.id, parent, only_status=SourceStatus.PROCESSING)
-            if transcript is not None:
-                # Расшифровку могли удалить за время обработки: тогда patch просто не найдёт её.
-                await repos.sources.patch(transcript.id, child, only_status=SourceStatus.PROCESSING)
+            # Расшифровку нельзя удалить, пока она `processing` (см. `delete`); удалённая вместе
+            # с записью не оживает: patch не найдёт строку.
+            await repos.sources.patch(transcript.id, child, only_status=SourceStatus.PROCESSING)
 
     async def _parse_changes(self, *, file_name: str, data: bytes) -> dict[str, Any]:
         """Результат разбора как набор полей источника: `status`, `content`, `error`, `warning`."""
@@ -514,6 +522,11 @@ class SourceService:
         async with self._repos.atomic() as repos:
             await repos.projects.lock(source.project_id)
             source = await get_source(repos, source_id)
+            if source.parent_id is not None and source.status is SourceStatus.PROCESSING:
+                # Распознавание уже идёт и оплачивается: результат был бы выброшен.
+                raise ConflictError(
+                    "Запись ещё обрабатывается. Дождитесь окончания или удалите запись целиком"
+                )
             now = self._rt.clock()
             # Удаление родителя удаляет производные (FK ON DELETE CASCADE и in-memory так же).
             family = [

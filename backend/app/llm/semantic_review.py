@@ -3,9 +3,11 @@
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
+from functools import partial
 
 from app.domain.analysis import RunContext
 from app.domain.bpmn.ir import GraphIR
+from app.domain.concurrency import bounded_gather
 from app.domain.models import QuestionStatus
 from app.llm.base import PipelineError
 
@@ -84,11 +86,21 @@ async def review_semantics(
 ) -> list[str]:
     """Независимо читает полный снимок порциями, включая пропущенные экстрактором факты."""
     sources = context.evidence_sources if context.evidence_sources is not None else context.sources
-    size = max(min(context.analysis_budget_chars // 2, 24_000), 1_000)
+    size = max(min(context.analysis_budget_chars // 2, context.chunk_chars), 1_000)
+    parts = [
+        replace(source, content=source.content[offset : offset + size])
+        for source in sources
+        for offset in range(0, len(source.content), size - 200)
+    ]
+    # Порции независимы: параллельные запросы, но отчёты собираются в порядке порций.
+    reports = await bounded_gather(
+        [
+            partial(_review_part, graph, replace(context, sources=[part]), complete)
+            for part in parts
+        ],
+        limit=context.parallel_requests,
+    )
     errors: list[str] = []
-    for source in sources:
-        for offset in range(0, len(source.content), size - 200):
-            part = replace(source, content=source.content[offset : offset + size])
-            found = await _review_part(graph, replace(context, sources=[part]), complete)
-            errors.extend(error for error in found if error not in errors)
+    for found in reports:
+        errors.extend(error for error in found if error not in errors)
     return errors[:MAX_REVIEW_ISSUES]

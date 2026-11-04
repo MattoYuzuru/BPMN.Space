@@ -11,6 +11,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
+from functools import partial
 from typing import Any, Literal, TypeVar
 from uuid import UUID
 
@@ -25,6 +26,7 @@ from app.domain.analysis import (
     RunContext,
 )
 from app.domain.bpmn.document import BPMN_NS
+from app.domain.concurrency import bounded_gather
 from app.domain.models import Question, QuestionKind, QuestionStatus, Quote, Severity
 from app.llm.base import OutputTruncatedError, PipelineError
 
@@ -424,21 +426,28 @@ class QuestionAnalyzer:
         )
         proposals: list[_Proposal] = []
         seen: set[str] = set()
-        for source_packet in packets:
-            for question_packet in question_packets:
-                responses = await self._scan(
-                    {
-                        "phase": "analyze",
-                        "project": context.project_title,
-                        "sources": source_packet,
-                        "existing_questions": question_packet,
-                        "current_diagram": diagram,
-                        "diagram_context_complete": diagram_complete,
-                        "source_context_complete": context.analysis_input_complete,
-                    }
-                )
-                for response in responses:
-                    self._proposals(response, questions, sources, result, proposals, seen=seen)
+        payloads = [
+            {
+                "phase": "analyze",
+                "project": context.project_title,
+                "sources": source_packet,
+                "existing_questions": question_packet,
+                "current_diagram": diagram,
+                "diagram_context_complete": diagram_complete,
+                "source_context_complete": context.analysis_input_complete,
+            }
+            for source_packet in packets
+            for question_packet in question_packets
+        ]
+        # Порции независимы: запросы идут с ограниченной параллельностью, а предложения
+        # обрабатываются строго в порядке порций, поэтому результат не зависит от скорости ответов.
+        scans = await bounded_gather(
+            [partial(self._scan, payload) for payload in payloads],
+            limit=context.parallel_requests,
+        )
+        for responses in scans:
+            for response in responses:
+                self._proposals(response, questions, sources, result, proposals, seen=seen)
         if proposals:
             await self._verify(
                 proposals,
@@ -676,30 +685,33 @@ class QuestionAnalyzer:
             [{"id": proposal.id, **proposal.payload} for proposal in proposals], budget
         )
         decisions: dict[str, list[_Decision]] = {proposal.id: [] for proposal in proposals}
-        for proposed in proposal_packets:
-            for source_packet in packets:
-                for compared in catalogs:
-                    responses = await self._verify_packet(
-                        {
-                            "phase": "verify",
-                            "project": context.project_title,
-                            "proposals": proposed,
-                            "sources": source_packet,
-                            "existing_items": compared,
-                            "current_diagram": diagram,
-                            "diagram_context_complete": diagram_complete,
-                            "source_context_complete": context.analysis_input_complete,
-                        }
-                    )
-                    keys = {item["key"] for item in compared}
-                    for decision in [item for response in responses for item in response.decisions]:
-                        if decision.same_as and (
-                            decision.same_as not in keys or decision.same_as == decision.id
-                        ):
-                            raise PipelineError(
-                                "Проверка сослалась на неизвестный или собственный вопрос"
-                            )
-                        decisions[decision.id].append(decision)
+        payloads = [
+            {
+                "phase": "verify",
+                "project": context.project_title,
+                "proposals": proposed,
+                "sources": source_packet,
+                "existing_items": compared,
+                "current_diagram": diagram,
+                "diagram_context_complete": diagram_complete,
+                "source_context_complete": context.analysis_input_complete,
+            }
+            for proposed in proposal_packets
+            for source_packet in packets
+            for compared in catalogs
+        ]
+        verified = await bounded_gather(
+            [partial(self._verify_packet, payload) for payload in payloads],
+            limit=context.parallel_requests,
+        )
+        for payload, responses in zip(payloads, verified, strict=True):
+            keys = {item["key"] for item in payload["existing_items"]}
+            for decision in [item for response in responses for item in response.decisions]:
+                if decision.same_as and (
+                    decision.same_as not in keys or decision.same_as == decision.id
+                ):
+                    raise PipelineError("Проверка сослалась на неизвестный или собственный вопрос")
+                decisions[decision.id].append(decision)
         return decisions
 
     def _accepted_candidate(

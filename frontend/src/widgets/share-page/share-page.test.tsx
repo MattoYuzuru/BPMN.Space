@@ -146,6 +146,8 @@ describe('страница по ссылке: проверка коллегой'
     const workspace = await screen.findByTestId('workspace')
     expect(workspace).toHaveAttribute('data-role', 'reviewer')
     expect(workspace).toHaveAttribute('data-open-project', 'false')
+    // Контракт пока не принимает ответ по ссылке: страница read-only, формы ответа нет.
+    expect(screen.queryByRole('button', { name: /Ответить/ })).not.toBeInTheDocument()
     expect(calls.some((call) => call.method === 'POST')).toBe(false)
   })
 

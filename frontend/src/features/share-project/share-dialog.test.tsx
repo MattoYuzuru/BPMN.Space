@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { TooltipProvider, toast } from '@/shared/ui'
 import { stubApi } from '@/test/api-stub'
 import { ShareDialog } from './share-dialog'
+import { ShareCreateForm } from './share-parts'
 
 const toastSuccess = vi.fn()
 const toastError = vi.fn()
@@ -291,7 +292,7 @@ describe('ShareDialog: проверка коллегой', () => {
       lane_ids: ['Продажи'],
     })
     expect(await screen.findByText('Выбранные дорожки (1)')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Скопировать запрос для агента' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Запрос для агента' })).toBeVisible()
   })
 
   it('весь проект допустим без выбранных дорожек', async () => {
@@ -330,12 +331,17 @@ describe('ShareDialog: проверка коллегой', () => {
     const { user } = setup()
     await user.click(await screen.findByRole('radio', { name: /Проверка/ }))
     await user.click(screen.getByRole('button', { name: 'Создать ссылку' }))
-    await user.click(await screen.findByRole('button', { name: 'Скопировать запрос для агента' }))
+    await user.click(await screen.findByRole('button', { name: 'Запрос для агента' }))
     const dialog = await screen.findByRole('dialog', { name: 'Запрос для агента' })
     const text = within(dialog).getByLabelText('Текст запроса') as HTMLTextAreaElement
     expect(text.value).toBe('Проверьте дорожку «Продажи» и ответьте на вопросы.')
     expect(text).toHaveAttribute('readonly')
     expect(document.body.textContent).not.toContain('review-secret')
+    // Секрет ссылки не должен просачиваться в значения полей этого окна (кроме самого адреса).
+    const values = [...document.querySelectorAll('input, textarea')]
+      .map((element) => (element as HTMLInputElement).value)
+      .filter((value) => value !== `${window.location.origin}/share/review-secret`)
+    expect(values.join(' ')).not.toContain('review-secret')
     await user.click(within(dialog).getByRole('button', { name: 'Копировать запрос' }))
     expect(await navigator.clipboard.readText()).toBe(text.value)
     expect(toastSuccess).toHaveBeenCalledWith('Запрос скопирован')
@@ -362,4 +368,38 @@ describe('ShareDialog: проверка коллегой', () => {
     expect(within(list).getByText('Проверка')).toBeInTheDocument()
     expect(within(list).getByText('Выбранные дорожки (2)')).toBeInTheDocument()
   })
+})
+
+it('пустая схема с выбранными дорожками не блокирует ссылку без объяснения', async () => {
+  const onCreate = vi.fn()
+  const user = userEvent.setup()
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  render(
+    <QueryClientProvider client={client}>
+      <TooltipProvider>
+        {/* biome-ignore lint/a11y/useValidAriaRole: role — проп проверки, не ARIA-роль */}
+        <ShareCreateForm
+          role="reviewer"
+          days={30}
+          scope="selected"
+          lanes={[]}
+          selectedLanes={[]}
+          onRoleChange={vi.fn()}
+          onDaysChange={vi.fn()}
+          onScopeChange={vi.fn()}
+          onLanesChange={vi.fn()}
+          onCreate={onCreate}
+          lanesLoading={false}
+          lanesError={false}
+        />
+      </TooltipProvider>
+    </QueryClientProvider>,
+  )
+  const submit = screen.getByRole('button', { name: 'Создать ссылку' })
+  expect(submit).toBeEnabled()
+  expect(screen.queryByRole('alert')).toBeNull()
+  await user.click(submit)
+  expect(onCreate).toHaveBeenCalled()
 })

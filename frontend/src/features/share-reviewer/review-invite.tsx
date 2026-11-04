@@ -41,7 +41,7 @@ export function ReviewInvite({ token, shared }: { token: string; shared: SharedP
         onClick={() => setPromptOpen(true)}
         {...tourAnchor(TOUR_ANCHORS.shareCopyPrompt)}
       >
-        Скопировать запрос для агента
+        Запрос для агента
       </Button>
       <Button size="sm" variant="primary" leadingIcon="key" onClick={() => setConnectOpen(true)}>
         Подключить агента

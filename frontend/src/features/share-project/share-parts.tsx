@@ -70,7 +70,9 @@ export function ShareCreateForm({
   lanesError = false,
 }: ShareCreateFormProps) {
   const reviewer = role === 'reviewer'
-  const selectedEmpty = reviewer && scope === 'selected' && selectedLanes.length === 0
+  // Без дорожек (пустая схема/сбой) «Выбранные» не блокируют ссылку: уйдёт весь проект.
+  const selectedEmpty =
+    reviewer && scope === 'selected' && lanes.length > 0 && selectedLanes.length === 0
   return (
     <form
       className="flex flex-col gap-4"
@@ -176,9 +178,10 @@ function ScopeField({
         <Card variant="sunken" padding="none">
           <ScrollArea className="max-h-44" viewportClassName="max-h-44">
             <div className="flex flex-col gap-2 p-3">
-              {lanes.map((lane) => (
+              {lanes.map((lane, index) => (
                 <Checkbox
-                  key={lane}
+                  // biome-ignore lint/suspicious/noArrayIndexKey: API отдаёт только названия дорожек
+                  key={`${index}:${lane}`}
                   label={lane}
                   checked={selected.includes(lane)}
                   onCheckedChange={(checked) =>
@@ -266,7 +269,7 @@ export function ShareLinkResult({
               onClick={() => setPromptOpen(true)}
               {...tourAnchor(TOUR_ANCHORS.shareCopyPrompt)}
             >
-              Скопировать запрос для агента
+              Запрос для агента
             </Button>
           )}
           <Button variant="ghost" size="sm" onClick={onAnother}>

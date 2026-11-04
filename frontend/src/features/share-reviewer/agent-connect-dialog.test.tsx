@@ -45,7 +45,7 @@ function withProviders(ui: ReactNode, options: { router?: boolean } = {}) {
   )
   if (!options.router) {
     render(tree)
-    return { user }
+    return { user, client }
   }
   const root = createRootRoute({ component: () => <>{ui}</> })
   const routes = [
@@ -62,7 +62,7 @@ function withProviders(ui: ReactNode, options: { router?: boolean } = {}) {
       </TooltipProvider>
     </QueryClientProvider>,
   )
-  return { user }
+  return { user, client }
 }
 
 const dialogProps = {
@@ -145,5 +145,31 @@ describe('AgentConnectDialog', () => {
     withProviders(<AgentConnectDialog {...dialogProps} shareRole="viewer" />)
     expect(await screen.findByText('Токен агента выдаётся по ссылке проверки')).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Подключить агента' })).not.toBeInTheDocument()
+  })
+})
+
+describe('секрет токена', () => {
+  it('не остаётся в DOM и MutationCache после закрытия', async () => {
+    stubApi({
+      'GET /api/v1/auth/session': { body: signed },
+      'POST /api/v1/shares/tok/agent-token': { status: 201, body: issued },
+    })
+    const { user, client } = withProviders(<AgentConnectDialog {...dialogProps} />)
+    await user.click(await screen.findByRole('button', { name: 'Подключить агента' }))
+    expect(await screen.findByLabelText('Токен агента')).toHaveValue(SECRET)
+    await user.click(screen.getByRole('button', { name: 'Готово' }))
+
+    expect(screen.queryByLabelText('Токен агента')).not.toBeInTheDocument()
+    const values = [...document.querySelectorAll('input, textarea')].map(
+      (element) => (element as HTMLInputElement).value,
+    )
+    expect(values.join(' ')).not.toContain(SECRET)
+    expect(document.body.textContent).not.toContain(SECRET)
+    const cached = client
+      .getMutationCache()
+      .getAll()
+      .map((mutation) => JSON.stringify(mutation.state.data ?? null))
+      .join(' ')
+    expect(cached).not.toContain(SECRET)
   })
 })

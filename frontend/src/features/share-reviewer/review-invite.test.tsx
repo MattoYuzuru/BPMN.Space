@@ -49,7 +49,7 @@ describe('ReviewInvite', () => {
     mount()
     expect(await screen.findByText('Продажи, Склад.')).toBeVisible()
     expect(screen.getByText('Проверка')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Скопировать запрос для агента' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Запрос для агента' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Подключить агента' })).toBeVisible()
   })
 
@@ -67,7 +67,7 @@ describe('ReviewInvite', () => {
       },
     })
     const { user } = mount()
-    await user.click(await screen.findByRole('button', { name: 'Скопировать запрос для агента' }))
+    await user.click(await screen.findByRole('button', { name: 'Запрос для агента' }))
     expect(await screen.findByRole('dialog', { name: 'Запрос для агента' })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Готово' }))
 
@@ -82,4 +82,12 @@ describe('ReviewInvite', () => {
       'Выбранные дорожки',
     )
   })
+})
+
+it('честно объясняет, что ответы оставит агент: формы ответа по ссылке нет', async () => {
+  mount()
+  expect(await screen.findByText(/Схема открыта только для чтения/)).toBeInTheDocument()
+  expect(screen.getByText(/ответы на вопросы области оставит ваш агент/)).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /Ответить/ })).not.toBeInTheDocument()
+  expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
 })

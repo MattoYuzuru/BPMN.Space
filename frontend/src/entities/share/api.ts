@@ -273,5 +273,8 @@ export function useIssueAgentToken(token: string) {
   return useMutation({
     mutationFn: async (): Promise<AgentTokenIssued> =>
       unwrap(await api.POST('/api/v1/shares/{token}/agent-token', { params: { path: { token } } })),
+    // Секрет показывается один раз: не держим его в MutationCache после закрытия окна.
+    gcTime: 0,
+    retry: false,
   })
 }

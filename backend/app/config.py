@@ -5,6 +5,8 @@ from functools import lru_cache
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.domain.concurrency import adaptive_deadline
+
 _MB = 1024 * 1024
 # Квитанции удаления доступны 30 дней; содержимое проектов удаляется сразу.
 DELETED_PROJECT_NOTICE_DAYS = 30
@@ -46,19 +48,49 @@ class Settings(BaseSettings):
     max_concurrent_runs: int = 2
     # Общий срок одного прогона (секунды, 0 — без срока): новые запросы к модели после него
     # не начинаются, прогон завершается ошибкой, а не висит.
+    # Это нижняя граница: к ней прибавляется время на объём источников (см. `run_deadline`).
     run_deadline_sec: float = 600.0
+    # Дополнительные секунды срока на каждую 1000 символов источников (длинные документы).
+    run_deadline_per_1k_chars_sec: float = Field(default=4.0, ge=0)
+    # Жёсткий потолок адаптивного срока (по умолчанию 2 часа); 0 — потолка нет.
+    run_deadline_max_sec: float = Field(default=7200.0, ge=0)
     # Анализ: бюджет одного запроса целиком, включая schema; полные источники идут порциями.
     # Построение: бюджет оснований после порционного извлечения; переполнение — явный отказ.
+    # Для моделей с большим контекстом увеличьте значение: документ пройдёт без извлечения.
     llm_context_budget_chars: int = 120_000
+    # Размер порции текста при извлечении оснований и смысловой сверке (символы).
+    llm_chunk_chars: int = Field(default=24_000, ge=1_000)
+    # Сколько независимых запросов порций к модели одновременно (анализ, извлечение, сверка).
+    llm_parallel_requests: int = Field(default=4, ge=1, le=32)
 
     # --- Ограничения загрузок ---
-    max_upload_bytes: int = 20 * _MB
+    # Документы (.txt .md .csv .docx .xlsx .pptx .pdf).
+    max_upload_bytes: int = 50 * _MB
+    # Голосовая заметка из микрофона (`POST /transcriptions`, синхронно).
     max_audio_bytes: int = 60 * _MB
+    # Файлы аудио и видео, загружаемые как источник (расшифровываются в фоне через ffmpeg).
+    max_media_bytes: int = 500 * _MB
     max_diagram_bytes: int = 5 * _MB
-    max_text_chars: int = 200_000
+    # Текст одного источника после разбора (≈ 500 страниц).
+    max_text_chars: int = 1_500_000
     # Разбор документов: у PDF ограничены число страниц и время (в отдельном потоке).
-    max_pdf_pages: int = 300
-    parse_timeout_sec: float = 60.0
+    max_pdf_pages: int = 1000
+    # Таблицы Excel: строк с данными на лист; остаток не молчаливо пропускается, а даёт warning.
+    max_sheet_rows: int = 20_000
+    parse_timeout_sec: float = 180.0
+
+    # --- Аудио и видео (ingest/media.py): ffmpeg режет звук, STT читает сегменты параллельно ---
+    ffmpeg_path: str = "ffmpeg"
+    ffprobe_path: str = "ffprobe"
+    media_segment_sec: int = Field(default=600, ge=30, le=1800)
+    media_ffmpeg_timeout_sec: float = Field(default=3600.0, gt=0)
+    media_max_duration_sec: float = Field(default=4 * 3600.0, gt=0)
+    # Одновременно расшифровываемых сегментов и одновременных медиазаданий.
+    stt_parallel_segments: int = Field(default=3, ge=1, le=16)
+    media_max_concurrent_jobs: int = Field(default=1, ge=1, le=8)
+    # Срок запроса сегмента: база + доля длительности сегмента.
+    stt_segment_timeout_base_sec: float = Field(default=60.0, gt=0)
+    stt_segment_timeout_per_audio_sec: float = Field(default=0.3, ge=0)
 
     # --- Mock-реализация (#2): задержки имитируют работу модели и STT ---
     # Множитель всех задержек: 0 — мгновенно (тесты), 1 — как в демо.
@@ -107,6 +139,7 @@ class Settings(BaseSettings):
     deepseek_retry_max_sec: float = 30.0
     stt_provider: str = "mock"
     deepgram_api_key: str | None = None
+    deepgram_timeout_sec: float = 120.0
 
     @field_validator(
         "database_url",
@@ -141,6 +174,22 @@ class Settings(BaseSettings):
         if self.session_cookie_secure is not None:
             return self.session_cookie_secure
         return self.app_env.lower() in {"prod", "production"}
+
+    def context_budget_chars(self, provider_max: int | None = None) -> int:
+        """Бюджет контекста: провайдер с большим окном может задать своё значение явно."""
+        return provider_max if provider_max is not None else self.llm_context_budget_chars
+
+    def run_deadline(self, total_chars: int = 0) -> float | None:
+        """Срок прогона: `run_deadline_sec` — нижняя граница, плюс время на объём источников.
+
+        `None` — срока нет (`RUN_DEADLINE_SEC=0`). Потолок `run_deadline_max_sec` не ниже базы.
+        """
+        return adaptive_deadline(
+            self.run_deadline_sec,
+            total_chars=total_chars,
+            per_1k_chars_sec=self.run_deadline_per_1k_chars_sec,
+            max_sec=self.run_deadline_max_sec,
+        )
 
     def mock_delay(self, seconds: float) -> float:
         return max(seconds, 0.0) * max(self.mock_delay_scale, 0.0)

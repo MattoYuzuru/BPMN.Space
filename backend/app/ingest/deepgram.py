@@ -6,11 +6,11 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from app.ingest.stt import NoSpeechError, Transcript
+from app.ingest.stt import NoSpeechError, TimedText, Transcript
 
 
 class DeepgramSpeechToText:
-    def __init__(self, api_key: str, *, timeout_sec: float = 45) -> None:
+    def __init__(self, api_key: str, *, timeout_sec: float = 120) -> None:
         self._api_key = api_key
         self._timeout_sec = timeout_sec
 
@@ -18,7 +18,9 @@ class DeepgramSpeechToText:
         return await asyncio.to_thread(self._transcribe_sync, data, mime)
 
     def _transcribe_sync(self, data: bytes, mime: str | None) -> Transcript:
-        query = urlencode({"model": "nova-3", "language": "ru", "smart_format": "true"})
+        query = urlencode(
+            {"model": "nova-3", "language": "ru", "smart_format": "true", "utterances": "true"}
+        )
         request = Request(
             f"https://api.deepgram.com/v1/listen?{query}",
             data=data,
@@ -48,4 +50,22 @@ class DeepgramSpeechToText:
             raise RuntimeError("Deepgram вернул ответ в неизвестном формате") from None
         if not text:
             raise NoSpeechError
-        return Transcript(text=text, duration_sec=max(0.0, duration), language="ru-RU")
+        return Transcript(
+            text=text,
+            duration_sec=max(0.0, duration),
+            language="ru-RU",
+            utterances=_utterances(result),
+        )
+
+
+def _utterances(result: dict) -> tuple[TimedText, ...]:
+    """Реплики с таймкодами; отсутствующее или кривое поле просто даёт пустой результат."""
+    try:
+        items = result["results"]["utterances"]
+        return tuple(
+            TimedText(start_sec=max(0.0, float(item["start"])), text=item["transcript"].strip())
+            for item in items
+            if isinstance(item["transcript"], str) and item["transcript"].strip()
+        )
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return ()

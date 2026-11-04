@@ -26,6 +26,7 @@ def test_deepgram_transcription_uses_server_auth_and_returns_russian_transcript(
         "model": ["nova-3"],
         "language": ["ru"],
         "smart_format": ["true"],
+        "utterances": ["true"],
     }
 
 

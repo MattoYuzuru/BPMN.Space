@@ -162,6 +162,7 @@ class RunService:
         pace: Pace = no_pace,
         context_budget_chars: int = 120_000,
         deadline_sec: float = 600.0,
+        deadline_for: Callable[[int], float | None] | None = None,
         progress: ProgressRecorder | None = None,
         broadcast: RealtimePublisher | None = None,
     ) -> None:
@@ -174,6 +175,7 @@ class RunService:
         self._pace = pace
         self._context_budget = context_budget_chars
         self._deadline_sec = deadline_sec
+        self._deadline_for = deadline_for
         self._progress = progress
         self._broadcast = broadcast
         self._limit = asyncio.Semaphore(max(max_concurrent, 1))
@@ -326,9 +328,17 @@ class RunService:
             error=_INTERNAL_ERROR,
         )
 
+    async def _deadline(self, run: Run) -> float | None:
+        """Срок прогона; с `deadline_for` растёт с объёмом активных источников."""
+        if self._deadline_for is None:
+            return self._deadline_sec if self._deadline_sec > 0 else None
+        sources = await self._repos.sources.list_by_project(run.project_id)
+        total = sum(len(s.content) for s in sources if s.active and s.status is SourceStatus.READY)
+        return self._deadline_for(total)
+
     async def _drive(self, run: Run) -> None:
         execution_started = time.perf_counter()
-        deadline = self._deadline_sec if self._deadline_sec > 0 else None
+        deadline = await self._deadline(run)
         scope: asyncio.Timeout | None = None
         try:
             with run_deadline(deadline):

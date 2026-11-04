@@ -15,8 +15,25 @@ export const SOURCE_KIND: Record<SourceKind, { label: string; icon: IconName }> 
   answer: { label: 'Ответ на вопрос', icon: 'message-question' },
 }
 
-/** Форматы, которые принимает бэкенд (`POST /sources/file`). */
-export const ACCEPTED_FILES = ['.txt', '.md', '.csv', '.docx', '.pdf'] as const
+/** Форматы, которые принимает бэкенд (`POST /sources/file`): документы и записи. */
+export const DOCUMENT_FILES = ['.txt', '.md', '.csv', '.docx', '.xlsx', '.pptx', '.pdf'] as const
+export const MEDIA_FILES = [
+  '.mp3',
+  '.wav',
+  '.ogg',
+  '.opus',
+  '.m4a',
+  '.flac',
+  '.aac',
+  '.webm',
+  '.mp4',
+  '.mov',
+  '.mkv',
+] as const
+export const ACCEPTED_FILES = [...DOCUMENT_FILES, ...MEDIA_FILES] as const
+
+/** Подсказка в зонах загрузки: документы и записи, без полного перечня аудио-расширений. */
+export const ACCEPTED_FILES_HINT = '.txt, .md, .csv, .docx, .xlsx, .pptx, .pdf, аудио и видео'
 
 export function isAcceptedFile(name: string): boolean {
   const lower = name.toLowerCase()
@@ -26,6 +43,7 @@ export function isAcceptedFile(name: string): boolean {
 /** Короткая метаинформация справа в строке источника: длительность, размер или объём текста. */
 export function sourceMeta(source: Source): string {
   if (source.kind === 'voice' && source.duration_sec) return formatClock(source.duration_sec)
+  if (source.kind === 'file' && source.duration_sec) return formatClock(source.duration_sec)
   if (source.kind === 'file' && source.size_bytes) return formatBytes(source.size_bytes)
   return formatCount(source.content.length, ['знак', 'знака', 'знаков'])
 }
@@ -112,4 +130,26 @@ export function splitByRanges(
   }
   if (cursor < content.length) parts.push({ start: cursor, text: content.slice(cursor) })
   return parts
+}
+
+/** Сколько знаков источника показывать сразу: длинные документы выводятся порциями. */
+export const DISPLAY_CHUNK_CHARS = 120_000
+
+/**
+ * Часть кусков текста, помещающаяся в `limit` знаков (только для показа, источник не меняется).
+ * Кусок, пересекающий границу, обрезается; цитата целиком остаётся в одном куске-<mark>.
+ */
+export function limitParts<T extends { start: number; text: string; range?: QuoteRange }>(
+  parts: readonly T[],
+  limit: number,
+): T[] {
+  const visible: T[] = []
+  for (const part of parts) {
+    if (part.start >= limit) break
+    const room = limit - part.start
+    visible.push(
+      !part.range && part.text.length > room ? { ...part, text: part.text.slice(0, room) } : part,
+    )
+  }
+  return visible
 }

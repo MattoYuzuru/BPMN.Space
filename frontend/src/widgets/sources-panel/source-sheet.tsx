@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  DISPLAY_CHUNK_CHARS,
   findQuoteRanges,
+  limitParts,
   type QuoteMark,
   type QuoteRange,
   quoteReferences,
@@ -11,7 +13,7 @@ import {
   useUpdateSource,
 } from '@/entities/source'
 import { cn } from '@/shared/lib/cn'
-import { formatDate } from '@/shared/lib/format'
+import { formatCount, formatDate } from '@/shared/lib/format'
 import {
   Badge,
   Button,
@@ -108,6 +110,12 @@ function SourceDetail({
     ].sort((left, right) => left.start - right.start)
   }, [source.content, marks, mark, target])
   const parts = useMemo(() => splitByRanges(source.content, ranges), [source.content, ranges])
+  // Длинный документ показываем порциями: в DOM не выводим сразу сотни тысяч знаков.
+  // Текст источника и поиск цитат не меняются; порция расширяется до цитаты, к которой пришли.
+  const [shown, setShown] = useState(DISPLAY_CHUNK_CHARS)
+  const visibleLimit = Math.max(shown, target ? target.end + 2_000 : 0)
+  const visibleParts = useMemo(() => limitParts(parts, visibleLimit), [parts, visibleLimit])
+  const hiddenChars = Math.max(source.content.length - visibleLimit, 0)
   const counts = { about: 0, evidence: 0, trace: 0 }
   for (const range of ranges) counts[range.kind] += 1
 
@@ -255,6 +263,15 @@ function SourceDetail({
               )}
             </div>
           )}
+          {source.status === 'ready' && source.warning && (
+            <div
+              role="status"
+              className="flex items-start gap-2 rounded-md bg-amber-subtle px-3 py-2.5 type-ui text-amber-fg"
+            >
+              <Icon name="alert-circle" size={16} className="mt-0.5" />
+              {source.warning}
+            </div>
+          )}
           {source.status === 'failed' && (
             <div className="flex items-start gap-2 rounded-md bg-danger-subtle px-3 py-2.5 type-ui text-danger-fg">
               <Icon name="alert-circle" size={16} className="mt-0.5" />
@@ -266,7 +283,7 @@ function SourceDetail({
             className="max-w-2xl whitespace-pre-wrap type-body text-fg-muted"
             data-testid="source-content"
           >
-            {parts.map((part) =>
+            {visibleParts.map((part) =>
               part.range ? (
                 <Popover
                   key={part.start}
@@ -336,6 +353,17 @@ function SourceDetail({
               ),
             )}
           </div>
+          {hiddenChars > 0 && (
+            <div className="flex flex-wrap items-center gap-3">
+              <Button onClick={() => setShown((value) => value + DISPLAY_CHUNK_CHARS)}>
+                Показать ещё
+              </Button>
+              <span className="type-ui text-fg-subtle" data-numeric>
+                Показано {formatCount(visibleLimit, ['знак', 'знака', 'знаков'])} из{' '}
+                {source.content.length}. Анализ использует весь текст.
+              </span>
+            </div>
+          )}
         </div>
       )}
     </SheetContent>

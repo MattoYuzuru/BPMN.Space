@@ -13,7 +13,7 @@ from hashlib import sha256
 from typing import Any
 from uuid import UUID
 
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request, status
 from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin
 from fastapi_users.authentication import AuthenticationBackend, CookieTransport
 from fastapi_users.authentication.strategy.db import AccessTokenDatabase, DatabaseStrategy
@@ -23,7 +23,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import HTTPConnection
 
 from app.infra.db_models import AccessTokenRow, UserRow
-from app.services.errors import UnavailableError
+from app.services.api_tokens import (
+    INVALID_ACCESS_MESSAGE,
+    bearer_secret,
+    check_route_policy,
+    remember_api_token,
+)
+from app.services.errors import UnauthorizedError, UnavailableError
 
 __all__ = [
     "SESSION_COOKIE",
@@ -32,6 +38,7 @@ __all__ = [
     "build_fastapi_users",
     "optional_user",
     "required_user",
+    "stream_user",
 ]
 
 SESSION_MAX_AGE = 60 * 60 * 24 * 14
@@ -108,14 +115,62 @@ def build_fastapi_users(*, cookie_secure: bool) -> tuple[FastAPIUsers[UserRow, U
 
 # Зависимости текущего пользователя читают cookie по имени и не зависят от флага `Secure`.
 _users, _ = build_fastapi_users(cookie_secure=False)
-optional_user = _users.current_user(active=True, optional=True)
-required_user = _users.current_user(active=True)
+_cookie_user = _users.current_user(active=True, optional=True)
+
+
+async def token_user(connection: HTTPConnection, secret: str) -> UserRow:
+    """Владелец действующего токена доступа (RFC-0007) с проверкой права маршрута.
+
+    Сначала секрет (`401` без подробностей), затем политика маршрута (`403`): неизвестный токен
+    не узнаёт, какие права нужны. Пользователь читается в короткой сессии, как у потоков.
+    """
+    container = connection.app.state.container
+    token = await container.api_tokens.authenticate(secret)
+    if token is None:
+        raise UnauthorizedError(INVALID_ACCESS_MESSAGE)
+    check_route_policy(connection, token)
+    database = container.database
+    if database is None:
+        raise UnavailableError("Для учётных записей требуется PostgreSQL")
+    async with database.sessions() as session:
+        user = await session.get(UserRow, token.user_id)
+        if user is None or not user.is_active:
+            raise UnauthorizedError(INVALID_ACCESS_MESSAGE)
+        session.expunge(user)
+    remember_api_token(connection, token)
+    return user
+
+
+async def optional_user(
+    request: Request, cookie_user: UserRow | None = Depends(_cookie_user)
+) -> UserRow | None:
+    """Текущий пользователь: по `Authorization: Bearer` (токен доступа) или по cookie-сессии.
+
+    Заголовок с токеном имеет приоритет: cookie не подменяет неверный или отозванный токен.
+    """
+    secret = bearer_secret(request)
+    if secret is None:
+        return cookie_user
+    return await token_user(request, secret)
+
+
+async def required_user(user: UserRow | None = Depends(optional_user)) -> UserRow:
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+    return user
 
 
 async def stream_user(request: HTTPConnection) -> UserRow | None:
-    """Проверить cookie HTTP/WS в короткой сессии, не удерживая соединение на время потока."""
+    """Проверить cookie HTTP/WS в короткой сессии, не удерживая соединение на время потока.
+
+    HTTP-потоки (SSE) принимают и токен доступа; WebSocket — только cookie: билеты комнаты
+    по токену не выдаются.
+    """
     if not request.app.state.auth_enabled:
         return None
+    secret = bearer_secret(request)
+    if secret is not None and request.scope["type"] == "http":
+        return await token_user(request, secret)
     token = request.cookies.get(SESSION_COOKIE)
     if token is None:
         return None

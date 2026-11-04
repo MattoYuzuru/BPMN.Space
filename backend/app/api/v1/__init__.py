@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    api_tokens,
     assistant,
     collaboration,
     llm_credentials,
@@ -28,6 +29,7 @@ for module in (
     sharing,
     onboarding,
     llm_credentials,
+    api_tokens,
     presence,
 ):
     api_router.include_router(module.router)

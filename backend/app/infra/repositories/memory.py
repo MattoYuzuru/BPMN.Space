@@ -15,6 +15,7 @@ from typing import Any
 from uuid import UUID
 
 from app.domain.access import ProjectScope
+from app.domain.api_tokens import ApiToken
 from app.domain.credentials import LlmCredential
 from app.domain.models import (
     LlmCall,
@@ -54,6 +55,7 @@ class InMemoryStore:
     project_owners: dict[UUID, UUID] = field(default_factory=dict[UUID, UUID])
     public_projects: set[UUID] = field(default_factory=set[UUID])
     llm_credentials: dict[UUID, LlmCredential] = field(default_factory=dict[UUID, LlmCredential])
+    api_tokens: dict[UUID, ApiToken] = field(default_factory=dict[UUID, ApiToken])
     onboarding: dict[UUID, UserOnboarding] = field(default_factory=dict[UUID, UserOnboarding])
     onboarding_items: dict[tuple[UUID, ChecklistItem], CompletedItem] = field(
         default_factory=dict[tuple[UUID, ChecklistItem], CompletedItem]
@@ -86,6 +88,7 @@ class InMemoryStore:
             llm_calls=InMemoryLlmCallRepository(self),
             onboarding=InMemoryOnboardingRepository(self),
             llm_credentials=InMemoryLlmCredentialRepository(self),
+            api_tokens=InMemoryApiTokenRepository(self),
         )
 
 
@@ -203,10 +206,13 @@ class InMemoryProjectRepository:
         owner_id: UUID | None = None,
         scope_to_user: bool = False,
         scope: ProjectScope = ProjectScope.ALL,
+        only_ids: frozenset[UUID] | None = None,
     ) -> list[Project]:
         items = sorted(self._matching(query), key=_sort_key, reverse=True)
         if scope_to_user:
             items = self._visible(items, owner_id, scope)
+        if only_ids is not None:
+            items = [p for p in items if p.id in only_ids]
         if after is not None:
             items = [p for p in items if _sort_key(p) < after]
         return [copy.deepcopy(p) for p in items[:limit]]
@@ -218,10 +224,13 @@ class InMemoryProjectRepository:
         owner_id: UUID | None = None,
         scope_to_user: bool = False,
         scope: ProjectScope = ProjectScope.ALL,
+        only_ids: frozenset[UUID] | None = None,
     ) -> int:
         items = self._matching(query)
         if scope_to_user:
             items = self._visible(items, owner_id, scope)
+        if only_ids is not None:
+            items = [p for p in items if p.id in only_ids]
         return len(items)
 
 
@@ -486,6 +495,40 @@ class InMemoryLlmCredentialRepository:
         if item is not None:
             item.last_used_at = at
             item.last_error = error[:500] if error else None
+
+
+class InMemoryApiTokenRepository:
+    def __init__(self, store: InMemoryStore) -> None:
+        self._items = store.api_tokens
+
+    async def list_by_user(self, user_id: UUID) -> list[ApiToken]:
+        own = [t for t in self._items.values() if t.user_id == user_id and t.revoked_at is None]
+        own.sort(key=lambda t: (t.created_at, str(t.id)), reverse=True)
+        return [copy.deepcopy(t) for t in own]
+
+    async def get(self, token_id: UUID) -> ApiToken | None:
+        item = self._items.get(token_id)
+        return copy.deepcopy(item) if item else None
+
+    async def by_hash(self, token_hash: str) -> ApiToken | None:
+        item = next((t for t in self._items.values() if t.token_hash == token_hash), None)
+        return copy.deepcopy(item) if item else None
+
+    async def count_active(self, user_id: UUID, now: datetime) -> int:
+        return sum(1 for t in self._items.values() if t.user_id == user_id and t.is_active(now))
+
+    async def add(self, token: ApiToken) -> None:
+        self._items[token.id] = copy.deepcopy(token)
+
+    async def revoke(self, token_id: UUID, at: datetime) -> None:
+        item = self._items.get(token_id)
+        if item is not None and item.revoked_at is None:
+            item.revoked_at = at
+
+    async def touch(self, token_id: UUID, at: datetime, *, older_than: datetime) -> None:
+        item = self._items.get(token_id)
+        if item is not None and (item.last_used_at is None or item.last_used_at < older_than):
+            item.last_used_at = at
 
 
 class InMemoryOnboardingRepository:

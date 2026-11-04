@@ -146,6 +146,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/api-tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Api Tokens
+         * @description Неотозванные токены пользователя (и истёкшие), новые первыми; секретов в списке нет.
+         */
+        get: operations["list_api_tokens"];
+        put?: never;
+        /**
+         * Create Api Token
+         * @description Выпустить токен. Ответ содержит секрет `bps_…` — единственный раз.
+         *
+         *     Проекты из `project_ids` должны быть доступны пользователю (любая роль), иначе `404`.
+         */
+        post: operations["create_api_token"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/api-tokens/{token_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke Api Token
+         * @description Отозвать токен: следующий запрос с ним получит `401`.
+         */
+        delete: operations["revoke_api_token"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/llm-credentials": {
         parameters: {
             query?: never;
@@ -1026,6 +1072,127 @@ export interface components {
             source_id: string;
             /** Text */
             text: string;
+        };
+        /**
+         * ApiScope
+         * @description Право токена. Пользователь в cookie-сессии имеет все права своей роли, как раньше.
+         * @enum {string}
+         */
+        ApiScope: "projects:read" | "projects:write" | "sources:write" | "sources:delete" | "runs:start" | "questions:answer";
+        /** ApiToken */
+        ApiToken: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expired
+             * @description Срок истёк: токен больше не принимается
+             */
+            expired: boolean;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Last Used At
+             * @description С точностью до минуты
+             */
+            last_used_at: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Project Ids
+             * @description null — все проекты пользователя
+             */
+            project_ids: string[] | null;
+            /** Scopes */
+            scopes: components["schemas"]["ApiScope"][];
+            /**
+             * Token Prefix
+             * @description `bps_` и первые символы секрета — чтобы узнать токен
+             */
+            token_prefix: string;
+        };
+        /** ApiTokenCreate */
+        ApiTokenCreate: {
+            /**
+             * Expires In Days
+             * @description Срок действия в днях; бессрочных токенов нет
+             * @default 30
+             */
+            expires_in_days: number;
+            /** Name */
+            name: string;
+            /**
+             * Project Ids
+             * @description null — все проекты пользователя, включая созданные позже
+             */
+            project_ids?: string[] | null;
+            /**
+             * Scopes
+             * @description По умолчанию — чтение проектов и ответы на вопросы
+             */
+            scopes?: components["schemas"]["ApiScope"][];
+        };
+        /** ApiTokenCreated */
+        ApiTokenCreated: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expired
+             * @description Срок истёк: токен больше не принимается
+             */
+            expired: boolean;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Last Used At
+             * @description С точностью до минуты
+             */
+            last_used_at: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Project Ids
+             * @description null — все проекты пользователя
+             */
+            project_ids: string[] | null;
+            /** Scopes */
+            scopes: components["schemas"]["ApiScope"][];
+            /**
+             * Secret
+             * @description Секрет `bps_…`: показывается один раз, в БД хранится только SHA-256
+             */
+            secret: string;
+            /**
+             * Token Prefix
+             * @description `bps_` и первые символы секрета — чтобы узнать токен
+             */
+            token_prefix: string;
+        };
+        /** ApiTokenList */
+        ApiTokenList: {
+            /** Items */
+            items: components["schemas"]["ApiToken"][];
         };
         /** AssistantRequest */
         AssistantRequest: {
@@ -2799,6 +2966,187 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Example"][];
+                };
+            };
+        };
+    };
+    list_api_tokens: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiTokenList"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Сервис или помощник не настроен */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_api_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiTokenCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiTokenCreated"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Конфликт состояния */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Сервис или помощник не настроен */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    revoke_api_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

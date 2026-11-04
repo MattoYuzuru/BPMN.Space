@@ -55,6 +55,7 @@ from app.infra.db_models import (
     SourceRow,
 )
 from app.infra.repositories.access_sql import SqlAccessRepository
+from app.infra.repositories.api_tokens_sql import SqlApiTokenRepository
 from app.infra.repositories.base import (
     ActiveRunConflictError,
     PageKey,
@@ -463,11 +464,14 @@ class SqlProjectRepository:
         owner_id: UUID | None = None,
         scope_to_user: bool = False,
         scope: ProjectScope = ProjectScope.ALL,
+        only_ids: frozenset[UUID] | None = None,
     ) -> list[Project]:
         async with self.sessions() as session:
             statement = select(ProjectRow).where(*self._filters(query))
             if scope_to_user:
                 statement = statement.where(self._visible_to(owner_id, scope))
+            if only_ids is not None:
+                statement = statement.where(ProjectRow.id.in_(only_ids))
             if after:
                 statement = statement.where(
                     or_(
@@ -491,11 +495,14 @@ class SqlProjectRepository:
         owner_id: UUID | None = None,
         scope_to_user: bool = False,
         scope: ProjectScope = ProjectScope.ALL,
+        only_ids: frozenset[UUID] | None = None,
     ) -> int:
         async with self.sessions() as session:
             statement = select(func.count()).select_from(ProjectRow).where(*self._filters(query))
             if scope_to_user:
                 statement = statement.where(self._visible_to(owner_id, scope))
+            if only_ids is not None:
+                statement = statement.where(ProjectRow.id.in_(only_ids))
             return int(await session.scalar(statement) or 0)
 
 
@@ -1223,5 +1230,6 @@ class SqlStore:
             access=SqlAccessRepository(sessions),
             onboarding=SqlOnboardingRepository(sessions),
             llm_credentials=SqlLlmCredentialRepository(sessions),
+            api_tokens=SqlApiTokenRepository(sessions),
             transaction=transaction,
         )

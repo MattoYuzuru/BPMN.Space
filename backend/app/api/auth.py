@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from fastapi_users.schemas import BaseUser, BaseUserCreate
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.api.access import require_scope
 from app.config import Settings
 from app.services.auth import (
     SESSION_MAX_AGE,
@@ -101,11 +102,12 @@ def build_auth_router(settings: Settings) -> APIRouter:
         )
         return {"csrf_token": token}
 
-    @router.get("/auth/me", response_model=UserRead)
+    # «Кто я» доступно с любым действующим токеном доступа (RFC-0007): агент проверяет вход.
+    @router.get("/auth/me", response_model=UserRead, dependencies=[require_scope(None)])
     async def get_me(user: RequiredUserDep) -> UserRow:
         return user
 
-    @router.get("/auth/session", response_model=SessionState)
+    @router.get("/auth/session", response_model=SessionState, dependencies=[require_scope(None)])
     async def get_session_state(request: Request, user: OptionalUserDep) -> SessionState:
         return SessionState(
             auth_enabled=request.app.state.auth_enabled,

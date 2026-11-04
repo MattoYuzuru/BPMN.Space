@@ -5,7 +5,15 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, Request, Response, status
 
-from app.api.access import ProjectRole, ensure_project_access, project_roles, require_account
+from app.api.access import (
+    ApiScope,
+    ProjectRole,
+    ensure_project_access,
+    project_roles,
+    require_account,
+    require_scope,
+    token_project_ids,
+)
 from app.api.auth import OptionalUserDep
 from app.api.deps import ContainerDep
 from app.api.schemas.common import errors
@@ -24,7 +32,9 @@ from app.domain.onboarding import ChecklistItem
 router = APIRouter(tags=["projects"])
 
 
-@router.get("/projects", responses=errors(401, 422))
+@router.get(
+    "/projects", dependencies=[require_scope(ApiScope.PROJECTS_READ)], responses=errors(401, 422)
+)
 async def list_projects(  # noqa: PLR0917 - FastAPI binds each query parameter independently
     request: Request,
     container: ContainerDep,
@@ -52,6 +62,7 @@ async def list_projects(  # noqa: PLR0917 - FastAPI binds each query parameter i
         owner_id=owner_id,
         scope_to_user=request.app.state.auth_enabled,
         scope=scope,
+        only_ids=token_project_ids(request),
     )
     roles = await project_roles(request, container, [view.project.id for view in page.items], user)
     return ProjectPage(
@@ -63,7 +74,12 @@ async def list_projects(  # noqa: PLR0917 - FastAPI binds each query parameter i
     )
 
 
-@router.post("/projects", status_code=status.HTTP_201_CREATED, responses=errors(401, 422))
+@router.post(
+    "/projects",
+    dependencies=[require_scope(ApiScope.PROJECTS_WRITE, all_projects=True)],
+    status_code=status.HTTP_201_CREATED,
+    responses=errors(401, 422),
+)
 async def create_project(
     body: ProjectCreate,
     request: Request,
@@ -80,6 +96,7 @@ async def create_project(
 
 @router.post(
     "/projects/from-example",
+    dependencies=[require_scope(ApiScope.PROJECTS_WRITE, all_projects=True)],
     status_code=status.HTTP_201_CREATED,
     responses=errors(401, 404, 410, 422),
 )
@@ -96,7 +113,11 @@ async def create_project_from_example(
     return Project.of(view, ProjectRole.OWNER)
 
 
-@router.get("/projects/{project_id}", responses=errors(401, 404, 410, 422))
+@router.get(
+    "/projects/{project_id}",
+    dependencies=[require_scope(ApiScope.PROJECTS_READ)],
+    responses=errors(401, 404, 410, 422),
+)
 async def get_project(
     project_id: UUID,
     request: Request,
@@ -108,7 +129,11 @@ async def get_project(
     return ProjectDetail.of_detail(await container.projects.detail(project_id), role)
 
 
-@router.patch("/projects/{project_id}", responses=errors(401, 403, 404, 410, 422))
+@router.patch(
+    "/projects/{project_id}",
+    dependencies=[require_scope(ApiScope.PROJECTS_WRITE)],
+    responses=errors(401, 403, 404, 410, 422),
+)
 async def update_project(
     project_id: UUID,
     body: ProjectUpdate,

@@ -21,6 +21,254 @@
         "title": "Answer",
         "type": "object"
       },
+      "ApiScope": {
+        "description": "Право токена. Пользователь в cookie-сессии имеет все права своей роли, как раньше.",
+        "enum": [
+          "projects:read",
+          "projects:write",
+          "sources:write",
+          "sources:delete",
+          "runs:start",
+          "questions:answer"
+        ],
+        "title": "ApiScope",
+        "type": "string"
+      },
+      "ApiToken": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expired": {
+            "description": "Срок истёк: токен больше не принимается",
+            "title": "Expired",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "С точностью до минуты",
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null — все проекты пользователя",
+            "title": "Project Ids"
+          },
+          "scopes": {
+            "items": {
+              "$ref": "#/components/schemas/ApiScope"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "token_prefix": {
+            "description": "`bps_` и первые символы секрета — чтобы узнать токен",
+            "title": "Token Prefix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "token_prefix",
+          "scopes",
+          "project_ids",
+          "expires_at",
+          "created_at",
+          "last_used_at",
+          "expired"
+        ],
+        "title": "ApiToken",
+        "type": "object"
+      },
+      "ApiTokenCreate": {
+        "properties": {
+          "expires_in_days": {
+            "default": 30,
+            "description": "Срок действия в днях; бессрочных токенов нет",
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Expires In Days",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "project_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null — все проекты пользователя, включая созданные позже",
+            "title": "Project Ids"
+          },
+          "scopes": {
+            "description": "По умолчанию — чтение проектов и ответы на вопросы",
+            "items": {
+              "$ref": "#/components/schemas/ApiScope"
+            },
+            "minItems": 1,
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ApiTokenCreate",
+        "type": "object"
+      },
+      "ApiTokenCreated": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expired": {
+            "description": "Срок истёк: токен больше не принимается",
+            "title": "Expired",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "С точностью до минуты",
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null — все проекты пользователя",
+            "title": "Project Ids"
+          },
+          "scopes": {
+            "items": {
+              "$ref": "#/components/schemas/ApiScope"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "secret": {
+            "description": "Секрет `bps_…`: показывается один раз, в БД хранится только SHA-256",
+            "title": "Secret",
+            "type": "string"
+          },
+          "token_prefix": {
+            "description": "`bps_` и первые символы секрета — чтобы узнать токен",
+            "title": "Token Prefix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "token_prefix",
+          "scopes",
+          "project_ids",
+          "expires_at",
+          "created_at",
+          "last_used_at",
+          "expired",
+          "secret"
+        ],
+        "title": "ApiTokenCreated",
+        "type": "object"
+      },
+      "ApiTokenList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ApiToken"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ApiTokenList",
+        "type": "object"
+      },
       "AssistantRequest": {
         "properties": {
           "credential_id": {
@@ -3704,6 +3952,230 @@
         "tags": [
           "projects",
           "examples"
+        ]
+      }
+    },
+    "/api/v1/me/api-tokens": {
+      "get": {
+        "description": "Неотозванные токены пользователя (и истёкшие), новые первыми; секретов в списке нет.",
+        "operationId": "list_api_tokens",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiTokenList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Сервис или помощник не настроен"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "List Api Tokens",
+        "tags": [
+          "api-tokens"
+        ]
+      },
+      "post": {
+        "description": "Выпустить токен. Ответ содержит секрет `bps_…` — единственный раз.\n\nПроекты из `project_ids` должны быть доступны пользователю (любая роль), иначе `404`.",
+        "operationId": "create_api_token",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiTokenCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiTokenCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Конфликт состояния"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Сервис или помощник не настроен"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Create Api Token",
+        "tags": [
+          "api-tokens"
+        ]
+      }
+    },
+    "/api/v1/me/api-tokens/{token_id}": {
+      "delete": {
+        "description": "Отозвать токен: следующий запрос с ним получит `401`.",
+        "operationId": "revoke_api_token",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Token Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Revoke Api Token",
+        "tags": [
+          "api-tokens"
         ]
       }
     },

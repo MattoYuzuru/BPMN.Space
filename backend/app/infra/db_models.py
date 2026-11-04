@@ -21,7 +21,7 @@ from sqlalchemy import (
     Uuid,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
 
 
@@ -362,6 +362,40 @@ class UserLlmCredentialRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(String(500))
+
+
+class ApiTokenRow(Base):
+    """Персональный токен доступа для агентов (RFC-0007): только SHA-256 секрета и префикс."""
+
+    __tablename__ = "api_tokens"
+    __table_args__ = (
+        CheckConstraint("cardinality(scopes) > 0", name="ck_api_tokens_scopes_not_empty"),
+        CheckConstraint(
+            "scopes <@ ARRAY['projects:read', 'projects:write', 'sources:write', "
+            "'sources:delete', 'runs:start', 'questions:answer']::varchar[]",
+            name="ck_api_tokens_scopes_known",
+        ),
+        CheckConstraint("expires_at > created_at", name="ck_api_tokens_expiry"),
+        UniqueConstraint("token_hash", name="uq_api_tokens_token_hash"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    token_prefix: Mapped[str] = mapped_column(String(16), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    scopes: Mapped[list[str]] = mapped_column(ARRAY(String(32)), nullable=False)
+    # NULL — все проекты пользователя.
+    project_ids: Mapped[list[UUID] | None] = mapped_column(ARRAY(Uuid(as_uuid=True)))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class LlmCallRow(Base):

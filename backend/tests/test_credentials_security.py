@@ -2,6 +2,7 @@
 
 import asyncio
 import socket
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import httpcore
@@ -10,7 +11,9 @@ import pytest
 from cryptography.fernet import Fernet
 from pydantic import SecretStr
 
+from app.domain.credentials import LlmCredential
 from app.infra.crypto import CredentialCipher, CredentialCipherError
+from app.infra.repositories.memory import InMemoryLlmCredentialRepository, InMemoryStore
 from app.llm.client import LlmConfig
 from app.llm.net_guard import UnsafeBaseUrlError, ensure_public_host, normalize_base_url
 from app.llm.openai_compatible import OpenAICompatibleClient
@@ -235,3 +238,27 @@ async def test_chunked_response_without_length_is_aborted_mid_stream() -> None:
     with pytest.raises(RuntimeError, match="слишком большой"):
         await client.list_models()
     assert sent < 10
+
+
+async def test_update_does_not_overwrite_concurrent_mark_used() -> None:
+    repo = InMemoryLlmCredentialRepository(InMemoryStore())
+    user_id, credential_id = uuid4(), uuid4()
+    await repo.save(
+        LlmCredential(
+            id=credential_id,
+            user_id=user_id,
+            provider="openai",
+            label="a",
+            base_url=None,
+            encrypted_key=b"x",
+            key_hint="1234",
+            default_model="m",
+            is_default=False,
+            created_at=datetime.now(UTC),
+        )
+    )
+    stamp = datetime.now(UTC)
+    await repo.mark_used(credential_id, stamp, "boom")
+    updated = await repo.update_fields(credential_id, label="b")
+    assert updated is not None
+    assert (updated.label, updated.last_error, updated.last_used_at) == ("b", "boom", stamp)

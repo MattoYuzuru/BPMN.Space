@@ -21,8 +21,10 @@ def flaky():
         def do_POST(self):
             self.rfile.read(int(self.headers.get("content-length", 0)))
             state["calls"] += 1
-            status = state["script"].pop(0) if state["script"] else 200
-            body = json.dumps({"xml": XML} if status == 200 else {"detail": "x"}).encode()
+            step = state["script"].pop(0) if state["script"] else 200
+            status, extra = step if isinstance(step, tuple) else (step, {})
+            payload = {"xml": XML} if status == 200 else {"detail": "x", **extra}
+            body = json.dumps(payload).encode()
             self.send_response(status)
             self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(body)))
@@ -78,3 +80,20 @@ async def test_connection_refused_is_retried_then_explicit_failure():
     tools = HttpBpmnTools("http://127.0.0.1:1", timeout_sec=0.2, retries=1, backoff_sec=0.01)
     with pytest.raises(BpmnToolsError, match="связаться"):
         await tools.layout(XML)
+
+
+@pytest.mark.asyncio
+async def test_worker_crash_503_is_not_retried(flaky):
+    state, url = flaky
+    state["script"] = [(503, {"code": "crash"})]
+    with pytest.raises(BpmnToolsError, match="503"):
+        await HttpBpmnTools(url, backoff_sec=0.01, retries=2).layout(XML)
+    assert state["calls"] == 1
+
+
+@pytest.mark.asyncio
+async def test_busy_code_503_is_still_retried(flaky):
+    state, url = flaky
+    state["script"] = [(503, {"code": "busy"})]
+    assert "BPMNPlane" in await HttpBpmnTools(url, backoff_sec=0.01).layout(XML)
+    assert state["calls"] == 2

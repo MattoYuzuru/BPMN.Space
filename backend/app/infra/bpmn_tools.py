@@ -34,6 +34,15 @@ class BpmnTools(Protocol):
     async def lint(self, xml: str) -> list[LintIssue]: ...
 
 
+def _worker_crashed(error: HTTPError) -> bool:
+    """`crash` — worker упал на этом XML (в том числе по памяти): повтор повторит и сбой."""
+    try:
+        data = json.loads(error.read(4096))
+    except (ValueError, UnicodeError, OSError):
+        return False
+    return isinstance(data, dict) and data.get("code") == "crash"
+
+
 class HttpBpmnTools:
     quality = "full"
 
@@ -108,7 +117,7 @@ class HttpBpmnTools:
                 raise BpmnToolsInputError(
                     "Сервис проверки отверг BPMN XML: проверьте элементы и ссылки"
                 ) from None
-            if error.code == HTTP_BUSY:
+            if error.code == HTTP_BUSY and not _worker_crashed(error):
                 raise BpmnToolsTransientError(
                     f"Сервис проверки схемы недоступен (HTTP {error.code})"
                 ) from None

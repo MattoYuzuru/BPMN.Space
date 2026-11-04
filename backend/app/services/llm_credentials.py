@@ -175,18 +175,24 @@ class LlmCredentialService:
         default_model: str | None = None,
         is_default: bool | None = None,
     ) -> LlmCredential:
-        credential = await self._own(user_id, credential_id)
+        await self._own(user_id, credential_id)
+        title: str | None = None
         if label is not None:
             title = label.strip()[:MAX_LABEL_CHARS]
             if not title:
                 raise InvalidInputError("Название не может быть пустым")
-            credential.label = title
-        if default_model is not None:
-            credential.default_model = default_model.strip()[:128] or None
-        if is_default is not None:
-            credential.is_default = is_default
-        await self._repo.save(credential)
-        return credential
+        model = default_model.strip()[:128] if default_model is not None else None
+        # Только изменённые колонки: целая строка затёрла бы параллельный `mark_used`.
+        updated = await self._repo.update_fields(
+            credential_id,
+            label=title,
+            default_model=model or None,
+            is_default=is_default,
+            clear_default_model=default_model is not None and not model,
+        )
+        if updated is None:
+            raise NotFoundError("Ключ модели не найден")
+        return updated
 
     async def delete(self, user_id: UUID, credential_id: UUID) -> None:
         await self._own(user_id, credential_id)

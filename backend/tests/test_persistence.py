@@ -1638,6 +1638,17 @@ async def test_llm_credentials_persist_encrypted_with_single_default_and_cascade
     reloaded = await repo.get(first.id)
     assert reloaded is not None
     assert reloaded.last_error == "x" * 500
+    # Правка настроек меняет только свои колонки: отметка использования переживает её.
+    updated = await repo.update_fields(first.id, label="a2", is_default=True)
+    assert updated is not None
+    assert (updated.label, updated.is_default) == ("a2", True)
+    assert updated.last_error == "x" * 500
+    assert updated.last_used_at == now
+    assert [item.is_default for item in await repo.list_by_user(user_id)] == [True, False]
+    cleared = await repo.update_fields(first.id, clear_default_model=True)
+    assert cleared is not None
+    assert cleared.default_model is None
+    assert await repo.update_fields(uuid4(), label="x") is None
     async with sessions() as session:
         raw = (await session.execute(text("SELECT encrypted_key FROM user_llm_credentials"))).all()
     assert all(secret.encode() not in bytes(row[0]) for row in raw)

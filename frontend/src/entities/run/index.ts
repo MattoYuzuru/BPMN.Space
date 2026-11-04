@@ -17,8 +17,14 @@ export {
   estimateTokensText,
 } from './estimate'
 export {
+  AGENT_MODE,
+  AGENT_STEP_PRESETS,
+  agentSteps,
+  DEFAULT_AGENT_MAX_STEPS,
   formatSummary,
   initialRunView,
+  isAgentRun,
+  PIPELINE_MODE,
   RUN_MODE_LABEL,
   type Run,
   type RunBudget,
@@ -27,6 +33,8 @@ export {
   type RunEvent,
   type RunEventType,
   type RunMode,
+  type RunProfile,
+  type RunProfileMode,
   type RunStage,
   type RunSummary,
   type RunView,

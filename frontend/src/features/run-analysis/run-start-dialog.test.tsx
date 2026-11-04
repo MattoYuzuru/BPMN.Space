@@ -41,10 +41,61 @@ const run = {
   started_at: '2026-11-04T10:00:00Z',
 }
 
-function mount() {
+const capabilities = (tools: boolean) => ({
+  accepts_temperature: true,
+  context_tokens: 200_000,
+  effort_default: 'medium' as const,
+  effort_levels: ['low', 'medium', 'high'] as ('low' | 'medium' | 'high')[],
+  known: true,
+  max_output_tokens: 32_000,
+  pdf_input: true,
+  prices: {
+    input: 4,
+    output: 20,
+    cache_read: 0.2,
+    cache_write: 5,
+    checked_on: '2026-10-06',
+  },
+  tools,
+  vision: true,
+})
+
+const credential = {
+  id: 'c1',
+  label: 'Рабочий',
+  provider: 'anthropic',
+  is_default: true,
+  default_model: 'claude-opus-5-5',
+  base_url: null,
+  key_hint: 'abcd',
+  created_at: '2026-11-01T10:00:00Z',
+  last_error: null,
+  last_used_at: null,
+}
+
+function mount(
+  overrides: Record<string, Parameters<typeof stubApi>[0][string]> = {},
+  opts: { tools?: boolean } = {},
+) {
   const calls = stubApi({
+    'GET /api/v1/auth/session': {
+      body: { auth_enabled: true, user: { id: 'u1', email: 'u@example.com' } },
+    },
+    'GET /api/v1/me/llm-credentials': { body: { items: [credential] } },
+    'GET /api/v1/me/llm-credentials/c1/models': {
+      body: {
+        items: [
+          {
+            id: 'claude-opus-5-5',
+            label: 'Claude Opus 5.5',
+            capabilities: capabilities(opts.tools ?? true),
+          },
+        ],
+      },
+    },
     'POST /api/v1/projects/p1/runs/estimate': { body: estimate },
     'POST /api/v1/projects/p1/runs': { status: 202, body: run },
+    ...overrides,
   })
   const onOpenChange = vi.fn()
   const rendered = renderUi(
@@ -119,6 +170,69 @@ describe('диалог запуска с оценкой', () => {
       ).toBe(true),
     )
     expect(screen.getByRole('button', { name: 'Построить схему' })).toBeInTheDocument()
+  })
+
+  it('агентный режим недоступен для модели без инструментов', async () => {
+    mount({}, { tools: false })
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Агентный/ })).toBeDisabled())
+    expect(await screen.findByText(/не поддерживает инструменты/)).toBeInTheDocument()
+  })
+
+  it('агентный режим уходит в оценку и в запуск с лимитом шагов', async () => {
+    const { user, calls } = mount()
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Агентный/ })).toBeEnabled())
+    await user.click(screen.getByRole('radio', { name: /Агентный/ }))
+    const steps = screen.getByLabelText(/Лимит шагов/)
+    await user.clear(steps)
+    await user.type(steps, '16')
+    expect(screen.getByText(/агент сам читает|Агентный — модель сама/)).toBeInTheDocument()
+    await waitFor(() =>
+      expect(
+        estimateCalls(calls).some(
+          (call) =>
+            (call.body as { profile?: { mode?: string; max_steps?: number } }).profile?.mode ===
+              'agent' &&
+            (call.body as { profile?: { max_steps?: number } }).profile?.max_steps === 16,
+        ),
+      ).toBe(true),
+    )
+    await user.click(screen.getByRole('button', { name: 'Запустить анализ' }))
+    await waitFor(() =>
+      expect(calls.some((call) => call.method === 'POST' && call.path.endsWith('/runs'))).toBe(
+        true,
+      ),
+    )
+    expect(
+      calls.find((call) => call.method === 'POST' && call.path.endsWith('/runs'))?.body,
+    ).toMatchObject({
+      mode: 'analyze',
+      profile: { mode: 'agent', max_steps: 16 },
+    })
+  })
+
+  it('неверный лимит шагов выключает запуск', async () => {
+    const { user } = mount()
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Агентный/ })).toBeEnabled())
+    await user.click(screen.getByRole('radio', { name: /Агентный/ }))
+    const steps = screen.getByLabelText(/Лимит шагов/)
+    await user.clear(steps)
+    await user.type(steps, '0')
+    expect(screen.getByRole('button', { name: 'Запустить анализ' })).toBeDisabled()
+    expect(screen.getByText(/целое число от 1 до 200/)).toBeInTheDocument()
+  })
+
+  it('отказ сервера 422 объясняет причину агентного режима', async () => {
+    const { user } = mount({
+      'POST /api/v1/projects/p1/runs': {
+        status: 422,
+        body: { detail: 'Агентный режим выключен: LLM_AGENT_MODE' },
+      },
+    })
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Агентный/ })).toBeEnabled())
+    await user.click(screen.getByRole('radio', { name: /Агентный/ }))
+    await user.click(screen.getByRole('button', { name: 'Запустить анализ' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/не разрешил агентный режим/)
+    expect(screen.getByRole('alert')).toHaveTextContent(/LLM_AGENT_MODE/)
   })
 
   it('ошибку оценки объясняет и предлагает повторить', async () => {

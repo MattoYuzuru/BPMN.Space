@@ -27,6 +27,7 @@ export const TOUR_ANCHORS = {
   runProgress: 'run.progress',
   runEstimate: 'run.estimate',
   runBudget: 'run.budget',
+  runAgent: 'run.agent',
   runCost: 'run.cost',
   questionAnswer: 'question.answer',
   questionIgnore: 'question.ignore',

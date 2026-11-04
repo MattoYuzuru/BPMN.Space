@@ -10,6 +10,8 @@ import {
   useModelChoiceStore,
 } from '@/entities/llm-credential'
 import {
+  AGENT_STEP_PRESETS,
+  DEFAULT_AGENT_MAX_STEPS,
   estimateCallsText,
   estimateCost,
   estimateCurrency,
@@ -24,7 +26,8 @@ import {
 } from '@/entities/run'
 import { useCurrentUser } from '@/entities/session'
 import { ModelPicker } from '@/features/model-picker/model-picker'
-import { errorMessage } from '@/shared/api/client'
+import { AgentModeHint } from '@/features/onboarding/agent-mode-hint'
+import { ApiError, errorMessage } from '@/shared/api/client'
 import { formatDate, formatMoneyRange, formatNumberRange } from '@/shared/lib/format'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import {
@@ -40,6 +43,7 @@ import {
   Input,
   SegmentedControl,
   Skeleton,
+  Tag,
 } from '@/shared/ui'
 
 export interface RunStartDialogProps {
@@ -56,6 +60,16 @@ interface BudgetFields {
 }
 
 const EMPTY_BUDGET: BudgetFields = { cost: '', tokens: '' }
+
+type ProfileMode = 'pipeline' | 'agent'
+
+/** «Лимит шагов»: целое 1–200; иначе — понятная ошибка, а не молчаливое обрезание. */
+export function parseAgentSteps(value: string): number | null {
+  const trimmed = value.trim()
+  if (!/^\d+$/.test(trimmed)) return null
+  const steps = Number.parseInt(trimmed, 10)
+  return steps >= 1 && steps <= 200 ? steps : null
+}
 
 /** Бюджет из полей формы: пустые и нулевые поля — без ограничения. */
 export function budgetFromFields(fields: BudgetFields): RunBudget | null {
@@ -99,6 +113,18 @@ export function RunStartDialog({
 
   const [mode, setMode] = useState<RunMode>(initialMode)
   const [fields, setFields] = useState<BudgetFields>(EMPTY_BUDGET)
+  const [profileMode, setProfileMode] = useState<ProfileMode>('pipeline')
+  const [steps, setSteps] = useState(String(DEFAULT_AGENT_MAX_STEPS))
+  const maxSteps = parseAgentSteps(steps)
+  const toolsSupported = capabilities?.tools === true
+  const agentReason = !resolved
+    ? 'Агентный режим работает на модели с инструментами — выберите свой ключ и модель.'
+    : capabilities === undefined
+      ? 'Возможности модели ещё загружаются — агентный режим станет доступен после загрузки.'
+      : !toolsSupported
+        ? 'Эта модель не поддерживает инструменты, поэтому агентный режим недоступен. Выберите другую модель.'
+        : null
+  const canUseAgent = agentReason === null
   const budget = useMemo(() => budgetFromFields(fields), [fields])
   const estimate = useRunEstimate(projectId)
   const start = useStartRun(projectId)
@@ -110,8 +136,18 @@ export function RunStartDialog({
 
   // Новый диалог — чистое поле бюджета: старый бюджет не должен незаметно применяться.
   useEffect(() => {
-    if (open) setFields(EMPTY_BUDGET)
+    if (open) {
+      setFields(EMPTY_BUDGET)
+      setProfileMode('pipeline')
+      setSteps(String(DEFAULT_AGENT_MAX_STEPS))
+    }
   }, [open])
+
+  // Агентный режим недоступен — возвращаемся к конвейеру, объяснение уже под переключателем.
+  useEffect(() => {
+    if (!open || canUseAgent || profileMode === 'pipeline') return
+    setProfileMode('pipeline')
+  }, [open, canUseAgent, profileMode])
 
   const request = useMemo(
     () => ({
@@ -120,9 +156,11 @@ export function RunStartDialog({
       profile: {
         ...(effort ? { effort } : {}),
         ...(budget ? { budget } : {}),
+        mode: profileMode,
+        ...(profileMode === 'agent' && maxSteps ? { max_steps: maxSteps } : {}),
       },
     }),
-    [mode, resolved, effort, budget],
+    [mode, resolved, effort, budget, profileMode, maxSteps],
   )
 
   // Оценка — POST, поэтому запускаем её эффектом на смену профиля, с короткой паузой.
@@ -132,9 +170,25 @@ export function RunStartDialog({
     return () => window.clearTimeout(timer)
   }, [open, request, estimate.mutate])
 
+  const agentMode = profileMode === 'agent'
+  const stepsInvalid = agentMode && maxSteps === null
   const submit = () => {
-    start.mutate({ mode, budget }, { onSuccess: () => onOpenChange(false) })
+    start.mutate(
+      {
+        mode,
+        budget,
+        agentMode,
+        ...(agentMode ? { maxSteps } : { maxSteps: null }),
+      },
+      { onSuccess: () => onOpenChange(false) },
+    )
   }
+  const startError =
+    start.error instanceof ApiError
+      ? { status: start.error.status, message: errorMessage(start.error) }
+      : start.error
+        ? { status: 0, message: errorMessage(start.error) }
+        : null
 
   const labels = RUN_MODE_LABEL[mode]
   return (
@@ -152,6 +206,7 @@ export function RunStartDialog({
               variant="primary"
               leadingIcon={mode === 'build' ? 'diagram' : 'sparkles'}
               loading={start.isPending}
+              disabled={stepsInvalid}
               onClick={submit}
             >
               {mode === 'build' ? 'Построить схему' : 'Запустить анализ'}
@@ -183,6 +238,85 @@ export function RunStartDialog({
               </span>
             )}
           </Card>
+
+          <div
+            className="flex flex-col gap-3"
+            {...tourAnchor(TOUR_ANCHORS.runAgent)}
+            data-testid="run-agent"
+          >
+            <div className="flex flex-col gap-1">
+              <span className="type-label text-fg">Режим работы</span>
+              <span className="type-caption text-fg-muted">
+                Конвейер идёт по этапам и дешевле. Агентный — модель сама читает источники
+                инструментами, гибче на сложных материалах, но дороже; шаги и бюджет ограничены.
+              </span>
+            </div>
+            <SegmentedControl<ProfileMode>
+              aria-label="Режим работы"
+              value={profileMode}
+              onValueChange={setProfileMode}
+              options={[
+                { value: 'pipeline', label: 'Конвейер', icon: 'route', disabled: false },
+                {
+                  value: 'agent',
+                  label: 'Агентный',
+                  icon: 'bolt',
+                  disabled: !canUseAgent,
+                },
+              ]}
+            />
+            {agentReason && <span className="type-caption text-fg-muted">{agentReason}</span>}
+            <AgentModeHint enabled={canUseAgent} />
+            {profileMode === 'agent' && (
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap items-end gap-2">
+                  <Field
+                    label="Лимит шагов"
+                    hint="Ходов агента; не больше серверного потолка"
+                    error={stepsInvalid ? 'Введите целое число от 1 до 200' : undefined}
+                    className="w-36"
+                  >
+                    <Input
+                      inputMode="numeric"
+                      value={steps}
+                      placeholder="12"
+                      onChange={(event) => setSteps(event.target.value)}
+                    />
+                  </Field>
+                  <div className="flex flex-wrap gap-1">
+                    {AGENT_STEP_PRESETS.map((preset) => (
+                      <Button
+                        key={preset}
+                        size="sm"
+                        variant={maxSteps === preset ? 'secondary' : 'ghost'}
+                        onClick={() => setSteps(String(preset))}
+                      >
+                        {preset}
+                      </Button>
+                    ))}
+                  </div>
+                  <Tag icon="bolt">агент</Tag>
+                </div>
+                <span className="type-caption text-fg-muted">
+                  Достигнутый лимит — мягкая остановка «ждёт вашего действия», как при исчерпанном
+                  бюджете: можно поднять шаги или продолжить.
+                </span>
+              </div>
+            )}
+            {startError && agentMode && (
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-md bg-danger-subtle px-3 py-2.5 type-caption text-danger-fg"
+              >
+                <Icon name="alert-circle" size={14} className="mt-0.5 shrink-0" />
+                <span>
+                  {startError.status === 422
+                    ? `Сервер не разрешил агентный режим: ${startError.message} Выберите конвейер или другую модель.`
+                    : startError.message}
+                </span>
+              </div>
+            )}
+          </div>
 
           <div
             className="flex flex-col gap-3"

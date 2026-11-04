@@ -10,6 +10,15 @@ export type RunCost = Schemas['RunCost']
 export type RunBudget = Schemas['RunBudget']
 export type RunEstimate = Schemas['RunEstimate']
 export type StageCost = Schemas['StageCost']
+export type RunProfile = NonNullable<Schemas['Run']['profile']>
+export type RunProfileMode = NonNullable<RunProfile['mode']>
+
+/** Агентный режим RFC-0004: `RunCreate.profile.mode`. */
+export const AGENT_MODE = 'agent' as const
+export const PIPELINE_MODE = 'pipeline' as const
+/** Пресеты лимита ходов агента; серверный потолок может быть меньше — 422 объясняется в диалоге. */
+export const AGENT_STEP_PRESETS = [6, 12, 24] as const
+export const DEFAULT_AGENT_MAX_STEPS = 12
 
 /** Этапы прогона по режимам (RFC §5.1, docs/backend/mock.md). */
 export const STAGES: Record<RunMode, readonly RunStage[]> = {
@@ -73,6 +82,10 @@ export interface RunView {
   cost: RunCost | null
   /** Бюджет прогона из профиля запуска. */
   budget: RunBudget | null
+  /** Режим из `Run.profile.mode`: конвейер или агент (RFC-0004). */
+  profileMode: RunProfileMode
+  /** Лимит ходов агента из `Run.profile.max_steps`; null — пайплайн/не задан. */
+  maxSteps: number | null
   error: string | null
   /** Последний обработанный номер события: при переподключении история приходит заново. */
   lastEventId: number
@@ -106,6 +119,8 @@ export function initialRunView(run: Run, now: number): RunView {
     warnings: run.warnings ?? [],
     cost: run.cost ?? null,
     budget: run.profile?.budget ?? null,
+    profileMode: run.profile?.mode ?? PIPELINE_MODE,
+    maxSteps: run.profile?.max_steps ?? null,
     error: run.error ?? null,
     lastEventId: 0,
     startedAt: Date.parse(run.started_at) || now,
@@ -175,6 +190,8 @@ export function reduceRun(view: RunView, event: RunEvent, now: number): RunView 
         warnings: run.warnings?.length ? run.warnings : view.warnings,
         cost: run.cost ?? view.cost,
         budget: run.profile?.budget ?? view.budget,
+        profileMode: run.profile?.mode ?? view.profileMode,
+        maxSteps: run.profile?.max_steps ?? view.maxSteps,
         error: failed ? (run.error ?? view.error ?? 'Прогон не завершён') : null,
         stageFinishedAt: failed ? view.stageFinishedAt : finishStage(view, now),
         finishedAt: waiting ? null : Date.parse(run.finished_at ?? '') || now,
@@ -219,4 +236,17 @@ export function formatSummary(summary: Pick<RunSummary, 'resolved' | 'open' | 'n
   if (parts.length === 0) return 'Открытых вопросов нет'
   const text = parts.join(', ')
   return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+/** Прогон идёт агентным режимом (RFC-0004). */
+export function isAgentRun(view: Pick<RunView, 'profileMode'>): boolean {
+  return view.profileMode === AGENT_MODE
+}
+
+/**
+ * Сколько ходов сделал агент: каждый ход — вызов модели со `stage=agent` в `RunCost.by_stage`.
+ * Это реальные данные API; имён инструментов в Run/SSE нет, поэтому UI их не выдумывает.
+ */
+export function agentSteps(cost: RunCost | null): number {
+  return cost?.by_stage?.find((stage) => stage.stage === 'agent')?.calls ?? 0
 }

@@ -199,7 +199,8 @@ class _Harness:
                 self.server,
                 _Runner(),
                 segment_sec=600,
-                parallel_segments=2,
+                # Сегменты по одному: покрытие в отказе маршрутизации детерминировано.
+                parallel_segments=1,
                 attempts=1,
                 provider="mock",
             ),

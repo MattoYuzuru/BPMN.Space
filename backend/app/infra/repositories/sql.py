@@ -1057,6 +1057,39 @@ class SqlVersionRepository:
                 await session.flush()
             return len(rows)
 
+    async def materialize_inherited_batch(self, project_id: UUID, *, limit: int = 100) -> int:
+        """Вернуть унаследованные цитаты/отчёт в строки версий (подготовка отката, ADR-0010).
+
+        Код до сессий правок читает `trace`/`report` только из самой строки. Повтор безопасен.
+        """
+        if not 1 <= limit <= MAX_MAINTENANCE_BATCH:
+            raise ValueError("Размер пакета должен быть от 1 до 1000")
+        async with self.sessions.begin() as session:
+            project = await session.scalar(
+                select(ProjectRow).where(ProjectRow.id == project_id).with_for_update()
+            )
+            if project is None:
+                return 0
+            rows = list(
+                await session.scalars(
+                    select(DiagramVersionRow)
+                    .where(
+                        DiagramVersionRow.project_id == project_id,
+                        or_(
+                            DiagramVersionRow.trace_inherited.is_(True),
+                            DiagramVersionRow.report_inherited.is_(True),
+                        ),
+                    )
+                    .order_by(DiagramVersionRow.number)
+                    .limit(limit)
+                )
+            )
+            for row in rows:
+                row.trace, row.report = await self._metadata(session, row)
+                row.trace_inherited = row.report_inherited = False
+                await session.flush()
+            return len(rows)
+
     async def get(self, version_id: UUID) -> Version | None:
         async with self.sessions() as session:
             row = await session.get(DiagramVersionRow, version_id)

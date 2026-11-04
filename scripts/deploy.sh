@@ -54,6 +54,13 @@ rollback() {
         return 1
       fi
     fi
+    # Код до ADR-0010 читает trace/report только из строки версии: вернуть унаследованные.
+    if ssh "$deploy_user@$deploy_host" "test -f '$release/backend/app/infra/version_maintenance.py' && ! grep -q trace_inherited '$previous/backend/app/infra/db_models.py'"; then
+      if ! ssh "$deploy_user@$deploy_host" "set -eu; cd '$release'; docker compose --env-file '$remote_root/shared/.env' -p arkhitektor -f compose.yaml -f compose.prod.yaml stop backend; docker compose --env-file '$remote_root/shared/.env' -p arkhitektor -f compose.yaml -f compose.prod.yaml run --rm --no-deps -T -v '$release/backend/app:/app/app:ro' --entrypoint python backend -m app.infra.version_maintenance --materialize-metadata"; then
+        echo "Не удалось вернуть цитаты и отчёты версий для старого релиза. Откат остановлен, данные сохранены; требуется ручное восстановление." >&2
+        return 1
+      fi
+    fi
     ssh "$deploy_user@$deploy_host" "set -eu; ln -sfn '$previous' '$remote_root/current'; cd '$previous'; docker compose --env-file '$remote_root/shared/.env' -p arkhitektor -f compose.yaml -f compose.prod.yaml up -d --build --remove-orphans"
   else
     ssh "$deploy_user@$deploy_host" "cd '$release' && docker compose --env-file '$remote_root/shared/.env' -p arkhitektor -f compose.yaml -f compose.prod.yaml down" || true

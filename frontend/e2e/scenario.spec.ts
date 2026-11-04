@@ -138,9 +138,9 @@ test('полный сценарий: вопросы, голос, докумен�
     await page.getByRole('button', { name: 'Вписать в окно' }).click()
     await page.waitForTimeout(600)
     await dragElement(page, 'Task_Inspection', 40, 30)
-    await expect(page.getByText('Схема сохранена')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText('Сохранено', { exact: true })).toBeVisible({ timeout: 15_000 })
     await expect(page.getByRole('button', { name: /^Версия 2/ })).toBeVisible()
-    await expect(page.getByRole('button', { name: /Правка вручную/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Правки/ })).toBeVisible()
   })
 
   await test.step('скачать .bpmn', async () => {

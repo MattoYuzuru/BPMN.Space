@@ -34,7 +34,10 @@ function mount(capabilities: Pick<WorkspaceApi, 'canEdit' | 'canManage' | 'canSh
   stubApi({})
   const api = {
     project,
-    versions: { list: () => ({ queryKey: ['v'], queryFn: async () => [] }) },
+    versions: {
+      list: () => ({ queryKey: ['v'], queryFn: async () => [] }),
+      detail: () => ({ queryKey: ['vd'], queryFn: async () => null }),
+    },
     ...capabilities,
   } as unknown as WorkspaceApi
   const router = createRouter({

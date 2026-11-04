@@ -279,6 +279,8 @@ def build_container(
             bpmn_tools=bpmn_tools,
             runtime=runtime,
             max_diagram_bytes=settings.max_diagram_bytes,
+            session_idle_sec=settings.version_session_idle_sec,
+            session_max_sec=settings.version_session_max_sec,
         ),
         examples=ExampleService(EXAMPLES),
         transcriptions=TranscriptionService(stt, max_audio_bytes=settings.max_audio_bytes),

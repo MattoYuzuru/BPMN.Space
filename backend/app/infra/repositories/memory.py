@@ -27,6 +27,7 @@ from app.domain.models import (
     SourceKind,
     SourceStatus,
     Version,
+    VersionSummary,
 )
 from app.domain.onboarding import (
     ChecklistItem,
@@ -370,6 +371,7 @@ class InMemoryRunRepository:
 class InMemoryVersionRepository:
     def __init__(self, store: InMemoryStore) -> None:
         self._items = store.versions
+        self._runs = store.runs
 
     async def add(self, version: Version) -> None:
         self._items[version.id] = copy.deepcopy(version)
@@ -389,6 +391,34 @@ class InMemoryVersionRepository:
     async def latest(self, project_id: UUID) -> Version | None:
         items = await self.list_by_project(project_id)
         return items[0] if items else None
+
+    async def by_number(self, project_id: UUID, number: int) -> Version | None:
+        for item in self._items.values():
+            if item.project_id == project_id and item.number == number:
+                return copy.deepcopy(item)
+        return None
+
+    async def list_page(
+        self, project_id: UUID, *, limit: int, before: int | None = None
+    ) -> list[VersionSummary]:
+        items = await self.list_by_project(project_id, include_xml=False)
+        return [v.summary() for v in items if before is None or v.number < before][:limit]
+
+    async def replace(self, old_id: UUID, version: Version) -> None:
+        self._items.pop(old_id, None)
+        self._items[version.id] = copy.deepcopy(version)
+
+    async def has_dependants(self, version_id: UUID) -> bool:
+        return any(run.version_id == version_id for run in self._runs.values())
+
+    async def mark_checkpoint(self, version_id: UUID, label: str | None) -> Version | None:
+        item = self._items.get(version_id)
+        if item is None:
+            return None
+        item.checkpoint = True
+        if label is not None:
+            item.label = label or None
+        return copy.deepcopy(item)
 
 
 class InMemoryLlmCallRepository:

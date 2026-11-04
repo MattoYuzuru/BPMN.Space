@@ -256,6 +256,25 @@
         "title": "ChecklistUpdate",
         "type": "object"
       },
+      "CheckpointRequest": {
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Имя контрольной точки; пустое — без имени",
+            "title": "Label"
+          }
+        },
+        "title": "CheckpointRequest",
+        "type": "object"
+      },
       "CollaborationTicket": {
         "properties": {
           "expires_at": {
@@ -2775,18 +2794,42 @@
             "description": "Автор версии; null для старых записей",
             "title": "Actor Email"
           },
+          "assumption_count": {
+            "description": "Элементов на допущениях",
+            "title": "Assumption Count",
+            "type": "integer"
+          },
+          "checkpoint": {
+            "description": "Версия закреплена и не принимает автосохранения",
+            "title": "Checkpoint",
+            "type": "boolean"
+          },
           "created_at": {
+            "description": "Начало сессии правок (для сборки — момент сборки)",
             "format": "date-time",
             "title": "Created At",
             "type": "string"
           },
           "diff": {
-            "$ref": "#/components/schemas/VersionDiff"
+            "$ref": "#/components/schemas/VersionDiff",
+            "description": "Сравнение с предыдущей версией"
           },
           "id": {
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Имя контрольной точки",
+            "title": "Label"
           },
           "lanes": {
             "description": "Названия дорожек",
@@ -2795,6 +2838,11 @@
             },
             "title": "Lanes",
             "type": "array"
+          },
+          "lint_count": {
+            "description": "Замечаний bpmnlint",
+            "title": "Lint Count",
+            "type": "integer"
           },
           "number": {
             "title": "Number",
@@ -2823,6 +2871,17 @@
             ],
             "title": "Run Id"
           },
+          "saved_count": {
+            "description": "Сколько автосохранений влито в версию",
+            "title": "Saved Count",
+            "type": "integer"
+          },
+          "session_started_at": {
+            "description": "Начало сессии правок",
+            "format": "date-time",
+            "title": "Session Started At",
+            "type": "string"
+          },
           "trace": {
             "additionalProperties": {
               "$ref": "#/components/schemas/Quote"
@@ -2830,6 +2889,12 @@
             "description": "Трассировка: id элемента схемы → цитата",
             "title": "Trace",
             "type": "object"
+          },
+          "updated_at": {
+            "description": "Последнее автосохранение, влитое в версию",
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
           }
         },
         "required": [
@@ -2839,6 +2904,12 @@
           "origin",
           "created_at",
           "diff",
+          "lint_count",
+          "assumption_count",
+          "checkpoint",
+          "session_started_at",
+          "updated_at",
+          "saved_count",
           "report",
           "trace",
           "lanes"
@@ -2860,18 +2931,42 @@
             "description": "Автор версии; null для старых записей",
             "title": "Actor Email"
           },
+          "assumption_count": {
+            "description": "Элементов на допущениях",
+            "title": "Assumption Count",
+            "type": "integer"
+          },
+          "checkpoint": {
+            "description": "Версия закреплена и не принимает автосохранения",
+            "title": "Checkpoint",
+            "type": "boolean"
+          },
           "created_at": {
+            "description": "Начало сессии правок (для сборки — момент сборки)",
             "format": "date-time",
             "title": "Created At",
             "type": "string"
           },
           "diff": {
-            "$ref": "#/components/schemas/VersionDiff"
+            "$ref": "#/components/schemas/VersionDiff",
+            "description": "Сравнение с предыдущей версией"
           },
           "id": {
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Имя контрольной точки",
+            "title": "Label"
           },
           "lanes": {
             "description": "Названия дорожек",
@@ -2880,6 +2975,11 @@
             },
             "title": "Lanes",
             "type": "array"
+          },
+          "lint_count": {
+            "description": "Замечаний bpmnlint",
+            "title": "Lint Count",
+            "type": "integer"
           },
           "number": {
             "title": "Number",
@@ -2908,6 +3008,17 @@
             ],
             "title": "Run Id"
           },
+          "saved_count": {
+            "description": "Сколько автосохранений влито в версию",
+            "title": "Saved Count",
+            "type": "integer"
+          },
+          "session_started_at": {
+            "description": "Начало сессии правок",
+            "format": "date-time",
+            "title": "Session Started At",
+            "type": "string"
+          },
           "trace": {
             "additionalProperties": {
               "$ref": "#/components/schemas/Quote"
@@ -2915,6 +3026,12 @@
             "description": "Трассировка: id элемента схемы → цитата",
             "title": "Trace",
             "type": "object"
+          },
+          "updated_at": {
+            "description": "Последнее автосохранение, влитое в версию",
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
           },
           "xml": {
             "description": "BPMN 2.0 XML с координатами (DI)",
@@ -2929,6 +3046,12 @@
           "origin",
           "created_at",
           "diff",
+          "lint_count",
+          "assumption_count",
+          "checkpoint",
+          "session_started_at",
+          "updated_at",
+          "saved_count",
           "report",
           "trace",
           "lanes",
@@ -2981,6 +3104,35 @@
         "title": "VersionOrigin",
         "type": "string"
       },
+      "VersionPage": {
+        "properties": {
+          "items": {
+            "description": "Версии по убыванию номера",
+            "items": {
+              "$ref": "#/components/schemas/VersionSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Значение `before` для следующей страницы; null — конец истории",
+            "title": "Next Before"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "VersionPage",
+        "type": "object"
+      },
       "VersionReport": {
         "properties": {
           "assumptions": {
@@ -3008,6 +3160,122 @@
           "assumptions"
         ],
         "title": "VersionReport",
+        "type": "object"
+      },
+      "VersionSummary": {
+        "description": "Строка истории: без XML, цитат и полного отчёта проверки.",
+        "properties": {
+          "actor_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Автор версии; null для старых записей",
+            "title": "Actor Email"
+          },
+          "assumption_count": {
+            "description": "Элементов на допущениях",
+            "title": "Assumption Count",
+            "type": "integer"
+          },
+          "checkpoint": {
+            "description": "Версия закреплена и не принимает автосохранения",
+            "title": "Checkpoint",
+            "type": "boolean"
+          },
+          "created_at": {
+            "description": "Начало сессии правок (для сборки — момент сборки)",
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "diff": {
+            "$ref": "#/components/schemas/VersionDiff",
+            "description": "Сравнение с предыдущей версией"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Имя контрольной точки",
+            "title": "Label"
+          },
+          "lint_count": {
+            "description": "Замечаний bpmnlint",
+            "title": "Lint Count",
+            "type": "integer"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/VersionOrigin"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "saved_count": {
+            "description": "Сколько автосохранений влито в версию",
+            "title": "Saved Count",
+            "type": "integer"
+          },
+          "session_started_at": {
+            "description": "Начало сессии правок",
+            "format": "date-time",
+            "title": "Session Started At",
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "Последнее автосохранение, влитое в версию",
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "number",
+          "origin",
+          "created_at",
+          "diff",
+          "lint_count",
+          "assumption_count",
+          "checkpoint",
+          "session_started_at",
+          "updated_at",
+          "saved_count"
+        ],
+        "title": "VersionSummary",
         "type": "object"
       },
       "login": {
@@ -6198,7 +6466,7 @@
     },
     "/api/v1/projects/{project_id}/versions": {
       "get": {
-        "description": "Версии без XML, последняя — первой.",
+        "description": "Страница истории без XML, цитат и отчёта: новые первыми, дальше — по `next_before`.",
         "operationId": "list_versions",
         "parameters": [
           {
@@ -6210,6 +6478,37 @@
               "title": "Project Id",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Только номера меньше этого",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Только номера меньше этого",
+              "title": "Before"
+            }
           }
         ],
         "responses": {
@@ -6217,11 +6516,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Version"
-                  },
-                  "title": "Response List Versions",
-                  "type": "array"
+                  "$ref": "#/components/schemas/VersionPage"
                 }
               }
             },
@@ -6274,6 +6569,115 @@
           }
         ],
         "summary": "List Versions",
+        "tags": [
+          "versions"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/versions/{version_id}/checkpoint": {
+      "post": {
+        "description": "Закрепить версию как контрольную точку: автосохранения в неё больше не вливаются.",
+        "operationId": "checkpoint_version",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckpointRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Version"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Checkpoint Version",
         "tags": [
           "versions"
         ]

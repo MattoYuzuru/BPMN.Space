@@ -28,9 +28,14 @@
 [RFC-0006](docs/rfc/0006-tools-connectors-and-derived-sources.md) шаг 2). Инструменты по
 ключам пользователя: шаг 1 — обобщённые ключи по типам задач, маршрутизация с классами
 ошибок и распознавание речи на ключах пользователя; vision/OCR/видео/веб/озвучка —
-контракты адаптеров для следующих волн, вызовов ещё нет. Предложено, не реализовано:
-агентный режим ([RFC-0004](docs/rfc/0004-agent-mode.md)), шаги 4–7 RFC-0006, шаги 3–4
-RFC-0007 (роль ссылки `reviewer`, OAuth для MCP, журнал действий агента).
+контракты адаптеров для следующих волн, вызовов ещё нет. Реализован шаг 1 агентного режима
+([RFC-0004](docs/rfc/0004-agent-mode.md), [agent-mode.md](docs/backend/agent-mode.md)):
+`LlmClient.complete_with_tools`, инструменты только-чтения (FTS `russian`, миграция
+`0024_agent_search`), цикл до проверяемого `submit`, бюджет ходов/токенов/денег и
+восстановление; включается `LLM_AGENT_MODE=true` и `RunProfile.mode=agent` только для моделей
+с инструментами. Рабочие модели (`worker`/`delegate`), MCP-доступ к режиму и эталонное
+сравнение с конвейером не реализованы. Предложено, не реализовано: шаги 4–7 RFC-0006,
+шаги 3–4 RFC-0007 (роль ссылки `reviewer`, OAuth для MCP, журнал действий агента).
 
 Сессии правок и контрольные точки (автосохранения сливаются в версию): [ADR-0010](docs/adr/0010-editing-sessions-and-checkpoints.md).
 Удаление и выход участника: [ADR-0009](docs/adr/0009-project-deletion-and-leaving.md).
@@ -42,6 +47,7 @@ RFC-0007 (роль ссылки `reviewer`, OAuth для MCP, журнал де�
 |---|---|
 | `backend/` | FastAPI, Python 3.13, uv. Слои `api → services → (llm, ingest, infra) → domain` (проверяет import-linter). PostgreSQL/Alembic описаны в `docs/backend/persistence.md`; оставшиеся заглушки — `docs/backend/mock.md` |
 | `backend/app/llm/{question_analysis,graph_generation}.py`, `domain/bpmn/{ir,compiler,importer,manual,xsd}.py` | порционная сверка вопросов с проверкой оснований, граф IR v1, компилятор, приоритет ручных правок и offline XSD — `docs/backend/generation-quality.md` |
+| `backend/app/llm/{agent,tools,budget}.py`, `services/agent_run.py`, миграция `0024_agent_search` | агентный режим RFC-0004: `complete_with_tools`, инструменты `list_sources`/`read_source`/`search_sources`/`list_questions`/`propose_question`/`check_graph`/`submit`, цикл с бюджетом ходов и восстановлением — `docs/backend/agent-mode.md` |
 | `infra/bpmn-tools/`, `backend/app/infra/bpmn_tools.py` | внутренний Node layout/lint и HTTP-адаптер; точные пределы и команды — `infra/bpmn-tools/README.md` |
 | `frontend/src/entities/{session,share}`, маршруты `/login`, `/share/$token` | аккаунты и общий доступ: правила — `docs/backend/auth-and-sharing.md`, UI-паттерны — стайлгайд §16 |
 | `frontend/src/features/onboarding`, `widgets/onboarding-root`, `shared/lib/{tour-anchors,onboarding-signals}.ts` | обучение: движок тура, сценарий из 11 шагов, приветствие, подсказки-указатели, якоря `data-tour`, сигналы приложения — `docs/frontend/onboarding.md`, паттерн — стайлгайд §10 |

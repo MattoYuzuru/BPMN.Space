@@ -19,8 +19,10 @@ import {
   TokensSection,
   TypographySection,
 } from './foundations'
+import { MaterialsSection } from './materials'
 import { OnboardingSection } from './onboarding'
 import { OverlaysSection } from './overlays'
+import { RunSection } from './run'
 import { SharingSection } from './sharing'
 
 const NAV = [
@@ -54,6 +56,8 @@ const NAV = [
   {
     group: 'Сборка',
     items: [
+      ['materials', 'Материалы'],
+      ['run', 'Прогон и стоимость'],
       ['account', 'Аккаунт и доступ'],
       ['sharing', 'Общий доступ'],
       ['onboarding', 'Обучение'],
@@ -202,6 +206,8 @@ export function StyleguidePage() {
           <StatusSection />
           <FeedbackSection />
           <LayoutSection />
+          <MaterialsSection />
+          <RunSection />
           <AccountSection />
           <SharingSection />
           <OnboardingSection />

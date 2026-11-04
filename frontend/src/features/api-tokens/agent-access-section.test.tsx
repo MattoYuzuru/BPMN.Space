@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { mcpCommand } from '@/entities/api-token'
+import { subscribeOnboardingSignals } from '@/shared/lib/onboarding-signals'
 import { TooltipProvider } from '@/shared/ui'
 import { stubApi } from '@/test/api-stub'
 import { AgentAccessSection, projectsSummary } from './agent-access-section'
@@ -85,6 +86,9 @@ describe('Доступ для агентов', () => {
       'GET /api/v1/projects': { body: page([{ id: 'p1', title: 'Договоры' }]) },
       'POST /api/v1/me/api-tokens': { status: 201, body: { ...token, secret: SECRET } },
     })
+    // Тур волн 2–4 ждёт факты создания токена и копирования команды.
+    const signals: string[] = []
+    const unsubscribe = subscribeOnboardingSignals((signal) => signals.push(signal.type))
     const { user } = mount()
     await user.click(await screen.findByRole('button', { name: 'Создать токен' }))
     const dialog = await screen.findByRole('dialog')
@@ -110,7 +114,13 @@ describe('Доступ для агентов', () => {
     const command = screen.getByLabelText('Команда для Claude Code') as HTMLTextAreaElement
     expect(command.value).toBe(mcpCommand(window.location.origin, SECRET))
     expect(command.value).toContain('/mcp --header "Authorization: Bearer bps_')
-    expect(screen.getByText(/MCP-сервер появится позже/)).toBeInTheDocument()
+    // Сервер появится в волне 2: команда показана, но текст честно говорит, что она пока не работает.
+    expect(screen.getAllByText(/MCP-сервер пока не запущен/).length).toBeGreaterThan(0)
+    // Тур волн 2–4 ждёт факты создания токена и копирования команды.
+    expect(signals).toContain('agent.token.created')
+    await user.click(screen.getByRole('button', { name: 'Копировать команду' }))
+    await waitFor(() => expect(signals).toContain('agent.command.copied'))
+    unsubscribe()
 
     await user.click(screen.getByRole('button', { name: 'Готово' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())

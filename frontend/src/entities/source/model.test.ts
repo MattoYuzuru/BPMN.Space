@@ -1,16 +1,26 @@
 import {
   buildSourceTree,
+  capabilityInfo,
+  capabilityLabel,
+  countSourceTree,
+  derivationCost,
   derivationLabel,
   descendantIds,
   findQuoteRanges,
   isAcceptedFile,
+  isAgentSource,
+  knownSourceTrust,
   limitParts,
   quoteReferences,
+  SOURCE_TRUST,
   type Source,
   sourceKindOf,
   sourceMeta,
+  sourceTrustInfo,
   splitByRanges,
   splitTimecodes,
+  unreadablePagesLabel,
+  unreadablePagesText,
 } from './model'
 
 const text =
@@ -162,5 +172,88 @@ describe('дерево материалов', () => {
       'r',
     )
     expect([...ids]).toEqual(['a', 'b'])
+  })
+})
+
+describe('возможности, доверие и дополнительные поля источника', () => {
+  const node = (extra: Partial<Source> = {}): Source => ({
+    id: 's',
+    project_id: 'p',
+    kind: 'text',
+    title: 'Материал',
+    content: '',
+    status: 'ready',
+    active: true,
+    created_at: '2026-11-04T10:00:00Z',
+    origin: 'user',
+    trust: 'primary',
+    edited_by_human: false,
+    ...extra,
+  })
+
+  it('подписывает любую известную возможность, а незнакомую не показывает сырым кодом', () => {
+    expect(capabilityLabel('speech_to_text')).toBe('Расшифровка')
+    expect(capabilityLabel('ocr')).toBe('Распознанный текст')
+    expect(capabilityLabel('vision')).toBe('Описание изображения')
+    expect(capabilityInfo('video_understanding').processing).toBe('Смотрю видео')
+    expect(capabilityLabel('brand_new_capability')).toBe('Материал от ИИ')
+    expect(capabilityInfo(null).icon).toBe('sparkles')
+  })
+
+  it('у каждого уровня доверия есть подпись, короткая метка и пояснение', () => {
+    for (const trust of Object.keys(SOURCE_TRUST) as (keyof typeof SOURCE_TRUST)[]) {
+      const info = sourceTrustInfo(trust)
+      expect(info.label.length).toBeGreaterThan(0)
+      expect(info.short.length).toBeGreaterThan(0)
+      expect(info.description.length).toBeGreaterThan(0)
+    }
+    expect(sourceTrustInfo('summary').tone).toBe('amber')
+    expect(sourceTrustInfo('agent').label).toBe('От агента')
+    // Новый уровень с сервера не притворяется первоисточником.
+    expect(knownSourceTrust('future')).toBeNull()
+    expect(sourceTrustInfo('future').label).toBe('Уровень доверия неизвестен')
+    expect(sourceTrustInfo('future').short).toBe('без уровня')
+  })
+
+  it('узнаёт материал агента и показывает стоимость обработки', () => {
+    const derived = node({
+      origin: 'derived',
+      derivation: {
+        capability: 'speech_to_text',
+        provider: 'deepgram',
+        created_at: '2026-11-04T10:00:00Z',
+        cost_usd: 0.42,
+      },
+    })
+    expect(isAgentSource(node({ origin: 'agent' }))).toBe(true)
+    expect(isAgentSource(derived)).toBe(false)
+    expect(derivationCost(derived)).toBe(0.42)
+    expect(derivationCost(node())).toBeNull()
+  })
+
+  it('называет страницы без текстового слоя', () => {
+    expect(unreadablePagesLabel([])).toBeNull()
+    expect(unreadablePagesLabel(null)).toBeNull()
+    expect(unreadablePagesLabel([2])).toBe('1\u00a0страница без текста')
+    expect(unreadablePagesLabel([2, 5])).toBe('2\u00a0страницы без текста')
+    expect(unreadablePagesText([12, 15])).toBe(
+      'Не прочитан текст страниц: 12, 15. Это сканы без текстового слоя.',
+    )
+    const many = Array.from({ length: 10 }, (_, index) => index + 1)
+    expect(unreadablePagesText(many)).toBe(
+      'Не прочитан текст страниц: 1, 2, 3, 4, 5, 6, 7, 8 и ещё 2\u00a0страницы. Это сканы без текстового слоя.',
+    )
+  })
+
+  it('считает все узлы дерева, а не только корни', () => {
+    const tree = buildSourceTree([
+      node({ id: 'rec' }),
+      node({ id: 'tr', parent_id: 'rec', origin: 'derived' }),
+      node({ id: 'frames', parent_id: 'rc' }),
+      node({ id: 'txt' }),
+    ])
+    expect(tree).toHaveLength(3)
+    expect(countSourceTree(tree)).toBe(4)
+    expect(countSourceTree([])).toBe(0)
   })
 })

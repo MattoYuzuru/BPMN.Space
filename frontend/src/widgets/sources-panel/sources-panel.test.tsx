@@ -95,8 +95,8 @@ afterEach(() => useWorkspaceUi.getState().reset())
 it('показывает запись деревом: расшифровка вложена, с меткой «ИИ», провайдером и правкой', async () => {
   const { user, openSource } = renderPanel([record, transcript, rules])
   const region = screen.getByRole('region', { name: 'Источники' })
-  // Счётчик — исходные материалы, без производных узлов.
-  expect(within(region).getByText('2')).toBeInTheDocument()
+  // Счётчик — все материалы дерева: исходные и производные узлы.
+  expect(within(region).getByText('3')).toBeInTheDocument()
   expect(within(region).getByText('Видеозапись')).toBeInTheDocument()
 
   const derived = screen.getByRole('list', { name: 'Получено из «встреча.mp4»' })
@@ -108,6 +108,72 @@ it('показывает запись деревом: расшифровка в�
 
   await user.click(link)
   expect(openSource).toHaveBeenCalledWith('tr')
+})
+
+it('показывает уровень доверия, стоимость обработки, страницы без текста и метку агента', () => {
+  const scan: Source = {
+    ...rules,
+    id: 'scan',
+    title: 'Скан регламента',
+    file_name: 'scan.pdf',
+    kind: 'file',
+    trust: 'extracted',
+    unreadable_pages: [12, 15],
+    warning: 'Часть страниц без текста',
+  }
+  const agentNote: Source = {
+    ...base,
+    id: 'agent',
+    kind: 'text',
+    title: 'Конспект агента',
+    content: 'Материал принёс агент.',
+    status: 'ready',
+    origin: 'agent',
+    trust: 'agent',
+  }
+  const pagesOnly: Source = {
+    ...scan,
+    id: 'pages-only',
+    title: 'Скан без предупреждения',
+    warning: null,
+  }
+  renderPanel([
+    {
+      ...transcript,
+      derivation: {
+        capability: 'speech_to_text',
+        provider: 'deepgram',
+        model: 'nova-3',
+        created_at: '2026-11-04T10:01:00Z',
+        cost_usd: 0.42,
+      },
+    },
+    record,
+    scan,
+    pagesOnly,
+    agentNote,
+  ])
+  expect(screen.getAllByText('извлечено').length).toBeGreaterThan(0)
+  expect(screen.getByText('$0,42')).toBeInTheDocument()
+  // Если сервер уже написал предупреждение, страницы второй раз не перечисляются.
+  expect(screen.getByText('Часть страниц без текста')).toBeInTheDocument()
+  expect(screen.getAllByText(/2\s+страницы без текста/)).toHaveLength(1)
+  // «Агент» — отдельная метка, уровень доверия «от агента» не дублируется.
+  expect(screen.getByText('Агент')).toBeInTheDocument()
+  expect(screen.queryByText('от агента')).toBeNull()
+})
+
+it('неизвестный уровень доверия не выдаётся за первоисточник', () => {
+  renderPanel([
+    {
+      ...rules,
+      id: 'future',
+      title: 'Материал нового типа',
+      trust: 'future' as Source['trust'],
+    },
+  ])
+  expect(screen.queryByText('первоисточник')).toBeNull()
+  expect(screen.queryByText('без уровня')).toBeNull()
 })
 
 it('сбой расшифровки виден и на записи, и на производном узле', () => {

@@ -26,6 +26,8 @@ export {
 } from './coach-card/coach-card'
 export { CommandPalette, preloadCommandPalette } from './command-palette/command-palette'
 export type { CommandGroup, CommandItem, CommandPaletteProps } from './command-palette/types'
+export { CopyField, type CopyFieldProps } from './copy-field/copy-field'
+export { CostMeter, type CostMeterProps, type CostRange } from './cost-meter/cost-meter'
 export { ConfirmDialog, type ConfirmDialogProps } from './dialog/confirm-dialog'
 export {
   Dialog,
@@ -85,6 +87,7 @@ export {
   usePanelRef,
 } from './resizable/resizable'
 export { ScrollArea, type ScrollAreaProps } from './scroll-area/scroll-area'
+export { SecretInput, type SecretInputProps } from './secret-input/secret-input'
 export {
   SegmentedControl,
   type SegmentedControlProps,
@@ -99,6 +102,7 @@ export {
   SheetTrigger,
 } from './sheet/sheet'
 export { Skeleton, SkeletonText } from './skeleton/skeleton'
+export { Slider, type SliderProps } from './slider/slider'
 export { type Rect, Spotlight, type SpotlightProps } from './spotlight/spotlight'
 export { type StepItem, Stepper, type StepperProps, type StepStatus } from './stepper/stepper'
 export {
@@ -113,5 +117,6 @@ export { Tag, type TagProps } from './tag/tag'
 export { Textarea, type TextareaProps } from './textarea/textarea'
 export { Toaster, type ToastOptions, toast } from './toast/toast'
 export { Tooltip, type TooltipProps, TooltipProvider } from './tooltip/tooltip'
+export { type TreeItem, TreeView, type TreeViewProps } from './tree-view/tree-view'
 export { Typewriter, type TypewriterProps } from './typewriter/typewriter'
 export { VoiceInput, type VoiceInputProps } from './voice-input/voice-input'

@@ -25,6 +25,31 @@ describe('якоря обучения', () => {
     expect(tourAnchor('run.build')).toEqual({ 'data-tour': 'run.build' })
   })
 
+  it('якоря волн 2–4 объявлены заранее и не дублируются', () => {
+    const added = {
+      runEstimate: 'run.estimate',
+      runBudget: 'run.budget',
+      runCost: 'run.cost',
+      questionsTechnical: 'questions.technical',
+      decisionsLog: 'decisions.log',
+      shareReviewer: 'share.reviewer',
+      settingsTools: 'settings.tools',
+      sourcePlayer: 'source.player',
+      sourceTrust: 'source.trust',
+      sourceTree: 'source.tree',
+      agentTokens: 'agent.tokens',
+      agentCreateToken: 'agent.create-token',
+      agentCopyCommand: 'agent.copy-command',
+      reviewPanel: 'review.panel',
+    } as const
+    for (const [key, value] of Object.entries(added)) {
+      expect(TOUR_ANCHORS[key as keyof typeof TOUR_ANCHORS]).toBe(value)
+      expect(anchorSelector(value)).toBe(`[data-tour="${value}"]`)
+    }
+    const values = Object.values(TOUR_ANCHORS)
+    expect(new Set(values).size).toBe(values.length)
+  })
+
   it('guardTourLayer отменяет событие только внутри слоя обучения', () => {
     const layer = document.createElement('div')
     layer.setAttribute(TOUR_LAYER_ATTR, '')

@@ -17,6 +17,7 @@
 Полнота контекста, независимая смысловая сверка и повтор запуска после рестарта —
 [ADR-0008](docs/adr/0008-evidence-semantic-review-and-recovery.md); это не OCR и не распределённая очередь.
 
+Сессии правок и контрольные точки (автосохранения сливаются в версию): [ADR-0010](docs/adr/0010-editing-sessions-and-checkpoints.md).
 Удаление и выход участника: [ADR-0009](docs/adr/0009-project-deletion-and-leaving.md).
 `DELETE /projects/{id}` зависит от роли: owner удаляет для всех, участник выходит сам.
 

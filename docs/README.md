@@ -24,3 +24,4 @@
   - [Компактное хранение истории XML](adr/0007-compact-version-storage.md)
   - [Полное чтение оснований, смысловая проверка и восстановление](adr/0008-evidence-semantic-review-and-recovery.md)
   - [Удаление проекта и выход участника](adr/0009-project-deletion-and-leaving.md)
+  - [Сессии правок и контрольные точки версий](adr/0010-editing-sessions-and-checkpoints.md)

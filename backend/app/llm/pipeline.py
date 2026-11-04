@@ -6,7 +6,7 @@
 import copy
 import json
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
 from uuid import UUID
 
@@ -31,6 +31,7 @@ from app.llm.client import LlmClient
 from app.llm.estimate import cost_of_usage
 from app.llm.evidence_context import prepare_evidence_context
 from app.llm.graph_generation import generate_graph
+from app.llm.multimodal import MediaAttachment
 from app.llm.question_analysis import QuestionAnalyzer, whole_project_request
 
 _CHAT_MAX_TOKENS = 4096
@@ -200,6 +201,58 @@ class LlmPipeline:
     async def count_tokens(self, system: str, user: str) -> int:
         """Сколько входных токенов займёт запрос: у Anthropic — точный бесплатный счётчик."""
         return await self._client.count_tokens(system, user)
+
+    async def complete_text(self, system: str, user: str, *, max_tokens: int | None = None) -> str:
+        """Текстовый запрос вне пайплайна (краткое содержание материала, сводки).
+
+        Бюджет прогона проверяется только внутри прогона: эти вызовы идут из фоновой
+        обработки источника и учитываются в `derivation.cost_usd`.
+        """
+        return await self._complete(
+            system, user, json_mode=False, max_tokens=max_tokens or _CHAT_MAX_TOKENS
+        )
+
+    async def complete_vision(
+        self,
+        system: str,
+        user: str,
+        *,
+        images: Sequence[MediaAttachment],
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> str:
+        """Мультимодальный запрос (RFC-0006): клиент сам кодирует изображения."""
+        self._check_budget()
+        return await self._client.complete_vision(
+            system,
+            user,
+            images=images,
+            json_mode=json_mode,
+            max_tokens=max_tokens,
+            effort=effort or self._effort,
+        )
+
+    async def complete_document(
+        self,
+        system: str,
+        user: str,
+        *,
+        document: MediaAttachment,
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> str:
+        """PDF целиком: Anthropic читает документ, остальные могут ответить отказом."""
+        self._check_budget()
+        return await self._client.complete_document(
+            system,
+            user,
+            document=document,
+            json_mode=json_mode,
+            max_tokens=max_tokens,
+            effort=effort or self._effort,
+        )
 
     async def analyze(self, context: RunContext) -> AnalysisResult:
         try:

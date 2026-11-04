@@ -10,6 +10,8 @@ Sonnet 5.5 отключить нельзя — параметр `thinking` не 
 Повторы выполняет приложение (`max_retries=0` у SDK): так они не удваиваются и учитывают срок.
 """
 
+from collections.abc import Sequence
+
 import anthropic
 import httpx2
 
@@ -36,6 +38,7 @@ from app.llm.client import (
     token_count,
     with_retries,
 )
+from app.llm.multimodal import MediaAttachment
 
 _JSON_ONLY = (
     "\n\nОтветь одним JSON-объектом без markdown-обёртки и без текста вне JSON. "
@@ -118,6 +121,77 @@ class AnthropicClient:
         request = self.build_request(
             system, user, json_mode=json_mode, max_tokens=max_tokens, effort=effort
         )
+        return await self._run(request)
+
+    async def complete_vision(
+        self,
+        system: str,
+        user: str,
+        *,
+        images: Sequence[MediaAttachment],
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> str:
+        """Изображения уходят блоками `image` рядом с текстом запроса (RFC-0006)."""
+        content: list[dict[str, object]] = [{"type": "text", "text": user}]
+        content.extend(_image_block(image) for image in images)
+        request = self.build_media_request(
+            system, content, json_mode=json_mode, max_tokens=max_tokens, effort=effort
+        )
+        return await self._run(request)
+
+    async def complete_document(
+        self,
+        system: str,
+        user: str,
+        *,
+        document: MediaAttachment,
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> str:
+        """PDF читает сама модель: блок `document` (до 32 МБ и 600 страниц, RFC-0006)."""
+        content: list[dict[str, object]] = [
+            {"type": "text", "text": user},
+            {
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": document.mime,
+                    "data": document.base64_data,
+                },
+            },
+        ]
+        request = self.build_media_request(
+            system, content, json_mode=json_mode, max_tokens=max_tokens, effort=effort
+        )
+        return await self._run(request)
+
+    def build_media_request(
+        self,
+        system: str,
+        content: list[dict[str, object]],
+        *,
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None,
+    ) -> dict[str, object]:
+        """Запрос с нетекстовыми блоками: параметры те же, что у `build_request`."""
+        request: dict[str, object] = {
+            "model": self._config.model,
+            "max_tokens": max_tokens if json_mode else min(max_tokens, _CHAT_MAX_TOKENS),
+            "system": [{"type": "text", "text": system + (_JSON_ONLY if json_mode else "")}],
+            "messages": [{"role": "user", "content": content}],
+            "cache_control": {"type": "ephemeral"},
+        }
+        level = self.effort_for(effort)
+        if level is not None:
+            request["output_config"] = {"effort": level}
+        return request
+
+    async def _run(self, request: dict[str, object]) -> str:
+        """Один запрос (стриминг обязателен): повторы, учёт токенов, проверка завершения."""
 
         async def once(attempt_timeout: float) -> anthropic.types.Message:
             try:
@@ -201,6 +275,16 @@ class AnthropicClient:
                 ModelInfo(id=item.id, label=item.display_name or item.id, capabilities=caps)
             )
         return models
+
+
+def _image_block(image: MediaAttachment) -> dict[str, object]:
+    """Блок изображения Anthropic: base64 из локального файла (кадры ffmpeg — JPEG)."""
+    if image.kind != "image":
+        raise ValueError("Ожидалось изображение")
+    return {
+        "type": "image",
+        "source": {"type": "base64", "media_type": image.mime, "data": image.base64_data},
+    }
 
 
 def _map_status(error: anthropic.APIStatusError) -> TransientLlmError | RuntimeError:

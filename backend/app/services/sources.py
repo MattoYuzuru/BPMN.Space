@@ -1,9 +1,10 @@
 """Сценарии источников: текст и расшифровка голоса, загрузка файла, правка, выключение, удаление."""
 
 import asyncio
+import hashlib
 import logging
-from collections.abc import Callable, Sequence
-from dataclasses import replace
+from collections.abc import AsyncIterator, Callable, Sequence
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -24,9 +25,16 @@ from app.domain.models import (
     SourceTrust,
 )
 from app.domain.projects import default_source_title
-from app.domain.sources import SPEECH_TO_TEXT, TRANSCRIPT_TITLE, descendants
+from app.domain.sources import (
+    SPEECH_TO_TEXT,
+    TRANSCRIPT_TITLE,
+    derivation_frame_keys,
+    descendants,
+    transcript_segments,
+)
 from app.infra.repositories.base import Repositories
 from app.infra.storage import ChunkReader, FileStorage, UploadTooLargeError
+from app.ingest.frames import frame_profile
 from app.ingest.media import (
     MEDIA_EXTENSIONS,
     MediaError,
@@ -49,13 +57,45 @@ from app.services.errors import (
     ConflictError,
     InvalidInputError,
     NotFoundError,
+    ToolUnavailableError,
+    UnavailableError,
     UnsupportedMediaError,
 )
+from app.services.media_derivation import MediaDerivationService
 
 logger = logging.getLogger(__name__)
 
+# Возможность OCR (RFC-0006): производный узел со страницами-сканами.
+OCR_CAPABILITY = "ocr"
+
 MAX_SOURCE_TITLE = 200
 TRANSCRIPT_MISSING = "Расшифровка записи удалена до окончания обработки. Загрузите запись заново"
+
+_MEDIA_CHUNK = 1024 * 1024
+# Запасной Content-Type, если браузер не прислал MIME при загрузке: по расширению файла.
+_MEDIA_MIME_BY_SUFFIX = {
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".ogg": "audio/ogg",
+    ".opus": "audio/ogg",
+    ".m4a": "audio/mp4",
+    ".flac": "audio/flac",
+    ".aac": "audio/aac",
+    ".webm": "video/webm",
+    ".mp4": "video/mp4",
+    ".mov": "video/quicktime",
+    ".mkv": "video/x-matroska",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class MediaFileInfo:
+    """Метаданные медиафайла для `GET /sources/{id}/media` (HTTP Range и кэш)."""
+
+    size: int
+    mime: str
+    etag: str
+    last_modified: datetime
 
 
 def _format_duration(seconds: float) -> str:
@@ -93,6 +133,7 @@ class SourceService:
         media: MediaTranscriber | None = None,
         stt_for_user: Callable[[UUID | None], SpeechToText] | None = None,
         incident_sink: CapabilityIncidentSink | None = None,
+        derivations: MediaDerivationService | None = None,
         max_media_bytes: int = 500 * 1024 * 1024,
     ) -> None:
         self._repos = repos
@@ -107,6 +148,8 @@ class SourceService:
         self._stt_for_user = stt_for_user
         # Мягкая стыковка с техническими вопросами волны 2B: приёмник необязателен.
         self._incident_sink = incident_sink
+        # OCR сканов и производные узлы видео (RFC-0006, шаги 4–5); необязателен в тестах.
+        self._derivations = derivations
         self._max_media = max_media_bytes
 
     def _clean_content(self, content: str) -> str:
@@ -471,7 +514,13 @@ class SourceService:
         except Exception:
             logger.exception("Не удалось передать отказ инструмента в технические вопросы")
 
-    async def _process_media(self, source: Source, *, initiator_id: UUID | None = None) -> None:
+    async def _process_media(
+        self,
+        source: Source,
+        *,
+        initiator_id: UUID | None = None,
+        media_profile: str | None = None,
+    ) -> None:
         siblings = await self._repos.sources.list_by_project(source.project_id)
         transcript = next(
             (
@@ -508,6 +557,28 @@ class SourceService:
             await repos.sources.patch(transcript.id, child, only_status=SourceStatus.PROCESSING)
         if routing is not None:
             await self._report_incident(source, routing)
+            return
+        if parent.get("status") is not SourceStatus.READY:
+            return
+        if self._derivations is not None and frame_profile(media_profile) is not None:
+            # Кадры и vision — после готовой расшифровки: сбой кадров не отменяет звук.
+            fresh = await self._repos.sources.get(source.id)
+            fresh_transcript = await self._repos.sources.get(transcript.id)
+            if fresh is not None and fresh_transcript is not None:
+                try:
+                    await self._derivations.derive_media(
+                        fresh,
+                        fresh_transcript,
+                        profile_name=media_profile,
+                        initiator_id=initiator_id,
+                    )
+                except Exception:
+                    logger.exception("Не удалось построить производные видео для %s", source.id)
+                    fresh = await self._repos.sources.get(source.id)
+                    if fresh is not None and self._derivations is not None:
+                        await self._derivations.append_warning(
+                            fresh.id, "Не удалось обработать видеоряд записи"
+                        )
 
     async def _parse_changes(self, *, file_name: str, data: bytes) -> dict[str, Any]:
         """Результат разбора как набор полей источника: `status`, `content`, `error`, `warning`."""
@@ -532,7 +603,13 @@ class SourceService:
             "unreadable_pages": list(parsed.unreadable_pages),
         }
 
-    async def process_file(self, source_id: UUID, *, initiator_id: UUID | None = None) -> None:
+    async def process_file(
+        self,
+        source_id: UUID,
+        *,
+        initiator_id: UUID | None = None,
+        media_profile: str | None = None,
+    ) -> None:
         """Фоновый разбор документа; `initiator_id` — чьи ключи использовать для записи.
 
         Ключи инициатора загрузки передаются аргументом, а не хранятся в источнике: после
@@ -542,6 +619,9 @@ class SourceService:
         Разбор запускается asyncio-задачей. Результат пишется точечным UPDATE только по
         полям разбора и только пока источник в `processing`: название и `active`, которые
         пользователь поменял за время разбора, не затираются, а удалённый источник не оживает.
+
+        `media_profile` — профиль обработки записи (RFC-0006): от него зависит, извлекаются ли
+        кадры и как часто. Для PDF со сканами после разбора запускается OCR производным узлом.
         """
         if self._parse_delay:
             await asyncio.sleep(self._parse_delay)
@@ -549,7 +629,9 @@ class SourceService:
         if source is None or source.status is not SourceStatus.PROCESSING or not source.file_key:
             return
         if is_media(source.file_name or ""):
-            await self._process_media(source, initiator_id=initiator_id)
+            await self._process_media(
+                source, initiator_id=initiator_id, media_profile=media_profile
+            )
             return
         try:
             data = await self._storage.load(source.file_key)
@@ -561,6 +643,182 @@ class SourceService:
         async with self._repos.atomic() as repos:
             await repos.projects.lock(source.project_id)
             await repos.sources.patch(source_id, changes, only_status=SourceStatus.PROCESSING)
+        if changes.get("status") is SourceStatus.READY and changes.get("unreadable_pages"):
+            await self._ocr_scans(source_id, initiator_id=initiator_id)
+
+    async def _ocr_scans(self, source_id: UUID, *, initiator_id: UUID | None) -> None:
+        """OCR страниц-сканов PDF (RFC-0006, шаг 4): производный узел, не трогая текст разбора.
+
+        Если модели с чтением PDF нет, `prepare_ocr` создаёт неблокирующий технический вопрос
+        и возвращает `None`; источник остаётся `ready` с `warning` и `unreadable_pages`.
+        """
+        if self._derivations is None:
+            return
+        source = await self._repos.sources.get(source_id)
+        if source is None or source.status is not SourceStatus.READY:
+            return
+        node = await self._derivations.prepare_ocr(source, initiator_id=initiator_id)
+        if node is None:
+            return
+        await self.process_ocr(source.id, node.id, initiator_id=initiator_id)
+
+    async def process_ocr(
+        self, source_id: UUID, node_id: UUID, *, initiator_id: UUID | None
+    ) -> None:
+        """Фоновая OCR-обработка узла; сбой помечает узел, а не теряет источник."""
+        if self._derivations is None:
+            return
+        try:
+            await self._derivations.run_ocr(source_id, node_id, initiator_id=initiator_id)
+        except Exception:
+            logger.exception("Не удалось распознать сканы источника %s", source_id)
+            await self._derivations.patch_node_failed(
+                node_id, "Не удалось распознать страницы-сканы"
+            )
+
+    async def media_file(self, source_id: UUID) -> MediaFileInfo:
+        """Размер, MIME, ETag и Last-Modified медиафайла: сам файл отдаёт `read_media`.
+
+        Только аудио и видео: документы этим маршрутом не отдаются (иначе PDF обходил бы
+        собственные проверки загрузки).
+        """
+        source = await self.get(source_id)
+        if not is_media(source.file_name or "") or not source.file_key:
+            raise NotFoundError("Медиафайл не найден")
+        size = source.size_bytes or 0
+        if size <= 0:
+            raise NotFoundError("Медиафайл не найден")
+        digest = hashlib.sha256(f"{source.file_key}:{size}".encode()).hexdigest()[:16]
+        mime = source.mime if (source.mime or "").startswith(("audio/", "video/")) else None
+        return MediaFileInfo(
+            size=size,
+            mime=mime or _mime_for(source.file_name or ""),
+            etag=f'"{digest}"',
+            last_modified=source.created_at,
+        )
+
+    async def read_media(self, source_id: UUID, *, start: int, length: int) -> AsyncIterator[bytes]:
+        """Поток байт файла из хранилища: плеер не держит запись в памяти целиком.
+
+        `local_file` даёт путь (для in-memory хранилища — временную копию), чтение идёт в
+        потоке кусками по 1 МБ; контекст живёт всё время отдачи ответа.
+        """
+        source = await self.get(source_id)
+        if not source.file_key:
+            raise NotFoundError("Медиафайл не найден")
+        async with self._storage.local_file(source.file_key) as path:
+            handle = await asyncio.to_thread(path.open, "rb")
+            try:
+                await asyncio.to_thread(handle.seek, max(start, 0))
+                remaining = max(length, 0)
+                while remaining > 0:
+                    chunk = await asyncio.to_thread(handle.read, min(_MEDIA_CHUNK, remaining))
+                    if not chunk:
+                        return
+                    remaining -= len(chunk)
+                    yield chunk
+            finally:
+                await asyncio.to_thread(handle.close)
+
+    async def media_segments(
+        self, source_id: UUID
+    ) -> tuple[Source, Sequence[tuple[float, float, str]]]:
+        """Расшифровка и отрезки с таймкодами для перемотки плеера к цитате.
+
+        Если запрос по записи — берётся производная расшифровка; если по самой расшифровке —
+        её текст. Длительность для последнего отрезка — у записи или расшифровки.
+        """
+        source = await self.get(source_id)
+        siblings = await self._repos.sources.list_by_project(source.project_id)
+        if source.derivation is not None and source.derivation.capability == SPEECH_TO_TEXT:
+            transcript = source
+        else:
+            transcript = next(
+                (
+                    item
+                    for item in siblings
+                    if item.parent_id == source.id
+                    and item.derivation is not None
+                    and item.derivation.capability == SPEECH_TO_TEXT
+                ),
+                None,
+            )
+        if transcript is None:
+            raise ConflictError("У этого источника нет расшифровки с таймкодами")
+        duration = transcript.duration_sec or source.duration_sec
+        return transcript, transcript_segments(transcript.content, duration)
+
+    async def retry_ocr(self, source_id: UUID, *, initiator_id: UUID | None) -> Source:
+        """Повтор OCR сканов PDF после настройки ключа или разового решения аналитика.
+
+        `«Повторить»` технического вопроса возвращает `derived`-узел, если модель нашлась, и
+        `503`, если возможности по-прежнему нет (вопрос при этом уже создан приёмником).
+        """
+        if self._derivations is None:
+            raise UnavailableError("Обработка сканов не включена на сервере")
+        source = await self.get(source_id)
+        if not (source.file_name or "").lower().endswith(".pdf"):
+            raise InvalidInputError("OCR сканов доступен только для PDF")
+        if not source.unreadable_pages:
+            raise ConflictError("Все страницы уже распознаны: повторять OCR нечего")
+        if source.status is SourceStatus.PROCESSING:
+            raise ConflictError("Файл ещё разбирается — повторите после окончания разбора")
+        if self._derivations is None:  # pragma: no cover - защита от гонки типов
+            raise UnavailableError("Обработка сканов не включена на сервере")
+        siblings = await self._repos.sources.list_by_project(source.project_id)
+        existing = next(
+            (
+                item
+                for item in siblings
+                if item.parent_id == source.id
+                and item.derivation is not None
+                and item.derivation.capability == OCR_CAPABILITY
+            ),
+            None,
+        )
+        if existing is not None and existing.status is SourceStatus.PROCESSING:
+            raise ConflictError("OCR уже выполняется: дождитесь окончания")
+        if existing is None:
+            node = await self._derivations.prepare_ocr(source, initiator_id=initiator_id)
+            if node is None:
+                raise ToolUnavailableError(
+                    "Модель с чтением PDF не подключена. Добавьте ключ модели в настройках "
+                    "и повторите",
+                    reason="capability_missing",
+                    remaining=f"страницы {', '.join(map(str, source.unreadable_pages[:30]))}",
+                )
+            return node
+        now = self._rt.clock()
+        derivation = existing.derivation
+        pages: list[int] = []
+        if derivation is not None:
+            raw_pages = derivation.params.get("pages")
+            if isinstance(raw_pages, list):
+                pages = [
+                    int(page)
+                    for page in raw_pages
+                    if isinstance(page, (int, float)) and not isinstance(page, bool)
+                ]
+            derivation = SourceDerivation(
+                capability=derivation.capability,
+                provider=derivation.provider,
+                model=derivation.model,
+                params={**derivation.params, "pages": sorted({*pages, *source.unreadable_pages})},
+                cost_usd=derivation.cost_usd,
+                created_at=derivation.created_at,
+            )
+        async with self._repos.atomic() as repos:
+            await repos.projects.lock(source.project_id)
+            await repos.sources.patch(
+                existing.id,
+                {"status": SourceStatus.PROCESSING, "error": None, "derivation": derivation},
+                only_status=SourceStatus.FAILED,
+            )
+            await touch_project(repos, source.project_id, now)
+        updated = await self._repos.sources.get(existing.id)
+        if updated is None or updated.status is not SourceStatus.PROCESSING:
+            raise ConflictError("Источник только что изменился — обновите страницу и повторите")
+        return updated
 
     def _content_changes(
         self, source: Source, content: str, *, has_children: bool
@@ -667,3 +925,11 @@ class SourceService:
         for item in family:
             if item.file_key:
                 await self._storage.delete(item.file_key)
+            for frame_key in derivation_frame_keys(item):
+                await self._storage.delete(frame_key)
+
+
+def _mime_for(file_name: str) -> str:
+    """Content-Type записи по расширению: браузер не всегда присылает MIME при загрузке."""
+    suffix = "." + file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+    return _MEDIA_MIME_BY_SUFFIX.get(suffix, "application/octet-stream")

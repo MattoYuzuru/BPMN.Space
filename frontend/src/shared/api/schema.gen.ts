@@ -767,6 +767,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/sources/media/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Estimate Media Source
+         * @description Оценка обработки записи до загрузки: минуты STT, кадры и цена по каталогу цен.
+         *
+         *     Профиль `audio` — только расшифровка, `sparse` — редкие кадры и описание экрана,
+         *     `detailed` — частые кадры. Оценка не запускает обработку и не пишет в БД.
+         */
+        post: operations["estimate_media_source"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/sources/sample": {
         parameters: {
             query?: never;
@@ -1133,6 +1156,75 @@ export interface paths {
         patch: operations["update_source"];
         trace?: never;
     };
+    "/api/v1/sources/{source_id}/media": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Source Media
+         * @description Плеер: аудио или видео записи с поддержкой HTTP Range.
+         *
+         *     `200` — весь файл, `206` — запрошенный диапазон (`Content-Range`), `416` — диапазон вне
+         *     файла. `ETag` и `Last-Modified` дают кэш; доступ — владельцу и участникам проекта
+         *     (и токену с правом чтения), посторонним — `404`, как и остальные чужие объекты.
+         */
+        get: operations["stream_source_media"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/{source_id}/ocr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Source Ocr
+         * @description Повторить OCR страниц-сканов PDF (действие «Повторить» технического вопроса).
+         *
+         *     Создаёт или перезапускает производный узел OCR; фоновая задача читает страницы моделью с
+         *     поддержкой PDF. Готовые страницы не распознаются заново: узел накапливает текст.
+         */
+        post: operations["retry_source_ocr"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/{source_id}/segments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Source Segments
+         * @description Таймкоды расшифровки: перемотка плеера к цитате `[мм:сс]` и границы отрезков.
+         *
+         *     Работает и для записи (берётся её расшифровка), и для самой расшифровки.
+         */
+        get: operations["source_segments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/transcriptions": {
         parameters: {
             query?: never;
@@ -1412,6 +1504,8 @@ export interface components {
              * @description .txt, .md, .csv, .docx, .xlsx, .pptx, .pdf или аудио/видео (.mp3 .wav .ogg .opus .m4a .flac .aac .webm .mp4 .mov .mkv)
              */
             file: string;
+            /** @default audio */
+            media_profile: components["schemas"]["MediaProfile"];
             /** Title */
             title?: string | null;
         };
@@ -2021,6 +2115,89 @@ export interface components {
             source: string;
         };
         /**
+         * MediaEstimate
+         * @description Оценка обработки записи до загрузки: минуты STT, кадры и цена по каталогу.
+         */
+        MediaEstimate: {
+            /**
+             * Currency
+             * @default USD
+             */
+            currency: string;
+            /** Duration Sec */
+            duration_sec: number;
+            frames: components["schemas"]["MediaEstimateFrames"];
+            /** Media Profile */
+            media_profile: string;
+            /** Media Profile Label */
+            media_profile_label: string;
+            /**
+             * Note
+             * @description Оговорки: фактическая цена зависит от ключей и модели
+             */
+            note: string;
+            /**
+             * Priced On
+             * Format: date
+             * @description Дата проверки цен каталога
+             */
+            priced_on: string;
+            stt: components["schemas"]["MediaEstimateStt"];
+            total_cost_usd: components["schemas"]["MoneyRange"];
+        };
+        /** MediaEstimateFrames */
+        MediaEstimateFrames: {
+            cost_usd: components["schemas"]["MoneyRange"];
+            /**
+             * Count Max
+             * @description Верхняя граница числа кадров
+             */
+            count_max: number;
+            /**
+             * Count Min
+             * @description Нижняя граница числа кадров
+             */
+            count_min: number;
+            /**
+             * Vision Requests
+             * @description Запросов к vision-модели при выбранном профиле
+             */
+            vision_requests: number;
+        };
+        /**
+         * MediaEstimateRequest
+         * @description Что известно о файле до загрузки: длительность, наличие видео и профиль обработки.
+         */
+        MediaEstimateRequest: {
+            /**
+             * Duration Sec
+             * @description Длительность записи, секунды
+             */
+            duration_sec: number;
+            /**
+             * Has Video
+             * @description Есть ли видеодорожка
+             * @default false
+             */
+            has_video: boolean;
+            /**
+             * Media Profile
+             * @description Профиль: `audio` — только звук, `sparse` — редкие кадры, `detailed` — подробно
+             * @default audio
+             * @enum {string}
+             */
+            media_profile: "audio" | "sparse" | "detailed";
+        };
+        /** MediaEstimateStt */
+        MediaEstimateStt: {
+            cost_usd: components["schemas"]["MoneyRange"];
+            /**
+             * Minutes
+             * @description Минуты распознавания речи
+             */
+            minutes: number;
+        };
+        /**
          * MediaInfo
          * @description Дорожки записи по `ffprobe`; `null` — неизвестно (сервер без ffmpeg).
          */
@@ -2029,6 +2206,54 @@ export interface components {
             has_audio?: boolean | null;
             /** Has Video */
             has_video?: boolean | null;
+        };
+        /**
+         * MediaProfile
+         * @description Профиль обработки записи (RFC-0006, «Видео»): от него зависит объём платной работы.
+         * @enum {string}
+         */
+        MediaProfile: "audio" | "sparse" | "detailed";
+        /**
+         * MediaSegment
+         * @description Отрезок расшифровки: от таймкода до следующей реплики (для перемотки плеера).
+         */
+        MediaSegment: {
+            /**
+             * End Sec
+             * @description Конец отрезка, секунды
+             */
+            end_sec: number;
+            /**
+             * Speaker
+             * @description Говорящий, если провайдер его сообщил
+             */
+            speaker?: string | null;
+            /**
+             * Start Sec
+             * @description Начало отрезка в записи, секунды
+             */
+            start_sec: number;
+            /**
+             * Text
+             * @description Реплика или фраза
+             */
+            text: string;
+        };
+        /**
+         * MoneyRange
+         * @description Ориентировочная стоимость: минимум и максимум по каталогу цен.
+         */
+        MoneyRange: {
+            /**
+             * Max Usd
+             * @description Самый дорогой сценарий, $
+             */
+            max_usd?: number | null;
+            /**
+             * Min Usd
+             * @description Самый дешёвый сценарий, $
+             */
+            min_usd?: number | null;
         };
         /**
          * MonthlyLimit
@@ -2982,6 +3207,31 @@ export interface components {
          * @enum {string}
          */
         SourceOrigin: "user" | "derived" | "agent" | "answer";
+        /**
+         * SourceSegments
+         * @description Таймкоды расшифровки источника: плеер перематывает к цитате без парсинга текста.
+         */
+        SourceSegments: {
+            /**
+             * Duration Sec
+             * @description Длительность записи, секунды
+             */
+            duration_sec?: number | null;
+            /** Segments */
+            segments?: components["schemas"]["MediaSegment"][];
+            /**
+             * Source Id
+             * Format: uuid
+             * @description Источник, для которого запрошены отрезки
+             */
+            source_id: string;
+            /**
+             * Transcript Id
+             * Format: uuid
+             * @description Расшифровка, из которой взяты отрезки
+             */
+            transcript_id: string;
+        };
         /**
          * SourceStatus
          * @enum {string}
@@ -6253,6 +6503,77 @@ export interface operations {
             };
         };
     };
+    estimate_media_source: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MediaEstimateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaEstimate"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     create_sample_source: {
         parameters: {
             query?: never;
@@ -7524,6 +7845,250 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    stream_source_media: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
+            /** @description Запрошенный диапазон байт вне файла */
+            416: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_source_ocr: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Source"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Конфликт состояния */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Слишком много запросов; повторите через `Retry-After` секунд */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Модели с чтением PDF нет: страницы-сканы не распознаны */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolUnavailableErrorResponse"];
+                };
+            };
+        };
+    };
+    source_segments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceSegments"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Конфликт состояния */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -19,6 +19,7 @@
 тестов сервисов и демо без ключа (RFC §9.1).
 """
 
+import json
 import re
 from collections.abc import Callable, Mapping, Sequence
 from uuid import UUID
@@ -41,6 +42,7 @@ from app.fixtures.types import DiagramRule, Playbook
 from app.llm.base import PipelineError
 from app.llm.capabilities import ModelCapabilities
 from app.llm.client import approximate_tokens
+from app.llm.multimodal import MediaAttachment, prompt_data
 
 _MAX_STEPS = 8
 _MAX_TASK_NAME = 60
@@ -122,6 +124,13 @@ def _first_sentence(text: str) -> str:
 
 
 class MockPipeline:
+    """Записанные ответы и детерминированные мультимодальные «ответы» без сети (RFC-0006).
+
+    Мультимодальные методы нужны демо и тестам: настоящая модель подменяется mock-ом, а
+    сервисы OCR/кадров получают корректную структуру ответа. Никаких сетевых вызовов и
+    расходов: mock разбирает JSON-данные из промпта (после `DATA_MARKER`) и отвечает по ним.
+    """
+
     def __init__(self, *, playbook: Playbook, read_bpmn: Callable[[str], str]) -> None:
         self._playbook = playbook
         self._read_bpmn = read_bpmn
@@ -130,12 +139,82 @@ class MockPipeline:
     def provider(self) -> str:
         return "mock"
 
+    @property
+    def capabilities(self) -> ModelCapabilities:
+        """Демо-модель читает изображения и PDF: иначе OCR и кадры в демо не проверить."""
+        return ModelCapabilities(vision=True, pdf_input=True, known=True)
+
     async def aclose(self) -> None:
         return None
 
     @property
     def model_name(self) -> str:
         return "recorded-fixtures"
+
+    async def complete_text(self, system: str, user: str, *, max_tokens: int | None = None) -> str:
+        """Краткое содержание и другие текстовые запросы вне прогона — заглушка."""
+        del system, user, max_tokens
+        return (
+            "Краткое содержание (демо-режим mock): на записи обсуждены этапы процесса, "
+            "участники и сроки. Точные формулировки — в расшифровке и описании экрана"
+        )
+
+    async def complete_vision(
+        self,
+        system: str,
+        user: str,
+        *,
+        images: Sequence[MediaAttachment],
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> str:
+        """Демо-описание кадров: по одному пункту на переданное изображение."""
+        del system, max_tokens, effort
+        data = _mock_data(user)
+        frames = data.get("frames") if isinstance(data, dict) else None
+        if not isinstance(frames, list) or len(frames) != len(images):
+            frames = [{"index": index} for index in range(1, len(images) + 1)]
+        described = []
+        for item in frames:
+            raw = item if isinstance(item, dict) else {}
+            index = raw.get("index", len(described) + 1)
+            timecode = raw.get("timecode") or f"00:{len(described):02d}"
+            described.append(
+                {
+                    "index": index,
+                    "timecode": timecode,
+                    "screen": f"Экран на {timecode}: показан интерфейс системы (демо-режим mock)",
+                    "text": None,
+                }
+            )
+        if json_mode:
+            return json.dumps({"frames": described}, ensure_ascii=False)
+        return "\n".join(f"{item['timecode']} {item['screen']}" for item in described)
+
+    async def complete_document(
+        self,
+        system: str,
+        user: str,
+        *,
+        document: MediaAttachment,
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> str:
+        """Демо-OCR: по одному фрагменту текста на запрошенную страницу."""
+        del system, document, max_tokens, effort
+        data = _mock_data(user)
+        pages = data.get("pages") if isinstance(data, dict) else None
+        if not isinstance(pages, list) or not pages:
+            pages = [1]
+        texts = {
+            str(page): f"Текст страницы {page}, распознанный моделью (демо-режим mock)."
+            for page in pages
+        }
+        if json_mode:
+            return json.dumps({"pages": texts}, ensure_ascii=False)
+        return "\n".join(f"[Страница {page}] {text}" for page, text in texts.items())
 
     async def count_tokens(self, system: str, user: str) -> int:
         """Mock не обращается к провайдеру: оценка по знакам и `chars_per_token` справочника."""
@@ -318,3 +397,15 @@ def _trace(trace: Mapping[str, str], sources: Sequence[ContextSource]) -> dict[s
         if source is not None:
             result[element_id] = Quote(source_id=source.id, quote=quote)
     return result
+
+
+def _mock_data(user: str) -> dict[str, object]:
+    """JSON-данные из промпта (после `DATA_MARKER`); пустой словарь, если их нет."""
+    raw = prompt_data(user)
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}

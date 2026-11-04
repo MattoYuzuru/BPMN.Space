@@ -1,6 +1,6 @@
 """Схемы источников."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
@@ -99,3 +99,67 @@ class SourceUpdate(ApiModel):
     title: str | None = Field(default=None, max_length=200)
     content: str | None = None
     active: bool | None = None
+
+
+class MediaSegment(ApiModel):
+    """Отрезок расшифровки: от таймкода до следующей реплики (для перемотки плеера)."""
+
+    start_sec: float = Field(description="Начало отрезка в записи, секунды")
+    end_sec: float = Field(description="Конец отрезка, секунды")
+    text: str = Field(description="Реплика или фраза")
+    speaker: str | None = Field(default=None, description="Говорящий, если провайдер его сообщил")
+
+
+class SourceSegments(ApiModel):
+    """Таймкоды расшифровки источника: плеер перематывает к цитате без парсинга текста."""
+
+    source_id: UUID = Field(description="Источник, для которого запрошены отрезки")
+    transcript_id: UUID = Field(description="Расшифровка, из которой взяты отрезки")
+    duration_sec: float | None = Field(default=None, description="Длительность записи, секунды")
+    segments: list[MediaSegment] = Field(default_factory=list[MediaSegment])
+
+
+class MoneyRange(ApiModel):
+    """Ориентировочная стоимость: минимум и максимум по каталогу цен."""
+
+    min_usd: float | None = Field(default=None, description="Самый дешёвый сценарий, $")
+    max_usd: float | None = Field(default=None, description="Самый дорогой сценарий, $")
+
+
+class MediaEstimateStt(ApiModel):
+    minutes: float = Field(description="Минуты распознавания речи")
+    cost_usd: MoneyRange
+
+
+class MediaEstimateFrames(ApiModel):
+    count_min: int = Field(description="Нижняя граница числа кадров")
+    count_max: int = Field(description="Верхняя граница числа кадров")
+    vision_requests: int = Field(description="Запросов к vision-модели при выбранном профиле")
+    cost_usd: MoneyRange
+
+
+class MediaEstimateRequest(ApiModel):
+    """Что известно о файле до загрузки: длительность, наличие видео и профиль обработки."""
+
+    duration_sec: float = Field(gt=0, description="Длительность записи, секунды")
+    has_video: bool = Field(default=False, description="Есть ли видеодорожка")
+    media_profile: Literal["audio", "sparse", "detailed"] = Field(
+        default="audio",
+        description=(
+            "Профиль: `audio` — только звук, `sparse` — редкие кадры, `detailed` — подробно"
+        ),
+    )
+
+
+class MediaEstimate(ApiModel):
+    """Оценка обработки записи до загрузки: минуты STT, кадры и цена по каталогу."""
+
+    duration_sec: float
+    media_profile: str
+    media_profile_label: str
+    stt: MediaEstimateStt
+    frames: MediaEstimateFrames
+    total_cost_usd: MoneyRange
+    currency: str = Field(default="USD")
+    priced_on: date = Field(description="Дата проверки цен каталога")
+    note: str = Field(description="Оговорки: фактическая цена зависит от ключей и модели")

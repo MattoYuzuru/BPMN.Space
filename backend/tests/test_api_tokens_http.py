@@ -525,3 +525,45 @@ async def test_migration_0017_creates_and_drops_api_tokens() -> None:
         async with admin.begin() as connection:
             await connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
         await admin.dispose()
+
+
+async def test_media_stream_requires_read_scope_and_hides_foreign_project(stack: Stack) -> None:
+    """Плеер записи: чтение участнику проекта, токену нужно `projects:read`, чужому — 404.
+
+    `Range` проверяется в тестах без авторизации (`tests/test_media_derivation.py`); здесь —
+    права: владелец и viewer читают, токен без чтения получает 403, посторонний — 404,
+    гость — 401.
+    """
+    owner = await stack.user("media-owner@example.com")
+    created = await owner.post("/projects", json={"title": "Запись совещания"})
+    assert created.status_code == 201
+    project_id = created.json()["id"]
+    upload = await owner.post(
+        f"/projects/{project_id}/sources/file",
+        files={"file": ("demo.mp4", b"\x00" * 256, "video/mp4")},
+    )
+    assert upload.status_code == 201, upload.text
+    source_id = upload.json()["id"]
+
+    full = await owner.get(f"/sources/{source_id}/media")
+    assert full.status_code == 200
+    assert full.headers["accept-ranges"] == "bytes"
+    partial = await owner.get(f"/sources/{source_id}/media", headers={"Range": "bytes=0-9"})
+    assert partial.status_code == 206
+    assert partial.headers["content-range"].startswith("bytes 0-9/")
+
+    viewer = await stack.user("media-viewer@example.com")
+    container = stack.app.state.container
+    await container.sharing.accept_invite(project_id, UUID(viewer.user_id), role="viewer")
+    assert (await viewer.get(f"/sources/{source_id}/media")).status_code == 200
+
+    stranger = await stack.user("media-stranger@example.com")
+    assert (await stranger.get(f"/sources/{source_id}/media")).status_code == 404
+    assert (await stranger.get(f"/sources/{source_id}/segments")).status_code == 404
+
+    guest = await stack.guest()
+    assert (await guest.get(f"/sources/{source_id}/media")).status_code == 401
+
+    restricted = Agent(stack, (await _issue(owner, scopes=["sources:write"]))["secret"])
+    denied = await restricted.get(f"/sources/{source_id}/media")
+    assert denied.status_code == 403

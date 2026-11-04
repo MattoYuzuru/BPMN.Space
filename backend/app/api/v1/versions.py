@@ -5,7 +5,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, Request, Response, status
 
-from app.api.access import ResourceKind, ensure_project_access, ensure_resource_access
+from app.api.access import (
+    ApiScope,
+    ResourceKind,
+    ensure_project_access,
+    ensure_resource_access,
+    require_scope,
+)
 from app.api.auth import OptionalUserDep
 from app.api.deps import ContainerDep
 from app.api.responses import bpmn_attachment
@@ -24,7 +30,11 @@ from app.domain.onboarding import ChecklistItem
 router = APIRouter(tags=["versions"])
 
 
-@router.get("/projects/{project_id}/versions", responses=errors(401, 404, 410, 422))
+@router.get(
+    "/projects/{project_id}/versions",
+    dependencies=[require_scope(ApiScope.PROJECTS_READ)],
+    responses=errors(401, 404, 410, 422),
+)
 async def list_versions(  # noqa: PLR0917 — зависимости FastAPI
     project_id: UUID,
     request: Request,
@@ -43,6 +53,7 @@ async def list_versions(  # noqa: PLR0917 — зависимости FastAPI
 
 @router.post(
     "/projects/{project_id}/versions/{version_id}/checkpoint",
+    dependencies=[require_scope(ApiScope.PROJECTS_WRITE)],
     responses=errors(401, 403, 404, 410, 422),
 )
 async def checkpoint_version(  # noqa: PLR0917 — зависимости FastAPI
@@ -70,7 +81,11 @@ async def checkpoint_version(  # noqa: PLR0917 — зависимости FastAP
     return Version.model_validate(marked)
 
 
-@router.get("/versions/{version_id}", responses=errors(401, 404, 410, 422))
+@router.get(
+    "/versions/{version_id}",
+    dependencies=[require_scope(ApiScope.PROJECTS_READ)],
+    responses=errors(401, 404, 410, 422),
+)
 async def get_version(
     version_id: UUID,
     request: Request,
@@ -85,6 +100,7 @@ async def get_version(
 
 @router.get(
     "/versions/{version_id}/xml",
+    dependencies=[require_scope(ApiScope.PROJECTS_READ)],
     response_class=Response,
     responses={
         200: {"content": {"application/xml": {}}, "description": "BPMN 2.0 XML файлом"},
@@ -108,6 +124,7 @@ async def download_version(
 
 @router.put(
     "/projects/{project_id}/diagram",
+    dependencies=[require_scope(ApiScope.PROJECTS_WRITE)],
     status_code=status.HTTP_201_CREATED,
     responses={
         **errors(401, 403, 404, 410, 413, 422, 503),

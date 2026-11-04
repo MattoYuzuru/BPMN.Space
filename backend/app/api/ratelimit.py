@@ -4,8 +4,10 @@
 инфраструктуры. Лимиты щедрые и задаются в `config.py`: цель — остановить скрипты и подбор
 пароля, а не ограничить обычную работу. При перезапуске счётчики обнуляются.
 
-Три корзины: весь API на IP, вход и регистрация на IP, «дорогие» вызовы на аккаунт и на IP
-(прогоны, помощник, расшифровка, загрузка файла — за ними платные провайдеры).
+Три корзины: весь API на IP (и на токен доступа), вход и регистрация на IP, «дорогие» вызовы
+на аккаунт и на IP (прогоны, помощник, расшифровка, загрузка файла — за ними платные
+провайдеры). Запросы по токену доступа (RFC-0007) считаются и в общем лимите на токен, и в
+«дорогом» лимите аккаунта владельца: агент не получает отдельного бюджета на платные вызовы.
 """
 
 import math
@@ -19,6 +21,8 @@ from fastapi.responses import JSONResponse, Response
 
 from app.api.auth import OptionalUserDep
 from app.config import Settings
+from app.domain.api_tokens import hash_secret
+from app.services.api_tokens import bearer_secret
 
 WINDOW_SEC = 60.0
 _MAX_KEYS = 50_000  # потолок числа ключей: защита памяти от перебора адресов
@@ -118,6 +122,10 @@ def install_rate_limits(app: FastAPI, settings: Settings) -> None:
                 if retry is not None:
                     return too_many_requests(retry)
             retry = limits.api.check(ip)
+            secret = bearer_secret(request) if retry is None else None
+            if secret:
+                # Ключ — хеш секрета: так же для неизвестных токенов, без запроса к БД.
+                retry = limits.api.check(f"token:{hash_secret(secret)}")
             if retry is not None:
                 return too_many_requests(retry)
         return await call_next(request)

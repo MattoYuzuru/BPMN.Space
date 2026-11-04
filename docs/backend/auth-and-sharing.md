@@ -40,7 +40,7 @@ Backend предоставляет email/password аккаунты, сервер
 2. Получить `GET /api/v1/auth/csrf`; сохранить cookie `arkhitektor_csrf` и значение `csrf_token`.
 3. Регистрация: JSON на `POST /api/v1/auth/register` с `email` и паролем не короче 8 символов.
 4. Вход: `application/x-www-form-urlencoded` на `POST /api/v1/auth/session/login`, поле `username` содержит email, `password` — пароль. Успех — `204` и cookie `arkhitektor_session`.
-5. Каждый изменяющий запрос (включая регистрацию и вход) несёт значение CSRF cookie в заголовке `X-CSRF-Token`, иначе `403`. Выход — `POST /api/v1/auth/session/logout`.
+5. Каждый изменяющий запрос (включая регистрацию и вход) несёт значение CSRF cookie в заголовке `X-CSRF-Token`, иначе `403`. Выход — `POST /api/v1/auth/session/logout`. Запросы с `Authorization: Bearer` (токен доступа, см. ниже) CSRF не требуют.
 
 Ошибки аккаунтов (`detail` у входа и регистрации — код FastAPI Users, а не русский текст; клиент сопоставляет его со своим сообщением):
 
@@ -79,6 +79,73 @@ Backend предоставляет email/password аккаунты, сервер
 
 Неизвестная или отозванная ссылка отвечает `404`, истёкшая — `410`. Ссылка редактора без сессии — `401`. Ссылку нужно считать секретом уровня пароля: не вставляйте её в публичные issue и логи.
 
+## Токены доступа для агентов
+
+Шаг 1 [RFC-0007](../rfc/0007-external-agents-mcp.md): персональный токен даёт внешнему агенту
+(Claude Code, Claude Desktop, скрипт) доступ к REST API `/api/v1` от имени пользователя, но
+только в пределах выбранных прав и проектов. MCP-сервер (`/mcp`) — следующий шаг; команда
+подключения в интерфейсе уже показывает его адрес.
+
+**Создание и хранение.** Настройки → «Доступ для агентов» или `POST /api/v1/me/api-tokens`
+(только cookie-сессия, с CSRF):
+
+```json
+{ "name": "Claude Code на ноутбуке", "scopes": ["projects:read", "questions:answer"],
+  "project_ids": null, "expires_in_days": 30 }
+```
+
+Ответ `201` содержит `secret` вида `bps_<43 символа>` **один раз**; в списке
+(`GET /me/api-tokens`) и в БД его нет — только SHA-256 и префикс `bps_xxxxxx` для опознания.
+`scopes` по умолчанию — чтение и ответы; `project_ids: null` — все проекты пользователя, включая
+будущие; в списке — только доступные пользователю проекты (иначе `404`), до 100. Срок обязателен:
+1–365 дней, по умолчанию 30, бессрочных токенов нет. Действующих токенов — не больше 50 (`409`).
+`DELETE /me/api-tokens/{id}` отзывает токен мгновенно; отозванные из списка пропадают,
+истёкшие остаются с `expired: true`.
+
+**Вход.** Заголовок `Authorization: Bearer bps_…` в любом маршруте `/api/v1`. Пользователь —
+владелец токена; cookie при этом не читается (неверный токен рядом с действующей cookie — всё
+равно `401`), CSRF не проверяется: чужой сайт не может добавить этот заголовок без
+CORS-preflight. Неизвестный, отозванный, истёкший токен и токен заблокированного аккаунта —
+одинаковый `401` «Токен доступа недействителен…». `last_used_at` пишется не чаще раза в минуту.
+SSE прогона принимает токен и закрывается после отзыва так же, как после выхода; WebSocket
+комнаты и presence по токену недоступны.
+
+**Права.** Токен сужает, но не расширяет роль: наблюдатель с `projects:write` всё равно получает
+`403` «нужны права редактора», проект вне `project_ids` — `404`, как чужой.
+
+| Право | Маршруты |
+|---|---|
+| `projects:read` | `GET /projects` (с ограничением проектами список и `total` сужаются), `GET /projects/{id}`, вопросы, версии и XML, `GET /runs/{id}`, `GET /runs/{id}/events` |
+| `projects:write` | `POST /projects`, `POST /projects/from-example` (только токен без ограничения проектами), `PATCH /projects/{id}`, `PUT /projects/{id}/diagram`, контрольная точка версии |
+| `sources:write` | `POST /projects/{id}/sources/{text,file,sample}`, `PATCH /sources/{id}` |
+| `sources:delete` | `DELETE /sources/{id}` |
+| `runs:start` | `POST /projects/{id}/runs`, `POST /runs/{id}/cancel`, помощник (`/projects/{id}/assistant`, `/assistant/chat`), `POST /transcriptions` — платные вызовы на ключах владельца |
+| `questions:answer` | `POST /questions/{id}/{answer,ignore,reopen}` |
+| любой действующий токен | `GET /auth/me`, `GET /auth/session` |
+
+Нехватка права — `403` с названием нужного права, например «Токену не хватает права
+«sources:write» (добавлять и изменять источники)…».
+
+**Что через токен нельзя** (`403` «Это действие недоступно по токену доступа…»): управлять
+токенами, ключами моделей (`/me/llm-credentials`), ссылками доступа и участниками, принимать
+ссылки, удалять проект или выходить из него, онбординг, билеты комнаты и presence. Вход,
+регистрация и выход работают только через cookie. Маршрут закрыт по умолчанию: открыт только тот,
+у которого объявлено право `require_scope(...)` (`app/api/access.py`); проверяет его
+аутентификация по токену (`services/auth.token_user`) по дереву зависимостей маршрута. Перечень
+открытых маршрутов зафиксирован в `tests/test_api_tokens.py`.
+
+Пример (секрет — из окна создания; в репозиторий и логи его не кладите):
+
+```bash
+curl -s https://example.org/api/v1/projects -H "Authorization: Bearer $BPS_TOKEN"
+curl -s -X POST https://example.org/api/v1/questions/QUESTION_ID/answer \
+  -H "Authorization: Bearer $BPS_TOKEN" -H "Content-Type: application/json" \
+  -d '{"text": "Согласует начальник отдела"}'
+```
+
+Пока нет (следующие шаги RFC-0007): MCP-сервер, пометка «через агента» у ответов и источников,
+журнал действий агента в проекте, отдельный от аккаунта бюджет `expensive` на токен.
+
 ## Долгоживущие соединения
 
 WebSocket комнаты открывается по одноразовому билету с TTL 60 секунд и проверенным Origin. Для
@@ -115,6 +182,7 @@ Content-Security-Policy: default-src 'none'; sandbox
 | `POST /auth/session/login`, `POST /auth/register` | 20 в минуту | IP |
 | запуск прогона, помощник, `POST /transcriptions`, загрузка файла | 60 в минуту | аккаунт |
 | те же «дорогие» вызовы | 120 в минуту | IP (все аккаунты вместе: новые аккаунты лимит не обходят) |
+| запросы с `Authorization: Bearer` | 600 в минуту | токен (сверх лимита на IP); «дорогие» вызовы по токену идут в бюджет аккаунта владельца |
 
 Окно скользящее, счётчики в памяти одного процесса и сбрасываются при перезапуске. Число ключей ограничено: при переполнении вытесняются самые давние.
 
@@ -124,6 +192,8 @@ Content-Security-Policy: default-src 'none'; sandbox
 - Запросы к БД лежат за портом `AccessRepository` (`infra/repositories/base.py`, SQL-реализация — `access_sql.py`). In-memory режим порт не реализует: аккаунты и ссылки требуют PostgreSQL.
 - Слой `app.api` не импортирует `app.infra`; это проверяет import-linter.
 - Подключение FastAPI Users — `app/services/auth.py`, маршруты и схемы — `app/api/auth.py`.
+- Токены доступа: модель — `app/domain/api_tokens.py`, выпуск и проверка — `app/services/api_tokens.py`,
+  маршруты — `app/api/v1/api_tokens.py`, хранение — `infra/repositories/api_tokens_sql.py`.
 
 ## Действия перед включением на существующей VM
 
@@ -137,8 +207,8 @@ Content-Security-Policy: default-src 'none'; sandbox
 ## Тесты
 
 `make test-backend` не требует PostgreSQL. HTTP-тесты с включённой авторизацией (`tests/test_auth_http.py`:
-гость, чужой проект, роли, ссылки, XML, миграция, отзыв доступа к уже открытым SSE и cookie WS-билета)
-запускает `make test-postgres` на временной схеме.
+гость, чужой проект, роли, ссылки, XML, миграция, отзыв доступа к уже открытым SSE и cookie WS-билета;
+`tests/test_api_tokens_http.py` — токены доступа) запускает `make test-postgres` на временной схеме.
 
 ## Удаление и выход из общего проекта
 

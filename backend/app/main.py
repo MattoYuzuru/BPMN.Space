@@ -21,6 +21,7 @@ from app.config import Settings, get_settings
 from app.container import Container, build_container
 from app.infra.seed import build_seed
 from app.log_filters import install_log_filters
+from app.services.api_tokens import bearer_secret
 from app.services.auth import optional_user
 from app.services.presence import PresenceRegistry
 
@@ -89,7 +90,11 @@ def create_app(settings: Settings | None = None, *, container: Container | None 
     async def csrf_protection(request, call_next):
         unsafe = request.method not in {"GET", "HEAD", "OPTIONS", "TRACE"}
         is_api = request.url.path.startswith(settings.api_prefix + "/")
-        if settings.auth_enabled and unsafe and is_api:
+        # Запрос с `Authorization: Bearer` аутентифицируется только токеном доступа, cookie
+        # тогда не используется. Чужой сайт не может добавить этот заголовок без CORS-preflight,
+        # поэтому double-submit CSRF к таким запросам не применяется (RFC-0007).
+        bearer = bearer_secret(request) is not None
+        if settings.auth_enabled and unsafe and is_api and not bearer:
             cookie = request.cookies.get(CSRF_COOKIE)
             header = request.headers.get("x-csrf-token")
             if not cookie or not header or not secrets.compare_digest(cookie, header):

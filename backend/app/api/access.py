@@ -1,11 +1,14 @@
 """HTTP-слой проверки прав: гость → 401, чужой проект → 404, роль без права → 403."""
 
+from typing import Any
 from uuid import UUID
 
-from fastapi import Request
+from fastapi import Depends, Request
 
 from app.container import Container
 from app.domain.access import ProjectRole, ResourceKind, ShareLink
+from app.domain.api_tokens import ApiScope, TokenPolicy
+from app.services.api_tokens import current_api_token, token_policy_marker
 from app.services.auth import UserRow, stream_user
 from app.services.errors import (
     DeletedProjectError,
@@ -16,6 +19,7 @@ from app.services.errors import (
 )
 
 __all__ = [
+    "ApiScope",
     "ProjectRole",
     "ResourceKind",
     "ensure_project_access",
@@ -24,7 +28,28 @@ __all__ = [
     "has_stream_project_access",
     "project_roles",
     "require_account",
+    "require_scope",
+    "token_project_ids",
 ]
+
+
+def require_scope(scope: ApiScope | None, *, all_projects: bool = False) -> Any:
+    """Объявить право, нужное маршруту при входе по токену доступа (RFC-0007).
+
+    Подключается в `dependencies=[...]` маршрута. Cookie-сессию не ограничивает: там решает
+    роль в проекте. Проверку выполняет аутентификация по токену (`services/auth.token_user`):
+    маршрут без объявления по токену недоступен (`403`), так что новые маршруты закрыты по
+    умолчанию. `scope=None` — достаточно любого действующего токена.
+    """
+    return Depends(token_policy_marker(TokenPolicy(scope, all_projects=all_projects)))
+
+
+def token_project_ids(request: Request) -> frozenset[UUID] | None:
+    """Проекты, которыми ограничен токен запроса; None — без ограничения (или cookie)."""
+    token = current_api_token(request)
+    if token is None or token.project_ids is None:
+        return None
+    return frozenset(token.project_ids)
 
 
 def require_account(request: Request, user: UserRow | None) -> UUID | None:
@@ -47,6 +72,10 @@ async def ensure_project_access(
         return ProjectRole.OWNER
     user_id = require_account(request, user)
     assert user_id is not None  # noqa: S101 — require_account пропускает гостя только без auth
+    token = current_api_token(request)
+    if token is not None and not token.allows_project(project_id):
+        # Проект вне токена неотличим от чужого: тот же 404, без квитанции об удалении.
+        raise NotFoundError("Проект не найден")
     role = await container.access.project_role(project_id, user_id)
     if role is None:
         if await container.access.project_was_deleted(project_id, user_id):
@@ -95,7 +124,10 @@ async def has_stream_project_access(
     У уже начатого ответа нельзя поменять HTTP-статус: потеря доступа закрывает поток
     до отправки следующего события, без исключения и утечки данных из очереди.
     """
-    current = await stream_user(request) if request.app.state.auth_enabled else user
+    try:
+        current = await stream_user(request) if request.app.state.auth_enabled else user
+    except (UnauthorizedError, ForbiddenError):
+        return False  # токен доступа отозван или истёк во время потока
     if request.app.state.auth_enabled and (
         current is None or user is None or current.id != user.id
     ):

@@ -31,6 +31,7 @@ from app.llm.factory import build_client, build_pipeline, call_knobs
 from app.llm.mock import MockPipeline
 from app.llm.pipeline import LlmPipeline
 from app.services.access import AccessService
+from app.services.api_tokens import ApiTokenService
 from app.services.assistant import AssistantService
 from app.services.catalog import ExampleService, TranscriptionService
 from app.services.collaboration import RealtimeHub
@@ -143,6 +144,7 @@ class Container:
     transcriptions: TranscriptionService
     assistant: AssistantService
     llm_credentials: LlmCredentialService
+    api_tokens: ApiTokenService
     access: AccessService
     sharing: SharingService
     onboarding: OnboardingService
@@ -296,6 +298,7 @@ def build_container(
             models_cache_sec=settings.llm_models_cache_sec,
             anthropic_effort=settings.anthropic_effort_default(),
         ),
+        api_tokens=ApiTokenService(repos, runtime=runtime),
         access=access,
         sharing=SharingService(access, runtime=runtime),
         onboarding=onboarding,

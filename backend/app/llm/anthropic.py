@@ -13,8 +13,14 @@ Sonnet 5.5 отключить нельзя — параметр `thinking` не 
 import anthropic
 import httpx2
 
-from app.llm.base import OutputTruncatedError, record_usage
-from app.llm.capabilities import capabilities_for, from_anthropic_model, nearest_effort, remember
+from app.llm.base import (
+    CONTEXT_OVERFLOW_MESSAGE,
+    ContextOverflowError,
+    OutputTruncatedError,
+    is_context_overflow,
+    record_usage,
+)
+from app.llm.capabilities import capabilities_for, from_anthropic_model, remember, wire_effort
 from app.llm.client import (
     NETWORK_MESSAGE,
     RETRYABLE_HTTP,
@@ -92,12 +98,12 @@ class AnthropicClient:
         return request
 
     def effort_for(self, requested: str | None) -> str | None:
-        """Уровень запроса: профиль → умолчание сервера → умолчание модели; `None` — не слать."""
+        """Уровень запроса: от пайплайна — как есть (он уже проверен и записан в прогоне);
+        без него — умолчание сервера, затем модели; `None` — не отправлять."""
+        if requested is not None:
+            return requested
         caps = capabilities_for("anthropic", self._config.model)
-        wanted = requested or self._config.effort or caps.effort_default
-        if wanted is None:
-            return None
-        return nearest_effort(wanted, caps.effort_levels)
+        return wire_effort("anthropic", caps, None, server_default=self._config.effort)
 
     async def complete(
         self,
@@ -180,4 +186,7 @@ def _map_status(error: anthropic.APIStatusError) -> TransientLlmError | RuntimeE
         return TransientLlmError(
             f"HTTP {status}", f"Сервис модели вернул HTTP {status}", retry_after=_retry_after(error)
         )
+    # Текст ошибки только проверяется на признак переполнения и в сообщение не попадает.
+    if is_context_overflow(status, str(getattr(error, "message", "") or "")):
+        return ContextOverflowError(CONTEXT_OVERFLOW_MESSAGE)
     return RuntimeError(f"Сервис модели вернул HTTP {status}")

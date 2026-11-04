@@ -7,7 +7,12 @@ import {
 } from '@tanstack/react-router'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { choiceRequest, getModelChoice, useModelChoiceStore } from '@/entities/llm-credential'
+import {
+  choiceRequest,
+  getModelChoice,
+  type ModelCapabilities,
+  useModelChoiceStore,
+} from '@/entities/llm-credential'
 import { TooltipProvider } from '@/shared/ui'
 import { stubApi } from '@/test/api-stub'
 import { ModelPicker } from './model-picker'
@@ -136,7 +141,7 @@ describe('Выбор модели для запуска', () => {
       model: 'claude-opus-5-5',
       effort: 'high',
     })
-    expect(choiceRequest(getModelChoice('u1'))).toEqual({
+    expect(choiceRequest(getModelChoice('u1'), CAPS as ModelCapabilities)).toEqual({
       credential_id: 'c1',
       model: 'claude-opus-5-5',
       profile: { effort: 'high' },

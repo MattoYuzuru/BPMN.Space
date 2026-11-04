@@ -65,6 +65,7 @@ async def generate_graph(  # noqa: PLR0912 — адресные repair-пути 
     verify_quote: Callable[[list, object, object], tuple[UUID | None, str | None]],
     *,
     semantic_review: bool = False,
+    review_complete: Callable[[str, str], Awaitable[str]] | None = None,
 ) -> DiagramDraft:
     current = None
     policy = None
@@ -152,7 +153,10 @@ async def generate_graph(  # noqa: PLR0912 — адресные repair-пути 
                 review_context = replace(
                     context, manual_overrides=policy.dump() if policy else context.manual_overrides
                 )
-                semantic_errors = await review_semantics(graph, review_context, complete)
+                # Сверка идёт порциями: им свой (меньший) лимит ответа, если он задан.
+                semantic_errors = await review_semantics(
+                    graph, review_context, review_complete or complete
+                )
                 if semantic_errors:
                     raise GraphValidationError(semantic_errors)
             bindings = _bindings(graph)

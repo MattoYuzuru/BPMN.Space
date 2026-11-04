@@ -12,6 +12,7 @@ from app.llm.capabilities import (
     capabilities_for,
     context_budget_chars,
     json_output_tokens,
+    wire_effort,
 )
 from app.llm.client import PROVIDER_COMPATIBLE, LlmClient, LlmConfig
 from app.llm.openai import OpenAIClient
@@ -66,9 +67,10 @@ def build_pipeline(
         transport=transport,
     )
     capabilities, json_max_tokens, budget = model_limits(config, settings)
+    provider = PROVIDER_COMPATIBLE if config.provider == "deepseek" else config.provider
     return LlmPipeline(
         client,
-        provider=PROVIDER_COMPATIBLE if config.provider == "deepseek" else config.provider,
+        provider=provider,
         model=config.model,
         json_mode=config.json_mode,
         semantic_review=settings.llm_semantic_review,
@@ -77,6 +79,9 @@ def build_pipeline(
         json_temperature=config.json_temperature,
         capabilities=capabilities,
         context_budget_chars=budget,
+        effort=wire_effort(provider, capabilities, None, server_default=config.effort),
+        chunk_max_tokens=settings.llm_chunk_max_tokens,
+        fallback_budget_chars=settings.context_budget_chars(),
     )
 
 

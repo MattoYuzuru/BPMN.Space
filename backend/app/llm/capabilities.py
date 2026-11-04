@@ -10,10 +10,12 @@
 Модуль не знает ни о ключах, ни о HTTP: только данные и расчёты.
 """
 
+import re
 from collections import OrderedDict
 from dataclasses import dataclass, replace
 from datetime import date
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 type Effort = Literal["low", "medium", "high", "xhigh", "max"]
 EFFORT_LEVELS: tuple[Effort, ...] = ("low", "medium", "high", "xhigh", "max")
@@ -28,13 +30,15 @@ EFFORT_LABELS: dict[str, str] = {
     "max": "максимум",
 }
 
-# Знаков на токен для русского текста — консервативно: кириллица у токенизаторов дробится
-# мельче латиницы. Значение уточняется замером `count_tokens` на эталонах `prompt-eval`;
-# пока оно занижено, бюджет получается меньше реального окна, а не больше.
-RU_CHARS_PER_TOKEN = 2.5
+# Знаков на токен для русского текста. Замера `count_tokens` на эталонах `prompt-eval` пока нет,
+# поэтому берём заведомо низкое значение: кириллица у токенизаторов дробится мельче латиницы,
+# а заниженная оценка даёт бюджет меньше реального окна, а не переполнение. Если оценка всё же
+# ошиблась, «вход длиннее окна» переводит прогон на порции (`llm/pipeline.py`).
+RU_CHARS_PER_TOKEN = 2.0
 # Доля окна, которую отдаём источникам: остальное — запас на неточность оценки токенов.
 CONTEXT_MARGIN = 0.8
-# Системный промпт, схема ответа, вопросы и XML схемы, которые идут рядом с источниками.
+# Системный промпт, схема ответа, вопросы и анализ, которые идут рядом с источниками. Текущая
+# схема учитывается отдельно при сборке контекста, черновик repair — резервом ответа (×2).
 PROMPT_OVERHEAD_TOKENS = 16_000
 
 _ANTHROPIC_PRICES_CHECKED = date(2026, 10, 6)
@@ -121,12 +125,29 @@ ANTHROPIC_CATALOG: dict[str, ModelCapabilities] = {
     ),
 }
 
+# Снимки и псевдонимы модели каталога: `claude-opus-5-5-20261001`, `claude-opus-5-5@20261001`,
+# `claude-opus-5-5-latest` описываются записью `claude-opus-5-5`.
+_SNAPSHOT = re.compile(r"^(?P<base>.+?)(?:[-@](?:\d{8}|latest))$")
+
+
+def catalog_entry(model: str) -> ModelCapabilities | None:
+    """Запись каталога Anthropic по имени модели или её датированного снимка."""
+    name = model.lower()
+    known = ANTHROPIC_CATALOG.get(name)
+    if known is None and (match := _SNAPSHOT.match(name)):
+        known = ANTHROPIC_CATALOG.get(match.group("base"))
+    return known
+
+
 # Модели Anthropic, которым параметр effort нельзя отправлять (400 у API).
 _ANTHROPIC_NO_EFFORT = ("claude-haiku-4", "claude-haiku-3", "claude-3")
 # Рассуждающие модели OpenAI: только температура по умолчанию, глубина — `reasoning_effort`.
 _OPENAI_REASONING = ("o1", "o3", "o4", "gpt-5")
 
-# Уточнения из Models API провайдера (процессный кеш: модель описана одинаково для всех ключей).
+# Уточнения из Models API провайдера. Процессный кеш по `(провайдер, модель)`, а не по ключу:
+# допущение — окно и уровни модели одинаковы для всех ключей провайдера (описано в
+# `generation-quality.md`). Прогон записывает рассчитанные пределы в `ir.execution.limits`,
+# поэтому восстановление после рестарта от этого кеша не зависит.
 _REGISTRY_SIZE = 256
 _registry: OrderedDict[tuple[str, str], ModelCapabilities] = OrderedDict()
 
@@ -145,8 +166,15 @@ def forget_all() -> None:
     _registry.clear()
 
 
-def is_deepseek(model: str, base_url: str | None = None) -> bool:
-    return model.lower().startswith("deepseek") or "deepseek.com" in (base_url or "").lower()
+DEEPSEEK_HOST = "api.deepseek.com"
+
+
+def is_deepseek(base_url: str | None) -> bool:
+    """Параметр `thinking` понимает только API самого DeepSeek, а не OpenRouter или vLLM."""
+    try:
+        return (urlsplit(base_url or "").hostname or "").lower() == DEEPSEEK_HOST
+    except ValueError:
+        return False
 
 
 def capabilities_for(
@@ -160,11 +188,12 @@ def capabilities_for(
     name = model.lower()
     match provider:
         case "anthropic":
-            return ANTHROPIC_CATALOG.get(name) or _unknown_claude(name)
+            return catalog_entry(name) or _unknown_claude(name)
         case "openai":
             return _openai(name)
-        case "openai_compatible" if is_deepseek(name, base_url):
-            # Рассуждение DeepSeek — только вкл/выкл: high включает thinking.
+        case "openai_compatible" if is_deepseek(base_url):
+            # Рассуждение DeepSeek — только вкл/выкл: low выключает, medium — как настроил
+            # оператор (`DEEPSEEK_THINKING_ENABLED`), high включает.
             return ModelCapabilities(effort_levels=_BASIC_EFFORTS, effort_default="medium")
         case "openai_compatible":
             return ModelCapabilities()
@@ -242,6 +271,26 @@ def nearest_effort(level: str, levels: tuple[str, ...]) -> str | None:
     return min(levels, key=lambda name: (abs(order.get(name, 0) - target), order.get(name, 0)))
 
 
+def wire_effort(
+    provider: str,
+    capabilities: ModelCapabilities,
+    requested: str | None,
+    *,
+    server_default: str | None = None,
+) -> str | None:
+    """Уровень, который адаптер реально отправит провайдеру; `None` — не отправлять.
+
+    Anthropic: профиль → умолчание сервера → умолчание модели. OpenAI и DeepSeek: только из
+    профиля (без него — поведение провайдера и `DEEPSEEK_THINKING_ENABLED`). Уровень
+    приводится к ближайшему, который модель принимает.
+    """
+    levels = capabilities.effort_levels
+    wanted = requested
+    if provider == "anthropic":
+        wanted = requested or server_default or capabilities.effort_default
+    return nearest_effort(wanted, levels) if wanted else None
+
+
 def json_output_tokens(capabilities: ModelCapabilities, *, configured: int, explicit: bool) -> int:
     """`max_tokens` JSON-ответа: максимум модели; `LLM_JSON_MAX_TOKENS` — потолок, если задан явно.
 
@@ -262,13 +311,14 @@ def context_budget_chars(
 ) -> int:
     """Бюджет источников прогона в знаках.
 
-    (окно − резерв на ответ − накладные промпта) × знаков на токен × запас, но не меньше
+    (окно − 2 × ответ − накладные промпта) × знаков на токен × запас, но не меньше
     `LLM_CONTEXT_BUDGET_CHARS`; `ceiling_chars` > 0 — потолок оператора (лимиты аккаунта).
+    Ответ резервируется дважды: попытка исправления графа отправляет прежний черновик обратно.
     """
     window = capabilities.context_tokens
     budget = fallback_chars
     if window is not None:
-        usable = max(window - output_reserve_tokens - PROMPT_OVERHEAD_TOKENS, 0)
+        usable = max(window - 2 * output_reserve_tokens - PROMPT_OVERHEAD_TOKENS, 0)
         budget = max(int(usable * capabilities.chars_per_token * CONTEXT_MARGIN), fallback_chars)
     if ceiling_chars > 0:
         budget = min(budget, max(ceiling_chars, fallback_chars))

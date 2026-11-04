@@ -1,4 +1,5 @@
 export {
+  cachedModelCapabilities,
   llmCredentialKeys,
   llmCredentialsQueryOptions,
   llmModelsQueryOptions,

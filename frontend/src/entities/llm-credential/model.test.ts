@@ -136,10 +136,25 @@ describe('модель ключей', () => {
       credential_id: 'c2',
       model: 'gpt-4o',
     })
-    expect(choiceRequest({ credentialId: 'c2', model: 'o3', effort: 'high' })).toEqual({
+    expect(choiceRequest({ credentialId: 'c2', model: 'o3', effort: 'high' }, caps())).toEqual({
       credential_id: 'c2',
       model: 'o3',
       profile: { effort: 'high' },
+    })
+  })
+
+  it('уходит показанный уровень, а без известных возможностей — никакой', () => {
+    const choice = { credentialId: 'c2', model: 'm', effort: 'xhigh' as const }
+    // Модель не умеет «очень тщательно»: в интерфейсе показан её уровень по умолчанию.
+    expect(choiceRequest(choice, caps())).toEqual({
+      credential_id: 'c2',
+      model: 'm',
+      profile: { effort: 'medium' },
+    })
+    expect(choiceRequest(choice)).toEqual({ credential_id: 'c2', model: 'm' })
+    expect(choiceRequest(choice, caps({ effort_levels: [], effort_default: null }))).toEqual({
+      credential_id: 'c2',
+      model: 'm',
     })
   })
 })

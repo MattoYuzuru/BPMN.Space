@@ -215,6 +215,7 @@ def build_container(
         factory=user_pipeline,
         runtime=runtime,
         production=settings.is_production,
+        server_max_effort=settings.llm_server_max_effort,
     )
 
     stt = build_stt(settings)

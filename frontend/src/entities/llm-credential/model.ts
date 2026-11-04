@@ -147,13 +147,20 @@ export function choiceLabel(
   return `${modelLabel(resolved.model)}${level}${LABEL_SEPARATOR}ключ «${resolved.credential.label}»`
 }
 
-/** Поля запроса запуска: без явного выбора сервер сам возьмёт ключ по умолчанию и уровень модели. */
-export function choiceRequest(choice: ModelChoice | null): {
+/**
+ * Поля запроса запуска: без явного выбора сервер сам возьмёт ключ по умолчанию и уровень модели.
+ * Уровень уходит тот, что показан (`effectiveEffort`); без известных возможностей модели — никакой.
+ */
+export function choiceRequest(
+  choice: ModelChoice | null,
+  caps?: ModelCapabilities,
+): {
   credential_id?: string
   model?: string
   profile?: { effort: Effort }
 } {
   if (!choice) return {}
   const request = { credential_id: choice.credentialId, model: choice.model }
-  return choice.effort ? { ...request, profile: { effort: choice.effort } } : request
+  const effort = caps ? effectiveEffort(choice.effort, caps) : null
+  return effort ? { ...request, profile: { effort } } : request
 }

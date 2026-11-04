@@ -23,9 +23,12 @@ class OpenAIClient(OpenAICompatibleClient):
         return self.capabilities().accepts_temperature
 
     def apply_effort(self, body: dict[str, Any], effort: str | None) -> None:
-        level = nearest_effort(effort, self.capabilities().effort_levels) if effort else None
-        if level is not None:
-            body["reasoning_effort"] = level
+        """Уровень уже приведён пайплайном (`wire_effort`); у моделей без рассуждения — нет."""
+        levels = self.capabilities().effort_levels
+        if effort and levels:
+            body["reasoning_effort"] = (
+                effort if effort in levels else nearest_effort(effort, levels)
+            )
 
     def is_chat_model(self, model_id: str) -> bool:
         name = model_id.lower()

@@ -2,7 +2,9 @@ import { useMutation } from '@tanstack/react-query'
 import { AnimatePresence, m } from 'motion/react'
 import { useEffect, useState } from 'react'
 import {
+  agentSteps,
   cancelRun,
+  isAgentRun,
   RUN_MODE_LABEL,
   type RunCost,
   type RunView,
@@ -199,7 +201,7 @@ function RunCard({
           />
         </span>
         <div className="flex min-w-0 flex-1 flex-col">
-          <span className="type-subheading text-fg">
+          <span className="flex flex-wrap items-center gap-1.5 type-subheading text-fg">
             {waiting
               ? 'Ждёт вашего действия'
               : cancelled
@@ -211,6 +213,11 @@ function RunCard({
                       ? 'Результат готов'
                       : labels.title
                     : labels.done}
+            {isAgentRun(view) && (
+              <Badge tone="accent" variant="outline" icon="bolt">
+                Агентный режим
+              </Badge>
+            )}
           </span>
           <span className="type-caption text-fg-subtle" data-numeric role="timer" aria-live="off">
             {waiting
@@ -280,6 +287,22 @@ function RunCard({
                 Новая версия схемы уже на холсте
               </span>
             )}
+          </div>
+        )}
+        {isAgentRun(view) && (
+          <div
+            className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 type-caption text-fg-muted"
+            data-testid="run-agent-steps"
+            data-numeric
+          >
+            <Icon name="bolt" size={14} className="text-accent-fg" />
+            <span>
+              Ходов агента: {agentSteps(actualView.cost)}
+              {view.maxSteps ? ` из ${view.maxSteps}` : ''}
+            </span>
+            <span className="text-fg-subtle">
+              Инструменты и журнал ходов сервер в прогон не отдаёт — здесь реальные вызовы модели.
+            </span>
           </div>
         )}
         <RunCostBlock cost={actualView.cost} budgetUsd={actualView.budget?.cost_usd ?? null} />

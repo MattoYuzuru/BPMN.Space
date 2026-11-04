@@ -255,3 +255,40 @@ describe('стоимость и ожидание технического воп
     expect(useRunStore.getState().views['p-1']?.status).toBe('running')
   })
 })
+
+it('агентный прогон показывает бейдж режима и реальное число ходов', async () => {
+  useRunStore.getState().track(
+    run({
+      status: 'running',
+      stage: 'reading_sources',
+      stage_label: 'Агентное чтение',
+      profile: { mode: 'agent', max_steps: 12 },
+      cost: {
+        tokens_in: 800,
+        tokens_out: 400,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        calls: 3,
+        cost_usd: 1,
+        complete: true,
+        currency: 'USD' as const,
+        by_stage: [
+          {
+            stage: 'agent',
+            label: 'Агентное чтение',
+            calls: 3,
+            tokens_in: 800,
+            tokens_out: 400,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+            cost_usd: 1,
+          },
+        ],
+      },
+    }),
+  )
+  mount()
+  await tick(0)
+  expect(screen.getByText('Агентный режим')).toBeInTheDocument()
+  expect(screen.getByTestId('run-agent-steps')).toHaveTextContent('Ходов агента: 3 из 12')
+})

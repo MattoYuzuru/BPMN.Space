@@ -24,6 +24,7 @@ import { OnboardingSection } from './onboarding'
 import { OverlaysSection } from './overlays'
 import { RunSection } from './run'
 import { SharingSection } from './sharing'
+import { WaveTwoSection } from './wave-two'
 
 const NAV = [
   {
@@ -58,6 +59,7 @@ const NAV = [
     items: [
       ['materials', 'Материалы'],
       ['run', 'Прогон и стоимость'],
+      ['wave2', 'Волна 2: оценка и инструменты'],
       ['account', 'Аккаунт и доступ'],
       ['sharing', 'Общий доступ'],
       ['onboarding', 'Обучение'],
@@ -208,6 +210,7 @@ export function StyleguidePage() {
           <LayoutSection />
           <MaterialsSection />
           <RunSection />
+          <WaveTwoSection />
           <AccountSection />
           <SharingSection />
           <OnboardingSection />

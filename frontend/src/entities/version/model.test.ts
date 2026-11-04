@@ -31,6 +31,15 @@ describe('элементы схемы', () => {
     expect(elements.get('Task_A')?.type).toBe('task')
   })
 
+  it('не разбирает один и тот же XML повторно', () => {
+    const parse = vi.spyOn(DOMParser.prototype, 'parseFromString')
+    const source = xml('<bpmn:task id="Cache_Probe" />')
+    const first = diagramElements(source)
+    expect(diagramElements(source)).toBe(first)
+    expect(parse).toHaveBeenCalledTimes(1)
+    parse.mockRestore()
+  })
+
   it('не падает на битом XML', () => {
     expect(diagramElements('<bpmn:definitions').size).toBe(0)
     expect(diagramElements('').size).toBe(0)

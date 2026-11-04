@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { ChecklistItemKey } from '@/entities/onboarding'
+import { registerAccountReset } from '@/shared/lib/account-reset'
 
 /** Сколько секунд пункт считается «только что отмеченным»: строка в панели показывает это движением. */
 export const RECENT_MS = 5000
@@ -24,6 +25,8 @@ export const useRecentItems = create<RecentState>((set) => ({
     })),
   clear: () => set({ at: {} }),
 }))
+
+registerAccountReset(() => useRecentItems.setState({ at: {} }))
 
 /** Пункт отмечен недавно. */
 export function isRecent(

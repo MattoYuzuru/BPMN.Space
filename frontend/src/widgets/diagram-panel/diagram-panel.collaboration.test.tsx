@@ -9,15 +9,32 @@ import type { DiagramEditorHandle } from '@/widgets/diagram-editor'
 import { type WorkspaceApi, WorkspaceContext } from '@/widgets/workspace/model'
 import { DiagramPanel } from './diagram-panel'
 
-const transport = vi.hoisted(() => ({
-  event: null as { type: string; [key: string]: unknown } | null,
-  nextXml: '<draft/>',
-  pendingTimer: 0,
-  save: { isPending: false, isSuccess: false, mutateAsync: vi.fn() },
-}))
+type TransportEvent = { type: string; [key: string]: unknown }
+const transport = vi.hoisted(() => {
+  const listeners = new Set<(event: TransportEvent) => void>()
+  return {
+    listeners,
+    /** Присваивание доставляет событие подписчикам, как сообщение сокета. */
+    run: (callback: () => void) => callback(),
+    set event(value: TransportEvent | null) {
+      if (!value) return
+      this.run(() => {
+        for (const listener of [...listeners]) listener(value)
+      })
+    },
+    enabledArgs: [] as unknown[],
+    nextXml: '<draft/>',
+    pendingTimer: 0,
+    save: { isPending: false, isSuccess: false, mutateAsync: vi.fn() },
+  }
+})
 vi.mock('@/features/project-collaboration/use-project-collaboration', () => ({
-  useProjectCollaboration: () => ({
-    event: transport.event,
+  useProjectCollaboration: (...args: unknown[]) => ({
+    subscribe: (listener: (event: TransportEvent) => void) => {
+      transport.enabledArgs = args
+      transport.listeners.add(listener)
+      return () => transport.listeners.delete(listener)
+    },
     connected: false,
     localSessionId: 'tab-1',
     presence: {
@@ -33,7 +50,8 @@ vi.mock('@/entities/version', async (original) => ({
   useSaveDiagram: () => transport.save,
 }))
 vi.mock('@/entities/onboarding', () => ({ useReportOnboardingEvent: () => ({ mutate: () => {} }) }))
-vi.mock('@/features/project-collaboration/collaborator-overlay', () => ({
+vi.mock('@/features/project-collaboration/collaborator-overlay', async (original) => ({
+  ...(await original<typeof import('@/features/project-collaboration/collaborator-overlay')>()),
   CollaboratorOverlay: () => null,
 }))
 vi.mock('@/widgets/diagram-editor', () => ({
@@ -69,6 +87,8 @@ vi.mock('@/widgets/diagram-editor', () => ({
 vi.mock('@/widgets/run-progress/run-progress', () => ({ RunProgress: () => null }))
 vi.mock('./diagram-toolbar', () => ({ DiagramToolbar: () => null }))
 vi.mock('./element-inspector', () => ({ ElementInspector: () => null }))
+
+transport.run = (callback) => act(callback)
 
 const version = (id = 'v-1', xml = '<initial/>'): VersionDetail => ({
   id,
@@ -125,7 +145,7 @@ function mount() {
 
 beforeEach(() => {
   vi.useFakeTimers()
-  transport.event = null
+  transport.listeners.clear()
   transport.nextXml = '<draft/>'
   transport.pendingTimer = 0
   transport.save.isPending = false
@@ -333,4 +353,50 @@ it('пока правка не сохранена, закрытие вкладк
   const saved = new Event('beforeunload', { cancelable: true })
   window.dispatchEvent(saved)
   expect(saved.defaultPrevented).toBe(false)
+})
+
+it('два события в одном пакете обрабатываются оба', () => {
+  const panel = mount()
+  fireEvent.click(screen.getByRole('button', { name: 'Изменить схему' }))
+  act(() => {
+    for (const listener of [...transport.listeners]) {
+      listener({ type: 'run.changed', status: 'succeeded', version_id: 'v-2', number: 2 })
+      listener({ type: 'diagram.version', version_id: 'v-3', number: 3 })
+    }
+  })
+  // Второе событие не затирает первое: баннер показывает последнюю версию, а не теряет её.
+  expect(screen.getByText(/Коллега сохранил версию 3/)).toBeInTheDocument()
+  expect(panel.invalidate).not.toHaveBeenCalled()
+})
+
+it('«Отменить мои правки» после подтверждения открывает версию коллеги без скачивания', async () => {
+  const panel = mount()
+  fireEvent.click(screen.getByRole('button', { name: 'Изменить схему' }))
+  transport.event = { type: 'diagram.version', version_id: 'v-2', number: 2 }
+  fireEvent.click(screen.getByRole('button', { name: 'Отменить мои правки' }))
+  expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Отменить правки' }))
+    await vi.advanceTimersByTimeAsync(1600)
+  })
+  expect(URL.createObjectURL).not.toHaveBeenCalled()
+  expect(screen.queryByText(/Коллега сохранил/)).not.toBeInTheDocument()
+  expect(transport.save.mutateAsync).not.toHaveBeenCalled()
+  expect(panel.invalidate).toHaveBeenCalledWith({ queryKey: projectKeys.detail('p-1') })
+})
+
+it('скачивание черновика добавляет ссылку в документ и освобождает адрес позже', async () => {
+  vi.useRealTimers()
+  vi.useFakeTimers()
+  const append = vi.spyOn(document.body, 'append')
+  mount()
+  fireEvent.click(screen.getByRole('button', { name: 'Изменить схему' }))
+  transport.event = { type: 'diagram.version', version_id: 'v-2', number: 2 }
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Скачать черновик' }))
+  })
+  expect(append).toHaveBeenCalledWith(expect.any(HTMLAnchorElement))
+  expect(URL.revokeObjectURL).not.toHaveBeenCalled()
+  await act(async () => vi.advanceTimersByTimeAsync(1100))
+  expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:draft')
 })

@@ -14,26 +14,49 @@ const COLOR_CLASSES = [
   'text-danger',
 ]
 
+/** Счётчик сдвигов холста: pan/zoom перерисовывает только оверлей, а не всю панель схемы. */
+export interface ViewportStore {
+  subscribe: (listener: () => void) => () => void
+  getSnapshot: () => number
+  bump: () => void
+}
+
+export function createViewportStore(): ViewportStore {
+  let revision = 0
+  const listeners = new Set<() => void>()
+  return {
+    subscribe: (listener) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    getSnapshot: () => revision,
+    bump: () => {
+      revision += 1
+      for (const listener of [...listeners]) listener()
+    },
+  }
+}
+
 export function CollaboratorOverlay({
   presence,
   localSessionId,
   editorRef,
   boundsRef,
-  viewportRevision,
+  viewport,
 }: {
   presence: PresenceStore
   localSessionId?: string
   editorRef: RefObject<DiagramEditorHandle | null>
   boundsRef: RefObject<HTMLDivElement | null>
-  viewportRevision: number
+  viewport: ViewportStore
 }) {
   const participants = useSyncExternalStore(
     presence.subscribe,
     presence.getSnapshot,
     presence.getSnapshot,
   )
-  // The revision is intentionally read: zoom/pan changes coordinates without new presence data.
-  void viewportRevision
+  // Ревизия читается намеренно: zoom/pan меняет координаты без новых данных присутствия.
+  useSyncExternalStore(viewport.subscribe, viewport.getSnapshot, viewport.getSnapshot)
   const remoteSelections = participants
     .filter(
       (participant) =>

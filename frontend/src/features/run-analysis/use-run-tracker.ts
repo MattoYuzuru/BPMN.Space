@@ -46,6 +46,9 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
     let disposed = false
     const isCurrentRun = () => !disposed && useRunStore.getState().views[projectId]?.runId === runId
     let poller: ReturnType<typeof setInterval> | undefined
+    // Ожидание свежего проекта перед сигналом об окончании: при выходе из эффекта не висит.
+    let finishTimer: ReturnType<typeof setTimeout> | undefined
+    let releaseFinishWait: (() => void) | undefined
     let running = activeRun
       ? activeRun.status === 'running'
       : Boolean(useRunStore.getState().views[projectId]?.stage)
@@ -94,7 +97,10 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
       // Сигнал об окончании — после свежего проекта: по нему обучение считает открытые вопросы.
       void Promise.race([
         refetched,
-        new Promise((resolve) => setTimeout(resolve, FINISH_REFETCH_MS)),
+        new Promise<void>((resolve) => {
+          releaseFinishWait = resolve
+          finishTimer = setTimeout(resolve, FINISH_REFETCH_MS)
+        }),
       ]).then(() => {
         if (useRunStore.getState().views[projectId]?.runId !== run.id) return
         const project = client.getQueryData<ProjectDetail>(projectKeys.detail(projectId))
@@ -161,6 +167,8 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
       disposed = true
       closeStream()
       clearInterval(poller)
+      clearTimeout(finishTimer)
+      releaseFinishWait?.()
     }
   }, [runId, projectId])
 }

@@ -96,9 +96,34 @@ export interface DiagramElement {
 }
 
 /** Элементы модели BPMN (задачи, события, шлюзы, дорожки, потоки) с подписями. */
+const ELEMENTS_CACHE_SIZE = 4
+const elementsCache = new Map<string, Map<string, DiagramElement>>()
+
+/**
+ * Элементы схемы по id. Разбор XML идёт в главном потоке, поэтому результат запоминается:
+ * несколько последних XML (текущий и база сравнения) повторно не парсятся. Возвращённую карту
+ * менять нельзя.
+ */
 export function diagramElements(xml: string): Map<string, DiagramElement> {
+  if (!xml) return new Map()
+  const cached = elementsCache.get(xml)
+  if (cached) {
+    // Свежие записи — в конец, вытесняется самая давняя.
+    elementsCache.delete(xml)
+    elementsCache.set(xml, cached)
+    return cached
+  }
+  const parsed = parseDiagramElements(xml)
+  elementsCache.set(xml, parsed)
+  if (elementsCache.size > ELEMENTS_CACHE_SIZE) {
+    const oldest = elementsCache.keys().next().value
+    if (oldest !== undefined) elementsCache.delete(oldest)
+  }
+  return parsed
+}
+
+function parseDiagramElements(xml: string): Map<string, DiagramElement> {
   const result = new Map<string, DiagramElement>()
-  if (!xml) return result
   const doc = new DOMParser().parseFromString(xml, 'application/xml')
   if (doc.getElementsByTagName('parsererror').length > 0) return result
   for (const element of Array.from(doc.getElementsByTagNameNS(BPMN_MODEL, '*'))) {

@@ -31,6 +31,7 @@ from app.api.schemas.projects import Transcription
 from app.api.schemas.sources import Source, SourceTextCreate, SourceUpdate
 from app.domain.models import SourceKind
 from app.domain.onboarding import ChecklistItem
+from app.ingest.media import is_media
 
 router = APIRouter(tags=["sources"])
 
@@ -76,21 +77,34 @@ async def create_file_source(  # noqa: PLR0917 - multipart form fields are separ
     request: Request,
     container: ContainerDep,
     background: BackgroundTasks,
-    file: Annotated[UploadFile, File(description=".txt, .md, .csv, .docx или .pdf")],
+    file: Annotated[
+        UploadFile,
+        File(
+            description=(
+                ".txt, .md, .csv, .docx, .xlsx, .pptx, .pdf или аудио/видео "
+                "(.mp3 .wav .ogg .opus .m4a .flac .aac .webm .mp4 .mov .mkv)"
+            )
+        ),
+    ],
     user: OptionalUserDep,
     title: Annotated[str | None, Form(max_length=200)] = None,
 ) -> Source:
-    """Документ. `.txt`/`.md`/`.csv` готовы сразу; `.docx`/`.pdf` приходят в `processing`
-    и становятся `ready` или `failed` в фоне — обновляйте проект, пока есть `processing`."""
+    """Документ или запись. `.txt`/`.md`/`.csv` готовы сразу; `.docx`/`.xlsx`/`.pptx`/`.pdf` и
+    аудио/видео приходят в `processing` и становятся `ready` или `failed` в фоне — обновляйте
+    проект, пока есть `processing`. Страницы PDF без текста дают `ready` с `warning`.
+    Записи пишутся на диск потоком (лимит `MAX_MEDIA_BYTES`), документы — `MAX_UPLOAD_BYTES`."""
     await ensure_project_access(request, container, project_id, user, write=True)
-    data = await read_upload(file, subject="Файл", limit=container.settings.max_upload_bytes)
-    source, slow = await container.sources.create_file(
-        project_id,
-        file_name=file.filename or "document.txt",
-        mime=file.content_type,
-        data=data,
-        title=title,
-    )
+    file_name = file.filename or "document.txt"
+    if is_media(file_name):
+        source = await container.sources.create_media(
+            project_id, file_name=file_name, mime=file.content_type, read=file.read, title=title
+        )
+        slow = True
+    else:
+        data = await read_upload(file, subject="Файл", limit=container.settings.max_upload_bytes)
+        source, slow = await container.sources.create_file(
+            project_id, file_name=file_name, mime=file.content_type, data=data, title=title
+        )
     if slow:
         background.add_task(container.sources.process_file, source.id)
     await container.onboarding.record(user.id if user else None, ChecklistItem.DOCUMENT_UPLOADED)

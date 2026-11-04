@@ -9,14 +9,17 @@ from app.domain import questions as question_rules
 from app.domain.models import Source, SourceKind, SourceStatus
 from app.domain.projects import default_source_title
 from app.infra.repositories.base import Repositories
-from app.infra.storage import FileStorage
+from app.infra.storage import ChunkReader, FileStorage, UploadTooLargeError
+from app.ingest.media import MEDIA_EXTENSIONS, MediaError, MediaTranscriber, is_media
 from app.ingest.parsers import (
+    SUPPORTED_EXTENSIONS,
     DocumentParseError,
     DocumentParser,
     UnsupportedFormatError,
     detect_format,
     is_slow,
 )
+from app.ingest.stt import NoSpeechError
 from app.services.common import Runtime, get_project, get_source, too_large, touch_project
 from app.services.errors import (
     ConflictError,
@@ -46,6 +49,8 @@ class SourceService:
         max_text_chars: int,
         max_upload_bytes: int,
         parse_delay_sec: float,
+        media: MediaTranscriber | None = None,
+        max_media_bytes: int = 500 * 1024 * 1024,
     ) -> None:
         self._repos = repos
         self._parser = parser
@@ -54,6 +59,8 @@ class SourceService:
         self._max_text = max_text_chars
         self._max_upload = max_upload_bytes
         self._parse_delay = parse_delay_sec
+        self._media = media
+        self._max_media = max_media_bytes
 
     def _clean_content(self, content: str) -> str:
         content = content.strip()
@@ -120,15 +127,15 @@ class SourceService:
         data: bytes,
         title: str | None,
     ) -> tuple[Source, bool]:
-        """Сохраняет файл. Возвращает источник и флаг «дочитать в фоне» (`process_file`).
+        """Сохраняет документ. Возвращает источник и флаг «дочитать в фоне» (`process_file`).
 
-        `.txt`/`.md`/`.csv` разбираются сразу (`ready`), `.docx`/`.pdf` — в фоне (`processing`).
+        `.txt`/`.md`/`.csv` разбираются сразу (`ready`), `.docx`/`.xlsx`/`.pptx`/`.pdf` — в фоне
+        (`processing`). Аудио и видео — отдельный потоковый путь `create_media`.
         """
         await get_project(self._repos, project_id)
-        try:
-            fmt = detect_format(file_name)
-        except UnsupportedFormatError as error:
-            raise UnsupportedMediaError(str(error)) from error
+        if is_media(file_name):
+            raise InvalidInputError("Аудио и видео загружаются потоком: используйте create_media")
+        fmt = self._detect(file_name)
         if not data:
             raise InvalidInputError("Файл пустой")
         if len(data) > self._max_upload:
@@ -154,6 +161,10 @@ class SourceService:
         if not background:
             for name, value in (await self._parse_changes(file_name=file_name, data=data)).items():
                 setattr(source, name, value)
+        await self._add_source(source, project_id=project_id, key=key, now=now)
+        return source, background
+
+    async def _add_source(self, source: Source, *, project_id: UUID, key: str, now) -> None:
         try:
             async with self._repos.atomic() as repos:
                 await repos.projects.lock(project_id)
@@ -168,14 +179,91 @@ class SourceService:
             except OSError:
                 logger.warning("Не удалён файл %s после удаления проекта во время загрузки", key)
             raise
-        return source, background
+
+    @staticmethod
+    def _detect(file_name: str):
+        try:
+            return detect_format(file_name)
+        except UnsupportedFormatError:
+            allowed = ", ".join((*SUPPORTED_EXTENSIONS, *MEDIA_EXTENSIONS))
+            raise UnsupportedMediaError(f"Формат не поддерживается. Загрузите {allowed}") from None
+
+    async def create_media(
+        self,
+        project_id: UUID,
+        *,
+        file_name: str,
+        mime: str | None,
+        read: ChunkReader,
+        title: str | None,
+    ) -> Source:
+        """Аудио или видео: файл пишется на диск потоком, расшифровка идёт в фоне (`process_file`).
+
+        Источник сразу `processing`; после ffmpeg и STT он станет `ready` (текст с `[мм:сс]`)
+        или `failed` с причиной.
+        """
+        await get_project(self._repos, project_id)
+        if self._media is None:
+            raise UnsupportedMediaError("Обработка аудио и видео не включена на сервере")
+        try:
+            key, size = await self._storage.save_stream(
+                project_id=project_id, file_name=file_name, read=read, limit=self._max_media
+            )
+        except UploadTooLargeError:
+            raise too_large("Файл", self._max_media) from None
+        if size == 0:
+            await self._storage.delete(key)
+            raise InvalidInputError("Файл пустой")
+        now = self._rt.clock()
+        source = Source(
+            id=self._rt.new_id(),
+            project_id=project_id,
+            kind=SourceKind.FILE,
+            title=self._clean_title(title) or file_name,
+            content="",
+            status=SourceStatus.PROCESSING,
+            active=True,
+            created_at=now,
+            file_name=file_name,
+            mime=mime,
+            size_bytes=size,
+            file_key=key,
+        )
+        await self._add_source(source, project_id=project_id, key=key, now=now)
+        return source
+
+    async def _media_changes(self, source: Source) -> dict[str, Any]:
+        if self._media is None or not source.file_key:
+            return {"status": SourceStatus.FAILED, "error": "Обработка аудио и видео не включена"}
+        try:
+            async with self._storage.local_file(source.file_key) as path:
+                transcript = await self._media.transcribe(path)
+        except MediaError as error:
+            return {"status": SourceStatus.FAILED, "error": str(error)}
+        except NoSpeechError:
+            return {"status": SourceStatus.FAILED, "error": "В записи не найдено речи"}
+        if len(transcript.text) > self._max_text:
+            return {
+                "status": SourceStatus.FAILED,
+                "error": (
+                    f"Расшифровка превышает лимит {self._max_text} символов. "
+                    "Разделите запись на части и загрузите их отдельно"
+                ),
+            }
+        return {
+            "status": SourceStatus.READY,
+            "content": transcript.text,
+            "error": None,
+            "duration_sec": transcript.duration_sec,
+        }
 
     async def _parse_changes(self, *, file_name: str, data: bytes) -> dict[str, Any]:
-        """Результат разбора как набор полей источника: `status`, `content`, `error`."""
+        """Результат разбора как набор полей источника: `status`, `content`, `error`, `warning`."""
         try:
-            text = await self._parser.parse(file_name=file_name, data=data)
+            parsed = await self._parser.parse_document(file_name=file_name, data=data)
         except DocumentParseError as error:
             return {"status": SourceStatus.FAILED, "error": str(error)}
+        text = parsed.text
         if len(text) > self._max_text:
             return {
                 "status": SourceStatus.FAILED,
@@ -184,7 +272,13 @@ class SourceService:
                     "Разделите файл на части и загрузите их отдельно"
                 ),
             }
-        return {"status": SourceStatus.READY, "content": text, "error": None}
+        return {
+            "status": SourceStatus.READY,
+            "content": text,
+            "error": None,
+            "warning": parsed.warning,
+            "unreadable_pages": list(parsed.unreadable_pages),
+        }
 
     async def process_file(self, source_id: UUID) -> None:
         """Фоновый разбор документа.
@@ -199,8 +293,11 @@ class SourceService:
         if source is None or source.status is not SourceStatus.PROCESSING or not source.file_key:
             return
         try:
-            data = await self._storage.load(source.file_key)
-            changes = await self._parse_changes(file_name=source.file_name or "", data=data)
+            if is_media(source.file_name or ""):
+                changes = await self._media_changes(source)
+            else:
+                data = await self._storage.load(source.file_key)
+                changes = await self._parse_changes(file_name=source.file_name or "", data=data)
         except Exception:
             logger.exception("Не удалось разобрать источник %s", source_id)
             changes = {"status": SourceStatus.FAILED, "error": "Не удалось разобрать файл"}

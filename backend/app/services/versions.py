@@ -2,10 +2,11 @@
 
 import asyncio
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from app.domain.bpmn.document import BpmnFormatError
+from app.domain.bpmn.document import BpmnFormatError, parse_bpmn
 from app.domain.bpmn.importer import retain_trace
 from app.domain.bpmn.xsd import require_valid_bpmn
 from app.domain.models import (
@@ -30,6 +31,17 @@ from app.services.errors import (
 
 #: Предел имени контрольной точки (совпадает с колонкой `diagram_versions.label`).
 MAX_LABEL_CHARS = 120
+
+
+@dataclass(frozen=True, slots=True)
+class DiagramCheck:
+    """Результат проверки XML без сохранения (MCP `check_diagram`, RFC-0007)."""
+
+    xsd_valid: bool
+    lint: list[LintIssue]
+    lanes: list[str]
+    nodes: int
+    flows: int
 
 
 async def add_version(
@@ -115,6 +127,35 @@ class VersionService:
 
     async def get(self, version_id: UUID) -> Version:
         return await get_version(self._repos, version_id)
+
+    async def check(self, xml: str) -> DiagramCheck:
+        """Проверить схему без сохранения: безопасность XML, официальная XSD и bpmnlint.
+
+        Те же проверки, что при `save_manual`, но истории не касается: агент может посмотреть
+        замечания до того, как предложить правку (RFC-0007, `check_diagram`).
+        """
+        if not xml.strip():
+            raise InvalidInputError("Схема пустая")
+        if len(xml.encode("utf-8")) > self._max_bytes:
+            raise too_large("Схема", self._max_bytes)
+        try:
+            await asyncio.to_thread(require_valid_bpmn, xml)
+            lint = await self._tools.lint(xml)
+        except BpmnToolsError as error:
+            raise UnavailableError(str(error)) from error
+        except BpmnFormatError as error:
+            raise InvalidInputError(str(error)) from error
+        try:
+            document = await asyncio.to_thread(parse_bpmn, xml)
+        except BpmnFormatError as error:  # pragma: no cover — XSD уже отсекла повреждённый XML
+            raise InvalidInputError(str(error)) from error
+        return DiagramCheck(
+            xsd_valid=True,
+            lint=lint,
+            lanes=[lane.name for lane in document.lanes],
+            nodes=len(document.nodes),
+            flows=len(document.flows),
+        )
 
     async def checkpoint(
         self, project_id: UUID, version_id: UUID, *, label: str | None = None

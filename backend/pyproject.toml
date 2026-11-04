@@ -21,6 +21,7 @@ dependencies = [
   "anthropic>=2.4.0",
   "cryptography>=50.0.2",
   "httpx>=0.28.1",
+  "mcp>=2.3,<3",
 ]
 
 [dependency-groups]
@@ -71,9 +72,10 @@ root_package = "app"
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
-name = "Слои: api → services → (domain, llm, ingest, infra)"
+name = "Слои: (api | mcp) → services → (llm, ingest, infra) → domain"
 type = "layers"
-layers = ["app.api", "app.services", "app.llm | app.ingest | app.infra", "app.domain"]
+# `app.mcp` — второе представление (MCP-сервер внешних агентов, RFC-0007) на тех же сервисах.
+layers = ["app.api | app.mcp", "app.services", "app.llm | app.ingest | app.infra", "app.domain"]
 
 [[tool.importlinter.contracts]]
 name = "domain не зависит от внешнего мира"
@@ -93,4 +95,12 @@ type = "forbidden"
 source_modules = ["app.api"]
 forbidden_modules = ["app.infra"]
 # Через app.container (сборка зависимостей) и services цепочка в infra допустима.
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "mcp не ходит в infra напрямую: только через services и контейнер"
+type = "forbidden"
+source_modules = ["app.mcp"]
+forbidden_modules = ["app.infra"]
+# MCP — слой представления; БД и файлы он видит только через сервисы.
 allow_indirect_imports = true

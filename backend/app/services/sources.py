@@ -114,6 +114,14 @@ class SourceService:
             raise InvalidInputError(f"Название длиннее {MAX_SOURCE_TITLE} символов")
         return title or None
 
+    async def list(self, project_id: UUID) -> list[Source]:
+        """Источники проекта по возрастанию `created_at` — без XML и производных вычислений."""
+        await get_project(self._repos, project_id)
+        return await self._repos.sources.list_by_project(project_id)
+
+    async def get(self, source_id: UUID) -> Source:
+        return await get_source(self._repos, source_id)
+
     async def create_text(
         self,
         project_id: UUID,
@@ -122,8 +130,15 @@ class SourceService:
         title: str | None,
         kind: SourceKind,
         duration_sec: float | None,
+        origin: SourceOrigin = SourceOrigin.USER,
+        trust: SourceTrust = SourceTrust.PRIMARY,
+        derivation: SourceDerivation | None = None,
     ) -> Source:
-        """Текст или проверенная аналитиком расшифровка голосовой заметки (`kind=voice`)."""
+        """Текст или проверенная аналитиком расшифровка голосовой заметки (`kind=voice`).
+
+        `origin=agent` и `trust=agent` ставит MCP-сервер (RFC-0007): материал принёс внешний
+        агент владельца токена, а не человек. `derivation` хранит провенанс агента (токен, ссылка).
+        """
         if kind not in {SourceKind.TEXT, SourceKind.VOICE}:
             raise InvalidInputError("Через этот метод добавляется только текст или голос")
         await get_project(self._repos, project_id)
@@ -145,6 +160,9 @@ class SourceService:
             active=True,
             created_at=now,
             duration_sec=duration_sec if kind is SourceKind.VOICE else None,
+            origin=origin,
+            trust=trust,
+            derivation=derivation,
         )
         async with self._repos.atomic() as repos:
             await repos.projects.lock(project_id)

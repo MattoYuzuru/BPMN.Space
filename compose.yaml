@@ -50,7 +50,7 @@ services:
     cpus: ${BPMN_TOOLS_CPUS:-1.0}
     logging: *logging
     environment:
-      BPMN_TOOLS_TIMEOUT_SEC: ${BPMN_TOOLS_TIMEOUT_SEC:-20}
+      BPMN_TOOLS_TIMEOUT_SEC: ${BPMN_TOOLS_TIMEOUT_SEC:-60}
       BPMN_TOOLS_POOL_SIZE: ${BPMN_TOOLS_POOL_SIZE:-2}
       BPMN_TOOLS_QUEUE_LIMIT: ${BPMN_TOOLS_QUEUE_LIMIT:-32}
       BPMN_TOOLS_WORKER_MAX_JOBS: ${BPMN_TOOLS_WORKER_MAX_JOBS:-200}
@@ -91,7 +91,7 @@ services:
       # uvicorn доверяет X-Forwarded-Proto от Caddy: адрес MCP в выдаче токена — https.
       # Backend не публикует порт наружу, поэтому доверять сети Compose безопасно.
       FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-*}
-      BPMN_TOOLS_TIMEOUT_SEC: ${BPMN_TOOLS_TIMEOUT_SEC:-20}
+      BPMN_TOOLS_TIMEOUT_SEC: ${BPMN_TOOLS_TIMEOUT_SEC:-60}
       LLM_PROVIDER: ${LLM_PROVIDER:-mock}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-}

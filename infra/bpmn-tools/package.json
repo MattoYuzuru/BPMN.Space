@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node patches/apply.mjs && node --test test/*.test.mjs"
   },
   "dependencies": {
     "bpmn-auto-layout": "2.0.0-alpha.2",

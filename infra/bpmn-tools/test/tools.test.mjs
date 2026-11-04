@@ -198,3 +198,12 @@ test('HTTP-ответ при сбое worker несёт code=crash', async () =>
     assert.equal((await response.json()).code, 'crash')
   })
 })
+
+test('правка маршрутизации bpmn-auto-layout применена (patches/apply.mjs)', async () => {
+  // Без неё граф на ~100 узлов раскладывается дольше таймаута сервиса: см. patches/apply.mjs.
+  const dist = await readFile(
+    new URL('../node_modules/bpmn-auto-layout/dist/index.js', import.meta.url),
+    'utf8',
+  )
+  assert.ok(dist.includes('BPMN Space: exact bounding-box prefilter'))
+})

@@ -59,7 +59,7 @@ class Settings(BaseSettings):
 
     # В Compose всегда настоящий внутренний Node-сервис. None — ограниченный локальный mock.
     bpmn_tools_url: str | None = None
-    bpmn_tools_timeout_sec: float = Field(default=20.0, gt=0, le=120)
+    bpmn_tools_timeout_sec: float = Field(default=60.0, gt=0, le=120)
 
     # --- Прогоны (RFC §5.1) ---
     max_concurrent_runs: int = 2

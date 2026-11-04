@@ -1,7 +1,8 @@
 FROM node:24-alpine
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+COPY patches ./patches
+RUN npm ci --omit=dev --ignore-scripts && node patches/apply.mjs && npm cache clean --force
 COPY *.mjs ./
 USER node
 EXPOSE 3000

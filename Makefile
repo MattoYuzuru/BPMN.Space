@@ -18,6 +18,7 @@ help: ## Список команд
 setup: ## Установить зависимости, браузер для e2e и git-хуки
 	npm ci
 	npm ci --prefix infra/bpmn-tools --ignore-scripts
+	node infra/bpmn-tools/patches/apply.mjs
 	cd backend && uv sync --frozen
 	npx --workspace frontend playwright install chromium
 

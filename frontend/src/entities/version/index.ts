@@ -19,6 +19,7 @@ export {
   diagramElements,
   elementTypeLabel,
   hasDiff,
+  hasMilestoneBefore,
   isMilestone,
   type LintIssue,
   toSummary,

@@ -57,15 +57,18 @@ vi.mock('@/features/project-collaboration/collaborator-overlay', async (original
 vi.mock('@/widgets/diagram-editor', () => ({
   LazyDiagramEditor: ({
     xml,
+    highlights,
     onChange,
     onChangePending,
   }: {
     xml: string
+    highlights?: { added: string[] }
     onChange: (xml: string) => void
     onChangePending?: (pending: boolean) => void
   }) => (
     <div>
       <pre data-testid="canvas-xml">{xml}</pre>
+      <output data-testid="added">{highlights?.added.join(',')}</output>
       <button type="button" onClick={() => onChange(transport.nextXml)}>
         Изменить схему
       </button>
@@ -110,14 +113,20 @@ const version = (id = 'v-1', xml = '<initial/>'): VersionDetail => ({
   assumption_count: 0,
 })
 
-function mount() {
-  const initial = version()
-  const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } })
+function mount(
+  initial = version(),
+  seed?: (client: QueryClient) => void,
+  history: VersionDetail[] = [initial],
+) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { staleTime: Infinity, retry: false } },
+  })
   client.setQueryData(versionKeys.detail(initial.id), initial)
   client.setQueryData(versionKeys.pages('p-1'), {
-    pages: [{ items: [initial], next_before: null }],
+    pages: [{ items: history, next_before: null }],
     pageParams: [undefined],
   })
+  seed?.(client)
   const invalidate = vi.spyOn(client, 'invalidateQueries').mockResolvedValue()
   const project = {
     id: 'p-1',
@@ -399,4 +408,50 @@ it('скачивание черновика добавляет ссылку в �
   expect(URL.revokeObjectURL).not.toHaveBeenCalled()
   await act(async () => vi.advanceTimersByTimeAsync(1100))
   expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:draft')
+})
+
+const BPMN = 'http://www.omg.org/spec/BPMN/20100524/MODEL'
+const process = (...ids: string[]) =>
+  `<bpmn:definitions xmlns:bpmn="${BPMN}"><bpmn:process id="P">${ids
+    .map((id) => `<bpmn:task id="${id}" />`)
+    .join('')}</bpmn:process></bpmn:definitions>`
+
+it('маркер «добавлено» считается от контрольной точки, даже если дифф против номера − 1 пуст', () => {
+  const checkpoint = { ...version('v-1', process('A')), number: 1, checkpoint: true }
+  const middle = { ...version('v-m', process('A', 'B')), number: 2 }
+  const head = { ...version('v-2', process('A', 'B')), number: 3 }
+  head.diff = { added: 0, removed: 0, changed: 0 }
+  mount(
+    head,
+    (client) => {
+      client.setQueryData(versionKeys.detail(checkpoint.id), checkpoint)
+      client.setQueryData(versionKeys.detail(middle.id), middle)
+    },
+    [head, middle, checkpoint],
+  )
+  expect(screen.getByTestId('added')).toHaveTextContent('B')
+})
+
+it('исчезнувшая версия показывает пояснение и обновляет историю', async () => {
+  vi.useRealTimers()
+  const gone = version('v-gone', '<x/>')
+  const panel = mount(version(), undefined, [version()])
+  panel.workspace.viewVersion = vi.fn()
+  panel.workspace.viewedVersionId = gone.id
+  const detail = panel.workspace.versions.detail
+  panel.workspace.versions = {
+    ...panel.workspace.versions,
+    detail: (id: string) =>
+      id === gone.id
+        ? {
+            queryKey: ['versions', id],
+            queryFn: () => Promise.reject(new ApiError(404, 'Версия не найдена')),
+          }
+        : detail(id),
+  } as typeof panel.workspace.versions
+  panel.refresh()
+  expect(await screen.findByText(/объединена с более поздней правкой/)).toBeInTheDocument()
+  expect(panel.invalidate).toHaveBeenCalledWith({ queryKey: versionKeys.all('p-1') })
+  fireEvent.click(screen.getByRole('button', { name: 'К текущей версии' }))
+  expect(panel.workspace.viewVersion).toHaveBeenCalledWith(undefined)
 })

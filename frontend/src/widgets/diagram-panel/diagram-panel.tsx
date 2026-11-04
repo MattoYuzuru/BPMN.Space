@@ -8,6 +8,7 @@ import {
   addedElementIds,
   comparisonBase,
   diagramElements,
+  hasMilestoneBefore,
   useCheckpointVersion,
   useSaveDiagram,
   versionKeys,
@@ -51,12 +52,20 @@ export function DiagramPanel() {
     viewedVersionId,
     selectedQuestionId,
     versions,
+    viewVersion,
     collaborationShareToken,
   } = useWorkspace()
   const queryClient = useQueryClient()
   const latest = project.latest_version
   const versionId = viewedVersionId ?? latest?.id
   const version = useQuery({ ...versions.detail(versionId ?? ''), enabled: !!versionId })
+  // Версию могла вытеснить правка соавтора (слияние сессии заменяет запись): список обновляем.
+  const versionGone = version.error instanceof ApiError && version.error.status === 404
+  useEffect(() => {
+    if (!versionGone) return
+    void queryClient.invalidateQueries({ queryKey: versionKeys.all(project.id) })
+    void queryClient.invalidateQueries({ queryKey: projectKeys.detail(project.id) })
+  }, [versionGone, project.id, queryClient])
   // История нужна только для базы сравнения «добавлено в версии»; страница общая с боковой панелью.
   const history = useInfiniteQuery({ ...versions.pages(project.id), enabled: !!latest })
   const run = useRunView(project.id)
@@ -452,17 +461,29 @@ export function DiagramPanel() {
 
   // База маркера «добавлено» — ближайшая более ранняя контрольная точка или сборка, а не номер − 1:
   // правки одной сессии сливаются в одну версию.
-  const previous = useMemo(
-    () =>
-      comparisonBase(
-        history.data?.pages.flatMap((page) => page.items) ?? [],
-        version.data?.number ?? 0,
-      ),
-    [history.data, version.data?.number],
+  const loadedHistory = useMemo(
+    () => history.data?.pages.flatMap((page) => page.items) ?? [],
+    [history.data],
   )
+  const viewedNumber = version.data?.number ?? 0
+  const previous = useMemo(
+    () => comparisonBase(loadedHistory, viewedNumber),
+    [loadedHistory, viewedNumber],
+  )
+  // Ближайшей контрольной точки может не оказаться в первой странице: подгружаем историю, пока
+  // она не найдётся или не кончится. До этого база неокончательна, XML не запрашиваем.
+  const baseSettled =
+    hasMilestoneBefore(loadedHistory, viewedNumber) || history.hasNextPage === false
+  const { fetchNextPage, hasNextPage, isFetchingNextPage } = history
+  useEffect(() => {
+    if (markers.added && viewedNumber > 0 && !baseSettled && hasNextPage && !isFetchingNextPage) {
+      void fetchNextPage()
+    }
+  }, [markers.added, viewedNumber, baseSettled, hasNextPage, isFetchingNextPage, fetchNextPage])
+  // Маркеры считаем на клиенте от этой базы: серверный дифф (против номера − 1) для неё не годится.
   const previousXml = useQuery({
     ...versions.detail(previous?.id ?? ''),
-    enabled: markers.added && !!previous && (version.data?.diff.added ?? 0) > 0,
+    enabled: markers.added && !!previous && baseSettled,
   })
 
   const selectedQuestion = project.questions.find((question) => question.id === selectedQuestionId)
@@ -613,7 +634,21 @@ export function DiagramPanel() {
             sendLivePresence({ cursor: null, selection: selectionRef.current, activity: 'idle' })
           }
         >
-          {versionId && version.isPending && !xml ? (
+          {versionGone ? (
+            <div role="status" className="absolute inset-0 grid place-items-center p-6">
+              <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+                <p className="type-ui text-fg-muted">
+                  Эта версия объединена с более поздней правкой и больше недоступна. История
+                  обновлена.
+                </p>
+                {viewedVersionId && (
+                  <Button size="sm" onClick={() => viewVersion(undefined)}>
+                    К текущей версии
+                  </Button>
+                )}
+              </div>
+            </div>
+          ) : versionId && version.isPending && !xml ? (
             <CanvasSkeleton />
           ) : (
             <LazyDiagramEditor

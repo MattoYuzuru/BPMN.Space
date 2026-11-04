@@ -335,6 +335,18 @@ class LlmCredentialRepository(Protocol):
         """Создаёт или обновляет; `is_default=True` снимает флаг с остальных ключей владельца."""
         ...
 
+    async def update_fields(
+        self,
+        credential_id: UUID,
+        *,
+        label: str | None = None,
+        default_model: str | None = None,
+        is_default: bool | None = None,
+        clear_default_model: bool = False,
+    ) -> LlmCredential | None:
+        """Меняет только перечисленные колонки: параллельный `mark_used` не затирается."""
+        ...
+
     async def delete(self, credential_id: UUID) -> bool: ...
     async def mark_used(self, credential_id: UUID, at: datetime, error: str | None) -> None:
         """Время последнего использования и текст последней ошибки (`None` — успех)."""

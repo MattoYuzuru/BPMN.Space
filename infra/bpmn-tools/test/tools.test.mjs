@@ -186,3 +186,15 @@ test('отмена ожидающей и выполняющейся задачи
   assert.equal((await pool.run('layout', sample)).ok, true)
   await pool.close()
 })
+
+test('HTTP-ответ при сбое worker несёт code=crash', async () => {
+  const workerUrl = new URL('./crash-worker.mjs', import.meta.url)
+  await withServer({ workerUrl, poolSize: 1 }, async (url) => {
+    const response = await fetch(`${url}/layout`, {
+      method: 'POST',
+      body: JSON.stringify({ xml: 'crash' }),
+    })
+    assert.equal(response.status, 503)
+    assert.equal((await response.json()).code, 'crash')
+  })
+})

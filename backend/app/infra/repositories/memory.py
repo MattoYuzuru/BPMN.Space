@@ -452,6 +452,32 @@ class InMemoryLlmCredentialRepository:
                     item.is_default = False
         self._items[credential.id] = copy.deepcopy(credential)
 
+    async def update_fields(
+        self,
+        credential_id: UUID,
+        *,
+        label: str | None = None,
+        default_model: str | None = None,
+        is_default: bool | None = None,
+        clear_default_model: bool = False,
+    ) -> LlmCredential | None:
+        item = self._items.get(credential_id)
+        if item is None:
+            return None
+        if is_default:
+            for other in self._items.values():
+                if other.user_id == item.user_id and other.id != item.id:
+                    other.is_default = False
+        if label is not None:
+            item.label = label
+        if default_model is not None:
+            item.default_model = default_model
+        elif clear_default_model:
+            item.default_model = None
+        if is_default is not None:
+            item.is_default = is_default
+        return copy.deepcopy(item)
+
     async def delete(self, credential_id: UUID) -> bool:
         return self._items.pop(credential_id, None) is not None
 

@@ -67,7 +67,8 @@ export function createToolsServer({
       const message = await pool.run(request.url.slice(1), body.xml, abort.signal)
       send(message.ok ? 200 : 422, message.ok ? message.result : { detail: message.message })
     } catch (error) {
-      if (error instanceof PoolError) send(error.status, { detail: error.message })
+      if (error instanceof PoolError)
+        send(error.status, { detail: error.message, code: error.code })
       else send(503, { detail: 'Не удалось выполнить проверку схемы' })
     }
   })

@@ -306,6 +306,38 @@ class DiagramVersionRow(Base):
     )
 
 
+class UserLlmCredentialRow(Base):
+    """Ключ модели пользователя; открытого ключа нет — только шифртекст и подсказка."""
+
+    __tablename__ = "user_llm_credentials"
+    __table_args__ = (
+        CheckConstraint(
+            "provider IN ('anthropic', 'openai', 'openai_compatible')",
+            name="ck_user_llm_credentials_provider",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    label: Mapped[str] = mapped_column(String(60), nullable=False)
+    base_url: Mapped[str | None] = mapped_column(String(500))
+    encrypted_key: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    key_hint: Mapped[str] = mapped_column(String(8), nullable=False)
+    default_model: Mapped[str | None] = mapped_column(String(128))
+    is_default: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(String(500))
+
+
 class LlmCallRow(Base):
     __tablename__ = "llm_calls"
 
@@ -326,6 +358,14 @@ Index(
     RunRow.project_id,
     unique=True,
     postgresql_where=text("status IN ('queued', 'running')"),
+)
+
+
+Index(
+    "uq_user_llm_credentials_default",
+    UserLlmCredentialRow.user_id,
+    unique=True,
+    postgresql_where=text("is_default"),
 )
 
 

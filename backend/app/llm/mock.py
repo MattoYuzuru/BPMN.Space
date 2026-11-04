@@ -125,6 +125,13 @@ class MockPipeline:
         self._read_bpmn = read_bpmn
 
     @property
+    def provider(self) -> str:
+        return "mock"
+
+    async def aclose(self) -> None:
+        return None
+
+    @property
     def model_name(self) -> str:
         return "recorded-fixtures"
 

@@ -1,16 +1,20 @@
 """Сборка приложения: выбирает persistent или тестовые реализации портов."""
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+
+import httpx
 
 from app.config import Settings
 from app.domain.analysis import MAX_SOURCE_TEXT_CHARS
+from app.domain.credentials import LlmCredential
 from app.domain.models import RunStage
 from app.fixtures import read_bpmn
 from app.fixtures.examples import EXAMPLES
 from app.fixtures.playbook import PLAYBOOK
 from app.fixtures.samples import SAMPLES
 from app.infra.bpmn_tools import HttpBpmnTools, MockBpmnTools
+from app.infra.crypto import CredentialCipher
 from app.infra.database import Database
 from app.infra.events import InMemoryRunEventBus
 from app.infra.repositories.base import Repositories
@@ -21,13 +25,17 @@ from app.infra.tasks import AsyncioTaskSpawner
 from app.ingest.deepgram import DeepgramSpeechToText
 from app.ingest.parsers import LocalDocumentParser
 from app.ingest.stt import MockSpeechToText
-from app.llm.deepseek import OpenAICompatiblePipeline
+from app.llm.client import LlmClient, LlmConfig
+from app.llm.factory import build_client, build_pipeline, call_knobs
 from app.llm.mock import MockPipeline
+from app.llm.pipeline import LlmPipeline
 from app.services.access import AccessService
-from app.services.assistant import AssistantModel, AssistantService
+from app.services.assistant import AssistantService
 from app.services.catalog import ExampleService, TranscriptionService
 from app.services.collaboration import RealtimeHub
 from app.services.common import Runtime
+from app.services.llm_credentials import LlmCredentialService
+from app.services.model_resolver import ModelResolver
 from app.services.onboarding import OnboardingService
 from app.services.projects import ProjectService
 from app.services.questions import QuestionService
@@ -38,11 +46,30 @@ from app.services.sources import SourceService
 from app.services.versions import VersionService
 
 
+def _server_pipeline(settings: Settings, transport: httpx.AsyncBaseTransport | None):
+    """Модель оператора из `LLM_*` — запасной путь для пользователей без своего ключа."""
+    provider = settings.llm_provider.lower()
+    if provider == "mock":
+        return MockPipeline(playbook=PLAYBOOK, read_bpmn=read_bpmn)
+    if provider not in {"openai_compatible", "deepseek", "anthropic", "openai"}:
+        raise ValueError(f"Неизвестный LLM_PROVIDER: {provider}")
+    api_key, base_url, model = settings.llm_connection()
+    knobs = call_knobs(settings)
+    thinking = settings.llm_runtime(warn=True)["thinking"]
+    config = LlmConfig(
+        provider=provider,
+        model=model,
+        api_key=api_key,
+        base_url=base_url,
+        thinking=thinking,  # type: ignore[arg-type]
+        **{k: v for k, v in knobs.items()},  # type: ignore[arg-type]
+    )
+    return build_pipeline(config, settings, transport=transport)
+
+
 def _mock_pace(settings: Settings):
     async def pace(stage: RunStage) -> None:
-        # Задержки нужны только для демонстрации mock; реальный прогон не ждёт анимацию UI.
-        if settings.llm_provider.lower() != "mock":
-            return
+        # Вызывается только для mock-пайплайна: реальный прогон не ждёт анимацию UI.
         delay = settings.mock_delay(settings.mock_stage_delays.get(stage.value, 0.0))
         if delay:
             await asyncio.sleep(delay)
@@ -76,7 +103,8 @@ class Container:
     versions: VersionService
     examples: ExampleService
     transcriptions: TranscriptionService
-    assistant: AssistantService | None
+    assistant: AssistantService
+    llm_credentials: LlmCredentialService
     access: AccessService
     sharing: SharingService
     onboarding: OnboardingService
@@ -85,10 +113,16 @@ class Container:
 
 
 def build_container(
-    settings: Settings, *, runtime: Runtime | None = None, database: Database | None = None
+    settings: Settings,
+    *,
+    runtime: Runtime | None = None,
+    database: Database | None = None,
+    llm_transport: httpx.AsyncBaseTransport | None = None,
 ) -> Container:
-    """`database` позволяет подставить готовое подключение (тесты со своей схемой PostgreSQL)."""
+    """`database` — готовое подключение (тесты со своей схемой PostgreSQL), `llm_transport` —
+    подмена HTTP к провайдерам моделей (тесты без сети)."""
     runtime = runtime or Runtime()
+    settings.validate_for_runtime()
 
     if database is None and settings.database_url:
         database = Database(
@@ -116,41 +150,36 @@ def build_container(
     access = AccessService(repos.access, runtime=runtime)
     realtime = RealtimeHub()
     spawner = AsyncioTaskSpawner()
-    assistant_model: AssistantModel | None = None
     bpmn_tools = build_bpmn_tools(settings)
-    match settings.llm_provider.lower():
-        case "mock":
-            pipeline = MockPipeline(playbook=PLAYBOOK, read_bpmn=read_bpmn)
-        case "openai_compatible" | "deepseek":
-            api_key, base_url, model = settings.llm_connection()
-            retries = settings.llm_max_retries
-            retry_base = settings.llm_retry_base_sec
-            retry_max = settings.llm_retry_max_sec
-            timeout = settings.llm_timeout_sec
-            thinking: bool | None = None
-            if settings.llm_provider.lower() == "deepseek":
-                thinking = settings.deepseek_thinking_enabled
-                retries = settings.deepseek_max_retries
-                retry_base = settings.deepseek_retry_base_sec
-                retry_max = settings.deepseek_retry_max_sec
-                timeout = settings.deepseek_timeout_sec
-            pipeline = OpenAICompatiblePipeline(
-                api_key=api_key,
-                base_url=base_url,
-                model=model,
-                timeout_sec=timeout,
-                json_mode=settings.llm_json_mode,
-                semantic_review=settings.llm_semantic_review,
-                json_max_tokens=settings.llm_json_max_tokens,
-                max_retries=retries,
-                retry_base_sec=retry_base,
-                retry_max_sec=retry_max,
-                thinking=thinking,
-                json_temperature=settings.llm_json_temperature,
-            )
-            assistant_model = pipeline
-        case provider:
-            raise ValueError(f"Неизвестный LLM_PROVIDER: {provider}")
+    server_pipeline = _server_pipeline(settings, llm_transport)
+    cipher = CredentialCipher(
+        settings.credentials_encryption_key, allow_ephemeral=not settings.is_production
+    )
+
+    def user_pipeline(config: LlmConfig, _credential: LlmCredential) -> LlmPipeline:
+        return build_pipeline(
+            replace(config, **call_knobs(settings)),  # type: ignore[arg-type]
+            settings,
+            user_supplied=True,
+            transport=llm_transport,
+        )
+
+    def validation_client(config: LlmConfig) -> LlmClient:
+        return build_client(
+            replace(config, **call_knobs(settings)),  # type: ignore[arg-type]
+            user_supplied_url=True,
+            allowed_private_hosts=settings.llm_allowed_private_hosts,
+            transport=llm_transport,
+        )
+
+    resolver = ModelResolver(
+        repos,
+        server_pipeline=server_pipeline,
+        cipher=cipher,
+        factory=user_pipeline,
+        runtime=runtime,
+        production=settings.is_production,
+    )
 
     match settings.stt_provider.lower():
         case "mock":
@@ -160,7 +189,7 @@ def build_container(
         case "deepgram":
             if not settings.deepgram_api_key:
                 raise ValueError("STT_PROVIDER=deepgram требует DEEPGRAM_API_KEY в .env")
-            stt = DeepgramSpeechToText(settings.deepgram_api_key)
+            stt = DeepgramSpeechToText(settings.deepgram_api_key.get_secret_value())
         case provider:
             raise ValueError(f"Неизвестный STT_PROVIDER: {provider}")
 
@@ -199,7 +228,7 @@ def build_container(
         questions=QuestionService(repos, runtime=runtime),
         runs=RunService(
             repos,
-            pipeline=pipeline,
+            resolver=resolver,
             bpmn_tools=bpmn_tools,
             events=InMemoryRunEventBus(),
             spawner=spawner,
@@ -219,8 +248,14 @@ def build_container(
         ),
         examples=ExampleService(EXAMPLES),
         transcriptions=TranscriptionService(stt, max_audio_bytes=settings.max_audio_bytes),
-        assistant=(
-            AssistantService(repos, model=assistant_model) if assistant_model is not None else None
+        assistant=AssistantService(repos, resolver=resolver),
+        llm_credentials=LlmCredentialService(
+            repos,
+            cipher=cipher,
+            client_factory=validation_client,
+            runtime=runtime,
+            allowed_private_hosts=tuple(settings.llm_allowed_private_hosts),
+            models_cache_sec=settings.llm_models_cache_sec,
         ),
         access=access,
         sharing=SharingService(access, runtime=runtime),

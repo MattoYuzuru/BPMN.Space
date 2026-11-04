@@ -1,12 +1,13 @@
 import json
-from unittest.mock import patch
 
+import httpx
 from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.container import build_container
 from app.infra.seed import DEMO_PROJECT_ID
 from app.main import create_app
+from tests.llm_helpers import json_transport, ok_chat
 
 API = "/api/v1"
 
@@ -40,18 +41,13 @@ def test_configured_assistant_uses_openai_compatible_provider_configuration() ->
         llm_base_url="https://llm.example.test/v1",
         llm_model="approved-model",
     )
-    app = create_app(settings, container=build_container(settings))
-    response_body = {
-        "choices": [{"message": {"content": "Процесс начинается с проверки заявления."}}]
-    }
+    requests: list[httpx.Request] = []
+    transport = json_transport(
+        lambda _request: ok_chat("Процесс начинается с проверки заявления."), requests
+    )
+    app = create_app(settings, container=build_container(settings, llm_transport=transport))
 
-    with (
-        TestClient(app) as configured_client,
-        patch("app.llm.openai_compatible.urlopen") as urlopen,
-    ):
-        urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(
-            response_body
-        ).encode()
+    with TestClient(app) as configured_client:
         response = configured_client.post(
             f"{API}/projects/{DEMO_PROJECT_ID}/assistant",
             json={
@@ -63,10 +59,10 @@ def test_configured_assistant_uses_openai_compatible_provider_configuration() ->
 
     assert response.status_code == 200
     assert response.json() == {"answer": "Процесс начинается с проверки заявления."}
-    request = urlopen.call_args.args[0]
-    assert request.get_header("Authorization") == "Bearer test-only"
-    assert request.full_url == "https://llm.example.test/v1/chat/completions"
-    provider_body = json.loads(request.data)
+    request = requests[0]
+    assert request.headers["Authorization"] == "Bearer test-only"
+    assert str(request.url) == "https://llm.example.test/v1/chat/completions"
+    provider_body = json.loads(request.content)
     assert provider_body["model"] == "approved-model"
     context = provider_body["messages"][1]["content"]
     assert "С чего начинается процесс?" in context
@@ -81,16 +77,11 @@ def test_local_draft_chat_sends_its_source_without_persisting_it() -> None:
         llm_provider="deepseek",
         deepseek_api_key="test-only",
     )
-    app = create_app(settings, container=build_container(settings))
-    response_body = {"choices": [{"message": {"content": "Шаги следуют по порядку."}}]}
+    requests: list[httpx.Request] = []
+    transport = json_transport(lambda _request: ok_chat("Шаги следуют по порядку."), requests)
+    app = create_app(settings, container=build_container(settings, llm_transport=transport))
 
-    with (
-        TestClient(app) as configured_client,
-        patch("app.llm.openai_compatible.urlopen") as urlopen,
-    ):
-        urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(
-            response_body
-        ).encode()
+    with TestClient(app) as configured_client:
         response = configured_client.post(
             f"{API}/assistant/chat",
             json={
@@ -102,7 +93,7 @@ def test_local_draft_chat_sends_its_source_without_persisting_it() -> None:
         )
 
     assert response.status_code == 200
-    provider_body = json.loads(urlopen.call_args.args[0].data)
+    provider_body = json.loads(requests[0].content)
     context = provider_body["messages"][1]["content"]
     assert "Сотрудник принимает заявление" in context
     assert "Локальный процесс" in context

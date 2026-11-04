@@ -55,6 +55,7 @@ from app.infra.db_models import (
 )
 from app.infra.repositories.access_sql import SqlAccessRepository
 from app.infra.repositories.base import ActiveRunConflictError, PageKey, Repositories
+from app.infra.repositories.llm_credentials_sql import SqlLlmCredentialRepository
 from app.infra.repositories.onboarding_sql import SqlOnboardingRepository
 from app.infra.repositories.session import BoundSessions, SessionFactory
 from app.infra.version_codec import (
@@ -893,5 +894,6 @@ class SqlStore:
             llm_calls=SqlLlmCallRepository(sessions),
             access=SqlAccessRepository(sessions),
             onboarding=SqlOnboardingRepository(sessions),
+            llm_credentials=SqlLlmCredentialRepository(sessions),
             transaction=transaction,
         )

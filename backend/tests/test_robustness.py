@@ -8,9 +8,6 @@ import time
 import zipfile
 from collections.abc import Iterator
 from datetime import UTC, datetime
-from email.message import Message
-from unittest.mock import MagicMock, patch
-from urllib.error import HTTPError
 from uuid import UUID, uuid4
 
 import pytest
@@ -32,11 +29,11 @@ from app.fixtures import read_bpmn
 from app.infra.repositories.memory import InMemoryStore
 from app.ingest.context import describe_context, fit_sources
 from app.ingest.parsers import DocumentParseError, LocalDocumentParser, _pdf_text
-from app.llm.base import PipelineError, record_usage, run_deadline, track_usage
-from app.llm.openai_compatible import DeepSeekPipeline
+from app.llm.base import PipelineError, record_usage, run_deadline
 from app.main import create_app
 from app.services.errors import ConflictError, InvalidInputError, NotFoundError
 from tests.conftest import API, create_project
+from tests.llm_helpers import ScriptedPipeline
 
 _WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
@@ -377,7 +374,6 @@ def test_pdf_stops_at_its_deadline() -> None:
 
 
 async def test_parsing_timeout_does_not_block_event_loop(monkeypatch: pytest.MonkeyPatch) -> None:
-    import time  # noqa: PLC0415
 
     def slow(*_args: object, **_kwargs: object) -> str:
         time.sleep(0.5)
@@ -468,135 +464,13 @@ class _Pipeline:
         return DiagramDraft(xml=read_bpmn("tp861_v2"))
 
 
-def _urlopen_response(payload: dict[str, object]) -> MagicMock:
-    response = MagicMock()
-    response.__enter__.return_value.read.return_value = json.dumps(payload).encode()
-    return response
-
-
 _OK = {
     "choices": [{"message": {"content": "{}"}}],
     "usage": {"prompt_tokens": 100, "completion_tokens": 25},
 }
 
 
-def _http_error(code: int, retry_after: str | None = None) -> HTTPError:
-    headers = Message()
-    if retry_after is not None:
-        headers["Retry-After"] = retry_after
-    return HTTPError("https://api.example/chat", code, "err", headers, None)
-
-
-def test_retry_after_is_respected_and_followed_by_success() -> None:
-    sleeps: list[float] = []
-    pipeline = DeepSeekPipeline(api_key="k", sleep=sleeps.append, jitter=lambda: 0.0)
-    with patch(
-        "app.llm.openai_compatible.urlopen",
-        side_effect=[_http_error(429, "7"), _urlopen_response(_OK)],
-    ) as urlopen:
-        assert pipeline._request_json("s", "p") == "{}"
-    assert urlopen.call_count == 2
-    assert sleeps == [7.0]  # Retry-After больше собственной паузы (0.5 с)
-
-
-@pytest.mark.parametrize("code", [408, 429, 500, 502, 503, 504])
-def test_transient_http_errors_are_retried_with_bound(code: int) -> None:
-    sleeps: list[float] = []
-    pipeline = DeepSeekPipeline(api_key="k", max_retries=2, sleep=sleeps.append, jitter=lambda: 1.0)
-    with (
-        patch(
-            "app.llm.openai_compatible.urlopen",
-            side_effect=lambda *_a, **_k: _raise(_http_error(code)),
-        ),
-        pytest.raises(RuntimeError, match=f"HTTP {code}"),
-    ):
-        pipeline._request_json("s", "p")
-    assert sleeps == [1.0, 2.0]  # полный джиттер: потолок удваивается
-
-
-def _raise(error: Exception) -> None:
-    raise error
-
-
-@pytest.mark.parametrize("code", [400, 401, 402, 404, 422])
-def test_client_errors_are_not_retried(code: int) -> None:
-    sleeps: list[float] = []
-    pipeline = DeepSeekPipeline(api_key="k", sleep=sleeps.append)
-    with (
-        patch("app.llm.openai_compatible.urlopen", side_effect=_http_error(code)) as urlopen,
-        pytest.raises(RuntimeError, match=f"HTTP {code}"),
-    ):
-        pipeline._request_json("s", "p")
-    assert urlopen.call_count == 1
-    assert sleeps == []
-
-
-def test_backoff_is_bounded_and_jittered() -> None:
-    low = DeepSeekPipeline(api_key="k", retry_base_sec=1, retry_max_sec=10, jitter=lambda: 0.0)
-    high = DeepSeekPipeline(api_key="k", retry_base_sec=1, retry_max_sec=10, jitter=lambda: 1.0)
-    assert [low._retry_delay(n, None) for n in range(6)] == [0.5, 1.0, 2.0, 4.0, 5.0, 5.0]
-    assert [high._retry_delay(n, None) for n in range(6)] == [1.0, 2.0, 4.0, 8.0, 10.0, 10.0]
-    assert high._retry_delay(0, 1000.0) == 30.0  # Retry-After тоже ограничен
-
-
-def test_retry_after_with_a_date_is_ignored() -> None:
-    sleeps: list[float] = []
-    pipeline = DeepSeekPipeline(api_key="k", sleep=sleeps.append, jitter=lambda: 0.0)
-    with patch(
-        "app.llm.openai_compatible.urlopen",
-        side_effect=[_http_error(503, "Wed, 21 Oct 2026 07:28:00 GMT"), _urlopen_response(_OK)],
-    ):
-        pipeline._request_json("s", "p")
-    assert sleeps == [0.5]
-
-
-def test_token_usage_is_recorded_from_provider() -> None:
-    pipeline = DeepSeekPipeline(api_key="k", sleep=_NO_SLEEP_FN)
-    with (
-        track_usage() as usage,
-        patch("app.llm.openai_compatible.urlopen", return_value=_urlopen_response(_OK)),
-    ):
-        pipeline._request_json("s", "p")
-        pipeline._request_json("s", "p")
-    assert (usage.tokens_in, usage.tokens_out, usage.requests) == (200, 50, 2)
-    # Без блока учёта и с кривым usage ничего не ломается.
-    broken = {"choices": [{"message": {"content": "{}"}}], "usage": {"prompt_tokens": "много"}}
-    with (
-        track_usage() as other,
-        patch("app.llm.openai_compatible.urlopen", return_value=_urlopen_response(broken)),
-    ):
-        pipeline._request_json("s", "p")
-    assert (other.tokens_in, other.tokens_out) == (0, 0)
-
-
 _NO_SLEEP_FN = lambda _seconds: None  # noqa: E731
-
-
-def test_retry_is_skipped_when_run_deadline_would_pass() -> None:
-    sleeps: list[float] = []
-    pipeline = DeepSeekPipeline(api_key="k", sleep=sleeps.append, jitter=lambda: 1.0)
-    with (
-        run_deadline(0.5),  # паузы 1 с не помещаются в оставшиеся полсекунды
-        patch("app.llm.openai_compatible.urlopen", side_effect=_http_error(503)) as urlopen,
-        pytest.raises(RuntimeError, match="HTTP 503"),
-    ):
-        pipeline._request_json("s", "p")
-    assert urlopen.call_count == 1
-    assert sleeps == []
-
-
-def test_request_timeout_is_cut_to_the_run_deadline() -> None:
-    pipeline = DeepSeekPipeline(api_key="k", timeout_sec=120)
-    with (
-        run_deadline(5),
-        patch("app.llm.openai_compatible.urlopen", return_value=_urlopen_response(_OK)) as m,
-    ):
-        pipeline._request_json("s", "p")
-    assert m.call_args.kwargs["timeout"] <= 5
-    with run_deadline(1e-9):
-        time.sleep(0.001)
-        with pytest.raises(RuntimeError, match="не уложился"):
-            pipeline._request_json("s", "p")
 
 
 async def test_no_new_model_request_after_deadline() -> None:
@@ -607,7 +481,7 @@ async def test_no_new_model_request_after_deadline() -> None:
         calls += 1
         return "{}"
 
-    pipeline = DeepSeekPipeline(api_key="k", complete=complete)
+    pipeline = ScriptedPipeline(api_key="k", complete=complete)
     context = RunContext(project_id=uuid4(), project_title="П", sources=[], questions=[])
     with run_deadline(1e-9):
         await asyncio.sleep(0.001)

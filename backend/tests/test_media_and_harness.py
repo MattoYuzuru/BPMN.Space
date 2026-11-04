@@ -236,8 +236,10 @@ async def test_semantic_review_parallel_is_ordered_and_bounded() -> None:
             ensure_ascii=False,
         )
 
-    errors = await review_semantics(graph, context, complete)
-    sequential = await review_semantics(graph, replace(context, parallel_requests=1), complete)
+    errors = (await review_semantics(graph, context, complete)).errors
+    sequential = (
+        await review_semantics(graph, replace(context, parallel_requests=1), complete)
+    ).errors
     assert errors == sequential
     assert errors[0].count("Пункт 0") == 1 or "Пункт 0" in errors[0]
     assert 1 < tracker.peak <= 4

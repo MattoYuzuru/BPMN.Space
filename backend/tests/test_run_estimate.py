@@ -330,8 +330,9 @@ def test_stage_output_cap_is_multiplied_by_calls() -> None:
     assert structure.tokens_out.max == 128_000 * 4
 
     review = stages["review"]
-    assert review.calls == IntRange(min=30, max=33)
-    assert review.tokens_out.max == 4_096 * 33
+    # Два круга сверки, каждый перечитывает все 30 порций.
+    assert review.calls == IntRange(min=30, max=60)
+    assert review.tokens_out.max == 4_096 * 60
 
 
 def test_duration_does_not_multiply_stage_tokens_by_calls_twice() -> None:

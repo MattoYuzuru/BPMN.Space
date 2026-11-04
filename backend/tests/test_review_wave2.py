@@ -239,8 +239,8 @@ async def test_semantic_review_prompt_excludes_technical_questions() -> None:
         prompts.append(prompt)
         return json.dumps({"issues": []})
 
-    errors = await review_semantics(graph, context, complete)
-    assert errors == []
+    report = await review_semantics(graph, context, complete)
+    assert report.errors == []
     assert prompts
     for prompt in prompts:
         assert "Q-2" not in prompt

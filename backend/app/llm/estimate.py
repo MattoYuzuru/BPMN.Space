@@ -26,6 +26,7 @@ from datetime import date
 from app.domain.models import RunMode
 from app.llm.base import LlmUsage
 from app.llm.capabilities import ModelCapabilities, ModelPrices
+from app.llm.semantic_review import SEMANTIC_ROUNDS
 
 CURRENCY = "USD"
 
@@ -535,7 +536,8 @@ def _review_stage(
     return _stage(
         stage=_REVIEW_STAGE,
         per_call_in=IntRange(min=per_call, max=per_call),
-        calls=IntRange(min=chunk_count, max=chunk_count + REPAIR_ATTEMPTS),
+        # Каждый круг сверки перечитывает все порции (`SEMANTIC_ROUNDS`).
+        calls=IntRange(min=chunk_count, max=chunk_count * SEMANTIC_ROUNDS),
         cap=inputs.chunk_max_tokens,
         effort_factor=1.0,
         prices=prices,

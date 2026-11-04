@@ -11,7 +11,15 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
-from app.domain.models import Project, Source, SourceKind, SourceStatus, SourceTrust
+from app.domain.models import (
+    Project,
+    Source,
+    SourceDerivation,
+    SourceKind,
+    SourceOrigin,
+    SourceStatus,
+    SourceTrust,
+)
 from tests.test_persistence import sql_test_store
 
 pytestmark = pytest.mark.asyncio
@@ -98,3 +106,95 @@ async def test_postgres_fts_search_uses_russian_morphology_and_migration_index()
                 )
             ).all()
         assert [row[0] for row in rows] == ["ix_sources_fts_russian"]
+
+
+async def test_postgres_fts_skips_navigation_derived_nodes() -> None:
+    """Видео: поиск видит расшифровку, но не «общую ленту» и «кадры» (RFC-0006)."""
+    async with sql_test_store() as (store, _sessions):
+        repos = store.repositories()
+        project_id = uuid4()
+        await repos.projects.add(
+            Project(
+                id=project_id,
+                title="Запись совещания",
+                description=None,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
+        video = _source(
+            project_id,
+            "Совещание.mp4",
+            "",
+            kind=SourceKind.VOICE,
+            status=SourceStatus.READY,
+        )
+        transcription = _source(
+            project_id,
+            "Расшифровка",
+            "Согласование заявки решили перенести на пятницу.",
+            origin=SourceOrigin.DERIVED,
+            parent_id=video.id,
+            trust=SourceTrust.EXTRACTED,
+            derivation=SourceDerivation(
+                capability="speech_to_text", provider="deepgram", created_at=NOW
+            ),
+        )
+        frames = _source(
+            project_id,
+            "Ключевые кадры (3)",
+            "[00:10] кадр 1\n[00:20] кадр 2",
+            origin=SourceOrigin.DERIVED,
+            parent_id=video.id,
+            trust=SourceTrust.OBSERVED,
+            derivation=SourceDerivation(capability="frames", provider="code", created_at=NOW),
+        )
+        feed = _source(
+            project_id,
+            "Общая лента",
+            "[00:10] Согласование заявки: экран 1",
+            origin=SourceOrigin.DERIVED,
+            parent_id=video.id,
+            trust=SourceTrust.OBSERVED,
+            derivation=SourceDerivation(capability="media_feed", provider="code", created_at=NOW),
+        )
+        for source in (video, transcription, frames, feed):
+            await repos.sources.add(source)
+
+        hits = await repos.sources.search(project_id, "согласование", limit=5)
+        assert [hit.source_id for hit in hits] == [transcription.id]
+        assert "<b>" not in hits[0].snippet
+        # Родитель-запись без текста в поиск не попадает.
+        assert await repos.sources.search(project_id, "совещание", limit=5) == []
+
+
+async def test_postgres_fts_survives_text_longer_than_one_megabyte() -> None:
+    """tsvector PostgreSQL ограничен 1 МБ: индексируется начало текста, поиск не падает."""
+    async with sql_test_store() as (store, _sessions):
+        repos = store.repositories()
+        project_id = uuid4()
+        await repos.projects.add(
+            Project(
+                id=project_id,
+                title="Очень длинный регламент",
+                description=None,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
+        big = _source(
+            project_id,
+            "Длинный регламент",
+            "Начало регламента: проверка заявки. "
+            + ("служебное слово " * 120_000)
+            + "УНИКАЛЬНЫЙ_ХВОСТ",
+        )
+        assert len(big.content) > 1_100_000
+        await repos.sources.add(big)
+
+        hits = await repos.sources.search(project_id, "заявка", limit=5)
+        assert [hit.source_id for hit in hits] == [big.id]
+        assert hits[0].snippet
+        # Хвост за пределом индексируемых 100 тыс. знаков поиском не находится — это
+        # документированное ограничение: его читают read_source по оглавлению.
+        assert await repos.sources.search(project_id, "уникальный_хвост", limit=5) == []

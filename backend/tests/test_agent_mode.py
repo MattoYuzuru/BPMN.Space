@@ -22,8 +22,10 @@ from app.domain.analysis import ContextSource, RunContext
 from app.domain.bpmn.ir import GraphIR
 from app.domain.models import (
     Project,
+    QuestionActionKind,
     QuestionCategory,
     QuestionKind,
+    QuestionStatus,
     Run,
     RunMode,
     RunStatus,
@@ -34,7 +36,7 @@ from app.domain.models import (
     TechnicalQuestionKind,
 )
 from app.domain.sources import SourceSearchHit
-from app.infra.bpmn_tools import MockBpmnTools
+from app.infra.bpmn_tools import BpmnToolsError, MockBpmnTools
 from app.infra.events import InMemoryRunEventBus
 from app.infra.repositories.memory import InMemoryStore
 from app.infra.tasks import AsyncioTaskSpawner
@@ -49,7 +51,14 @@ from app.llm.agent import (
     build_system_prompt,
     tool_definitions,
 )
-from app.llm.base import BudgetReachedError, PipelineError, run_budget, track_run_usage
+from app.llm.base import (
+    BudgetReachedError,
+    OutputTruncatedError,
+    PipelineError,
+    record_usage,
+    run_budget,
+    track_run_usage,
+)
 from app.llm.capabilities import Budget, ModelCapabilities, ModelPrices, RunProfile
 from app.llm.estimate import EstimateInput, estimate_run
 from app.llm.mock import RecordedToolClient
@@ -151,7 +160,7 @@ def _verify(sources: list[ContextSource], source_id: object, quote: object):
     return verified_quote(sources, source_id, quote)
 
 
-async def _no_search(_query: str) -> list[Any]:
+async def _no_search(_query: str, _limit: int) -> list[Any]:
     return []
 
 
@@ -385,10 +394,18 @@ async def test_agent_read_source_bounds_and_limits() -> None:
 
 @pytest.mark.asyncio
 async def test_agent_search_sources_returns_ranked_snippets() -> None:
-    async def search(query: str) -> list[SourceSearchHit]:
+    requested: list[int] = []
+
+    async def search(query: str, limit: int) -> list[SourceSearchHit]:
         assert query == "заявка"
+        requested.append(limit)
         return [
-            SourceSearchHit(source_id=SOURCE_ID, title="Регламент", snippet="…заявку…", rank=0.7)
+            SourceSearchHit(
+                source_id=SOURCE_ID,
+                title="Регламент",
+                snippet="…<b>заявку</b>…",
+                rank=0.7,
+            )
         ]
 
     client = RecordedToolClient(
@@ -402,6 +419,9 @@ async def test_agent_search_sources_returns_ranked_snippets() -> None:
     results = _tool_results(client)
     assert results[0]["ok"] is True
     assert results[0]["results"][0]["source_id"] == str(SOURCE_ID)
+    assert results[0]["results"][0]["snippet"] == "…заявку…"  # без HTML-подсветки
+    assert requested
+    assert requested[0] > 5  # запас выдачи до фильтра по снимку
     assert results[1]["ok"] is False  # минимум 2 символа
 
 
@@ -485,10 +505,17 @@ class _LintTools:
 
     quality = "full"
 
+    def __init__(self, *, fail_after: int | None = None) -> None:
+        self.calls = 0
+        self._fail_after = fail_after
+
     async def layout(self, xml: str) -> str:
         return xml
 
     async def lint(self, xml: str) -> list[Any]:
+        self.calls += 1
+        if self._fail_after is not None and self.calls > self._fail_after:
+            raise BpmnToolsError("bpmn-tools недоступен")
         return []
 
 
@@ -521,7 +548,14 @@ def _pipeline(turns: list[ToolTurn], *, usage: tuple[int, int, int, int] | None 
     )
 
 
-def _runs(container: Container, pipeline: Any, spawner: Any, *, max_steps: int = 8) -> RunService:
+def _runs(
+    container: Container,
+    pipeline: Any,
+    spawner: Any,
+    *,
+    max_steps: int = 8,
+    tools: Any = None,
+) -> RunService:
     resolver = ModelResolver(
         container.repos,
         server_pipeline=pipeline,
@@ -533,7 +567,7 @@ def _runs(container: Container, pipeline: Any, spawner: Any, *, max_steps: int =
     return RunService(
         container.repos,
         resolver=resolver,
-        bpmn_tools=_LintTools(),  # type: ignore[arg-type]
+        bpmn_tools=tools if tools is not None else _LintTools(),  # type: ignore[arg-type]
         events=InMemoryRunEventBus(),
         spawner=spawner,
         runtime=Runtime(),
@@ -943,7 +977,13 @@ def test_agent_estimate_counts_steps_instead_of_pipeline_stages() -> None:
     assert estimate.calls.max == 10
     assert estimate.calls.min == 2
     assert estimate.cost is not None
+    stage = estimate.breakdown[0]
+    # История агентного цикла растёт, поэтому верхняя граница ответа — максимум модели на
+    # каждом ходу, а вход — бюджет источников плюс один ответ сверх него.
+    assert stage.tokens_out.max == 16_384 * estimate.calls.max
+    assert stage.tokens_in.max > stage.tokens_in.min * 5
     assert any("Агентный режим" in note for note in estimate.notes)
+    assert any("консервативная" in note for note in estimate.notes)
 
 
 @pytest.mark.asyncio
@@ -980,3 +1020,322 @@ async def test_agent_run_can_be_cancelled_during_a_model_request() -> None:
     await spawner.wait_idle()
     assert cancelled.status is RunStatus.CANCELLED
     assert cancelled.error == "Прогон отменён участником"
+
+
+# ---------- находки ревью волны 4: оплаченные ходы, инфраструктура, поиск ----------
+
+
+@pytest.mark.asyncio
+async def test_paid_turn_without_tools_is_journaled() -> None:
+    client = RecordedToolClient(
+        [turn(text="Пока думаю"), turn(use("submit", {"questions": []}))],
+        usage=(10, 2, 0, 0),
+    )
+    records: list[AgentTurn] = []
+
+    async def on_turn(record: AgentTurn) -> None:
+        records.append(record)
+
+    await _runner(client, task=_agent_input(mode=RunMode.ANALYZE), on_turn=on_turn).run()
+    assert [record.index for record in records] == [1, 2]
+    first = records[0]
+    assert first.tool_names == ()
+    assert first.ok is False
+    assert first.usage.tokens_in == 10
+    assert first.usage.requests == 1
+    assert first.cost_usd is not None
+    assert "без вызова инструмента" in (first.error or "")
+    assert records[1].tool_names == ("submit",)
+    assert records[1].ok is True
+
+
+@pytest.mark.asyncio
+async def test_provider_error_turn_is_journaled_with_usage() -> None:
+    class TruncatingClient(RecordedToolClient):
+        async def complete_with_tools(self, *args: Any, **kwargs: Any) -> ToolTurn:
+            record_usage(tokens_in=100, tokens_out=5, cache_read=40, cache_write=0)
+            raise OutputTruncatedError("ответ обрезан")
+
+    records: list[AgentTurn] = []
+
+    async def on_turn(record: AgentTurn) -> None:
+        records.append(record)
+
+    with pytest.raises(OutputTruncatedError):
+        await _runner(TruncatingClient([]), on_turn=on_turn).run()
+    assert len(records) == 1
+    assert records[0].usage.tokens_in == 100
+    assert records[0].usage.cache_read_tokens == 40
+    assert records[0].usage.requests == 1
+    assert records[0].cost_usd is not None
+    assert "обрезан" in (records[0].error or "")
+
+
+@pytest.mark.asyncio
+async def test_cancelled_turn_with_running_tool_is_journaled() -> None:
+    entered = asyncio.Event()
+
+    async def slow_check(_data: object):
+        entered.set()
+        await asyncio.sleep(3600)
+        raise AssertionError("недостижимо")  # pragma: no cover
+
+    client = RecordedToolClient(
+        [turn(use("check_graph", {"ir": graph_case("xor")}))], usage=(7, 3, 0, 0)
+    )
+    records: list[AgentTurn] = []
+
+    async def on_turn(record: AgentTurn) -> None:
+        records.append(record)
+
+    runner = _runner(client, check_graph=slow_check, on_turn=on_turn)
+    task = asyncio.create_task(runner.run())
+    await asyncio.wait_for(entered.wait(), timeout=1)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert len(records) == 1
+    assert records[0].usage.tokens_in == 7
+    assert records[0].tool_names == ("check_graph",)
+    assert "отмен" in (records[0].error or "")
+
+
+@pytest.mark.asyncio
+async def test_infrastructure_tool_failure_is_pipeline_error_not_model_argument_error() -> None:
+    async def broken_check(_data: object):
+        raise BpmnToolsError("bpmn-tools недоступен")
+
+    client = RecordedToolClient(
+        [turn(use("check_graph", {"ir": graph_case("xor")}))], usage=(5, 1, 0, 0)
+    )
+    records: list[AgentTurn] = []
+
+    async def on_turn(record: AgentTurn) -> None:
+        records.append(record)
+
+    with pytest.raises(PipelineError, match="Инструмент агента временно недоступен"):
+        await _runner(client, check_graph=broken_check, on_turn=on_turn).run()
+    assert len(records) == 1
+    assert records[0].ok is False
+    assert "Инструмент агента временно недоступен" not in json.dumps(
+        [record.journal for record in records]
+    )
+
+
+@pytest.mark.asyncio
+async def test_check_submitted_graph_translates_bpmn_tools_failure() -> None:
+    async def broken_lint(_xml: str) -> list[Any]:
+        raise BpmnToolsError("bpmn-tools недоступен")
+
+    with pytest.raises(PipelineError, match="Проверка схемы недоступна"):
+        await check_submitted_graph(graph_case("xor"), _context(), _verify, lint=broken_lint)
+
+
+@pytest.mark.asyncio
+async def test_search_filters_snapshot_and_requests_oversample() -> None:
+    foreign = uuid4()
+    requested: list[int] = []
+
+    async def search(_query: str, limit: int) -> list[SourceSearchHit]:
+        requested.append(limit)
+        return [
+            SourceSearchHit(source_id=foreign, title="Чужой", snippet="не из снимка", rank=9.0),
+            SourceSearchHit(source_id=SOURCE_ID, title="Регламент", snippet="заявка", rank=0.5),
+        ]
+
+    client = RecordedToolClient(
+        [turn(use("search_sources", {"query": "заявка"})), turn(use("submit", {"questions": []}))]
+    )
+    await _runner(client, task=_agent_input(mode=RunMode.ANALYZE), search=search).run()
+    results = _tool_results(client)
+    assert [item["source_id"] for item in results[0]["results"]] == [str(SOURCE_ID)]
+    assert requested == [AgentLimits().search_limit * 3]
+
+
+@pytest.mark.asyncio
+async def test_list_questions_includes_answers() -> None:
+    task = replace(
+        _agent_input(mode=RunMode.ANALYZE),
+        questions=(
+            AgentQuestionView(
+                code="Q-1",
+                status="answered",
+                kind="missing_actor",
+                text="Кто проверяет?",
+                assumption="Оператор",
+                answer="Оператор проверяет заявку.",
+            ),
+        ),
+    )
+    client = RecordedToolClient(
+        [turn(use("list_questions", {})), turn(use("submit", {"questions": []}))]
+    )
+    await _runner(client, task=task).run()
+    [result] = [item for item in _tool_results(client) if "questions" in item]
+    assert result["questions"][0]["answer"] == "Оператор проверяет заявку."
+
+
+@pytest.mark.asyncio
+async def test_step_limit_error_has_no_budget_attached() -> None:
+    client = RecordedToolClient([turn(use("list_sources", {})) for _ in range(3)])
+    with pytest.raises(BudgetReachedError) as caught:
+        await _runner(client, task=_agent_input(mode=RunMode.ANALYZE, max_steps=2)).run()
+    error = caught.value
+    assert error.budget is None
+    assert "Лимит ходов" in error.message
+    assert "Бюджет" not in error.message
+
+
+@pytest.mark.asyncio
+async def test_step_limit_question_continues_with_new_allowance() -> None:
+    container = build_container(Settings(mock_delay_scale=0, seed_demo_data=False))
+    project_id, _ = await _project(container)
+    pipeline, client = _pipeline(
+        [turn(use("list_sources", {})), turn(use("submit", {"questions": []}))],
+        usage=(10, 2, 0, 0),
+    )
+    spawner = AsyncioTaskSpawner()
+    runs = _runs(container, pipeline, spawner, max_steps=1)
+    run = await runs.start(
+        project_id,
+        mode=RunMode.ANALYZE,
+        created_by=None,
+        profile=RunProfile(mode="agent", max_steps=1),
+    )
+    await spawner.wait_idle()
+    waiting = await runs.get(run.id)
+    assert waiting.status is RunStatus.WAITING
+    questions = await container.repos.questions.list_by_project(project_id)
+    technical = [item for item in questions if item.is_technical]
+    assert len(technical) == 1
+    question = technical[0]
+    assert question.kind is TechnicalQuestionKind.BUDGET_REACHED
+    assert "Лимит ходов" in question.text
+    assert "Бюджет" not in question.text
+    # Ни «поднять бюджет», ни повторного вопроса: предлагаем продолжить с новым запасом ходов.
+    assert [item.kind for item in question.actions] == [
+        QuestionActionKind.CONTINUE_WITHOUT,
+        QuestionActionKind.OPEN_SETTINGS,
+    ]
+    assert "новым запасом" in question.actions[0].label
+
+    # Действие вопроса продолжает именно наш прогон, а не сервис контейнера.
+    container.technical_questions.bind_run_actions(runs)
+    updated = await container.technical_questions.apply_action(
+        question.id, QuestionActionKind.CONTINUE_WITHOUT
+    )
+    assert updated.status is QuestionStatus.IGNORED
+    await spawner.wait_idle()
+    final = await runs.get(run.id)
+    assert final.status is RunStatus.SUCCEEDED, final.error
+    assert len(client.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_llm_agent_mode_switch_is_rechecked_on_recovery() -> None:
+    container = build_container(Settings(mock_delay_scale=0, seed_demo_data=False))
+    project_id, _ = await _project(container)
+    pipeline, _ = _pipeline([])
+    runs = _runs(container, pipeline, _HoldSpawner(), max_steps=4)
+    run = await runs.start(
+        project_id,
+        mode=RunMode.ANALYZE,
+        created_by=None,
+        profile=RunProfile(mode="agent", max_steps=4),
+    )
+    saved = await runs.get(run.id)
+    assert saved.ir is not None
+
+    # Администратор выключил LLM_AGENT_MODE: восстановленный агентный прогон обязан
+    # остановиться понятной ошибкой, а не тихо продолжить или подменить режим.
+    disabled_resolver = ModelResolver(
+        container.repos,
+        server_pipeline=pipeline,
+        runtime=Runtime(),
+        agent_enabled=False,
+        agent_max_steps=4,
+    )
+    spawner = AsyncioTaskSpawner()
+    restarted = RunService(
+        container.repos,
+        resolver=disabled_resolver,
+        bpmn_tools=_LintTools(),  # type: ignore[arg-type]
+        events=InMemoryRunEventBus(),
+        spawner=spawner,
+        runtime=Runtime(),
+        max_concurrent=2,
+        agent_limits=AgentLimits(max_steps=4),
+    )
+    restarted.resume(run.id)
+    await spawner.wait_idle()
+    final = await restarted.get(run.id)
+    assert final.status is RunStatus.FAILED
+    assert final.error is not None
+    assert "выключен администратором" in final.error
+
+
+@pytest.mark.asyncio
+async def test_structuring_revalidates_agent_draft() -> None:
+    container = build_container(Settings(mock_delay_scale=0, seed_demo_data=False))
+    project_id, source_id = await _project(container)
+    ir = _simple_ir(source_id)
+    pipeline, _ = _pipeline([turn(use("submit", {"questions": [], "ir": ir}))], usage=(10, 2, 0, 0))
+    # Первая проверка (submit) проходит, вторая (этап структуры) падает: черновик обязан
+    # перепроверяться после сверки вопросов, а не публиковаться как есть.
+    tools = _LintTools(fail_after=1)
+    spawner = AsyncioTaskSpawner()
+    runs = _runs(container, pipeline, spawner, tools=tools)
+    run = await runs.start(
+        project_id,
+        mode=RunMode.BUILD,
+        created_by=None,
+        profile=RunProfile(mode="agent"),
+    )
+    await spawner.wait_idle()
+    final = await runs.get(run.id)
+    assert final.status is RunStatus.FAILED
+    assert final.error is not None
+    assert "Проверка схемы недоступна" in final.error
+    assert tools.calls >= 2
+
+
+@pytest.mark.asyncio
+async def test_paid_turn_is_journaled_in_llm_calls_on_provider_error() -> None:
+    container = build_container(Settings(mock_delay_scale=0, seed_demo_data=False))
+    project_id, _ = await _project(container)
+
+    class ExplodingClient(RecordedToolClient):
+        async def complete_with_tools(self, *args: Any, **kwargs: Any) -> ToolTurn:
+            record_usage(tokens_in=250, tokens_out=10, cache_read=0, cache_write=0)
+            raise RuntimeError("Сервис модели вернул ответ неизвестной структуры")
+
+    pipeline = LlmPipeline(
+        ExplodingClient([]),
+        provider="anthropic",
+        model="claude-opus-5-5",
+        capabilities=CAPABILITIES,
+        json_max_tokens=8_192,
+        context_budget_chars=120_000,
+        effort="medium",
+    )
+    spawner = AsyncioTaskSpawner()
+    runs = _runs(container, pipeline, spawner)
+    run = await runs.start(
+        project_id,
+        mode=RunMode.ANALYZE,
+        created_by=None,
+        profile=RunProfile(mode="agent"),
+    )
+    await spawner.wait_idle()
+    final = await runs.get(run.id)
+    assert final.status is RunStatus.FAILED
+    calls = [
+        call
+        for call in await container.repos.llm_calls.list_by_run(run.id)
+        if call.stage == "agent"
+    ]
+    assert len(calls) == 1
+    assert calls[0].tokens_in == 250
+    assert calls[0].cost_usd is not None
+    assert calls[0].request["step"] == 1
+    assert calls[0].response["error"]

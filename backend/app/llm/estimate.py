@@ -277,8 +277,8 @@ def estimate_run(inputs: EstimateInput) -> RunEstimate:
     ]
     if inputs.agent_mode:
         notes.append(
-            "Агентный режим: число ходов и объём чтения выбирает модель; верхняя граница — "
-            "лимит ходов и бюджет прогона"
+            "Агентный режим: число ходов и объём чтения выбирает модель; верхняя граница "
+            "консервативная — лимит ходов, рост истории и максимальный ответ модели на каждом ходу"
         )
     if inputs.questions:
         notes.append(f"Вопросов в проекте: {inputs.questions}; ответы и допущения идут в контекст")
@@ -413,19 +413,25 @@ def _agent_stage(
     """Агентные ходы (RFC-0004): от «оглавление и submit» до исчерпания лимита ходов.
 
     Точное число ходов решает модель. Нижняя граница — два хода (оглавление и submit),
-    верхняя — `agent_max_steps`; вход одного хода ограничен бюджетом источников, выход —
-    максимумом ответа модели. Оценка честно помечается приблизительной в `notes`.
+    верхняя — `agent_max_steps`. В отличие от одного запроса конвейера, история агентного
+    цикла растёт: каждый следующий ход несёт предыдущие результаты инструментов и ответы
+    модели (аргументы `submit` — тоже выход). Поэтому верхняя граница входа одного хода —
+    весь бюджет источников плюс один ответ модели сверх него, а верхняя граница ответа —
+    максимальный ответ модели на каждом ходу. Оценка заведомо консервативна и честно
+    помечена приблизительной в `notes`.
     """
     steps = max(inputs.agent_max_steps, 2)
     calls = IntRange(min=2, max=steps)
     index_tokens = math.ceil(2_000 / chars_per_token)
+    budget_tokens = max(math.ceil(inputs.budget_chars / chars_per_token), 1)
+    history_tokens = min(total_tokens, budget_tokens) + inputs.json_max_tokens
     per_call_in = IntRange(
         min=overhead + index_tokens,
-        max=overhead + max(min(total_tokens, inputs.budget_chars // 2), index_tokens),
+        max=overhead + history_tokens + index_tokens,
     )
     # Выход этапа уже учитывает число ходов (cap × calls.max), вход — ниже через `_stage_tokens`.
     tokens_out = _output_range(
-        per_call_in, calls, cap=inputs.json_max_tokens, effort_factor=effort_factor, short=True
+        per_call_in, calls, cap=inputs.json_max_tokens, effort_factor=effort_factor
     )
     tokens_in = _stage_tokens(per_call_in, calls)
     return StageEstimate(

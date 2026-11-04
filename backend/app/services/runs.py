@@ -25,8 +25,11 @@ from app.domain.bpmn.document import BpmnFormatError
 from app.domain.bpmn.importer import preserve_geometry
 from app.domain.bpmn.xsd import xsd_errors
 from app.domain.models import (
+    QUESTION_ACTION_LABELS,
     LlmCall,
     Question,
+    QuestionAction,
+    QuestionActionKind,
     QuestionKind,
     QuestionStatus,
     Quote,
@@ -799,15 +802,17 @@ class RunService:
         else:
             # Лимит ходов агентного режима (RFC-0004): текст ошибки уже называет границу.
             text = (
-                f"{error.message}. Поднимите лимит шагов в профиле прогона и продолжите "
-                "или остановите прогон."
+                f"{error.message}. Продолжите с новым запасом ходов или создайте прогон "
+                "с большим лимитом в профиле."
             )
+        actions = _step_limit_actions() if budget is None else None
         question = await self._technical.create(
             run.project_id,
             TechnicalQuestionKind.BUDGET_REACHED,
             text,
             run_id=run.id,
             blocking=True,
+            actions=actions,
         )
         await self._publish(run, RunEventKind.QUESTION, question)
         if run.stage is not None:
@@ -908,9 +913,17 @@ class RunService:
                 )
                 state.context = context
                 if state.agent is not None:
-                    # Черновик уже проверен submit агентного режима (RFC-0004):
-                    # повторный запрос к модели не нужен, этап только переносит результат.
-                    state.draft = state.agent.draft
+                    # Черновик уже принят submit, но между submit и структурой прошла сверка
+                    # вопросов: перепроверяем IR по актуальным основаниям и вопросам, чтобы
+                    # не опубликовать устаревшую схему. Запрос к модели не нужен.
+                    if state.agent.draft is None:
+                        raise PipelineError("Агентный submit не содержит IR схемы")
+                    state.draft = await check_submitted_graph(
+                        state.agent.draft.ir,
+                        context,
+                        self._verify_quote,
+                        lint=self._tools.lint,
+                    )
                 else:
                     state.draft = await self._model_call(
                         run,
@@ -948,6 +961,13 @@ class RunService:
         pipeline = state.model()
         client = getattr(pipeline, "client", None)
         capabilities = pipeline_capabilities(pipeline)
+        # Восстановленный прогон проверяет флаг и возможности заново: оператор мог выключить
+        # LLM_AGENT_MODE, а модель — потерять инструменты (Models API/каталог изменились).
+        if not getattr(self._resolver, "agent_enabled", True):
+            raise PipelineError(
+                "Агентный режим выключен администратором (LLM_AGENT_MODE). Включите его и "
+                "повторите прогон или создайте новый в режиме конвейера"
+            )
         if client is None or not capabilities.tools:
             raise PipelineError(
                 "Модель прогона не поддерживает инструменты: агентный режим недоступен"
@@ -980,7 +1000,7 @@ class RunService:
                 client,
                 task,
                 verify_quote=verify,
-                search=lambda query: self._search_sources(run.project_id, query, limits),
+                search=lambda query, limit: self._search_sources(run.project_id, query, limit),
                 check_graph=lambda data: check_submitted_graph(data, context, verify, lint=lint),
                 on_turn=lambda turn: self._agent_turn(run, turn),
                 max_tokens=_pipeline_json_max_tokens(pipeline),
@@ -1025,7 +1045,11 @@ class RunService:
                     "prompt_version": AGENT_PROMPT_VERSION,
                     "tools": [dict(item) for item in turn.journal],
                 },
-                response={"ok": turn.ok, "tool_names": list(turn.tool_names)},
+                response={
+                    "ok": turn.ok,
+                    "tool_names": list(turn.tool_names),
+                    "error": turn.error,
+                },
                 tokens_in=turn.usage.tokens_in if turn.usage.requests else None,
                 tokens_out=turn.usage.tokens_out if turn.usage.requests else None,
                 cache_read_tokens=turn.usage.cache_read_tokens if turn.usage.requests else None,
@@ -1050,13 +1074,24 @@ class RunService:
         await self._repos.runs.update(run)
 
     async def _search_sources(
-        self, project_id: UUID, query: str, limits: AgentLimits
+        self, project_id: UUID, query: str, limit: int
     ) -> list[SourceSearchHit]:
-        """Полнотекстовый поиск по источникам проекта (PostgreSQL FTS `russian`)."""
+        """Полнотекстовый поиск по источникам проекта (PostgreSQL FTS `russian`).
+
+        Раннер запрашивает запас выдачи и сам отсекает источники вне снимка прогона, поэтому
+        лимит здесь — верхняя граница, а не точное число результатов.
+        """
         phrase = query.strip()
         if not phrase:
             return []
-        return await self._repos.sources.search(project_id, phrase, limit=limits.search_limit)
+        return await self._repos.sources.search(project_id, phrase, limit=max(limit, 1))
+
+    @staticmethod
+    def _verify_quote(
+        sources: list[ContextSource], source_id: object, quote: object
+    ) -> tuple[UUID | None, str | None]:
+        """Проверка дословной цитаты: та же функция, что у конвейера и агентного submit."""
+        return verified_quote(sources, source_id, quote)
 
     async def _apply_draft(self, run: Run, state: _RunState) -> None:
         """Переносит проверенный черновик в `run.ir`; общий путь конвейера и агента."""
@@ -1546,6 +1581,25 @@ class RunService:
         except Exception:
             # Realtime is a best-effort projection; it must never fail or stop the durable run.
             logger.exception("Прогон %s: не удалось разослать realtime-событие", run.id)
+
+
+def _step_limit_actions() -> list[QuestionAction]:
+    """Действия технического вопроса, когда исчерпан лимит ходов, а не бюджет.
+
+    «Поднять бюджет» здесь бессмысленно: граница — число ходов в профиле. Поэтому предлагаем
+    продолжить с новым запасом ходов (действие `continue_without` перезапускает попытку с
+    полным лимитом из профиля) или открыть настройки и создать прогон с большим лимитом.
+    """
+    return [
+        QuestionAction(
+            kind=QuestionActionKind.CONTINUE_WITHOUT,
+            label="Продолжить с новым запасом ходов",
+        ),
+        QuestionAction(
+            kind=QuestionActionKind.OPEN_SETTINGS,
+            label=QUESTION_ACTION_LABELS[QuestionActionKind.OPEN_SETTINGS],
+        ),
+    ]
 
 
 def _pipeline_json_max_tokens(pipeline: object) -> int:

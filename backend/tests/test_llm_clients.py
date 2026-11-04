@@ -766,3 +766,63 @@ async def test_openai_compatible_complete_with_tools_rejects_truncated_answer() 
         await client.complete_with_tools(
             "S", _tool_conversation(), _tool_definitions(), max_tokens=5
         )
+
+
+class _ThinkingBlock:
+    """Блок рассуждения Anthropic с подписью: её нельзя восстановить из текста."""
+
+    type = "thinking"
+
+    def __init__(self, thinking: str, signature: str) -> None:
+        self.thinking = thinking
+        self.signature = signature
+
+
+def _thinking_block(thinking: str, signature: str) -> Any:
+    return _ThinkingBlock(thinking, signature)
+
+
+@pytest.mark.asyncio
+async def test_anthropic_complete_with_tools_preserves_thinking_blocks() -> None:
+    blocks = [
+        _thinking_block("Проверяю регламент", "sig-abc"),
+        _text_block("Читаю"),
+        _tool_block("call-2", "read_source", {"source_id": "s1"}),
+    ]
+    sdk = _Sdk(
+        _anthropic_tool_message(*blocks),
+        _anthropic_tool_message(_text_block("Готово")),
+    )
+    client = _anthropic(sdk)
+    answer = await client.complete_with_tools(
+        "СИСТЕМА", _tool_conversation(), _tool_definitions(), max_tokens=2_000
+    )
+    # Сырые блоки ответа сохранены: thinking с подписью и tool_use.
+    assert answer.provider_blocks[0] == {
+        "type": "thinking",
+        "thinking": "Проверяю регламент",
+        "signature": "sig-abc",
+    }
+    assert answer.provider_blocks[2]["type"] == "tool_use"
+
+    # Следующий ход возвращает историю целиком: API требует thinking с подписью, иначе 400.
+    history = [
+        ConversationMessage(role="user", text="Изучи материалы"),
+        ConversationMessage(
+            role="assistant",
+            text=answer.text or "",
+            tool_uses=answer.tool_uses,
+            provider_blocks=answer.provider_blocks,
+        ),
+        ConversationMessage(role="tool", text='{"ok": true}', tool_use_id="call-2"),
+    ]
+    await client.complete_with_tools("СИСТЕМА", history, _tool_definitions(), max_tokens=2_000)
+    assistant = sdk.calls[1]["messages"][1]
+    assert assistant["role"] == "assistant"
+    assert assistant["content"][0] == {
+        "type": "thinking",
+        "thinking": "Проверяю регламент",
+        "signature": "sig-abc",
+    }
+    assert assistant["content"][1] == {"type": "text", "text": "Читаю"}
+    assert assistant["content"][2]["type"] == "tool_use"

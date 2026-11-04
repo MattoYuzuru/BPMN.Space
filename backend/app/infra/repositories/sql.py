@@ -60,6 +60,7 @@ from app.domain.models import (
 from app.domain.questions import actions_from_json, actions_to_json, normalize
 from app.domain.runs import ACTIVE_STATUSES
 from app.domain.sources import (
+    FTS_INDEXED_CHARS,
     SourceSearchHit,
     derivation_from_json,
     derivation_to_json,
@@ -687,9 +688,17 @@ class SqlSourceRepository:
     async def search(self, project_id: UUID, query: str, *, limit: int) -> list[SourceSearchHit]:
         """FTS `russian` по названию и тексту источников; индекс — миграция 0024.
 
-        Запрос повторяет выражение индекса `to_tsvector('russian', title || ' ' || content)`
-        буквально: иначе планировщик не сопоставит условие с индексом. `ts_headline` отдаёт
-        фрагмент вокруг совпадения — полный текст источника через поиск не отдаётся.
+        Запрос повторяет выражение индекса
+        `to_tsvector('russian', left(title || ' ' || content, 100000))` буквально: иначе
+        планировщик не сопоставит условие с индексом. `left(…, 100000)` ограничивает
+        индексируемую длину: tsvector PostgreSQL не принимает больше 1 МБ, а текст источника
+        бывает до миллиона знаков. Хвост длинного документа через поиск не находится — его
+        читают `read_source` по оглавлению.
+
+        Навигационные производные (`frames`, `media_feed`) и краткие содержания исключены так
+        же, как в `Source.feeds_model`: иначе выдача заполняется дублями расшифровки, а
+        `read_source` по ним отвечает «нет текста». `ts_headline` отдаёт фрагмент вокруг
+        совпадения без подсветки — полный текст источника через поиск не отдаётся.
         """
         phrase = query.strip()
         if not phrase or limit <= 0:
@@ -697,9 +706,11 @@ class SqlSourceRepository:
         statement = text(
             """
             SELECT id, title,
-                   ts_headline('russian', content, plainto_tsquery('russian', :query),
+                   ts_headline('russian', left(content, :indexed_chars),
+                               plainto_tsquery('russian', :query),
                                'MaxWords=60, MinWords=20, MaxFragments=1') AS snippet,
-                   ts_rank_cd(to_tsvector('russian', title || ' ' || content),
+                   ts_rank_cd(to_tsvector('russian',
+                                          left(title || ' ' || content, :indexed_chars)),
                               plainto_tsquery('russian', :query)) AS rank
             FROM sources
             WHERE project_id = :project_id
@@ -707,7 +718,9 @@ class SqlSourceRepository:
               AND status = 'ready'
               AND trust <> 'summary'
               AND length(btrim(content)) > 0
-              AND to_tsvector('russian', title || ' ' || content)
+              AND coalesce(derivation->>'capability', '') NOT IN ('frames', 'media_feed')
+              AND to_tsvector('russian',
+                              left(title || ' ' || content, :indexed_chars))
                   @@ plainto_tsquery('russian', :query)
             ORDER BY rank DESC, created_at
             LIMIT :limit
@@ -717,14 +730,20 @@ class SqlSourceRepository:
             rows = (
                 await session.execute(
                     statement,
-                    {"project_id": project_id, "query": phrase, "limit": min(limit, 20)},
+                    {
+                        "project_id": project_id,
+                        "query": phrase,
+                        "limit": min(limit, 20),
+                        "indexed_chars": FTS_INDEXED_CHARS,
+                    },
                 )
             ).all()
         return [
             SourceSearchHit(
                 source_id=row.id,
                 title=row.title,
-                snippet=row.snippet or "",
+                # Подсветка `ts_headline` по умолчанию — `<b>`: модели нужен текст, не HTML.
+                snippet=(row.snippet or "").replace("<b>", "").replace("</b>", ""),
                 rank=float(row.rank or 0.0),
             )
             for row in rows

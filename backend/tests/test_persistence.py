@@ -149,6 +149,8 @@ def test_postgres_schema_has_domain_tables_and_active_run_constraint() -> None:
     assert active_run_index.unique
     assert "queued" in str(active_run_index.dialect_options["postgresql"]["where"])
     assert "running" in str(active_run_index.dialect_options["postgresql"]["where"])
+    # Ожидание действия пользователя тоже занимает проект (RFC-0006, шаг 2).
+    assert "waiting" in str(active_run_index.dialect_options["postgresql"]["where"])
 
     question_table = cast(Table, QuestionRow.__table__)
     version_table = cast(Table, DiagramVersionRow.__table__)

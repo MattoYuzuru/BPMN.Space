@@ -101,6 +101,29 @@ class TechnicalQuestionService:
         async with self._repos.atomic() as repos:
             await repos.projects.lock(project_id)
             questions = await repos.questions.list_by_project(project_id)
+            # «Повторить» осмысленно только при связанном прогоне; у вопроса из фоновой
+            # обработки медиа прогона нет — действие не предлагаем.
+            if actions is None:
+                actions = [
+                    item
+                    for item in default_actions(kind)
+                    if run_id is not None or item.kind is not QuestionActionKind.RETRY
+                ]
+            if run_id is not None:
+                # Дубль блокирующего вопроса по тому же прогону не создаём.
+                existing = next(
+                    (
+                        item
+                        for item in questions
+                        if item.is_technical
+                        and item.run_id == run_id
+                        and item.kind is kind
+                        and item.status is QuestionStatus.OPEN
+                    ),
+                    None,
+                )
+                if existing is not None:
+                    return existing
             question = Question(
                 id=self._rt.new_id(),
                 project_id=project_id,
@@ -114,7 +137,7 @@ class TechnicalQuestionService:
                 updated_at=now,
                 run_id=run_id,
                 category=QuestionCategory.TECHNICAL,
-                actions=(actions if actions is not None else default_actions(kind)),
+                actions=list(actions or []),
                 blocking=blocking,
             )
             await repos.questions.add(question)
@@ -171,9 +194,11 @@ class TechnicalQuestionService:
             await self._close(question, QuestionStatus.RESOLVED)
             return await self._reload(question)
         if action is QuestionActionKind.CONTINUE_WITHOUT:
-            await self._close(question, QuestionStatus.IGNORED)
+            # Сначала продолжение: если прогон уже нельзя продолжить, вопрос остаётся
+            # открытым, а не закрытым без результата.
             if run_id is not None:
                 await self._require_run_actions().resume_waiting(run_id)
+            await self._close(question, QuestionStatus.IGNORED)
             return await self._reload(question)
         if action is QuestionActionKind.RETRY:
             if run_id is None:

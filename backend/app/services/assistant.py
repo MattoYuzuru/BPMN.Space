@@ -28,9 +28,14 @@ class AssistantService:
     ) -> str:
         project = await get_project(self._repos, project_id)
         source_items = await self._repos.sources.list_by_project(project_id)
-        question_items = await self._repos.questions.list_by_project(
-            project_id, status=QuestionStatus.OPEN
-        )
+        question_items = [
+            question
+            for question in await self._repos.questions.list_by_project(
+                project_id, status=QuestionStatus.OPEN
+            )
+            # Технические вопросы — о материалах и запуске, а не о процессе: в чат они не идут.
+            if not question.is_technical
+        ]
         sources: list[dict[str, str]] = []
         budget = 24_000
         for source in source_items:

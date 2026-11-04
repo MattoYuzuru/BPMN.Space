@@ -7,7 +7,6 @@ import {
   providerLabel,
 } from '@/entities/tool-credential'
 import { formatRelative } from '@/shared/lib/format'
-import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import { Badge, Button, Card, Icon, IconButton, Switch, Tag, Tooltip } from '@/shared/ui'
 
 /** Строка ключа: что закрывает, приоритет, лимит, ошибки; проверка и правка рядом. */
@@ -52,11 +51,7 @@ export function CredentialRow({
         <div className="type-caption flex flex-wrap items-center gap-x-2 text-fg-muted">
           <span>{providerLabel(providers, credential.provider)}</span>
           <span className="font-mono">{credential.key_hint}</span>
-          <Tooltip content="Меньше — раньше в переборе">
-            <span {...tourAnchor(TOUR_ANCHORS.toolsPriority)} data-numeric>
-              Приоритет {credential.priority}
-            </span>
-          </Tooltip>
+          <span data-numeric>Приоритет {credential.priority}</span>
           {credential.last_used_at && (
             <span>использован {formatRelative(new Date(credential.last_used_at))}</span>
           )}

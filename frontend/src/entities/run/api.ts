@@ -112,7 +112,7 @@ export function useStartRun(projectId: string) {
       const caps = picked && cachedModelCapabilities(client, picked.credentialId, picked.model)
       const choice = choiceRequest(picked, caps || undefined)
       if (typeof input === 'string') return startRun(projectId, input, choice)
-      const { budget, agentMode, maxSteps, ...rest } = input
+      const { budget, agentMode, maxSteps, profile: inputProfile, ...rest } = input
       const modeProfile =
         agentMode === undefined
           ? {}
@@ -121,11 +121,13 @@ export function useStartRun(projectId: string) {
             : { mode: 'pipeline' as const }
       const profile = {
         ...(choice.profile ?? {}),
+        ...(inputProfile ?? {}),
         ...modeProfile,
         ...(budget ? { budget } : {}),
       }
       const hasProfile = Object.keys(profile).length > 0
       return startRun(projectId, rest.mode, {
+        ...choice,
         ...rest,
         ...(hasProfile ? { profile } : {}),
       })

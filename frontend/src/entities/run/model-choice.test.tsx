@@ -97,3 +97,44 @@ describe('запуск прогона с выбранной моделью', () 
     expect(body).not.toHaveProperty('model')
   })
 })
+
+describe('объектный запуск: диалог оценки и перестройка', () => {
+  it('сохраняет выбранные ключ, модель, уровень, бюджет и голову перестройки', async () => {
+    useModelChoiceStore.setState({
+      choices: {
+        u1: { credentialId: 'c1', model: 'claude-sonnet-5-5', effort: 'medium' },
+      },
+    })
+    const calls = stubApi({
+      'POST /api/v1/projects/p-1/runs': {
+        status: 202,
+        body: { id: 'r-4', project_id: 'p-1', mode: 'build', status: 'queued' },
+      },
+    })
+    const hook = setup({
+      models: [
+        {
+          id: 'claude-sonnet-5-5',
+          label: 'x',
+          capabilities: { effort_levels: ['low', 'medium', 'high'], effort_default: 'medium' },
+        },
+      ],
+    })
+    await act(async () => {
+      await hook.result.current.mutateAsync({
+        mode: 'build',
+        replace_manual: true,
+        base_version_id: 'v-1',
+        budget: { cost_usd: 10, tokens: null },
+      })
+    })
+    expect(calls.at(-1)?.body).toMatchObject({
+      mode: 'build',
+      replace_manual: true,
+      base_version_id: 'v-1',
+      credential_id: 'c1',
+      model: 'claude-sonnet-5-5',
+      profile: { effort: 'medium', budget: { cost_usd: 10, tokens: null } },
+    })
+  })
+})

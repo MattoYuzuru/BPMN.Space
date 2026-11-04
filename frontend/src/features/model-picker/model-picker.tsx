@@ -80,14 +80,19 @@ export function PickerBody({
   loading,
   choice,
   onChange,
+  demoModels,
 }: {
   items: LlmCredential[]
   loading: boolean
   choice: ModelChoice | null
   onChange: (choice: ModelChoice | null) => void
+  /** Готовый список моделей для витрины: живые запросы к API тогда не нужны. */
+  demoModels?: LlmModel[]
 }) {
   const resolved = resolveChoice(items, choice)
-  const models = useLlmModels(resolved?.credential.id)
+  // В образцах стилгайда модели передаются готовыми — запрос к ключу не уходит.
+  const models = useLlmModels(demoModels ? undefined : resolved?.credential.id)
+  const modelList = demoModels ?? models.data
   const effortId = useId()
   const changeKey = useCallback(
     (value: string) => {
@@ -105,15 +110,15 @@ export function PickerBody({
     { value: SERVER, label: SERVER_MODEL_LABEL, icon: 'settings' as const },
     ...items.map((item) => ({ value: item.id, label: item.label, icon: 'key' as const })),
   ]
-  const ids = (models.data ?? []).map((item) => item.id)
+  const ids = (modelList ?? []).map((item) => item.id)
   if (resolved && !ids.includes(resolved.model)) ids.unshift(resolved.model)
-  const caps = capabilitiesOf(models.data, resolved?.model)
+  const caps = capabilitiesOf(modelList, resolved?.model)
   const levels = effortOptions(caps)
   const effort = effectiveEffort(resolved?.effort, caps)
   const changeModel = (model: string) => {
     if (!resolved) return
     // Уровень переносится, только если новая модель его поддерживает.
-    const next = capabilitiesOf(models.data, model)
+    const next = capabilitiesOf(modelList, model)
     const keep = resolved.effort && next?.effort_levels.includes(resolved.effort)
     onChange({
       credentialId: resolved.credential.id,

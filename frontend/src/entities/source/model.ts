@@ -89,11 +89,13 @@ export const CAPABILITIES: Record<string, CapabilityInfo> = {
     processing: 'Расшифровываю запись',
   },
   ocr: { label: 'Распознанный текст', icon: 'file-text', processing: 'Распознаю текст страниц' },
-  vision: { label: 'Описание изображения', icon: 'photo', processing: 'Описываю изображения' },
+  vision: { label: 'Описание экрана', icon: 'photo', processing: 'Описываю кадры' },
   video_understanding: { label: 'Разбор видео', icon: 'video', processing: 'Смотрю видео' },
   scene_detection: { label: 'Ключевые кадры', icon: 'photo', processing: 'Выбираю кадры' },
   web_search: { label: 'Результаты поиска', icon: 'search', processing: 'Ищу в интернете' },
   web_fetch: { label: 'Страница из интернета', icon: 'link', processing: 'Читаю страницу' },
+  frames: { label: 'Ключевые кадры', icon: 'photo', processing: 'Выбираю кадры' },
+  media_feed: { label: 'Общая лента', icon: 'list-check', processing: 'Свожу ленту' },
   code_execution: { label: 'Результат расчёта', icon: 'file-code', processing: 'Считаю' },
   text_to_speech: { label: 'Озвучка', icon: 'wave-sine', processing: 'Озвучиваю' },
   summary: { label: 'Краткое содержание', icon: 'notes', processing: 'Сокращаю материал' },
@@ -375,4 +377,99 @@ export function descendantIds(sources: readonly Source[], rootId: string): Set<s
     frontier = next
   }
   return found
+}
+
+/** Время из таймкода `[мм:сс]` или `[ч:мм:сс]` — в секунды; не таймкод — null. */
+export function parseTimecode(text: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(text.trim().replace(/^\[|\]$/g, ''))
+  if (!match) return null
+  const first = Number(match[1])
+  const second = Number(match[2])
+  const third = match[3] === undefined ? null : Number(match[3])
+  if (second >= 60 || (third !== null && third >= 60)) return null
+  return third === null ? first * 60 + second : first * 3600 + second * 60 + third
+}
+
+/** Исходная запись для плеера: сама запись или корень дерева, у которого есть медиа. */
+export function mediaRootSource(sources: readonly Source[], source: Source): Source | null {
+  if (source.media) return source
+  let current: Source | undefined = source
+  const seen = new Set<string>([source.id])
+  while (current?.parent_id) {
+    if (seen.has(current.parent_id)) return null
+    seen.add(current.parent_id)
+    current = sources.find((item) => item.id === current?.parent_id)
+    if (current?.media) return current
+  }
+  return null
+}
+
+export interface SourcePlayback {
+  /** Запись, чей файл играет плеер. */
+  mediaSource: Source
+  /** Источник, у которого спрашиваем реплики (`/segments` умеет и запись, и расшифровку). */
+  segmentsSourceId: string
+  hasVideo: boolean
+}
+
+/**
+ * Что играть в листе источника: саму запись или корень дерева для расшифровки и производных.
+ * У расшифровки реплики берём у неё, у остальных производных — у записи.
+ */
+export function sourcePlayback(sources: readonly Source[], source: Source): SourcePlayback | null {
+  const mediaSource = mediaRootSource(sources, source)
+  if (!mediaSource) return null
+  const isTranscript = source.derivation?.capability === 'speech_to_text'
+  return {
+    mediaSource,
+    segmentsSourceId: isTranscript ? source.id : mediaSource.id,
+    hasVideo: Boolean(mediaSource.media?.has_video),
+  }
+}
+
+const DERIVATION_EXTRA: Record<string, (params: Record<string, unknown>) => string | null> = {
+  frames: (params) =>
+    typeof params.frames === 'number'
+      ? `${formatCount(params.frames, ['кадр', 'кадра', 'кадров'])}`
+      : null,
+  media_feed: (params) => {
+    const total = typeof params.total_frames === 'number' ? params.total_frames : null
+    return total ? `${formatCount(total, ['кадр', 'кадра', 'кадров'])} в ленте` : null
+  },
+  summary: () => 'Навигация, не основание схемы',
+}
+
+/** Дополнительные факты производного узла: кадры, страницы, навигация по сводке. */
+export function derivationDetails(source: Source): string[] {
+  const derivation = source.derivation
+  if (!derivation) return []
+  const details: string[] = []
+  const extra = DERIVATION_EXTRA[derivation.capability]?.(derivation.params ?? {})
+  if (extra) details.push(extra)
+  const remaining = remainingOcrPages(source)
+  if (remaining.length > 0) {
+    details.push(`не распознано ${formatCount(remaining.length, PAGE_FORMS)}`)
+  }
+  return details
+}
+
+const remainingOcrPagesCache = new WeakMap<Source, number[]>()
+
+/** Те же правила, что в `media.ts`, без циклического импорта: страницы из params. */
+export function remainingOcrPages(source: Source): number[] {
+  const cached = remainingOcrPagesCache.get(source)
+  if (cached) return cached
+  const raw = source.derivation?.params?.pages_remaining
+  const pages = Array.isArray(raw)
+    ? raw.filter((page): page is number => typeof page === 'number')
+    : []
+  remainingOcrPagesCache.set(source, pages)
+  return pages
+}
+
+/** Пояснение к уровню доверия для листа источника. */
+export function trustNotice(trust: SourceTrust): string | null {
+  if (trust === 'summary') return 'Навигация по записи: цитаты из сводки не идут в основания схемы.'
+  if (trust === 'observed') return 'Получено по изображению и таймкодам записи.'
+  return null
 }

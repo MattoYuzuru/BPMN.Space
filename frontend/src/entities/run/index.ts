@@ -16,6 +16,7 @@ export {
   estimateIncomplete,
   estimateTokensText,
 } from './estimate'
+export { forgetRun, rememberedRunId, rememberRun } from './last-run'
 export {
   AGENT_MODE,
   AGENT_STEP_PRESETS,

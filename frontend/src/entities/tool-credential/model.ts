@@ -16,6 +16,15 @@ export type CredentialKind = Credential['kinds'][number]
 export type CredentialCapability = CapabilityCard['capability']
 export type MonthlyLimit = Schemas['MonthlyLimit']
 export type CredentialProvider = Schemas['CredentialProvider']
+export type ToolCatalog = Schemas['ToolCatalogResponse']
+export type ToolCatalogCapability = Schemas['ToolCatalogCapability']
+export type ToolCatalogProvider = Schemas['ToolCatalogProvider']
+
+export interface CatalogHint extends ToolCatalogProvider {
+  /** Возможность каталога, к которой относится провайдер. */
+  capability: ToolCatalogCapability['capability']
+  capabilityLabel: string
+}
 
 /** Типы задач, которые закрывает ключ. `video` — вход видео, остальные — возможности. */
 export const CREDENTIAL_KIND: Record<CredentialKind, { label: string; icon: IconName }> = {
@@ -174,11 +183,41 @@ export function kindLabel(kind: CredentialKind): string {
   return CREDENTIAL_KIND[kind]?.label ?? kind
 }
 
+/** Провайдеры, которые закрывают выбранные типы задач (по видам из карточек возможностей). */
+export function providersForKinds(
+  capabilities: readonly CapabilityCard[],
+  kinds: readonly CredentialKind[],
+): CredentialProvider[] {
+  const wanted = new Set(kinds)
+  return availableProviders(
+    capabilities.filter((card) => card.kinds.some((kind) => wanted.has(kind))),
+  )
+}
+
 export function providerLabel(providers: readonly CredentialProvider[], id: string): string {
   return providers.find((provider) => provider.id === id)?.label ?? id
 }
 
-/** Провайдеры, которые встречаются в карточках возможностей, без повторов. */
+/**
+ * Подсказки «где взять ключ» из каталога сервера для выбранных типов задач.
+ * Если каталог недоступен, вызывающий код падает на статический `PROVIDER_HINTS`.
+ */
+export function catalogHints(
+  catalog: ToolCatalog | undefined,
+  kinds: readonly CredentialKind[],
+): CatalogHint[] {
+  if (!catalog) return []
+  const wanted = new Set(kinds)
+  return catalog.capabilities
+    .filter((capability) => capability.kinds.some((kind) => wanted.has(kind)))
+    .flatMap((capability) =>
+      capability.providers.map((provider) => ({
+        ...provider,
+        capability: capability.capability,
+        capabilityLabel: capability.label,
+      })),
+    )
+}
 export function availableProviders(capabilities: readonly CapabilityCard[]): CredentialProvider[] {
   const seen = new Map<string, CredentialProvider>()
   for (const card of capabilities) {

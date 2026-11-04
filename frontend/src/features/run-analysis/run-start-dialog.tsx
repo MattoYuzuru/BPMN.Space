@@ -28,7 +28,9 @@ import { useCurrentUser } from '@/entities/session'
 import { ModelPicker } from '@/features/model-picker/model-picker'
 import { AgentModeHint } from '@/features/onboarding/agent-mode-hint'
 import { ApiError, errorMessage } from '@/shared/api/client'
+import { cn } from '@/shared/lib/cn'
 import { formatDate, formatMoneyRange, formatNumberRange } from '@/shared/lib/format'
+import { parseMoneyInput, parseTokensInput } from '@/shared/lib/number-input'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import {
   Badge,
@@ -71,15 +73,30 @@ export function parseAgentSteps(value: string): number | null {
   return steps >= 1 && steps <= 200 ? steps : null
 }
 
-/** Бюджет из полей формы: пустые и нулевые поля — без ограничения. */
-export function budgetFromFields(fields: BudgetFields): RunBudget | null {
-  const cost = Number.parseFloat(fields.cost.replace(',', '.'))
-  const tokens = Number.parseInt(fields.tokens, 10)
+export interface ParsedBudget {
+  budget: RunBudget | null
+  costError: string | null
+  tokensError: string | null
+  valid: boolean
+}
+
+/**
+ * Бюджет из полей формы: пустые поля — без ограничения, мусор — ошибка поля,
+ * а не молча обрезанное число. «100 000» и «1 000,50» понимаются как есть.
+ */
+export function parseBudgetFields(fields: BudgetFields): ParsedBudget {
+  const cost = parseMoneyInput(fields.cost)
+  const tokens = parseTokensInput(fields.tokens)
   const budget: RunBudget = {
-    cost_usd: Number.isFinite(cost) && cost > 0 ? cost : null,
-    tokens: Number.isFinite(tokens) && tokens > 0 ? tokens : null,
+    cost_usd: cost.value,
+    tokens: tokens.value,
   }
-  return budget.cost_usd === null && budget.tokens === null ? null : budget
+  return {
+    budget: budget.cost_usd === null && budget.tokens === null ? null : budget,
+    costError: cost.error,
+    tokensError: tokens.error,
+    valid: !cost.error && !tokens.error,
+  }
 }
 
 /** Оценка должна пересчитаться после смены профиля, но не на каждый введённый знак. */
@@ -125,7 +142,8 @@ export function RunStartDialog({
         ? 'Эта модель не поддерживает инструменты, поэтому агентный режим недоступен. Выберите другую модель.'
         : null
   const canUseAgent = agentReason === null
-  const budget = useMemo(() => budgetFromFields(fields), [fields])
+  const parsedBudget = useMemo(() => parseBudgetFields(fields), [fields])
+  const budget = parsedBudget.budget
   const estimate = useRunEstimate(projectId)
   const start = useStartRun(projectId)
 
@@ -173,6 +191,7 @@ export function RunStartDialog({
   const agentMode = profileMode === 'agent'
   const stepsInvalid = agentMode && maxSteps === null
   const submit = () => {
+    if (!parsedBudget.valid) return
     start.mutate(
       {
         mode,
@@ -206,8 +225,9 @@ export function RunStartDialog({
               variant="primary"
               leadingIcon={mode === 'build' ? 'diagram' : 'sparkles'}
               loading={start.isPending}
-              disabled={stepsInvalid}
+              disabled={stepsInvalid || !parsedBudget.valid}
               onClick={submit}
+              {...tourAnchor(TOUR_ANCHORS.runStartConfirm)}
             >
               {mode === 'build' ? 'Построить схему' : 'Запустить анализ'}
             </Button>
@@ -330,7 +350,12 @@ export function RunStartDialog({
               </span>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="В долларах" optional hint="Например, 10">
+              <Field
+                label="В долларах"
+                optional
+                hint="Например, 10"
+                error={parsedBudget.costError ?? undefined}
+              >
                 <Input
                   inputMode="decimal"
                   value={fields.cost}
@@ -340,7 +365,12 @@ export function RunStartDialog({
                   }
                 />
               </Field>
-              <Field label="В токенах" optional hint="Вход и ответ вместе">
+              <Field
+                label="В токенах"
+                optional
+                hint="Вход и ответ вместе"
+                error={parsedBudget.tokensError ?? undefined}
+              >
                 <Input
                   inputMode="numeric"
                   value={fields.tokens}
@@ -411,15 +441,29 @@ function EstimateBlock({
   }
   const estimate = state.data
   if (!estimate) return null
+  const refreshing = state.isPending
   const cost = estimateCost(estimate)
   const incomplete = estimateIncomplete(estimate)
   const budgetUsd = budget?.cost_usd ?? null
   return (
-    <Card variant="outline" padding="sm" className="flex flex-col gap-3">
+    <Card
+      variant="outline"
+      padding="sm"
+      aria-busy={refreshing}
+      className={cn(
+        'flex flex-col gap-3 transition-opacity duration-base',
+        refreshing && 'opacity-60',
+      )}
+    >
       <div className="flex flex-wrap items-center gap-2">
         <span className="type-subheading text-fg">
           {mode === 'build' ? 'Оценка сборки' : 'Оценка анализа'}
         </span>
+        {refreshing && (
+          <span className="type-caption text-fg-subtle" role="status">
+            Пересчитываю оценку…
+          </span>
+        )}
         {incomplete && (
           <Badge tone="amber" variant="outline" icon="alert-triangle">
             Неполная

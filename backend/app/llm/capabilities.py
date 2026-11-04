@@ -393,6 +393,32 @@ class Budget:
         return cls(tokens=tokens, cost_usd=cost_usd)
 
 
+def merge_budget(current: Budget | None, requested: Budget) -> Budget:
+    """Монотонное объединение бюджетов: каждая граница только растёт.
+
+    «Поднять бюджет» не заменяет профиль целиком: если пользователь задал стоимость, уже
+    заданный лимит токенов сохраняется (и наоборот). Понизить границу нельзя — запрошенное
+    меньшее значение остаётся прежним; если ни одна граница не выросла, сервис отвечает 422.
+    """
+    if current is None:
+        return requested
+    tokens = (
+        current.tokens
+        if requested.tokens is None
+        else requested.tokens
+        if current.tokens is None
+        else max(current.tokens, requested.tokens)
+    )
+    cost_usd = (
+        current.cost_usd
+        if requested.cost_usd is None
+        else requested.cost_usd
+        if current.cost_usd is None
+        else max(current.cost_usd, requested.cost_usd)
+    )
+    return Budget(tokens=tokens, cost_usd=cost_usd)
+
+
 @dataclass(frozen=True, slots=True)
 class RunProfile:
     """Профиль одного прогона: `None` — умолчание сервера и модели. Ключей не содержит.

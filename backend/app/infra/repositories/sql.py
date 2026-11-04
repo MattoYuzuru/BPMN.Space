@@ -1345,6 +1345,17 @@ class SqlLlmCallRepository:
                         func.count().label("calls"),
                         func.count(LlmCallRow.tokens_in).label("usage_calls"),
                         func.count(LlmCallRow.cost_usd).label("priced_calls"),
+                        func.count(
+                            case(
+                                (
+                                    and_(
+                                        LlmCallRow.tokens_in.is_(None),
+                                        func.jsonb_exists(LlmCallRow.response, "error"),
+                                    ),
+                                    1,
+                                )
+                            )
+                        ).label("neutral_calls"),
                         func.coalesce(func.sum(LlmCallRow.tokens_in), 0),
                         func.coalesce(func.sum(LlmCallRow.tokens_out), 0),
                         func.coalesce(func.sum(LlmCallRow.cache_read_tokens), 0),
@@ -1361,6 +1372,7 @@ class SqlLlmCallRepository:
             calls,
             usage_calls,
             priced_calls,
+            neutral_calls,
             tokens_in,
             tokens_out,
             cache_read,
@@ -1371,6 +1383,7 @@ class SqlLlmCallRepository:
                 calls=int(calls),
                 usage_calls=int(usage_calls),
                 priced_calls=int(priced_calls),
+                neutral_calls=int(neutral_calls),
                 tokens_in=int(tokens_in),
                 tokens_out=int(tokens_out),
                 cache_read_tokens=int(cache_read),

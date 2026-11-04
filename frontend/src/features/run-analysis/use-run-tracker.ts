@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { type ProjectDetail, projectKeys } from '@/entities/project'
-import { upsertQuestion } from '@/entities/question'
+import { isTechnical, upsertQuestion } from '@/entities/question'
 import {
   fetchRun,
   formatSummary,
@@ -11,6 +11,7 @@ import {
   type RunEvent,
   useRunStore,
 } from '@/entities/run'
+import { forgetRun, rememberedRunId } from '@/entities/run/last-run'
 import { needsLogin, sessionQueryOptions } from '@/entities/session'
 import { cacheVersion, type VersionSummary, versionLabel } from '@/entities/version'
 import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
@@ -18,6 +19,11 @@ import { toast } from '@/shared/ui'
 
 /** Как часто спрашиваем сервер о прогоне, когда поток событий потерян. */
 export const RUN_POLL_MS = 5000
+/**
+ * Лёгкий опрос статуса, пока поток жив: SSE не присылает события об ожидании технического
+ * вопроса, поэтому `waiting` узнаём из GET /runs/{id}, а не ждём вечно «running».
+ */
+export const RUN_STATUS_POLL_MS = 5000
 /** Сколько ждём свежий проект перед сигналом об окончании прогона. */
 const FINISH_REFETCH_MS = 4000
 
@@ -30,7 +36,31 @@ const FINISH_REFETCH_MS = 4000
 export function useRunTracker(projectId: string, activeRun: Run | null | undefined) {
   const client = useQueryClient()
   const track = useRunStore((state) => state.track)
+  const restored = useRunStore((state) => Boolean(state.views[projectId]))
+
+  // После перезагрузки сервер может не отдать active_run (запись ещё не в проекте): берём
+  // последний прогон этой вкладки и восстанавливаем карточку хода, включая ожидание.
+  useEffect(() => {
+    if (activeRun || restored) return
+    const runId = rememberedRunId(projectId)
+    if (!runId) return
+    let cancelled = false
+    void fetchRun(runId)
+      .then((run) => {
+        if (cancelled || useRunStore.getState().views[projectId]) return
+        if (run.status === 'succeeded' || run.status === 'failed' || run.status === 'cancelled') {
+          forgetRun(projectId)
+          return
+        }
+        track(run)
+      })
+      .catch(() => forgetRun(projectId))
+    return () => {
+      cancelled = true
+    }
+  }, [activeRun, projectId, restored, track])
   const apply = useRunStore((state) => state.apply)
+  const observe = useRunStore((state) => state.observe)
   const unfinishedRunId = useRunStore((state) => {
     const view = state.views[projectId]
     return view?.finishedAt === null ? view.runId : undefined
@@ -46,6 +76,8 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
     let disposed = false
     const isCurrentRun = () => !disposed && useRunStore.getState().views[projectId]?.runId === runId
     let poller: ReturnType<typeof setInterval> | undefined
+    /** Поток потерян: статус тогда уточняет его собственный опрос, второй не нужен. */
+    let streamLost = false
     // Ожидание свежего проекта перед сигналом об окончании: при выходе из эффекта не висит.
     let finishTimer: ReturnType<typeof setTimeout> | undefined
     let releaseFinishWait: (() => void) | undefined
@@ -108,7 +140,9 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
           type: 'run.finished',
           status: run.status,
           openQuestions:
-            project?.questions.filter((question) => question.status === 'open').length ?? 0,
+            project?.questions.filter(
+              (question) => question.status === 'open' && !isTechnical(question),
+            ).length ?? 0,
           hasDiagram: Boolean(project?.latest_version),
           projectId,
         })
@@ -124,6 +158,22 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
       })
     }
 
+    // SSE молчит об ожидании технического вопроса и может задержаться: пока прогон не завершён,
+    // раз в несколько секунд уточняем статус и стоимость по GET /runs/{id}. Ожидание — не финал,
+    // поэтому поток оставляем открытым, а `done`-обработчик остаётся единственным источником итога.
+    const statusPoller = setInterval(() => {
+      if (finished || !isCurrentRun()) return
+      if (streamLost) return
+      const current = useRunStore.getState().views[projectId]
+      if (!current || current.finishedAt !== null || current.status === 'waiting') return
+      void fetchRun(runId)
+        .then((latest) => {
+          if (finished || !isCurrentRun()) return
+          if (latest.status === 'waiting') observe(latest)
+        })
+        .catch(() => undefined)
+    }, RUN_STATUS_POLL_MS)
+
     // Сессия закончилась: любой защищённый запрос получит 401, а его общая обработка уведёт на вход.
     const expire = () => void client.invalidateQueries({ queryKey: projectKeys.detail(projectId) })
 
@@ -134,6 +184,7 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
         onSessionExpired: expire,
         onLost: () => {
           if (finished || !isCurrentRun() || poller) return
+          streamLost = true
           void client.invalidateQueries({ queryKey: projectKeys.detail(projectId) })
           toast.warning('Связь с прогоном потеряна', {
             description: 'Результат появится, когда прогон завершится.',
@@ -167,6 +218,7 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
       disposed = true
       closeStream()
       clearInterval(poller)
+      clearInterval(statusPoller)
       clearTimeout(finishTimer)
       releaseFinishWait?.()
     }

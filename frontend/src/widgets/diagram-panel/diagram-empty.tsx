@@ -1,5 +1,5 @@
 import { isRunning } from '@/entities/project'
-import { useStartRun } from '@/entities/run'
+import { isTechnical } from '@/entities/question'
 import { ACCEPTED_FILES } from '@/entities/source'
 import { useFileUploads } from '@/features/add-source/use-file-uploads'
 import { Button, EmptyState, GridBackdrop, Icon, type IconName } from '@/shared/ui'
@@ -11,7 +11,7 @@ import { useWorkspace, useWorkspaceUi } from '@/widgets/workspace/model'
  */
 export function DiagramEmpty() {
   const { project, canEdit } = useWorkspace()
-  const start = useStartRun(project.id)
+  const openRunDialog = useWorkspaceUi((state) => state.openRunDialog)
   const running = isRunning(project.status)
   const building = project.status === 'building'
 
@@ -36,17 +36,15 @@ export function DiagramEmpty() {
               variant="primary"
               leadingIcon="diagram"
               disabled={running}
-              loading={start.isPending && start.variables === 'build'}
-              onClick={() => start.mutate('build')}
+              onClick={() => openRunDialog('build')}
             >
               Построить схему
             </Button>
-            {project.questions.length === 0 && (
+            {!project.questions.some((question) => !isTechnical(question)) && (
               <Button
                 leadingIcon="sparkles"
                 disabled={running}
-                loading={start.isPending && start.variables === 'analyze'}
-                onClick={() => start.mutate('analyze')}
+                onClick={() => openRunDialog('analyze')}
               >
                 Сначала анализ
               </Button>

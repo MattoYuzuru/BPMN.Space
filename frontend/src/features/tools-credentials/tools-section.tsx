@@ -99,13 +99,16 @@ export function ToolsSection() {
       )}
 
       <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <span className="type-label text-fg-muted">Ключи</span>
           {items.length > 0 && (
             <Badge tone="neutral" variant="outline">
               {items.length}
             </Badge>
           )}
+          <span className="type-caption text-fg-subtle" {...tourAnchor(TOUR_ANCHORS.toolsPriority)}>
+            Меньше приоритет — раньше в переборе
+          </span>
         </div>
         {credentials.data && items.length === 0 && storage && (
           <Card variant="sunken" padding="none">

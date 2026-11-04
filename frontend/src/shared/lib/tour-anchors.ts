@@ -24,6 +24,7 @@ export const TOUR_ANCHORS = {
   sourceTrust: 'source.trust',
   sourcePlayer: 'source.player',
   runBuild: 'run.build',
+  runStartConfirm: 'run.start-confirm',
   runProgress: 'run.progress',
   runEstimate: 'run.estimate',
   runBudget: 'run.budget',

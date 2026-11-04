@@ -129,7 +129,10 @@ async def generate_graph(
                 if q.answer
                 else None,
             }
+            # Технические вопросы (RFC-0006) касаются материалов, а не процесса: в промпт
+            # сборки графа и в проверку допущений они не попадают.
             for q in context.questions
+            if not q.is_technical
         ],
         "current_graph": current.canonical() if current and not context.replace_manual else None,
         "manual_overrides": policy.dump() if policy else None,

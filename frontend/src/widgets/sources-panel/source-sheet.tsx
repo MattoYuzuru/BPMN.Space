@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   DISPLAY_CHUNK_CHARS,
+  derivationCost,
   derivationLabel,
   findQuoteRanges,
+  isAgentSource,
   isDerived,
   limitParts,
   type QuoteMark,
@@ -11,12 +13,15 @@ import {
   type Source,
   sourceKindOf,
   sourceMeta,
+  sourceTrustInfo,
   splitByRanges,
   splitTimecodes,
+  unreadablePagesText,
   useUpdateSource,
 } from '@/entities/source'
 import { cn } from '@/shared/lib/cn'
-import { formatCount, formatDate } from '@/shared/lib/format'
+import { formatCount, formatDate, formatMoney } from '@/shared/lib/format'
+import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import {
   Badge,
   Button,
@@ -79,6 +84,10 @@ function SourceDetail({
   const kind = sourceKindOf(source)
   const derived = isDerived(source)
   const producer = derivationLabel(source)
+  const trust = sourceTrustInfo(source.trust)
+  const agent = isAgentSource(source)
+  const cost = derivationCost(source)
+  const unreadable = unreadablePagesText(source.unreadable_pages)
   // Запись без своего текста: её содержимое — в производных узлах (расшифровка), RFC-0006.
   const derivedNodes = project.sources.filter((item) => item.parent_id === source.id)
   const container = derivedNodes.length > 0 && !source.content
@@ -191,7 +200,18 @@ function SourceDetail({
               ИИ
             </Badge>
           )}
+          {agent && (
+            <Badge tone="accent" icon="user">
+              Агент
+            </Badge>
+          )}
+          <span {...tourAnchor(TOUR_ANCHORS.sourceTrust)} className="inline-flex">
+            <Badge variant="outline" tone={trust.tone}>
+              {trust.label}
+            </Badge>
+          </span>
           {producer && <span>{producer}</span>}
+          {cost !== null && <span>{formatMoney(cost)}</span>}
           {source.edited_by_human && (
             <Badge tone="neutral" icon="human-edit">
               Изменено человеком
@@ -199,6 +219,8 @@ function SourceDetail({
           )}
           <span data-numeric>{sourceMeta(source)}</span>
           <span>{formatDate(new Date(source.created_at))}</span>
+          {/* Пояснение уровня доверия — текстом: читается скринридером и доступно с клавиатуры. */}
+          <span className="basis-full text-fg-muted">{trust.description}</span>
         </span>
       }
       footer={
@@ -302,6 +324,15 @@ function SourceDetail({
             >
               <Icon name="alert-circle" size={16} className="mt-0.5" />
               {source.warning}
+            </div>
+          )}
+          {unreadable && (
+            <div
+              role="status"
+              className="flex items-start gap-2 rounded-md bg-amber-subtle px-3 py-2.5 type-ui text-amber-fg"
+            >
+              <Icon name="alert-triangle" size={16} className="mt-0.5" />
+              {unreadable}
             </div>
           )}
           {source.status === 'failed' && (
@@ -441,7 +472,11 @@ function MediaContainer({
   onOpen: (sourceId: string) => void
 }) {
   return (
-    <div className="flex flex-col gap-3" data-testid="media-container">
+    <div
+      className="flex flex-col gap-3"
+      data-testid="media-container"
+      {...tourAnchor(TOUR_ANCHORS.sourcePlayer)}
+    >
       {source.media && (
         <div className="flex flex-wrap gap-1.5">
           {source.media.has_audio !== null && source.media.has_audio !== undefined && (

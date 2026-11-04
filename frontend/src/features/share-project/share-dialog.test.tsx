@@ -2,19 +2,21 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
-import { TooltipProvider } from '@/shared/ui'
+import { TooltipProvider, toast } from '@/shared/ui'
 import { stubApi } from '@/test/api-stub'
 import { ShareDialog } from './share-dialog'
 
 const toastSuccess = vi.fn()
 const toastError = vi.fn()
-vi.mock('@/shared/ui', async (original) => ({
-  ...(await original<typeof import('@/shared/ui')>()),
-  toast: Object.assign(vi.fn(), {
-    success: (...args: unknown[]) => toastSuccess(...args),
-    error: (...args: unknown[]) => toastError(...args),
-  }),
-}))
+// Шпионим за самим объектом уведомлений: через него идут и тосты фичи, и тосты useCopy.
+vi.spyOn(toast, 'success').mockImplementation((...args) => {
+  toastSuccess(...args)
+  return ''
+})
+vi.spyOn(toast, 'error').mockImplementation((...args) => {
+  toastError(...args)
+  return ''
+})
 
 const PROJECT = 'p-1'
 const LINKS = `/api/v1/projects/${PROJECT}/share-links`

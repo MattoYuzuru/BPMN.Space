@@ -4,6 +4,7 @@ import {
   BrandMark,
   Button,
   Checkbox,
+  CopyField,
   Field,
   FileDrop,
   IconButton,
@@ -11,6 +12,7 @@ import {
   Kbd,
   RadioGroup,
   RadioGroupItem,
+  SecretInput,
   SegmentedControl,
   Select,
   Switch,
@@ -153,6 +155,32 @@ export function FieldsSection() {
                 <Input defaultValue="Только чтение" />
               </Field>
             </div>
+          </div>
+        </Specimen>
+        <Specimen title="Секрет и копирование" note="SecretInput, CopyField">
+          <div className="flex flex-col gap-5">
+            <Field label="Ключ нового провайдера" hint="Хранится в зашифрованном виде.">
+              <SecretInput placeholder="sk-…" />
+            </Field>
+            <CopyField
+              label="Токен"
+              value="bps_ttttttttttttttttttttttttttttttttttttttttttt"
+              copyLabel="Копировать токен"
+              hint="Показывается один раз. Храните его как пароль."
+            />
+            <CopyField
+              label="Команда подключения"
+              value={
+                'claude mcp add --transport http bpmn-space https://bpmn.space/mcp --header "Authorization: Bearer bps_…"'
+              }
+              copyLabel="Копировать команду"
+              multiline
+              hint="MCP-сервер пока не запущен: команда заработает после обновления."
+            />
+            <Caption>
+              Секрет скрыт по умолчанию, глаз показывает его; копирование всегда берёт полное
+              значение, а не маску.
+            </Caption>
           </div>
         </Specimen>
         <Specimen title="Textarea" note="растёт по тексту от minRows до maxRows">

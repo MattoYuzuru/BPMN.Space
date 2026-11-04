@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 20 * _MB
     max_audio_bytes: int = 60 * _MB
     max_diagram_bytes: int = 5 * _MB
+
+    # --- Сессии правок (ADR-0010): автосохранения одного автора сливаются в одну версию ---
+    # Пауза между сохранениями, после которой правка начинает новую версию (0 — не сливать).
+    version_session_idle_sec: float = Field(default=600.0, ge=0)
+    # Предельная длительность одной сессии правок, даже если автор не останавливался.
+    version_session_max_sec: float = Field(default=3600.0, ge=0)
     max_text_chars: int = 200_000
     # Разбор документов: у PDF ограничены число страниц и время (в отдельном потоке).
     max_pdf_pages: int = 300

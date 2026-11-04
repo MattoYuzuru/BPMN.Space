@@ -1,30 +1,63 @@
 """Версии схемы: список, XML, скачивание, ручная правка."""
 
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Request, Response, status
+from fastapi import APIRouter, Query, Request, Response, status
 
 from app.api.access import ResourceKind, ensure_project_access, ensure_resource_access
 from app.api.auth import OptionalUserDep
 from app.api.deps import ContainerDep
 from app.api.responses import bpmn_attachment
 from app.api.schemas.common import errors
-from app.api.schemas.versions import DiagramConflictResponse, DiagramSave, Version, VersionDetail
+from app.api.schemas.versions import (
+    CheckpointRequest,
+    DiagramConflictResponse,
+    DiagramSave,
+    Version,
+    VersionDetail,
+    VersionPage,
+    VersionSummary,
+)
 from app.domain.onboarding import ChecklistItem
 
 router = APIRouter(tags=["versions"])
 
 
 @router.get("/projects/{project_id}/versions", responses=errors(401, 404, 410, 422))
-async def list_versions(
+async def list_versions(  # noqa: PLR0917 — зависимости FastAPI
     project_id: UUID,
     request: Request,
     container: ContainerDep,
     user: OptionalUserDep,
-) -> list[Version]:
-    """Версии без XML, последняя — первой."""
+    limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    before: Annotated[int | None, Query(ge=1, description="Только номера меньше этого")] = None,
+) -> VersionPage:
+    """Страница истории без XML, цитат и отчёта: новые первыми, дальше — по `next_before`."""
     await ensure_project_access(request, container, project_id, user, write=False)
-    return [Version.model_validate(v) for v in await container.versions.list(project_id)]
+    items, next_before = await container.versions.list_page(project_id, limit=limit, before=before)
+    return VersionPage(
+        items=[VersionSummary.model_validate(v) for v in items], next_before=next_before
+    )
+
+
+@router.post(
+    "/projects/{project_id}/versions/{version_id}/checkpoint",
+    responses=errors(401, 403, 404, 410, 422),
+)
+async def checkpoint_version(  # noqa: PLR0917 — зависимости FastAPI
+    project_id: UUID,
+    version_id: UUID,
+    body: CheckpointRequest,
+    request: Request,
+    container: ContainerDep,
+    user: OptionalUserDep,
+) -> Version:
+    """Закрепить версию как контрольную точку: автосохранения в неё больше не вливаются."""
+    await ensure_project_access(request, container, project_id, user, write=True)
+    return Version.model_validate(
+        await container.versions.checkpoint(project_id, version_id, label=body.label)
+    )
 
 
 @router.get("/versions/{version_id}", responses=errors(401, 404, 410, 422))

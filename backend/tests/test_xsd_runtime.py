@@ -135,7 +135,6 @@ async def test_historical_validation_flags_are_rechecked_without_rewriting_stora
     await container.repos.versions.add(historical)
     for projected in (
         await container.versions.get(historical.id),
-        (await container.versions.list(historical.project_id))[0],
         (await container.projects.detail(historical.project_id)).latest_version,
     ):
         assert projected is not None

@@ -184,7 +184,7 @@ async def test_version_history_records_actual_author(stack: Stack) -> None:
     owner = await stack.user("history-owner@example.com")
     finished = await _finished_project(owner)
     project_id = finished["project"]
-    generated = (await owner.get(f"/projects/{project_id}/versions")).json()[0]
+    generated = (await owner.get(f"/projects/{project_id}/versions")).json()["items"][0]
     assert generated["actor_email"] == owner.email
 
     manual = await owner.put(
@@ -196,7 +196,7 @@ async def test_version_history_records_actual_author(stack: Stack) -> None:
     )
     assert manual.status_code == 201, manual.text
     assert manual.json()["actor_email"] == owner.email
-    versions = (await owner.get(f"/projects/{project_id}/versions")).json()
+    versions = (await owner.get(f"/projects/{project_id}/versions")).json()["items"]
     assert [version["actor_email"] for version in versions[:2]] == [owner.email, owner.email]
 
 
@@ -908,7 +908,7 @@ async def test_runtime_xsd_rejects_manual_xml_without_creating_postgres_version(
     assert response.status_code == 422
     assert "XSD" in response.json()["detail"]
     after = (await owner.get(f"/projects/{ids['project']}")).json()
-    versions = (await owner.get(f"/projects/{ids['project']}/versions")).json()
+    versions = (await owner.get(f"/projects/{ids['project']}/versions")).json()["items"]
     assert after["latest_version"]["id"] == ids["version"]
     assert after["counts"]["versions"] == before["counts"]["versions"]
     assert len(versions) == before["counts"]["versions"]
@@ -959,12 +959,14 @@ async def test_manual_save_rejects_malicious_xml(stack: Stack) -> None:
     assert allowed.status_code == 201, allowed.text
 
     # Не навредили: версий не прибавилось, а корректный XML (в т.ч. bpmn-js) сохраняется.
-    versions = (await owner.get(f"/projects/{ids['project']}/versions")).json()
+    versions = (await owner.get(f"/projects/{ids['project']}/versions")).json()["items"]
     ok = await owner.put(path, json={"xml": ids["xml"], "base_version_id": allowed.json()["id"]})
     assert ok.status_code == 201, ok.text
-    assert (
-        len((await owner.get(f"/projects/{ids['project']}/versions")).json()) == len(versions) + 1
-    )
+    # Правка того же автора сразу после прошлой вливается в ту же версию (ADR-0010).
+    assert ok.json()["number"] == allowed.json()["number"]
+    assert ok.json()["saved_count"] == 2
+    listed = (await owner.get(f"/projects/{ids['project']}/versions")).json()["items"]
+    assert len(listed) == len(versions)
 
 
 # ---------- миграция 0006 ----------

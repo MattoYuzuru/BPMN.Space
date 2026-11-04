@@ -36,6 +36,7 @@ from app.llm.pipeline import LlmPipeline
 from app.services.access import AccessService
 from app.services.api_tokens import ApiTokenService
 from app.services.assistant import AssistantService
+from app.services.capability_incidents import TechnicalQuestionIncidentSink
 from app.services.capability_router import CapabilityRouter, RoutedSpeechToText, RoutingPolicy
 from app.services.catalog import ExampleService, TranscriptionService
 from app.services.collaboration import RealtimeHub
@@ -291,6 +292,7 @@ def build_container(
         parallel_requests=settings.llm_parallel_requests, chunk_chars=settings.llm_chunk_chars
     )
     media = build_media_transcriber(settings, stt)
+    technical_questions = TechnicalQuestionService(repos, runtime=runtime)
     sources = SourceService(
         repos,
         parser=LocalDocumentParser(
@@ -302,6 +304,7 @@ def build_container(
         ),
         media=media,
         stt_for_user=routed_stt.for_user,
+        incident_sink=TechnicalQuestionIncidentSink(technical_questions, repos),
         max_media_bytes=settings.max_media_bytes,
         storage=storage,
         runtime=runtime,
@@ -314,8 +317,8 @@ def build_container(
         ),
     )
 
-    # Технические вопросы — общая точка для бюджета (здесь) и инструментов (волна C).
-    technical_questions = TechnicalQuestionService(repos, runtime=runtime)
+    # Технические вопросы — общая точка для бюджета и отказов инструментов (волна C):
+    # сервис создан выше, потому что приёмник событий источника собирается до источников.
     runs = RunService(
         repos,
         resolver=resolver,

@@ -358,10 +358,9 @@ class SourceService:
                 parent["duration_sec"] = probe.duration_sec
             child: dict[str, Any] = {"status": SourceStatus.FAILED, "error": error}
             if routing is not None:
-                if routing.done and routing.remaining:
-                    parent["warning"] = (
-                        f"Обработано {routing.done}, не расшифровано {routing.remaining}"
-                    )
+                coverage = self._coverage_warning(routing)
+                if coverage is not None:
+                    parent["warning"] = coverage
                 child["derivation"] = self._routing_derivation(transcript, routing)
             return parent, child
 
@@ -421,6 +420,21 @@ class SourceService:
                 },
             )
         return parent, child, routing
+
+    @staticmethod
+    def _coverage_warning(routing: CapabilityOutcome) -> str | None:
+        """Предупреждение о неполной обработке: что покрыто и что осталось.
+
+        Пишется всегда, когда маршрутизатор знает хотя бы один из отрезков, — независимо от
+        того, успел ли завершиться хотя бы один сегмент до отказа. Если покрытых сегментов нет,
+        `done` пуст, и предупреждение честно говорит, что не обработана вся запись.
+        """
+        parts: list[str] = []
+        if routing.done:
+            parts.append(f"Обработано {routing.done}")
+        if routing.remaining:
+            parts.append(f"не обработано {routing.remaining}")
+        return ", ".join(parts) if parts else None
 
     @staticmethod
     def _routing_derivation(

@@ -100,8 +100,10 @@
 
 **Реализовано:** `services/capability_router.py`, пороги и паузы — в `config.py`
 (`CAPABILITY_*`). Отказ источника сохраняет структурный результат в `derivation.params.routing`
-и понятный текст ошибки, а необязательный `CapabilityIncidentSink` передаёт событие техническим
-вопросам, когда волна 2B его подключит.
+и понятный текст ошибки; `services/capability_incidents.py` (`TechnicalQuestionIncidentSink`)
+создаёт из него неблокирующий технический вопрос проекта через `TechnicalQuestionService`
+(квота → `quota_exhausted`, отказ ключа → `credential_invalid`, несовместимый материал/нет
+возможности → `capability_missing`). Временный и фатальный сбой вопроса не создают.
 
 Модель получает структурный результат:
 `{status: "unavailable", reason: "quota_exhausted", capability: "speech_to_text",
@@ -253,7 +255,8 @@ Anthropic: нужны те же проверки, журнал `llm_calls` и н
 1. ✅ Обобщённые ключи и маршрутизация с классами ошибок; первым переведено существующее
    распознавание речи (ветка `feature/wave-2-tools-keys`). Остались адаптеры vision/OCR/видео/веба
    и вызовы инструментов моделью.
-2. Технические вопросы (заодно для бюджета из RFC-0005).
+2. ✅ Технические вопросы (заодно для бюджета из RFC-0005); отказы инструментов создают их
+   через `TechnicalQuestionIncidentSink`.
 3. Производные источники: `parent_id`, `origin`, `trust`, кеш; дерево в интерфейсе.
 4. Сканы PDF через модель или `ocr` для страниц из `unreadable_pages`.
 5. Кадры видео + `vision`, общая лента, плеер с таймкодами.

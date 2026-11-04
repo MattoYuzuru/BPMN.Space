@@ -147,6 +147,7 @@ class _Harness:
         *,
         plan: dict[str, list[object]] | None = None,
         server: SpeechToText | None = None,
+        parallel_segments: int = 2,
     ) -> None:
         self.user_id = uuid4()
         self.project = Project(
@@ -199,7 +200,7 @@ class _Harness:
                 self.server,
                 _Runner(),
                 segment_sec=600,
-                parallel_segments=2,
+                parallel_segments=parallel_segments,
                 attempts=1,
                 provider="mock",
             ),
@@ -264,8 +265,9 @@ async def _make_harness(
     plan: dict[str, list[object]] | None = None,
     server: SpeechToText | None = None,
     with_key: bool = True,
+    parallel_segments: int = 2,
 ) -> _Harness:
-    harness = _Harness(plan=plan, server=server)
+    harness = _Harness(plan=plan, server=server, parallel_segments=parallel_segments)
     return await harness.setup(with_key=with_key)
 
 
@@ -307,7 +309,12 @@ async def test_media_falls_back_to_server_when_user_has_no_key() -> None:
 
 
 async def test_routing_failure_is_explained_and_structured_in_source() -> None:
-    harness = await _make_harness(server=_ServerStt(fail=CapabilityError(ErrorClass.AUTH, "нет")))
+    # Один ключ пользователя: исчерпание квоты одним сегментом меняет исход соседних,
+    # поэтому покрытие проверяем в фиксированном порядке сегментов.
+    harness = await _make_harness(
+        server=_ServerStt(fail=CapabilityError(ErrorClass.AUTH, "нет")),
+        parallel_segments=1,
+    )
     harness.plan["0"] = [Transcript(text="речь 0", duration_sec=600, provider="fake")]
     harness.plan["1"] = [CapabilityError(ErrorClass.QUOTA_EXHAUSTED, "квота", retry_after_sec=600)]
 
@@ -327,6 +334,45 @@ async def test_routing_failure_is_explained_and_structured_in_source() -> None:
     assert routing["reason"] == "quota_exhausted"  # причина — ключ пользователя
     assert routing["done"] == "00:00–10:00"
     assert routing["remaining"] == "10:00–20:00"
+
+
+@pytest.mark.parametrize(
+    ("failing_index", "expected_done", "expected_remaining"),
+    [
+        (1, "00:00–10:00", "10:00–20:00"),
+        (0, None, "00:00–20:00"),
+    ],
+)
+async def test_routing_failure_coverage_does_not_depend_on_segment_order(
+    failing_index: int, expected_done: str | None, expected_remaining: str
+) -> None:
+    """Покрытие считается по непрерывному префиксу сегментов, а не по порядку завершения.
+
+    Параллельные сегменты завершаются по-разному; `done`/`remaining` и `warning` записи
+    должны быть одинаковыми при каждом повторе и не теряться, если успешный сегмент
+    завершился позже отказавшего.
+    """
+    for _ in range(3):  # несколько повторов при parallel_segments=2: гонка не должна влиять
+        plan: dict[str, list[object]] = {
+            "0": [Transcript(text="речь 0", duration_sec=600, provider="fake")],
+            "1": [Transcript(text="речь 1", duration_sec=600, provider="fake")],
+        }
+        # `unsupported` не выключает ключ: успешность соседнего сегмента не зависит от порядка.
+        plan[str(failing_index)] = [CapabilityError(ErrorClass.UNSUPPORTED, "формат")]
+        harness = await _make_harness(
+            server=_ServerStt(fail=CapabilityError(ErrorClass.AUTH, "нет")),
+            plan=plan,
+        )
+        record, transcript = await harness.upload_and_process()
+        assert record.status is SourceStatus.FAILED
+        assert record.warning is not None
+        assert expected_remaining.split("–", 1)[0] in record.warning
+        derivation = transcript.derivation
+        assert derivation is not None
+        routing = derivation.params["routing"]
+        assert routing["done"] == expected_done
+        assert routing["remaining"] == expected_remaining
+        assert routing["reason"] == "unsupported"
 
 
 # ---------- голосовая заметка на ключе вызывающего ----------

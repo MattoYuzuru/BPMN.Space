@@ -17,7 +17,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from app.domain.capabilities import CapabilityOutcome, CapabilityUnavailableError
-from app.domain.concurrency import bounded_gather
 from app.ingest.stt import NoSpeechError, SpeechToText, Transcript
 
 logger = logging.getLogger(__name__)
@@ -319,30 +318,32 @@ class MediaTranscriber:
             hours = self._max_duration / 3600
             raise MediaError(f"Запись длиннее {hours:g} ч. Разделите её на части")
         workdir = Path(await asyncio.to_thread(tempfile.mkdtemp, prefix="media-"))
-        completed: set[float] = set()
         segments: list[Path] = []
         try:
             segments = await self._runner.segment(source, workdir, segment_sec=self._segment_sec)
             if not segments:
                 raise MediaError("В записи не найдено звука для расшифровки")
-            parts = await bounded_gather(
+            results = await self._collect_segments(
                 [
-                    self._segment_factory(index, path, probe.duration_sec, engine, completed)
+                    self._segment_factory(index, path, probe.duration_sec, engine)
                     for index, path in enumerate(segments)
-                ],
-                limit=self._parallel,
+                ]
             )
-        except CapabilityUnavailableError as error:
-            # Маршрутизатор уже перебрал ключи и запасной путь: показываем, что покрыто.
-            outcome = replace(
-                error.outcome,
-                **self._covered_range(completed, probe.duration_sec),
-            )
-            if job is not None:
-                job.routing = outcome
-            raise MediaRoutingError(self._routing_message(outcome), outcome=outcome) from None
         finally:
             await asyncio.to_thread(shutil.rmtree, workdir, True)
+        failed_index, failure = _first_failure(results)
+        if failure is not None:
+            if isinstance(failure, CapabilityUnavailableError):
+                # Покрытие — непрерывный префикс успешных сегментов: индекс, а не тайминг.
+                outcome = replace(
+                    failure.outcome,
+                    **self._covered_range(failed_index or 0, probe.duration_sec),
+                )
+                if job is not None:
+                    job.routing = outcome
+                raise MediaRoutingError(self._routing_message(outcome), outcome=outcome) from None
+            raise failure
+        parts = [item for item in results if not isinstance(item, BaseException)]
         text = stitch(parts)
         if not text.strip():
             raise NoSpeechError
@@ -363,13 +364,39 @@ class MediaTranscriber:
             cost_usd=cost_usd,
         )
 
-    def _covered_range(self, completed: set[float], duration_sec: float) -> dict[str, str | None]:
-        """Непрерывно покрытый отрезок записи: `done` и `remaining` в формате `мм:сс`."""
-        segment = float(self._segment_sec)
-        covered = 0.0
-        while round(covered, 3) in completed:
-            covered += segment
-        covered = min(covered, duration_sec)
+    async def _collect_segments(
+        self,
+        factories: list[Callable[[], Awaitable[tuple[float, Transcript | None]]]],
+    ) -> list[tuple[float, Transcript | None] | BaseException]:
+        """Ждёт все сегменты, не отменяя остальные при ошибке одного.
+
+        Отмена нарушила бы покрытие: успешный сегмент мог не успеть отметиться, и `done`
+        зависел бы от гонки. Ошибка возвращается значением и обрабатывается после того, как
+        все запущенные сегменты завершились; параллельность ограничена семафором.
+        """
+        semaphore = asyncio.Semaphore(self._parallel)
+
+        async def run(
+            factory: Callable[[], Awaitable[tuple[float, Transcript | None]]],
+        ) -> tuple[float, Transcript | None] | BaseException:
+            async with semaphore:
+                try:
+                    return await factory()
+                except asyncio.CancelledError:
+                    raise
+                except Exception as error:
+                    return error
+
+        return list(await asyncio.gather(*(run(factory) for factory in factories)))
+
+    def _covered_range(self, failed_index: int, duration_sec: float) -> dict[str, str | None]:
+        """Непрерывно покрытый отрезок записи до первого отказавшего сегмента.
+
+        Сегменты одинаковой длины, поэтому покрытие считается по индексу: `failed_index`
+        успешных сегментов идут подряд с начала записи. Так `done`/`remaining` не зависят от
+        того, в каком порядке завершились параллельные сегменты.
+        """
+        covered = min(float(failed_index) * self._segment_sec, duration_sec)
         done = f"00:00–{self._clock(covered)}" if covered > 0 else None
         remaining = (
             f"{self._clock(covered)}–{self._clock(duration_sec)}"
@@ -398,7 +425,6 @@ class MediaTranscriber:
         path: Path,
         total_sec: float,
         engine: SpeechToText,
-        completed: set[float],
     ) -> Callable[[], Awaitable[tuple[float, Transcript | None]]]:
         offset = float(index * self._segment_sec)
         duration = max(min(float(self._segment_sec), total_sec - offset), 1.0)
@@ -412,7 +438,6 @@ class MediaTranscriber:
                         timeout=self.segment_timeout(duration),
                     )
                 except NoSpeechError:
-                    completed.add(offset)
                     return offset, None
                 except CapabilityUnavailableError:
                     # Маршрутизатор уже повторил временные сбои и перебрал ключи: не умножаем.
@@ -424,8 +449,47 @@ class MediaTranscriber:
                             "Повторите загрузку позже"
                         ) from None
                 else:
-                    completed.add(offset)
                     return offset, transcript
             raise AssertionError  # pragma: no cover
 
         return run
+
+
+# Приоритет причины, когда отказали несколько сегментов: показываем корень, а не следствие.
+# Например, при исчерпанной квоте соседние сегменты падают с «нет рабочего ключа», но
+# пользователю и техническому вопросу нужна причина «квота».
+_REASON_PRIORITY = {
+    "quota_exhausted": 5,
+    "auth": 4,
+    "unsupported": 3,
+    "transient": 2,
+    "fatal": 1,
+}
+
+
+def _routing_priority(error: BaseException) -> int:
+    if isinstance(error, CapabilityUnavailableError):
+        return _REASON_PRIORITY.get(error.outcome.reason or "", 0)
+    return 0
+
+
+def _first_failure(
+    results: list[tuple[float, Transcript | None] | BaseException],
+) -> tuple[int | None, BaseException | None]:
+    """Покрытие — по первому отказавшему сегменту, причина — по самому содержательному.
+
+    Непосредственная ошибка сегмента (например, повреждённый фрагмент) важнее отказа
+    маршрутизации: она и становится причиной. Среди отказов маршрутизации выбирается
+    корневая причина по классу (квота важнее «нет рабочего ключа» у соседних сегментов).
+    """
+    failures = [
+        (index, item) for index, item in enumerate(results) if isinstance(item, BaseException)
+    ]
+    if not failures:
+        return None, None
+    for index, item in failures:
+        if not isinstance(item, CapabilityUnavailableError):
+            return index, item
+    coverage_index = failures[0][0]
+    primary = max(failures, key=lambda pair: _routing_priority(pair[1]))[1]
+    return coverage_index, primary

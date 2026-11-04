@@ -12,6 +12,18 @@ import { toast } from '@/shared/ui'
 
 export const toolCredentialKeys = {
   all: ['credentials'] as const,
+  catalog: ['tool-catalog'] as const,
+}
+
+/** Каталог провайдеров: где взять ключ, бесплатный уровень, РФ, что закрывает модель. */
+export const toolCatalogQueryOptions = queryOptions({
+  queryKey: toolCredentialKeys.catalog,
+  queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/me/tool-catalog', { signal })),
+  staleTime: 10 * 60_000,
+})
+
+export function useToolCatalog() {
+  return useQuery(toolCatalogQueryOptions)
 }
 
 /**

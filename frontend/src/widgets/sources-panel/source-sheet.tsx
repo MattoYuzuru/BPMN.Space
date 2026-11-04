@@ -2,23 +2,29 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   DISPLAY_CHUNK_CHARS,
   derivationCost,
+  derivationDetails,
   derivationLabel,
   findQuoteRanges,
   isAgentSource,
   isDerived,
   limitParts,
+  parseTimecode,
   type QuoteMark,
   type QuoteRange,
   quoteReferences,
   type Source,
   sourceKindOf,
   sourceMeta,
+  sourcePlayback,
   sourceTrustInfo,
   splitByRanges,
   splitTimecodes,
+  timecodeBefore,
+  trustNotice,
   unreadablePagesText,
   useUpdateSource,
 } from '@/entities/source'
+import { SourceOcrAction } from '@/features/source-ocr'
 import { cn } from '@/shared/lib/cn'
 import { formatCount, formatDate, formatMoney } from '@/shared/lib/format'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
@@ -28,6 +34,7 @@ import {
   Field,
   Icon,
   Input,
+  type MediaPlayerHandle,
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -37,6 +44,7 @@ import {
   Textarea,
 } from '@/shared/ui'
 import { useWorkspace, useWorkspaceUi } from '@/widgets/workspace/model'
+import { SourceMedia } from './source-media'
 
 const MARK_CLASS: Record<QuoteRange['kind'], string> = {
   about:
@@ -81,6 +89,8 @@ function SourceDetail({
   const [content, setContent] = useState(source.content)
   const [referenceStart, setReferenceStart] = useState<number | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const playerRef = useRef<MediaPlayerHandle>(null)
+  const playback = useMemo(() => sourcePlayback(project.sources, source), [project.sources, source])
   const kind = sourceKindOf(source)
   const derived = isDerived(source)
   const producer = derivationLabel(source)
@@ -91,7 +101,8 @@ function SourceDetail({
   // Запись без своего текста: её содержимое — в производных узлах (расшифровка), RFC-0006.
   const derivedNodes = project.sources.filter((item) => item.parent_id === source.id)
   const container = derivedNodes.length > 0 && !source.content
-  const timed = source.derivation?.capability === 'speech_to_text'
+  // Таймкоды кликабельны везде, где есть плеер: расшифровка, лента, описание экрана.
+  const timed = Boolean(playback)
   const editable =
     canEdit &&
     source.kind !== 'answer' &&
@@ -118,6 +129,12 @@ function SourceDetail({
     const [hit] = findQuoteRanges(source.content, [{ quote: mark, kind: 'about', ref: 'target' }])
     return hit
   }, [mark, source.content])
+
+  // Цитата ведёт к таймкоду, если перед ней в тексте он есть: плеер открывается на этом месте.
+  const initialTime = useMemo(
+    () => (target ? (timecodeBefore(source.content, target.start) ?? 0) : 0),
+    [target, source.content],
+  )
 
   // Выбранная цитата важнее перекрывающей её подсветки: показываем весь фрагмент из ссылки.
   const ranges = useMemo(() => {
@@ -212,6 +229,11 @@ function SourceDetail({
           </span>
           {producer && <span>{producer}</span>}
           {cost !== null && <span>{formatMoney(cost)}</span>}
+          {derivationDetails(source).map((detail) => (
+            <Badge key={detail} tone="neutral" variant="outline">
+              {detail}
+            </Badge>
+          ))}
           {source.edited_by_human && (
             <Badge tone="neutral" icon="human-edit">
               Изменено человеком
@@ -220,7 +242,9 @@ function SourceDetail({
           <span data-numeric>{sourceMeta(source)}</span>
           <span>{formatDate(new Date(source.created_at))}</span>
           {/* Пояснение уровня доверия — текстом: читается скринридером и доступно с клавиатуры. */}
-          <span className="basis-full text-fg-muted">{trust.description}</span>
+          <span className="basis-full text-fg-muted">
+            {trustNotice(source.trust) ?? trust.description}
+          </span>
         </span>
       }
       footer={
@@ -341,9 +365,21 @@ function SourceDetail({
               {source.error ?? 'Документ не удалось разобрать'}
             </div>
           )}
-          {container && (
-            <MediaContainer source={source} derived={derivedNodes} onOpen={openSource} />
+          {playback && (
+            <SourceMedia
+              source={source}
+              sources={project.sources}
+              playerRef={playerRef}
+              initialTime={initialTime}
+            />
           )}
+          <SourceOcrAction
+            source={source}
+            projectId={project.id}
+            canEdit={canEdit}
+            nodes={derivedNodes}
+          />
+          {container && <MediaContainer derived={derivedNodes} onOpen={openSource} />}
           <div
             ref={bodyRef}
             className="max-w-2xl whitespace-pre-wrap type-body text-fg-muted"
@@ -415,7 +451,11 @@ function SourceDetail({
                   </PopoverContent>
                 </Popover>
               ) : timed ? (
-                <TimedText key={part.start} text={part.text} />
+                <TimedText
+                  key={part.start}
+                  text={part.text}
+                  onSeek={(seconds) => playerRef.current?.seek(seconds)}
+                />
               ) : (
                 <span key={part.start}>{part.text}</span>
               ),
@@ -438,16 +478,37 @@ function SourceDetail({
   )
 }
 
-/** Текст расшифровки: таймкоды `[мм:сс]` выделены моноширинным приглушённым шрифтом. */
-function TimedText({ text }: { text: string }) {
+/**
+ * Текст расшифровки: таймкоды `[мм:сс]` — кнопки перемотки плеера к этому моменту.
+ * Без плеера (документ/OCR) остаются просто моноширинной меткой.
+ */
+function TimedText({ text, onSeek }: { text: string; onSeek?: (seconds: number) => void }) {
   return (
     <span>
       {splitTimecodes(text).map((piece, index) =>
         index % 2 === 1 ? (
           // Позиция стабильна: текст делится один раз на рендер, порядок кусков не меняется.
           // biome-ignore lint/suspicious/noArrayIndexKey: куски строки без собственных id
-          <span key={index} data-timecode className="font-mono text-fg-subtle">
-            {piece}
+          <span key={index} className="inline">
+            {onSeek && parseTimecode(piece) !== null ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                data-timecode
+                aria-label={`Перемотать к ${piece.replace(/^\[|\]$/g, '')}`}
+                className="inline-flex h-auto min-h-0 px-0.5 py-0 align-baseline font-mono type-caption font-normal text-fg-subtle"
+                onClick={() => {
+                  const seconds = parseTimecode(piece)
+                  if (seconds !== null) onSeek(seconds)
+                }}
+              >
+                {piece}
+              </Button>
+            ) : (
+              <span data-timecode className="font-mono text-fg-subtle">
+                {piece}
+              </span>
+            )}
           </span>
         ) : (
           // biome-ignore lint/suspicious/noArrayIndexKey: куски строки без собственных id
@@ -459,42 +520,18 @@ function TimedText({ text }: { text: string }) {
 }
 
 /**
- * Исходная запись: своего текста нет, содержимое — в производных узлах. Здесь же позже
- * появится плеер с перемоткой на таймкод цитаты (RFC-0006, шаг 5).
+ * Исходная запись: своего текста нет, содержимое — в производных узлах (расшифровка, кадры,
+ * лента, сводка). Плеер и реплики показывает `SourceMedia` выше.
  */
 function MediaContainer({
-  source,
   derived,
   onOpen,
 }: {
-  source: Source
   derived: Source[]
   onOpen: (sourceId: string) => void
 }) {
   return (
-    <div
-      className="flex flex-col gap-3"
-      data-testid="media-container"
-      {...tourAnchor(TOUR_ANCHORS.sourcePlayer)}
-    >
-      {source.media && (
-        <div className="flex flex-wrap gap-1.5">
-          {source.media.has_audio !== null && source.media.has_audio !== undefined && (
-            <Badge
-              tone={source.media.has_audio ? 'success' : 'amber'}
-              variant="outline"
-              icon="wave-sine"
-            >
-              {source.media.has_audio ? 'Есть звук' : 'Нет звука'}
-            </Badge>
-          )}
-          {source.media.has_video && (
-            <Badge tone="neutral" variant="outline" icon="video">
-              Есть видео
-            </Badge>
-          )}
-        </div>
-      )}
+    <div className="flex flex-col gap-3" data-testid="media-container">
       <p className="type-ui text-fg-muted">
         Модель читает не сам файл, а полученные из него материалы:
       </p>

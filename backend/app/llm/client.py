@@ -9,7 +9,7 @@ import asyncio
 import math
 import random
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -17,6 +17,7 @@ from pydantic import SecretStr
 
 from app.llm.base import DEADLINE_MESSAGE, PipelineError, remaining_sec
 from app.llm.capabilities import ModelCapabilities
+from app.llm.multimodal import MediaAttachment
 
 PROVIDER_ANTHROPIC = "anthropic"
 PROVIDER_OPENAI = "openai"
@@ -112,6 +113,41 @@ class LlmClient(Protocol):
         effort: str | None = None,
     ) -> str:
         """`effort` — уровень профиля прогона; адаптер переводит его в параметр провайдера."""
+        ...
+
+    async def complete_vision(
+        self,
+        system: str,
+        user: str,
+        *,
+        images: Sequence[MediaAttachment],
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> str:
+        """Запрос с изображениями (RFC-0006, возможность `vision`).
+
+        `images` — локальные файлы: адаптер сам кодирует их в base64 и переводит в блоки
+        провайдера. `MediaUnsupportedError` — модель не принимает изображения.
+        """
+        ...
+
+    async def complete_document(
+        self,
+        system: str,
+        user: str,
+        *,
+        document: MediaAttachment,
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> str:
+        """Запрос с PDF-документом (возможность `ocr`: модель читает скан сама).
+
+        Провайдер без `pdf_input` объявляет `MediaUnsupportedError`, чтобы вызывающий код
+        перешёл на другой путь (изображения страниц, OCR-провайдер) и создал технический
+        вопрос, а не падал.
+        """
         ...
 
     async def count_tokens(self, system: str, user: str) -> int:

@@ -2,8 +2,10 @@
 
 Адаптер создаётся на время одного вызова по расшифрованному ключу пользователя (или ключу
 оператора) и закрывается после. Реестр отвечает на два вопроса: какие провайдеры поддержаны
-для возможности и как создать адаптер. Волна 1 знает только `speech_to_text`; заготовки
-vision/ocr/video/web/tts описаны контрактами, но в реестре не зарегистрированы.
+для возможности и как создать адаптер. Волна 2 добавила `speech_to_text`, волна 3 — веб-поиск
+и чтение страниц. Контракты OCR (Mistral, Yandex) зарегистрированы с `implemented=False`:
+ключ можно сохранить заранее, рабочих вызовов нет. Заготовки vision/video/tts в реестре не
+зарегистрированы.
 """
 
 from collections.abc import Callable, Iterable
@@ -15,8 +17,14 @@ import httpx
 from app.domain.capabilities import Capability, CapabilityError, ErrorClass
 from app.ingest.adapters.base import CapabilityAdapter
 from app.ingest.adapters.http import AdapterClientFactory
+from app.ingest.adapters.ocr import OCR_PROVIDERS, ContractOcrAdapter
 from app.ingest.adapters.stt_deepgram import DeepgramSttAdapter
 from app.ingest.adapters.stt_openai import OpenAISttAdapter
+from app.ingest.adapters.web_brave import BraveSearchAdapter
+from app.ingest.adapters.web_exa import ExaSearchAdapter
+from app.ingest.adapters.web_firecrawl import FirecrawlFetchAdapter
+from app.ingest.adapters.web_jina import JinaReaderAdapter
+from app.ingest.adapters.web_tavily import TavilySearchAdapter
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,12 +46,19 @@ type AdapterFactory = Callable[[AdapterContext], CapabilityAdapter]
 
 @dataclass(frozen=True, slots=True)
 class AdapterSpec:
-    """Одна пара «возможность + провайдер» с подписью для настроек."""
+    """Одна пара «возможность + провайдер» с подписью для настроек.
+
+    `implemented=False` — контракт провайдера: ключ можно сохранить заранее и увидеть в
+    настройках, но рабочие вызовы ещё не реализованы. Каталог провайдеров показывает такие
+    возможности как неподдержанные (`supported=false`), маршрутизатор вызовет их только после
+    реализации адаптера.
+    """
 
     capability: Capability
     provider: str
     label: str
     factory: AdapterFactory
+    implemented: bool = True
 
 
 @dataclass(slots=True)
@@ -60,6 +75,11 @@ class AdapterRegistry:
 
     def supports(self, capability: Capability, provider: str) -> bool:
         return (capability, provider) in self._specs
+
+    def implements(self, capability: Capability, provider: str) -> bool:
+        """Реализованы ли рабочие вызовы провайдера; у контрактов — нет."""
+        spec = self._specs.get((capability, provider))
+        return spec is not None and spec.implemented
 
     def providers(self, capability: Capability) -> list[tuple[str, str]]:
         """Подписанные провайдеры возможности: (идентификатор, подпись для интерфейса)."""
@@ -136,10 +156,61 @@ def register_stt_providers(registry: AdapterRegistry) -> None:
     )
 
 
+def register_ocr_providers(registry: AdapterRegistry) -> None:
+    """Контракты внешних OCR-провайдеров (RFC-0006, шаг 4).
+
+    Вызовы не реализованы: страницы-сканы в волне 3 распознаёт модель с чтением PDF. Ключ
+    Mistral/Yandex можно сохранить заранее — провайдер появится в настройках возможности.
+    """
+
+    def factory(provider: str):
+        def build(context: AdapterContext) -> CapabilityAdapter:
+            return ContractOcrAdapter(provider=provider, credential_id=context.credential_id)
+
+        return build
+
+    for provider, label in OCR_PROVIDERS:
+        registry.register(
+            AdapterSpec(Capability.OCR, provider, label, factory(provider), implemented=False)
+        )
+
+
+def register_web_providers(registry: AdapterRegistry) -> None:
+    """Веб-поиск: Tavily, Brave, Exa. Чтение страниц: Jina Reader, Firecrawl (RFC-0006, шаг 6)."""
+
+    def factory(adapter_type):
+        def build(context: AdapterContext) -> CapabilityAdapter:
+            return adapter_type(
+                context.api_key,
+                transport=context.transport,
+                client_factory=context.client_factory,
+                timeout_sec=context.timeout_sec,
+                credential_id=context.credential_id,
+            )
+
+        return build
+
+    registry.register(
+        AdapterSpec(Capability.WEB_SEARCH, "tavily", "Tavily", factory(TavilySearchAdapter))
+    )
+    registry.register(
+        AdapterSpec(Capability.WEB_SEARCH, "brave", "Brave Search", factory(BraveSearchAdapter))
+    )
+    registry.register(AdapterSpec(Capability.WEB_SEARCH, "exa", "Exa", factory(ExaSearchAdapter)))
+    registry.register(
+        AdapterSpec(Capability.WEB_FETCH, "jina", "Jina Reader", factory(JinaReaderAdapter))
+    )
+    registry.register(
+        AdapterSpec(Capability.WEB_FETCH, "firecrawl", "Firecrawl", factory(FirecrawlFetchAdapter))
+    )
+
+
 def build_default_registry(extra: Iterable[AdapterSpec] = ()) -> AdapterRegistry:
     """Реестр по умолчанию: ключи по типам задач, которые уже поддержаны."""
     registry = AdapterRegistry()
     for spec in extra:
         registry.register(spec)
     register_stt_providers(registry)
+    register_ocr_providers(registry)
+    register_web_providers(registry)
     return registry

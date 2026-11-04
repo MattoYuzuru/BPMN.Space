@@ -27,10 +27,17 @@
 технические вопросы ([RFC-0005](docs/rfc/0005-full-model-capacity-and-cost.md) шаги 1–5,
 [RFC-0006](docs/rfc/0006-tools-connectors-and-derived-sources.md) шаг 2). Инструменты по
 ключам пользователя: шаг 1 — обобщённые ключи по типам задач, маршрутизация с классами
-ошибок и распознавание речи на ключах пользователя; vision/OCR/видео/веб/озвучка —
-контракты адаптеров для следующих волн, вызовов ещё нет. Предложено, не реализовано:
-агентный режим ([RFC-0004](docs/rfc/0004-agent-mode.md)), шаги 4–7 RFC-0006, шаги 3–4
-RFC-0007 (роль ссылки `reviewer`, OAuth для MCP, журнал действий агента).
+ошибок и распознавание речи на ключах пользователя; шаги 4–5 RFC-0006 — OCR страниц-сканов
+моделью с чтением PDF, кадры видео и описание экрана (`vision`), общая лента и краткое
+содержание, профили обработки и оценка, плеер с HTTP Range и таймкодами
+([media-and-derived-sources.md](docs/backend/media-and-derived-sources.md)); шаг 6 частично —
+веб-поиск (Tavily, Brave, Exa) и чтение страниц (Jina Reader, Firecrawl), сервис инструментов
+для агентного режима и каталог провайдеров ([web-tools.md](docs/backend/web-tools.md)).
+Отдельные ключи/адаптеры `vision` и `ocr` (Mistral/Yandex), `video_understanding` и озвучка
+остаются контрактами адаптеров: vision и OCR в этой волне выполняет модель ключа `llm`.
+Предложено, не реализовано: агентный режим ([RFC-0004](docs/rfc/0004-agent-mode.md)), шаг 7
+RFC-0006 (ревизии производных), шаги 3–4 RFC-0007 (роль ссылки `reviewer`, OAuth для MCP,
+журнал действий агента).
 
 Сессии правок и контрольные точки (автосохранения сливаются в версию): [ADR-0010](docs/adr/0010-editing-sessions-and-checkpoints.md).
 Удаление и выход участника: [ADR-0009](docs/adr/0009-project-deletion-and-leaving.md).
@@ -48,7 +55,8 @@ RFC-0007 (роль ссылки `reviewer`, OAuth для MCP, журнал де�
 | `backend/app/{domain,services,api/v1}/onboarding.py`, `fixtures/samples*` | онбординг: тур, чек-лист «Начало работы», учебные материалы «Примеры»; правила — `docs/backend/onboarding.md` |
 | `backend/app/llm/{client,factory,pipeline,anthropic,openai,openai_compatible,net_guard}.py`, `services/{model_resolver,credentials,llm_credentials}.py`, `infra/crypto.py`, `api/v1/{llm_credentials,credentials}.py`, `frontend/src/{entities/llm-credential,features/llm-credentials,features/model-picker}`, маршрут `/settings` | модельно-независимый запуск: свои ключи пользователя (шифруются), провайдеры Anthropic/OpenAI/совместимые, выбор модели на прогон, защита от SSRF — [ADR-0011](docs/adr/0011-user-llm-credentials.md), `docs/backend/подключение-провайдеров.md` |
 | `backend/app/mcp/`, `backend/app/{domain,services,api/v1}/api_tokens.py`, `infra/repositories/api_tokens_sql.py` | внешние агенты: персональные токены `bps_…` (вход по `Authorization: Bearer` в REST) и MCP-сервер `/mcp` (инструменты, ресурсы, подсказки, провенанс «через агента») — [RFC-0007](docs/rfc/0007-external-agents-mcp.md), [mcp.md](docs/backend/mcp.md), [auth-and-sharing.md](docs/backend/auth-and-sharing.md) |
-| `backend/app/{domain,services}/capabilities*.py`, `services/{capability_router,credentials,capability_incidents}.py`, `ingest/adapters/`, миграция `0020_user_credentials` | ключи по типам задач и маршрутизация инструментов (RFC-0006 шаг 1): возможности, перебор по приоритету, классы ошибок, предохранитель, STT на ключах пользователя; контракты vision/OCR/видео/веб/TTS — заготовки волны 3 — [RFC-0006](docs/rfc/0006-tools-connectors-and-derived-sources.md), [каталог провайдеров](docs/research/tool-providers-2026-11.md) |
+| `backend/app/{domain,services}/capabilities*.py`, `services/{capability_router,credentials,capability_incidents,tool_catalog,web_tools}.py`, `ingest/adapters/`, миграция `0020_user_credentials` | ключи по типам задач и маршрутизация инструментов (RFC-0006 шаги 1, 6): возможности, перебор по приоритету, классы ошибок, предохранитель, STT и веб-поиск/чтение страниц на ключах пользователя, каталог провайдеров и `GET /me/tool-catalog` — [RFC-0006](docs/rfc/0006-tools-connectors-and-derived-sources.md), [web-tools.md](docs/backend/web-tools.md), [каталог провайдеров](docs/research/tool-providers-2026-11.md) |
+| `backend/app/llm/multimodal.py`, `ingest/{frames,pdf}.py`, `services/{media_derivation,media_estimate}.py`, `domain/media.py` | волна 3 RFC-0006 шаги 4–5: `complete_vision`/`complete_document` в порте `LlmClient`, OCR страниц-сканов моделью с чтением PDF, кадры видео (смена сцены + dhash без Pillow), производные узлы «ключевые кадры/описание экрана/общая лента/краткое содержание», профили обработки и оценка, `GET /sources/{id}/media` с HTTP Range и `GET /sources/{id}/segments` — [media-and-derived-sources.md](docs/backend/media-and-derived-sources.md) |
 | `backend/migrations/` | Alembic-миграции PostgreSQL; правила и сохраняемые сущности — `docs/backend/persistence.md` |
 | `backend/app/fixtures/` | демо-данные mock-а: тексты, BPMN-схемы, записанные ответы модели (`make fixtures` пересобирает схемы) |
 | `examples/` | примеры входа и выхода для жюри (копии фикстур) |

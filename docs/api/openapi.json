@@ -417,6 +417,10 @@
             "title": "File",
             "type": "string"
           },
+          "media_profile": {
+            "$ref": "#/components/schemas/MediaProfile",
+            "default": "audio"
+          },
           "title": {
             "anyOf": [
               {
@@ -1967,6 +1971,152 @@
         "title": "LocalAssistantRequest",
         "type": "object"
       },
+      "MediaEstimate": {
+        "description": "Оценка обработки записи до загрузки: минуты STT, кадры и цена по каталогу.",
+        "properties": {
+          "currency": {
+            "default": "USD",
+            "title": "Currency",
+            "type": "string"
+          },
+          "duration_sec": {
+            "title": "Duration Sec",
+            "type": "number"
+          },
+          "frames": {
+            "$ref": "#/components/schemas/MediaEstimateFrames"
+          },
+          "media_profile": {
+            "title": "Media Profile",
+            "type": "string"
+          },
+          "media_profile_label": {
+            "title": "Media Profile Label",
+            "type": "string"
+          },
+          "note": {
+            "description": "Оговорки: фактическая цена зависит от ключей и модели",
+            "title": "Note",
+            "type": "string"
+          },
+          "priced_on": {
+            "description": "Дата проверки цен каталога",
+            "format": "date",
+            "title": "Priced On",
+            "type": "string"
+          },
+          "stt": {
+            "$ref": "#/components/schemas/MediaEstimateStt"
+          },
+          "summary_cost_usd": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MoneyRange"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Краткое содержание: один запрос, только для видео с кадрами"
+          },
+          "total_cost_usd": {
+            "$ref": "#/components/schemas/MoneyRange"
+          }
+        },
+        "required": [
+          "duration_sec",
+          "media_profile",
+          "media_profile_label",
+          "stt",
+          "frames",
+          "total_cost_usd",
+          "priced_on",
+          "note"
+        ],
+        "title": "MediaEstimate",
+        "type": "object"
+      },
+      "MediaEstimateFrames": {
+        "properties": {
+          "cost_usd": {
+            "$ref": "#/components/schemas/MoneyRange"
+          },
+          "count_max": {
+            "description": "Верхняя граница числа кадров",
+            "title": "Count Max",
+            "type": "integer"
+          },
+          "count_min": {
+            "description": "Нижняя граница числа кадров",
+            "title": "Count Min",
+            "type": "integer"
+          },
+          "vision_requests": {
+            "description": "Запросов к vision-модели при выбранном профиле",
+            "title": "Vision Requests",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count_min",
+          "count_max",
+          "vision_requests",
+          "cost_usd"
+        ],
+        "title": "MediaEstimateFrames",
+        "type": "object"
+      },
+      "MediaEstimateRequest": {
+        "description": "Что известно о файле до загрузки: длительность, наличие видео и профиль обработки.",
+        "properties": {
+          "duration_sec": {
+            "description": "Длительность записи, секунды",
+            "exclusiveMinimum": 0.0,
+            "title": "Duration Sec",
+            "type": "number"
+          },
+          "has_video": {
+            "default": false,
+            "description": "Есть ли видеодорожка",
+            "title": "Has Video",
+            "type": "boolean"
+          },
+          "media_profile": {
+            "default": "audio",
+            "description": "Профиль: `audio` — только звук, `sparse` — редкие кадры, `detailed` — подробно",
+            "enum": [
+              "audio",
+              "sparse",
+              "detailed"
+            ],
+            "title": "Media Profile",
+            "type": "string"
+          }
+        },
+        "required": [
+          "duration_sec"
+        ],
+        "title": "MediaEstimateRequest",
+        "type": "object"
+      },
+      "MediaEstimateStt": {
+        "properties": {
+          "cost_usd": {
+            "$ref": "#/components/schemas/MoneyRange"
+          },
+          "minutes": {
+            "description": "Минуты распознавания речи",
+            "title": "Minutes",
+            "type": "number"
+          }
+        },
+        "required": [
+          "minutes",
+          "cost_usd"
+        ],
+        "title": "MediaEstimateStt",
+        "type": "object"
+      },
       "MediaInfo": {
         "description": "Дорожки записи по `ffprobe`; `null` — неизвестно (сервер без ffmpeg).",
         "properties": {
@@ -1994,6 +2144,86 @@
           }
         },
         "title": "MediaInfo",
+        "type": "object"
+      },
+      "MediaProfile": {
+        "description": "Профиль обработки записи (RFC-0006, «Видео»): от него зависит объём платной работы.",
+        "enum": [
+          "audio",
+          "sparse",
+          "detailed"
+        ],
+        "title": "MediaProfile",
+        "type": "string"
+      },
+      "MediaSegment": {
+        "description": "Отрезок расшифровки: от таймкода до следующей реплики (для перемотки плеера).",
+        "properties": {
+          "end_sec": {
+            "description": "Конец отрезка, секунды",
+            "title": "End Sec",
+            "type": "number"
+          },
+          "speaker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Говорящий, если провайдер его сообщил",
+            "title": "Speaker"
+          },
+          "start_sec": {
+            "description": "Начало отрезка в записи, секунды",
+            "title": "Start Sec",
+            "type": "number"
+          },
+          "text": {
+            "description": "Реплика или фраза",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_sec",
+          "end_sec",
+          "text"
+        ],
+        "title": "MediaSegment",
+        "type": "object"
+      },
+      "MoneyRange": {
+        "description": "Ориентировочная стоимость: минимум и максимум по каталогу цен.",
+        "properties": {
+          "max_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Самый дорогой сценарий, $",
+            "title": "Max Usd"
+          },
+          "min_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Самый дешёвый сценарий, $",
+            "title": "Min Usd"
+          }
+        },
+        "title": "MoneyRange",
         "type": "object"
       },
       "MonthlyLimit": {
@@ -4118,6 +4348,48 @@
         "title": "SourceOrigin",
         "type": "string"
       },
+      "SourceSegments": {
+        "description": "Таймкоды расшифровки источника: плеер перематывает к цитате без парсинга текста.",
+        "properties": {
+          "duration_sec": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Длительность записи, секунды",
+            "title": "Duration Sec"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/MediaSegment"
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "source_id": {
+            "description": "Источник, для которого запрошены отрезки",
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "transcript_id": {
+            "description": "Расшифровка, из которой взяты отрезки",
+            "format": "uuid",
+            "title": "Transcript Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "transcript_id"
+        ],
+        "title": "SourceSegments",
+        "type": "object"
+      },
       "SourceStatus": {
         "enum": [
           "processing",
@@ -4380,6 +4652,182 @@
         ],
         "title": "TechnicalQuestionKind",
         "type": "string"
+      },
+      "ToolCatalogCapability": {
+        "description": "Карточка возможности: что делает, каким инструментом видит модель и чем закрыть.",
+        "properties": {
+          "capability": {
+            "enum": [
+              "llm",
+              "speech_to_text",
+              "ocr",
+              "vision",
+              "video_understanding",
+              "web_search",
+              "web_fetch",
+              "tts"
+            ],
+            "title": "Capability",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "kinds": {
+            "description": "Типы ключей, закрывающие возможность",
+            "items": {
+              "enum": [
+                "llm",
+                "speech_to_text",
+                "ocr",
+                "vision",
+                "video",
+                "web_search",
+                "web_fetch",
+                "tts"
+              ],
+              "type": "string"
+            },
+            "title": "Kinds",
+            "type": "array"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "model_coverage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Что закрывает ключ модели без отдельного ключа",
+            "title": "Model Coverage"
+          },
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/ToolCatalogProvider"
+            },
+            "title": "Providers",
+            "type": "array"
+          },
+          "tool": {
+            "description": "Имя инструмента, которое увидит модель",
+            "title": "Tool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability",
+          "label",
+          "description",
+          "tool",
+          "kinds",
+          "providers"
+        ],
+        "title": "ToolCatalogCapability",
+        "type": "object"
+      },
+      "ToolCatalogProvider": {
+        "description": "Провайдер: где взять ключ, бесплатный уровень и поддержка в коде.",
+        "properties": {
+          "free_tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Что даёт бесплатный уровень",
+            "title": "Free Tier"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Страница, где взять ключ; null — ключ и адрес выдаёт ваш сервер",
+            "title": "Key Url"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "model_covers": {
+            "description": "Возможность закрывает ключ модели, отдельный ключ не нужен",
+            "title": "Model Covers",
+            "type": "boolean"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ограничения и особенности провайдера",
+            "title": "Notes"
+          },
+          "rf": {
+            "description": "Данные размещаются в РФ",
+            "title": "Rf",
+            "type": "boolean"
+          },
+          "supported": {
+            "description": "Адаптер выполняет рабочие вызовы: ключом можно пользоваться уже сейчас",
+            "title": "Supported",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "rf",
+          "model_covers",
+          "supported"
+        ],
+        "title": "ToolCatalogProvider",
+        "type": "object"
+      },
+      "ToolCatalogResponse": {
+        "description": "Каталог провайдеров с датой проверки; дополняет карточки `/me/credentials`.",
+        "properties": {
+          "capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/ToolCatalogCapability"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "checked_on": {
+            "description": "Дата проверки цен, бесплатных уровней и ссылок",
+            "format": "date",
+            "title": "Checked On",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checked_on",
+          "capabilities"
+        ],
+        "title": "ToolCatalogResponse",
+        "type": "object"
       },
       "ToolUnavailableErrorResponse": {
         "description": "Возможность не выполнена (RFC-0006): причина, прогресс и альтернативы.\n\nТекст провайдера в сообщение не входит — только класс причины и структурный прогресс.",
@@ -6100,7 +6548,7 @@
     },
     "/api/v1/me/credentials/{credential_id}/check": {
       "post": {
-        "description": "Проверка ключа для каждого типа: отказ провайдера — `ok=false` с понятной причиной.\n\nУспешная проверка снимает отметку ошибки и снова включает ключ, отключённый после отказа\nпровайдера. Для возможностей волны 3 проверка честно отвечает, что пока недоступна.",
+        "description": "Проверка ключа для каждого типа: отказ провайдера — `ok=false` с понятной причиной.\n\nУспешная проверка снимает отметку ошибки и снова включает ключ, отключённый после отказа\nпровайдера. Для vision/OCR/видео/озвучки проверка честно отвечает, что пока недоступна:\nвеб-поиск и чтение страниц проверяются настоящим запросом провайдера.",
         "operationId": "check_credential",
         "parameters": [
           {
@@ -6915,6 +7363,43 @@
         "summary": "Restart Tour",
         "tags": [
           "onboarding"
+        ]
+      }
+    },
+    "/api/v1/me/tool-catalog": {
+      "get": {
+        "description": "Возможности, провайдеры, где взять ключ и что закрывает модель (данные на 04.11.2026).",
+        "operationId": "tool_catalog",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolCatalogResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Tool Catalog",
+        "tags": [
+          "tools"
         ]
       }
     },
@@ -8872,6 +9357,105 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/sources/media/estimate": {
+      "post": {
+        "description": "Оценка обработки записи до загрузки: минуты STT, кадры и цена по каталогу цен.\n\nПрофиль `audio` — только расшифровка, `sparse` — редкие кадры и описание экрана,\n`detailed` — частые кадры. Оценка не запускает обработку и не пишет в БД.",
+        "operationId": "estimate_media_source",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaEstimateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaEstimate"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Estimate Media Source",
+        "tags": [
+          "sources"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/sources/sample": {
       "post": {
         "description": "Добавить учебный материал из `GET /samples` как обычный источник: документ проходит тот\nже разбор, что и `sources/file`, голосовая заметка сразу готова (`kind=voice`).",
@@ -10619,6 +11203,401 @@
           }
         ],
         "summary": "Update Source",
+        "tags": [
+          "sources"
+        ]
+      }
+    },
+    "/api/v1/sources/{source_id}/media": {
+      "get": {
+        "description": "Плеер: аудио или видео записи с поддержкой HTTP Range.\n\n`200` — весь файл, `206` — запрошенный диапазон (`Content-Range`), `416` — диапазон вне\nфайла. `ETag` и `Last-Modified` дают кэш; доступ — владельцу и участникам проекта\n(и токену с правом чтения), посторонним — `404`, как и остальные чужие объекты.",
+        "operationId": "stream_source_media",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Запрошенный диапазон байт вне файла"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Stream Source Media",
+        "tags": [
+          "sources"
+        ]
+      },
+      "head": {
+        "description": "HEAD для плеера: те же метаданные и права, без тела — `200`/`304`/`404`/`416` не нужен.",
+        "operationId": "head_source_media",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Head Source Media",
+        "tags": [
+          "sources"
+        ]
+      }
+    },
+    "/api/v1/sources/{source_id}/ocr": {
+      "post": {
+        "description": "Повторить OCR страниц-сканов PDF (действие «Повторить» технического вопроса).\n\nСоздаёт или перезапускает производный узел OCR; фоновая задача читает страницы моделью с\nподдержкой PDF. Готовые страницы не распознаются заново: узел накапливает текст.",
+        "operationId": "retry_source_ocr",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Source"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Конфликт состояния"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Слишком много запросов; повторите через `Retry-After` секунд"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolUnavailableErrorResponse"
+                }
+              }
+            },
+            "description": "Модели с чтением PDF нет: страницы-сканы не распознаны"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Retry Source Ocr",
+        "tags": [
+          "sources"
+        ]
+      }
+    },
+    "/api/v1/sources/{source_id}/segments": {
+      "get": {
+        "description": "Таймкоды расшифровки: перемотка плеера к цитате `[мм:сс]` и границы отрезков.\n\nРаботает и для записи (берётся её расшифровка), и для самой расшифровки.",
+        "operationId": "source_segments",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceSegments"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Конфликт состояния"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Source Segments",
         "tags": [
           "sources"
         ]

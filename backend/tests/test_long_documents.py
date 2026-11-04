@@ -246,7 +246,35 @@ def test_parsed_document_warning_joins_parts() -> None:
     assert ParsedDocument(text="x", warnings=("a.", "b.")).warning == "a. b."
 
 
-def test_mixed_pdf_upload_is_ready_with_warning_and_context_notes_it(client: TestClient) -> None:
+def test_scan_only_pdf_is_ocrd_and_source_becomes_ready(client: TestClient) -> None:
+    """Чистый скан: раньше источник был `failed` без возможности OCR — теперь распознаётся."""
+    project_id = create_project(client)
+    response = client.post(
+        f"{API}/projects/{project_id}/sources/file",
+        files={"file": ("scan.pdf", _make_pdf(["", "", ""]), "application/pdf")},
+    )
+    assert response.status_code == 201
+    project = client.get(f"{API}/projects/{project_id}").json()
+    source = next(s for s in project["sources"] if s["file_name"] == "scan.pdf")
+    assert source["status"] == "ready"
+    assert source["error"] is None
+    assert source["unreadable_pages"] == []
+    ocr = next(item for item in project["sources"] if item["parent_id"] == source["id"])
+    assert ocr["status"] == "ready"
+    assert ocr["origin"] == "derived"
+    assert ocr["trust"] == "extracted"
+    assert ocr["derivation"]["capability"] == "ocr"
+    assert "[Страница 1]" in ocr["content"]
+    assert "[Страница 3]" in ocr["content"]
+
+
+def test_mixed_pdf_upload_is_ocr_derived_and_context_sees_it(client: TestClient) -> None:
+    """Страницы-сканы читает модель (RFC-0006, шаг 4): текст — в производном узле OCR.
+
+    До волны 3 источник оставался с `warning`/`unreadable_pages`; теперь mock-модель (как и
+    настоящая модель с чтением PDF) распознаёт сканы в фоне, а модель прогона получает текст
+    производного источника. Полнота контекста восстанавливается.
+    """
     from app.domain.models import SourceStatus  # noqa: PLC0415
     from app.ingest.context import build_run_context  # noqa: PLC0415
 
@@ -259,9 +287,17 @@ def test_mixed_pdf_upload_is_ready_with_warning_and_context_notes_it(client: Tes
     project = client.get(f"{API}/projects/{project_id}").json()
     source = next(s for s in project["sources"] if s["file_name"] == "regl.pdf")
     assert source["status"] == "ready"
-    assert source["unreadable_pages"] == [2]
-    assert "страницах: 2" in source["warning"]
+    assert source["unreadable_pages"] == []
+    assert source["warning"] is None
     assert "Page three" in source["content"]
+    ocr = next(
+        item
+        for item in project["sources"]
+        if item["parent_id"] == source["id"] and item["origin"] == "derived"
+    )
+    assert ocr["derivation"]["capability"] == "ocr"
+    assert ocr["trust"] == "extracted"
+    assert "[Страница 2]" in ocr["content"]
 
     container: Container = client.app.state.container  # type: ignore[attr-defined]
     stored = asyncio.run(container.repos.sources.list_by_project(UUID(project_id)))
@@ -271,5 +307,5 @@ def test_mixed_pdf_upload_is_ready_with_warning_and_context_notes_it(client: Tes
     context = build_run_context(
         project=detail, sources=stored, questions=[], versions=[], budget_chars=120_000
     )
-    assert any("прочитан не полностью" in w and "regl.pdf" in w for w in context.warnings)
-    assert context.analysis_input_complete is False
+    assert any("[Страница 2]" in s.content for s in context.sources)
+    assert context.analysis_input_complete is True

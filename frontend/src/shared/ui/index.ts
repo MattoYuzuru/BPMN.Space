@@ -64,6 +64,11 @@ export { IconButton, type IconButtonProps } from './icon-button/icon-button'
 export { Input, type InputProps } from './input/input'
 export { Kbd, type KbdProps, type KeyName, keyLabel } from './kbd/kbd'
 export {
+  MediaPlayer,
+  type MediaPlayerHandle,
+  type MediaPlayerProps,
+} from './media-player/media-player'
+export {
   Popover,
   PopoverAnchor,
   PopoverClose,

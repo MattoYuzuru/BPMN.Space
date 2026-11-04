@@ -74,8 +74,8 @@ CAPABILITY_DESCRIPTIONS: dict[Capability, str] = {
     Capability.TTS: "Озвучка вопросов и резюме",
 }
 
-# Имя инструмента, которое увидит модель (RFC-0006). Пока инструменты волны 3 не реализованы,
-# подписи нужны интерфейсу настроек и будущему агенту.
+# Имя инструмента, которое увидит модель (RFC-0006). Для веб-поиска и чтения страниц адаптеры
+# уже есть (волна 3); vision/OCR/видео/озвучка пока контракты, подписи нужны настройкам и агенту.
 CAPABILITY_TOOLS: dict[Capability, str] = {
     Capability.LLM: "generate",
     Capability.SPEECH_TO_TEXT: "transcribe",

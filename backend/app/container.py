@@ -24,6 +24,7 @@ from app.ingest.adapters import build_default_registry
 from app.ingest.adapters.http import AdapterClientFactory
 from app.ingest.adapters.stt_deepgram import DEEPGRAM_MODEL, DeepgramSttAdapter
 from app.ingest.context import configure_llm_limits
+from app.ingest.frames import FrameExtractor
 from app.ingest.media import FfmpegRunner, MediaTranscriber
 from app.ingest.parsers import LocalDocumentParser
 from app.ingest.stt import MockSpeechToText, SpeechToText
@@ -43,6 +44,7 @@ from app.services.collaboration import RealtimeHub
 from app.services.common import Runtime
 from app.services.credentials import CredentialService
 from app.services.estimate import EstimateService
+from app.services.media_derivation import MediaDerivationService
 from app.services.model_resolver import ModelResolver
 from app.services.onboarding import OnboardingService
 from app.services.projects import ProjectService
@@ -52,7 +54,9 @@ from app.services.samples import SampleService
 from app.services.sharing import SharingService
 from app.services.sources import SourceService
 from app.services.technical_questions import TechnicalQuestionService
+from app.services.tool_catalog import ToolCatalogService
 from app.services.versions import VersionService
+from app.services.web_tools import WebTools
 
 
 def _server_pipeline(settings: Settings, transport: httpx.AsyncBaseTransport | None):
@@ -140,6 +144,18 @@ def build_media_transcriber(settings: Settings, stt: SpeechToText) -> MediaTrans
     )
 
 
+def build_frame_extractor(settings: Settings) -> FrameExtractor:
+    """Извлечение кадров видео по профилю обработки (RFC-0006, «Видео»)."""
+    return FrameExtractor(
+        ffmpeg=settings.ffmpeg_path,
+        timeout_sec=settings.media_frame_ffmpeg_timeout_sec,
+        frame_width=settings.media_frame_width,
+        dedup_bits=settings.media_frame_dedup_bits,
+        max_frames_cap=settings.media_frame_max_frames,
+        max_concurrent_extractions=settings.media_frame_max_concurrent,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class Container:
     settings: Settings
@@ -158,6 +174,8 @@ class Container:
     assistant: AssistantService
     estimate: EstimateService
     credentials: CredentialService
+    tool_catalog: ToolCatalogService
+    web_tools: WebTools
     api_tokens: ApiTokenService
     access: AccessService
     sharing: SharingService
@@ -296,6 +314,26 @@ def build_container(
     )
     media = build_media_transcriber(settings, stt)
     technical_questions = TechnicalQuestionService(repos, runtime=runtime)
+    incident_sink = TechnicalQuestionIncidentSink(technical_questions, repos)
+    # Производные узлы записи и сканов (RFC-0006, шаги 4–5): OCR, кадры, экран, лента, сводка.
+    media_derivations = MediaDerivationService(
+        repos,
+        storage=storage,
+        runtime=runtime,
+        resolver=resolver,
+        incident_sink=incident_sink,
+        frames=build_frame_extractor(settings),
+        vision_batch_size=settings.media_vision_batch_size,
+        vision_max_tokens=settings.media_vision_max_tokens,
+        ocr_pages_per_request=settings.ocr_pages_per_request,
+        ocr_max_tokens=settings.ocr_max_tokens,
+        ocr_tokens_per_page=settings.ocr_tokens_per_page,
+        summary_max_tokens=settings.media_summary_max_tokens,
+        parallel_requests=settings.llm_parallel_requests,
+        max_text_chars=settings.max_text_chars,
+    )
+    tool_catalog = ToolCatalogService(registry)
+    web_tools = WebTools(router, incident_sink=incident_sink, runtime=runtime)
     sources = SourceService(
         repos,
         parser=LocalDocumentParser(
@@ -307,7 +345,8 @@ def build_container(
         ),
         media=media,
         stt_for_user=routed_stt.for_user,
-        incident_sink=TechnicalQuestionIncidentSink(technical_questions, repos),
+        incident_sink=incident_sink,
+        derivations=media_derivations,
         max_media_bytes=settings.max_media_bytes,
         storage=storage,
         runtime=runtime,
@@ -367,6 +406,8 @@ def build_container(
         ),
         assistant=AssistantService(repos, resolver=resolver),
         estimate=EstimateService(repos, resolver=resolver, settings=settings, runtime=runtime),
+        tool_catalog=tool_catalog,
+        web_tools=web_tools,
         credentials=CredentialService(
             repos,
             cipher=cipher,

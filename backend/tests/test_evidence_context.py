@@ -5,7 +5,7 @@ from dataclasses import replace
 
 import pytest
 
-from app.ingest.parsers import DocumentParseError, LocalDocumentParser
+from app.ingest.parsers import LocalDocumentParser, ScanOnlyPdfError
 from app.llm.base import PipelineError
 from app.llm.evidence_context import prepare_evidence_context
 from tests.test_graph_repair_feedback import _context
@@ -59,5 +59,7 @@ async def test_mixed_pdf_cannot_silently_skip_scanned_page():
     assert "Valid process" in parsed.text
     assert parsed.warning is not None
     assert "страницах: 2" in parsed.warning
-    with pytest.raises(DocumentParseError, match="не найден текстовый слой"):
+    with pytest.raises(ScanOnlyPdfError, match="нет текстового слоя") as scan_only:
         await LocalDocumentParser().parse(file_name="scan.pdf", data=_make_pdf(["", ""]))
+    # Номера страниц сохраняются: по ним сервис запускает OCR, а не теряет скан.
+    assert scan_only.value.pages == (1, 2)

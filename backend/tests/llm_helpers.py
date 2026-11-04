@@ -2,13 +2,14 @@
 
 import asyncio
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import httpx
 
 from app.llm.base import record_usage
 from app.llm.client import ModelInfo
+from app.llm.multimodal import MediaAttachment
 from app.llm.pipeline import LlmPipeline
 
 
@@ -54,6 +55,34 @@ class ScriptedClient:
                 cache_write=cache_write,
             )
         return result
+
+    async def complete_vision(
+        self,
+        system: str,
+        user: str,
+        *,
+        images: Sequence[MediaAttachment],
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> str:
+        return await self.complete(
+            system, user, json_mode=json_mode, max_tokens=max_tokens, effort=effort
+        )
+
+    async def complete_document(
+        self,
+        system: str,
+        user: str,
+        *,
+        document: MediaAttachment,
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> str:
+        return await self.complete(
+            system, user, json_mode=json_mode, max_tokens=max_tokens, effort=effort
+        )
 
     async def count_tokens(self, system: str, user: str) -> int:
         return max((len(system) + len(user)) // 2, 1)

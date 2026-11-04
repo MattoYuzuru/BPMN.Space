@@ -32,6 +32,7 @@ from app.ingest.parsers import (
     DocumentParseError,
     LocalDocumentParser,
     ParsedDocument,
+    ScanOnlyPdfError,
     _pdf_document,
 )
 from app.llm.base import PipelineError, record_usage, run_deadline
@@ -369,7 +370,7 @@ async def test_pdf_page_limit() -> None:
     parser = LocalDocumentParser(max_pdf_pages=2)
     with pytest.raises(DocumentParseError, match="3 страниц — больше лимита 2"):
         await parser.parse(file_name="long.pdf", data=_pdf(3))
-    with pytest.raises(DocumentParseError, match="не найден текстовый слой"):
+    with pytest.raises(ScanOnlyPdfError, match="нет текстового слоя"):
         await parser.parse(file_name="scan.pdf", data=_pdf(2))
 
 

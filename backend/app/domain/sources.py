@@ -1,15 +1,59 @@
 """Правила дерева материалов (RFC-0006): сериализация происхождения и обход потомков."""
 
+import re
 from collections.abc import Iterable
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
+# Возможности производных узлов волны 3 живут в `domain/media.py` (нужны и `domain/models.py`
+# для `feeds_model`); здесь — реэкспорт для удобства вызывающего кода.
+from app.domain.media import KEY_FRAMES, MEDIA_FEED, OCR, SUMMARY, VISION
 from app.domain.models import MediaInfo, Source, SourceDerivation
+
+# Реэкспорт возможностей нужен вызывающему коду; `__all__` снимает вопросы линтеров.
+__all__ = [
+    "KEY_FRAMES",
+    "MEDIA_FEED",
+    "OCR",
+    "SPEECH_TO_TEXT",
+    "SUMMARY",
+    "TRANSCRIPT_TITLE",
+    "VISION",
+    "derivation_frame_keys",
+    "derivation_from_json",
+    "derivation_to_json",
+    "descendants",
+    "media_from_json",
+    "media_to_json",
+    "transcript_segments",
+]
 
 # Возможность «речь → текст» (RFC-0006): расшифровка записи — производный источник.
 SPEECH_TO_TEXT = "speech_to_text"
 TRANSCRIPT_TITLE = "Расшифровка"
+
+
+def derivation_frame_keys(source: Source) -> list[str]:
+    """Ключи файлов кадров из `derivation.params` производного узла (для уборки хранилища).
+
+    Кадры лежат в том же uploads-хранилище, что и записи: при удалении записи и её
+    производных их нужно удалить, иначе диск VPS заполнится молча.
+    """
+    derivation = source.derivation
+    if derivation is None:
+        return []
+    frames = derivation.params.get("frames")
+    if not isinstance(frames, list):
+        return []
+    keys: list[str] = []
+    for item in cast("list[object]", frames):
+        if not isinstance(item, dict):
+            continue
+        key = cast("dict[str, object]", item).get("key")
+        if isinstance(key, str):
+            keys.append(key)
+    return keys
 
 
 def derivation_to_json(value: SourceDerivation | None) -> dict[str, Any] | None:
@@ -70,3 +114,34 @@ def descendants(sources: Iterable[Source], root_id: UUID) -> list[Source]:
                 found.append(child)
                 queue.append(child.id)
     return found
+
+
+_TIMECODE = re.compile(r"^\[(?P<minutes>\d{1,4}):(?P<seconds>\d{2})\]\s*(?P<body>.+)$")
+
+
+def transcript_segments(
+    content: str, duration_sec: float | None = None
+) -> list[tuple[float, float, str]]:
+    """Отрезки `[мм:сс] текст` расшифровки: (начало, конец, текст).
+
+    Плеер перематывает к таймкоду цитаты по этим отрезкам; конец — начало следующей реплики
+    или длительность записи. Строки без таймкода пропускаются: они не привязаны ко времени.
+    """
+    starts: list[tuple[float, str]] = []
+    for line in content.splitlines():
+        match = _TIMECODE.match(line.strip())
+        if match is None:
+            continue
+        at_sec = int(match.group("minutes")) * 60 + int(match.group("seconds"))
+        body = match.group("body").strip()
+        if body:
+            starts.append((float(at_sec), body))
+    segments: list[tuple[float, float, str]] = []
+    for index, (start, text) in enumerate(starts):
+        end = starts[index + 1][0] if index + 1 < len(starts) else None
+        if end is None:
+            end = (
+                duration_sec if duration_sec is not None and duration_sec > start else start + 30.0
+            )
+        segments.append((start, max(end, start), text))
+    return segments

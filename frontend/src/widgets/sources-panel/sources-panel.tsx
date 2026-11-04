@@ -7,6 +7,7 @@ import {
   capabilityInfo,
   countSourceTree,
   derivationCost,
+  derivationDetails,
   derivationLabel,
   isAgentSource,
   isDerived,
@@ -23,6 +24,7 @@ import {
   useSamples,
   useUpdateSource,
 } from '@/entities/source'
+import { MediaProfileDialog } from '@/features/add-source/media-profile-dialog'
 import { useFileUploads } from '@/features/add-source/use-file-uploads'
 import { cn } from '@/shared/lib/cn'
 import { formatMoney } from '@/shared/lib/format'
@@ -44,6 +46,7 @@ import {
   IconButton,
   Progress,
   ScrollArea,
+  SegmentedControl,
   Switch,
   Tooltip,
 } from '@/shared/ui'
@@ -53,10 +56,15 @@ import { useWorkspace, useWorkspaceUi } from '@/widgets/workspace/model'
 export function SourcesPanel({ onCollapse }: { onCollapse: () => void }) {
   const { project, canEdit } = useWorkspace()
   const setDialog = useWorkspaceUi((state) => state.setDialog)
-  const { uploads, upload } = useFileUploads(project.id)
+  const { uploads, upload, pendingMedia, confirmMedia, cancelMedia } = useFileUploads(project.id)
   const [dragging, setDragging] = useState(false)
+  // Фильтр дерева: все материалы или только исходные (без производных узлов).
+  const [scope, setScope] = useState<'all' | 'sources'>('all')
   // Дерево материалов (RFC-0006): исходные файлы и вложенные производные узлы.
-  const tree = buildSourceTree(project.sources.filter((source) => source.kind !== 'answer'))
+  const materials = project.sources.filter((source) => source.kind !== 'answer')
+  const tree = buildSourceTree(materials)
+  // «Исходные» — корни без вложенных производных: дерево отдаёт их в children, а не отдельно.
+  const shownTree = scope === 'sources' ? tree.map((node) => ({ ...node, children: [] })) : tree
   const answers = project.sources.filter((source) => source.kind === 'answer')
 
   return (
@@ -75,7 +83,7 @@ export function SourcesPanel({ onCollapse }: { onCollapse: () => void }) {
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border pr-1.5 pl-4">
         <h2 className="type-subheading text-fg">Источники</h2>
         <span className="type-caption text-fg-subtle" data-numeric>
-          {countSourceTree(tree)}
+          {countSourceTree(shownTree)}
         </span>
         <div className="ml-auto flex items-center gap-0.5">
           {canEdit && <AddSourceMenu projectId={project.id} onPick={setDialog} onFiles={upload} />}
@@ -90,9 +98,19 @@ export function SourcesPanel({ onCollapse }: { onCollapse: () => void }) {
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-4 p-2 pb-4">
+          <SegmentedControl
+            aria-label="Какие материалы показывать"
+            size="sm"
+            value={scope}
+            onValueChange={setScope}
+            options={[
+              { value: 'all', label: 'Все' },
+              { value: 'sources', label: 'Исходные' },
+            ]}
+          />
           <ul className="flex flex-col gap-0.5" {...tourAnchor(TOUR_ANCHORS.sourceTree)}>
             <AnimatePresence initial={false}>
-              {tree.map((node) => (
+              {shownTree.map((node) => (
                 <m.li
                   key={node.source.id}
                   variants={listItem}
@@ -154,6 +172,14 @@ export function SourcesPanel({ onCollapse }: { onCollapse: () => void }) {
           title="Отпустите, чтобы загрузить"
           hint={ACCEPTED_FILES_HINT}
           className="absolute inset-2 z-10 animate-fade-in border-accent bg-accent-subtle/90 backdrop-blur-sm"
+        />
+      )}
+      {pendingMedia && (
+        <MediaProfileDialog
+          projectId={project.id}
+          files={pendingMedia}
+          onCancel={cancelMedia}
+          onConfirm={confirmMedia}
         />
       )}
     </section>
@@ -309,6 +335,19 @@ function SourceRow({ source, derivedCount }: { source: Source; derivedCount: num
               Агент
             </Badge>
           )}
+          {derived &&
+            derivationDetails(source)
+              .slice(0, 2)
+              .map((detail) => (
+                <Badge
+                  key={detail}
+                  tone={source.trust === 'summary' ? 'amber' : 'neutral'}
+                  variant="outline"
+                  className="shrink-0"
+                >
+                  {detail}
+                </Badge>
+              ))}
           {showTrust && trustBadge && (
             <Badge variant="outline" tone={trustBadge.tone} className="shrink-0">
               {trustBadge.short}

@@ -38,9 +38,10 @@ from app.domain.models import Question, QuestionStatus, Quote, SourceKind
 from app.domain.questions import find_source_with_quote, normalize, quote_in_source
 from app.fixtures.generic import RESPONSIBLE_MARKER, generic_questions
 from app.fixtures.types import DiagramRule, Playbook
-from app.llm.base import PipelineError
+from app.llm.base import PipelineError, record_usage
 from app.llm.capabilities import ModelCapabilities
-from app.llm.client import approximate_tokens
+from app.llm.client import ModelInfo, approximate_tokens
+from app.llm.tools import ConversationMessage, ToolDefinition, ToolTurn
 
 _MAX_STEPS = 8
 _MAX_TASK_NAME = 60
@@ -318,3 +319,85 @@ def _trace(trace: Mapping[str, str], sources: Sequence[ContextSource]) -> dict[s
         if source is not None:
             result[element_id] = Quote(source_id=source.id, quote=quote)
     return result
+
+
+class RecordedToolClient:
+    """Записанные ответы `tool_use`/`tool_calls` — третья реализация порта без сети.
+
+    Агентный режим (RFC-0004) проверяется на записанных ходах модели: очередь `turns` отдаётся
+    по одному вызову `complete_with_tools`, а `messages`/`tools` сохраняются для проверок
+    (например, что сервер вернул результат инструмента и передал ошибки модели). Живой
+    провайдер и ключ не нужны; поведение детерминировано.
+    """
+
+    def __init__(
+        self,
+        turns: Sequence[ToolTurn],
+        *,
+        provider: str = "mock",
+        usage: tuple[int, int, int, int] | None = None,
+    ) -> None:
+        self._turns = list(turns)
+        self._provider = provider
+        # Токены одного хода: как будто провайдер сообщил их usage. Нужны бюджету и стоимости.
+        self._usage = usage
+        self.calls: list[dict[str, object]] = []
+
+    @property
+    def provider(self) -> str:
+        return self._provider
+
+    @property
+    def remaining(self) -> int:
+        return len(self._turns)
+
+    async def complete(
+        self,
+        system: str,
+        user: str,
+        *,
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> str:
+        del system, user, json_mode, max_tokens, effort
+        raise RuntimeError("Записанный клиент инструментов отвечает только на агентные ходы")
+
+    async def complete_with_tools(
+        self,
+        system: str,
+        messages: Sequence[ConversationMessage],
+        tools: Sequence[ToolDefinition],
+        *,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> ToolTurn:
+        self.calls.append(
+            {
+                "system": system,
+                "messages": list(messages),
+                "tools": [tool.name for tool in tools],
+                "max_tokens": max_tokens,
+                "effort": effort,
+            }
+        )
+        if not self._turns:
+            raise RuntimeError("Записанные ответы модели закончились")
+        if self._usage is not None:
+            tokens_in, tokens_out, cache_read, cache_write = self._usage
+            record_usage(
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                cache_read=cache_read,
+                cache_write=cache_write,
+            )
+        return self._turns.pop(0)
+
+    async def count_tokens(self, system: str, user: str) -> int:
+        return approximate_tokens(system, user, ModelCapabilities())
+
+    async def list_models(self) -> list[ModelInfo]:
+        return [ModelInfo(id="recorded-tools", label="recorded-tools")]
+
+    async def aclose(self) -> None:
+        return None

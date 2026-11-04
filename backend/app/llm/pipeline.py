@@ -19,16 +19,13 @@ from app.domain.analysis import (
 from app.domain.questions import normalize
 from app.llm.base import (
     DEADLINE_MESSAGE,
-    BudgetReachedError,
     ContextOverflowError,
     PipelineError,
-    current_budget,
     remaining_sec,
-    usage_totals,
 )
+from app.llm.budget import check_run_budget
 from app.llm.capabilities import ModelCapabilities, RunProfile, nearest_effort
 from app.llm.client import LlmClient
-from app.llm.estimate import cost_of_usage
 from app.llm.evidence_context import prepare_evidence_context
 from app.llm.graph_generation import generate_graph
 from app.llm.question_analysis import QuestionAnalyzer, whole_project_request
@@ -89,7 +86,7 @@ class LlmPipeline:
         self._thinking = thinking
         self._json_temperature = json_temperature
         self._question_analyzer = QuestionAnalyzer(
-            self._analyze_complete, _verified_quote, self._analysis_model
+            self._analyze_complete, verified_quote, self._analysis_model
         )
 
     @property
@@ -99,6 +96,11 @@ class LlmPipeline:
     @property
     def model_name(self) -> str:
         return self._model
+
+    @property
+    def client(self) -> LlmClient:
+        """Порт провайдера: агентный цикл RFC-0004 вызывает `complete_with_tools`."""
+        return self._client
 
     @property
     def capabilities(self) -> ModelCapabilities:
@@ -139,7 +141,7 @@ class LlmPipeline:
         derived = copy.copy(self)
         # Анализатор привязан к методам копии; кэш общий, его ключ включает effort и лимиты.
         derived._question_analyzer = QuestionAnalyzer(
-            derived._analyze_complete, _verified_quote, derived._analysis_model
+            derived._analyze_complete, verified_quote, derived._analysis_model
         )
         derived._question_analyzer.cache = self._question_analyzer.cache
         return derived
@@ -239,7 +241,7 @@ class LlmPipeline:
                 current,
                 analysis,
                 self._graph_complete,
-                _verified_quote,
+                verified_quote,
                 semantic_review=self._semantic_review,
                 review_complete=self._chunk_complete,
             )
@@ -330,24 +332,9 @@ class LlmPipeline:
         Считается по накопителю всего прогона, включая израсходованное до продолжения после
         `waiting`. Достигнутый бюджет не роняет прогон: сервис переводит его в `waiting` с
         блокирующим техническим вопросом, и после решения пользователя работа продолжается.
+        Общая функция также используется агентным циклом (`llm/agent.py`).
         """
-        budget = current_budget()
-        totals = usage_totals()
-        if budget is None or totals is None:
-            return
-        spent = totals.tokens_in + totals.tokens_out
-        if budget.tokens is not None and spent >= budget.tokens:
-            raise BudgetReachedError(
-                f"Бюджет прогона {budget.tokens} токенов исчерпан: потрачено {spent}",
-                budget=budget,
-            )
-        if budget.cost_usd is not None:
-            cost = cost_of_usage(totals, self._capabilities.prices).cost_usd
-            if cost is not None and cost >= budget.cost_usd:
-                raise BudgetReachedError(
-                    f"Бюджет прогона ${budget.cost_usd:g} исчерпан: потрачено ≈ ${cost:.2f}",
-                    budget=budget,
-                )
+        check_run_budget(self._capabilities.prices)
 
     async def _complete(
         self, system: str, prompt: str, *, json_mode: bool, max_tokens: int | None = None
@@ -365,9 +352,15 @@ class LlmPipeline:
         )
 
 
-def _verified_quote(
+def verified_quote(
     sources: list[ContextSource], source_id: object, quote: object
 ) -> tuple[UUID | None, str | None]:
+    """Дословная цитата источника или `(None, None)`.
+
+    Сравнение с нормализацией пробелов, регистра и «ё» (PDF рвёт строки), но в трассировку
+    возвращается исходный фрагмент источника. Тот же код проверяет основания агентного
+    режима (`llm/agent.py`): выбор инструмента не ослабляет проверку цитат.
+    """
     if not isinstance(source_id, str) or not isinstance(quote, str) or not quote.strip():
         return None, None
     try:

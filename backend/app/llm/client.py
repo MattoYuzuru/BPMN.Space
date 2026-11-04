@@ -9,7 +9,7 @@ import asyncio
 import math
 import random
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -17,6 +17,7 @@ from pydantic import SecretStr
 
 from app.llm.base import DEADLINE_MESSAGE, PipelineError, remaining_sec
 from app.llm.capabilities import ModelCapabilities
+from app.llm.tools import ConversationMessage, ToolDefinition, ToolTurn
 
 PROVIDER_ANTHROPIC = "anthropic"
 PROVIDER_OPENAI = "openai"
@@ -112,6 +113,23 @@ class LlmClient(Protocol):
         effort: str | None = None,
     ) -> str:
         """`effort` — уровень профиля прогона; адаптер переводит его в параметр провайдера."""
+        ...
+
+    async def complete_with_tools(
+        self,
+        system: str,
+        messages: Sequence[ConversationMessage],
+        tools: Sequence[ToolDefinition],
+        *,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> ToolTurn:
+        """Один ход агентного режима RFC-0004: текст модели и/или запросы инструментов.
+
+        Адаптер переводит общий формат в нативный протокол провайдера и сообщает токены
+        через `record_usage` — учёт кеша, стоимости и бюджета остаётся общим с `complete`.
+        `stop_reason` с обрезкой по `max_tokens` и отказ модели — явные ошибки, как у `complete`.
+        """
         ...
 
     async def count_tokens(self, system: str, user: str) -> int:

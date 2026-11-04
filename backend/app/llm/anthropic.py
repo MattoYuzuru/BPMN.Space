@@ -10,6 +10,9 @@ Sonnet 5.5 отключить нельзя — параметр `thinking` не 
 Повторы выполняет приложение (`max_retries=0` у SDK): так они не удваиваются и учитывают срок.
 """
 
+import json
+from collections.abc import Sequence
+
 import anthropic
 import httpx2
 
@@ -36,6 +39,7 @@ from app.llm.client import (
     token_count,
     with_retries,
 )
+from app.llm.tools import ConversationMessage, ToolDefinition, ToolTurn, ToolUse
 
 _JSON_ONLY = (
     "\n\nОтветь одним JSON-объектом без markdown-обёртки и без текста вне JSON. "
@@ -50,6 +54,94 @@ def _retry_after(error: anthropic.APIStatusError) -> float | None:
         return max(float(error.response.headers["retry-after"]), 0.0)
     except (KeyError, ValueError, TypeError):
         return None
+
+
+def _record_usage(message: anthropic.types.Message) -> None:
+    """Токены ответа Anthropic: обычный вход, чтение и запись кеша — как в `complete`."""
+    usage = message.usage
+    cached = token_count(getattr(usage, "cache_read_input_tokens", 0)) or 0
+    created = token_count(getattr(usage, "cache_creation_input_tokens", 0)) or 0
+    input_tokens = token_count(usage.input_tokens) or 0
+    record_usage(
+        # `tokens_in` — все входные токены: обычный вход, чтение и запись кеша.
+        tokens_in=input_tokens + cached + created,
+        tokens_out=token_count(usage.output_tokens),
+        cache_read=cached,
+        cache_write=created,
+    )
+
+
+def _stop_error(message: anthropic.types.Message) -> None:
+    """Обрезка и отказ модели — ошибки, а не пустой ответ."""
+    if message.stop_reason == "max_tokens":
+        raise OutputTruncatedError(
+            "Ответ модели обрезан по лимиту длины: результат неполный и не применён"
+        )
+    if message.stop_reason == "refusal":
+        raise LlmRefusalError(
+            "Модель отказалась отвечать на этот запрос. "
+            "Измените материалы или выберите другую модель"
+        )
+
+
+def _text_of(message: anthropic.types.Message) -> str:
+    return "".join(block.text for block in message.content if block.type == "text")
+
+
+def _tool_messages(messages: Sequence[ConversationMessage]) -> list[dict[str, object]]:
+    """Общий разговор → сообщения Anthropic; результаты подряд идут одним user-сообщением.
+
+    API требует: после assistant с `tool_use` следующий user содержит `tool_result` на каждый
+    запрос. Несколько параллельных инструментов — один список блоков, а не несколько сообщений.
+    """
+    converted: list[dict[str, object]] = []
+    pending_results: list[dict[str, object]] = []
+    for message in messages:
+        if message.role == "tool":
+            pending_results.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": message.tool_use_id,
+                    "content": message.text,
+                    "is_error": message.is_error,
+                }
+            )
+            continue
+        if pending_results:
+            converted.append({"role": "user", "content": pending_results})
+            pending_results = []
+        if message.role == "user":
+            converted.append({"role": "user", "content": [{"type": "text", "text": message.text}]})
+            continue
+        blocks: list[dict[str, object]] = []
+        if message.text.strip():
+            blocks.append({"type": "text", "text": message.text})
+        blocks.extend(
+            {
+                "type": "tool_use",
+                "id": use.id,
+                "name": use.name,
+                "input": use.parsed_arguments(),
+            }
+            for use in message.tool_uses
+        )
+        if blocks:
+            converted.append({"role": "assistant", "content": blocks})
+    if pending_results:
+        converted.append({"role": "user", "content": pending_results})
+    return converted
+
+
+def _tool_turn(message: anthropic.types.Message) -> ToolTurn:
+    text = _text_of(message).strip()
+    uses = tuple(
+        ToolUse(id=block.id, name=block.name, arguments=json.dumps(block.input, ensure_ascii=False))
+        for block in message.content
+        if block.type == "tool_use"
+    )
+    if not uses and not text:
+        raise RuntimeError("Модель вернула пустой ответ без запросов инструментов")
+    return ToolTurn(text=text or None, tool_uses=uses, stop_reason=message.stop_reason)
 
 
 class AnthropicClient:
@@ -135,30 +227,77 @@ class AnthropicClient:
         message = await with_retries(
             once, policy=self._policy, timeout_sec=self._config.timeout_sec
         )
-        usage = message.usage
-        cached = token_count(getattr(usage, "cache_read_input_tokens", 0)) or 0
-        created = token_count(getattr(usage, "cache_creation_input_tokens", 0)) or 0
-        input_tokens = token_count(usage.input_tokens) or 0
-        record_usage(
-            # `tokens_in` — все входные токены: обычный вход, чтение и запись кеша.
-            tokens_in=input_tokens + cached + created,
-            tokens_out=token_count(usage.output_tokens),
-            cache_read=cached,
-            cache_write=created,
-        )
-        if message.stop_reason == "max_tokens":
-            raise OutputTruncatedError(
-                "Ответ модели обрезан по лимиту длины: результат неполный и не применён"
-            )
-        if message.stop_reason == "refusal":
-            raise LlmRefusalError(
-                "Модель отказалась отвечать на этот запрос. "
-                "Измените материалы или выберите другую модель"
-            )
-        text = "".join(block.text for block in message.content if block.type == "text")
+        _record_usage(message)
+        _stop_error(message)
+        text = _text_of(message)
         if not text.strip():
             raise RuntimeError("Модель вернула пустой или неподдерживаемый ответ")
         return text
+
+    def build_tools_request(
+        self,
+        system: str,
+        messages: Sequence[ConversationMessage],
+        tools: Sequence[ToolDefinition],
+        *,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> dict[str, object]:
+        """Запрос агентного хода: тот же кешируемый префикс и effort, плюс описания инструментов."""
+        request: dict[str, object] = {
+            "model": self._config.model,
+            "max_tokens": max_tokens,
+            "system": [{"type": "text", "text": system}],
+            "messages": _tool_messages(messages),
+            "tools": [
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "input_schema": tool.input_schema,
+                }
+                for tool in tools
+            ],
+            "cache_control": {"type": "ephemeral"},
+        }
+        level = self.effort_for(effort)
+        if level is not None:
+            request["output_config"] = {"effort": level}
+        return request
+
+    async def complete_with_tools(
+        self,
+        system: str,
+        messages: Sequence[ConversationMessage],
+        tools: Sequence[ToolDefinition],
+        *,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> ToolTurn:
+        if not tools:
+            raise ValueError("Агентный ход требует хотя бы одного инструмента")
+        request = self.build_tools_request(
+            system, messages, tools, max_tokens=max_tokens, effort=effort
+        )
+
+        async def once(attempt_timeout: float) -> anthropic.types.Message:
+            try:
+                async with self._sdk.messages.stream(**request, timeout=attempt_timeout) as stream:  # type: ignore[arg-type]
+                    return await stream.get_final_message()
+            except anthropic.APITimeoutError:
+                raise TransientLlmError(
+                    "таймаут", timeout_message(self._config.timeout_sec), timeout=True
+                ) from None
+            except anthropic.APIConnectionError:
+                raise TransientLlmError("сеть", NETWORK_MESSAGE) from None
+            except anthropic.APIStatusError as error:
+                raise _map_status(error) from None
+
+        message = await with_retries(
+            once, policy=self._policy, timeout_sec=self._config.timeout_sec
+        )
+        _record_usage(message)
+        _stop_error(message)
+        return _tool_turn(message)
 
     async def count_tokens(self, system: str, user: str) -> int:
         """Точное число входных токенов бесплатным `messages.count_tokens`.

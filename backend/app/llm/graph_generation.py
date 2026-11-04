@@ -15,7 +15,8 @@ from app.domain.bpmn.compiler import compile_graph
 from app.domain.bpmn.importer import import_graph
 from app.domain.bpmn.ir import GraphIR, GraphValidationError, SourceReference, validate_graph
 from app.domain.bpmn.manual import ManualPolicy, semantic_value
-from app.domain.models import QuestionStatus, Quote
+from app.domain.bpmn.xsd import xsd_errors
+from app.domain.models import LintIssue, LintSeverity, QuestionStatus, Quote
 from app.llm.base import PipelineError
 from app.llm.semantic_review import review_semantics
 
@@ -58,15 +59,23 @@ _MAX_HINT_TEXT = 480
 _MAX_HINT_FLOWS = 12
 
 
-async def generate_graph(  # noqa: PLR0912 — адресные repair-пути одной генерации
-    context: RunContext,
-    analysis: AnalysisResult,
-    complete: Callable[[str, str], Awaitable[str]],
-    verify_quote: Callable[[list, object, object], tuple[UUID | None, str | None]],
-    *,
-    semantic_review: bool = False,
-    review_complete: Callable[[str, str], Awaitable[str]] | None = None,
-) -> DiagramDraft:
+class GraphRejectedError(Exception):
+    """Представленный агентом IR отклонён: адресные ошибки возвращаются модели (RFC-0004).
+
+    Проект при этом не меняется: валидация идёт до публикации версии, как у конвейера.
+    """
+
+    def __init__(self, errors: list[str]) -> None:
+        self.errors = errors[:30]
+        super().__init__("; ".join(self.errors[:5]))
+
+
+def manual_state(context: RunContext) -> tuple[GraphIR | None, ManualPolicy | None]:
+    """Текущий граф и политика ручных правок из контекста прогона.
+
+    Ручные значения приоритетнее предложений модели: тот же разбор нужен конвейеру
+    (`generate_graph`) и агенту, проверяющему `check_graph`/`submit`.
+    """
     current = None
     policy = None
     try:
@@ -79,6 +88,19 @@ async def generate_graph(  # noqa: PLR0912 — адресные repair-пути 
             policy = ManualPolicy.restore(context.manual_overrides)
     except (GraphValidationError, ValidationError, ValueError) as error:
         raise PipelineError(f"Ручная схема не совместима с текущим IR: {error}") from error
+    return current, policy
+
+
+async def generate_graph(
+    context: RunContext,
+    analysis: AnalysisResult,
+    complete: Callable[[str, str], Awaitable[str]],
+    verify_quote: Callable[[list, object, object], tuple[UUID | None, str | None]],
+    *,
+    semantic_review: bool = False,
+    review_complete: Callable[[str, str], Awaitable[str]] | None = None,
+) -> DiagramDraft:
+    current, policy = manual_state(context)
     payload = {
         "project": context.project_title,
         "sources": [
@@ -454,3 +476,76 @@ def _bindings(graph: GraphIR) -> dict[str, list[str]]:
                         n.id for n in graph.nodes if n.lane == item.id
                     )
     return {key: sorted(value) for key, value in result.items()}
+
+
+async def accept_submitted_ir(
+    data: object,
+    context: RunContext,
+    verify_quote: Callable[[list, object, object], tuple[UUID | None, str | None]],
+    *,
+    lint: Callable[[str], Awaitable[list[LintIssue]]] | None = None,
+) -> DiagramDraft:
+    """Проверяет IR, представленный агентом инструментом `check_graph`/`submit` (RFC-0004).
+
+    Проверки те же, что у конвейера: схема GraphIR, ручные правки и их приоритет, дословные
+    основания и допустимые допущения, топология fork/join, XSD и `bpmnlint` (если передан
+    адаптер). Ничего не сохраняет: версия публикуется обычными этапами прогона после submit.
+    Неверный IR → `GraphRejectedError` с адресными ошибками для исправления моделью.
+    """
+    if not isinstance(data, dict):
+        raise GraphRejectedError(["ir: ожидался JSON-объект GraphIR schema_version=1"])
+    try:
+        graph = GraphIR.model_validate(data)
+    except ValidationError as error:
+        raise GraphRejectedError(
+            [f"{'.'.join(map(str, item['loc']))}: {item['msg']}" for item in error.errors()]
+        ) from None
+    current, policy = manual_state(context)
+    try:
+        graph, trace = _ground(graph, context, verify_quote, policy, current)
+        if current:
+            graph = graph.model_copy(
+                update={
+                    "process_id": current.process_id,
+                    "participant_id": current.participant_id,
+                    "collaboration_id": current.collaboration_id,
+                    "process_name": current.process_name,
+                }
+            )
+        conflicts: list[dict[str, Any]] = []
+        if policy and current:
+            graph, trace, conflicts = _merge_manual(
+                graph, trace, context, policy, current, verify_quote=verify_quote
+            )
+        validate_graph(graph)
+    except GraphValidationError as error:
+        raise GraphRejectedError(error.errors) from None
+    xml = compile_graph(graph)
+    errors = xsd_errors(xml)
+    if errors:
+        raise GraphRejectedError([f"XSD: {message}" for message in errors])
+    warnings = [
+        f"Сохранена ручная правка «{item['element_id']}»; противоречие вынесено в вопросы"
+        for item in conflicts
+    ]
+    if lint is not None:
+        issues = await lint(xml)
+        errors = [
+            f"bpmnlint: {issue.message}" for issue in issues if issue.severity is LintSeverity.ERROR
+        ]
+        if errors:
+            raise GraphRejectedError(errors)
+        warnings.extend(
+            f"bpmnlint: {issue.message}"
+            for issue in issues
+            if issue.severity is LintSeverity.WARNING
+        )
+    return DiagramDraft(
+        xml=xml,
+        trace=trace,
+        ir=graph.canonical(),
+        bindings=_bindings(graph),
+        warnings=warnings,
+        conflicts=conflicts,
+        manual_overrides=policy.dump() if policy else None,
+    )

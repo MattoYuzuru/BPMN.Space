@@ -3,6 +3,7 @@
 import logging
 
 import pytest
+from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
 from app.config import Settings
@@ -23,6 +24,9 @@ def _csrf_cookie(**settings: object) -> str:
         database_url=None,
         seed_demo_data=False,
         auth_enabled=True,
+        stt_provider="deepgram",
+        deepgram_api_key="test-only",
+        credentials_encryption_key=Fernet.generate_key().decode(),
         **settings,  # type: ignore[arg-type]
     )  # type: ignore[arg-type]
     with TestClient(create_app(config, container=build_container(config))) as client:

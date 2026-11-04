@@ -32,7 +32,14 @@ class OutputTruncatedError(RuntimeError):
 
 class ProcessPipeline(Protocol):
     @property
+    def provider(self) -> str: ...
+
+    @property
     def model_name(self) -> str: ...
+
+    async def aclose(self) -> None:
+        """Освободить соединения клиента провайдера."""
+        ...
 
     async def analyze(self, context: RunContext) -> AnalysisResult:
         """Участники, шаги, условия → обновления прежних вопросов и новые вопросы."""

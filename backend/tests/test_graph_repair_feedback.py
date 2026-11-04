@@ -12,7 +12,7 @@ from app.domain.analysis import AnalysisResult, ContextSource, RunContext
 from app.domain.models import SourceKind
 from app.fixtures import read_text
 from app.llm.base import PipelineError
-from app.llm.openai_compatible import OpenAICompatiblePipeline
+from tests.llm_helpers import ScriptedPipeline
 from tests.test_graph_ir import SOURCE_ID, TEXT, graph_case
 
 RECORDED = Path(__file__).parent / "fixtures" / "logistics_order_bad_ir.json"
@@ -46,7 +46,7 @@ async def test_recorded_pro_failure_exposes_literal_and_topology_hints_without_r
         prompts.append(json.loads(prompt))
         return json.dumps(broken)
 
-    pipeline = OpenAICompatiblePipeline(api_key="recorded-only", complete=complete)
+    pipeline = ScriptedPipeline(api_key="recorded-only", complete=complete)
     with pytest.raises(PipelineError, match="трёх исправлений"):
         await pipeline.structure(_context(content, source_id), AnalysisResult())
     assert len(prompts) == 4
@@ -101,7 +101,7 @@ async def test_only_explicit_corrected_model_response_can_use_literal_candidate(
         corrected_task["source"]["quote"] = hint["literal_fragment"]
         return json.dumps(corrected)
 
-    draft = await OpenAICompatiblePipeline(api_key="recorded-only", complete=complete).structure(
+    draft = await ScriptedPipeline(api_key="recorded-only", complete=complete).structure(
         context, AnalysisResult()
     )
     assert len(prompts) == 2
@@ -135,7 +135,7 @@ async def test_feedback_never_searches_another_source_or_replaces_the_claimed_id
         return json.dumps(broken)
 
     with pytest.raises(PipelineError, match="трёх исправлений"):
-        await OpenAICompatiblePipeline(api_key="recorded-only", complete=complete).structure(
+        await ScriptedPipeline(api_key="recorded-only", complete=complete).structure(
             context, AnalysisResult()
         )
     assert len(prompts) == 4

@@ -23,6 +23,19 @@
       },
       "AssistantRequest": {
         "properties": {
+          "credential_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Свой ключ модели; не задан — ключ по умолчанию, затем сервер",
+            "title": "Credential Id"
+          },
           "diagram_xml": {
             "default": "",
             "maxLength": 30000,
@@ -42,6 +55,18 @@
             "minLength": 1,
             "title": "Message",
             "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
           }
         },
         "required": [
@@ -513,8 +538,282 @@
         "title": "LintSeverity",
         "type": "string"
       },
+      "LlmCredential": {
+        "properties": {
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Только для совместимого провайдера",
+            "title": "Base Url"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "default_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_default": {
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "key_hint": {
+            "description": "Последние 4 символа ключа; пусто у коротких ключей",
+            "title": "Key Hint",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ошибка последнего использования ключа",
+            "title": "Last Error"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "provider": {
+            "enum": [
+              "anthropic",
+              "openai",
+              "openai_compatible"
+            ],
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "label",
+          "base_url",
+          "key_hint",
+          "default_model",
+          "is_default",
+          "created_at",
+          "last_used_at",
+          "last_error"
+        ],
+        "title": "LlmCredential",
+        "type": "object"
+      },
+      "LlmCredentialCreate": {
+        "properties": {
+          "api_key": {
+            "description": "Принимается один раз; сохраняется зашифрованным",
+            "format": "password",
+            "title": "Api Key",
+            "type": "string",
+            "writeOnly": true
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "default_model": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model"
+          },
+          "is_default": {
+            "default": false,
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "provider": {
+            "enum": [
+              "anthropic",
+              "openai",
+              "openai_compatible"
+            ],
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "api_key"
+        ],
+        "title": "LlmCredentialCreate",
+        "type": "object"
+      },
+      "LlmCredentialList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LlmCredential"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "storage_available": {
+            "description": "false — на сервере не задан CREDENTIALS_ENCRYPTION_KEY, ключи не принимаются",
+            "title": "Storage Available",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "items",
+          "storage_available"
+        ],
+        "title": "LlmCredentialList",
+        "type": "object"
+      },
+      "LlmCredentialUpdate": {
+        "properties": {
+          "default_model": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model"
+          },
+          "is_default": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Default"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "title": "LlmCredentialUpdate",
+        "type": "object"
+      },
+      "LlmModel": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "LlmModel",
+        "type": "object"
+      },
+      "LlmModelList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LlmModel"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "LlmModelList",
+        "type": "object"
+      },
       "LocalAssistantRequest": {
         "properties": {
+          "credential_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Свой ключ модели; не задан — ключ по умолчанию, затем сервер",
+            "title": "Credential Id"
+          },
           "diagram_xml": {
             "default": "",
             "maxLength": 30000,
@@ -534,6 +833,18 @@
             "minLength": 1,
             "title": "Message",
             "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
           },
           "project_title": {
             "maxLength": 200,
@@ -1231,6 +1542,19 @@
       },
       "Run": {
         "properties": {
+          "credential_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ключ пользователя, с которым запущен прогон; null — сервер",
+            "title": "Credential Id"
+          },
           "error": {
             "anyOf": [
               {
@@ -1263,6 +1587,18 @@
           "mode": {
             "$ref": "#/components/schemas/RunMode"
           },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Модель, на которой выполнен прогон",
+            "title": "Model"
+          },
           "progress": {
             "maximum": 1.0,
             "minimum": 0.0,
@@ -1273,6 +1609,18 @@
             "format": "uuid",
             "title": "Project Id",
             "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Провайдер модели: anthropic, openai, openai_compatible, mock",
+            "title": "Provider"
           },
           "stage": {
             "anyOf": [
@@ -1359,9 +1707,35 @@
             "description": "Голова, которую видит инициатор; устаревшая — 409",
             "title": "Base Version Id"
           },
+          "credential_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Свой ключ модели; не задан — ключ по умолчанию, затем модель сервера",
+            "title": "Credential Id"
+          },
           "mode": {
             "$ref": "#/components/schemas/RunMode",
             "description": "`analyze` — только вопросы, `build` — вопросы и схема"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Модель; требует `credential_id`",
+            "title": "Model"
           },
           "replace_manual": {
             "default": false,
@@ -3042,6 +3416,342 @@
         "tags": [
           "projects",
           "examples"
+        ]
+      }
+    },
+    "/api/v1/me/llm-credentials": {
+      "get": {
+        "operationId": "list_llm_credentials",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmCredentialList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "List Llm Credentials",
+        "tags": [
+          "llm-credentials"
+        ]
+      },
+      "post": {
+        "description": "Проверяет ключ запросом списка моделей у провайдера и сохраняет его зашифрованным.",
+        "operationId": "create_llm_credential",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmCredentialCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmCredential"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Конфликт состояния"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Слишком много запросов; повторите через `Retry-After` секунд"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Сервис или помощник не настроен"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Create Llm Credential",
+        "tags": [
+          "llm-credentials"
+        ]
+      }
+    },
+    "/api/v1/me/llm-credentials/{credential_id}": {
+      "delete": {
+        "operationId": "delete_llm_credential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credential Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Delete Llm Credential",
+        "tags": [
+          "llm-credentials"
+        ]
+      },
+      "patch": {
+        "operationId": "update_llm_credential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credential Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmCredentialUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmCredential"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Update Llm Credential",
+        "tags": [
+          "llm-credentials"
+        ]
+      }
+    },
+    "/api/v1/me/llm-credentials/{credential_id}/models": {
+      "get": {
+        "operationId": "list_llm_models",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credential Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmModelList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Слишком много запросов; повторите через `Retry-After` секунд"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "List Llm Models",
+        "tags": [
+          "llm-credentials"
         ]
       }
     },

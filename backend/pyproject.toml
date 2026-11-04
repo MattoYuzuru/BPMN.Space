@@ -17,6 +17,9 @@ dependencies = [
   "alembic",
   "pypdf>=6.19.0",
   "fastapi-users[sqlalchemy]>=15.0.5,<16",
+  "anthropic>=2.4.0",
+  "cryptography>=50.0.2",
+  "httpx>=0.28.1",
 ]
 
 [dependency-groups]
@@ -24,7 +27,6 @@ dev = [
   "pytest",
   "pytest-asyncio",
   "pytest-cov",
-  "httpx",
   "ruff",
   "import-linter",
   "vulture",

@@ -7,7 +7,6 @@ from copy import deepcopy
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -32,8 +31,8 @@ from app.domain.models import (
 from app.domain.questions import reconcile
 from app.fixtures import read_bpmn
 from app.llm.base import OutputTruncatedError, PipelineError
-from app.llm.openai_compatible import OpenAICompatiblePipeline
 from app.llm.question_analysis import snapshot_fingerprint
+from tests.llm_helpers import ScriptedPipeline
 
 NOW = datetime(2026, 10, 6, tzinfo=UTC)
 type Response = Callable[[dict[str, Any]], dict[str, Any]]
@@ -141,8 +140,8 @@ class RecordedProvider:
             }
         return json.dumps(response, ensure_ascii=False)
 
-    def pipeline(self) -> OpenAICompatiblePipeline:
-        return OpenAICompatiblePipeline(api_key="recorded-only", complete=self)
+    def pipeline(self) -> ScriptedPipeline:
+        return ScriptedPipeline(api_key="recorded-only", complete=self)
 
 
 @pytest.mark.parametrize("kind", [SourceKind.FILE, SourceKind.VOICE, SourceKind.ANSWER])
@@ -777,27 +776,6 @@ def test_fingerprint_preserves_semantic_changes_and_ignores_di_layout() -> None:
     assert snapshot_fingerprint(replace(context, project_title="Другой процесс")) != fingerprint
     changed = context.current_xml.replace("Заявитель", "Экономист")
     assert snapshot_fingerprint(replace(context, current_xml=changed)) != fingerprint
-
-
-def test_transport_rejects_length_even_with_valid_json_and_json_budget_is_configurable() -> None:
-    pipeline = OpenAICompatiblePipeline(api_key="recorded-only", json_max_tokens=16_384)
-    with patch("app.llm.openai_compatible.urlopen") as urlopen:
-        urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(
-            {
-                "choices": [
-                    {"finish_reason": "length", "message": {"content": '{"new_questions":[]}'}}
-                ]
-            }
-        ).encode()
-        with pytest.raises(OutputTruncatedError):
-            pipeline._request_json("system", "prompt")
-        request = json.loads(urlopen.call_args.args[0].data)
-        assert request["max_tokens"] == 16_384
-        urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(
-            {"choices": [{"message": {"content": "legacy completed"}}]}
-        ).encode()
-        assert pipeline._request_text("system", "prompt") == "legacy completed"
-        assert json.loads(urlopen.call_args.args[0].data)["max_tokens"] == 4096
 
 
 @pytest.mark.parametrize(

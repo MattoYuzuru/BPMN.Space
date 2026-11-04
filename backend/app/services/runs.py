@@ -367,9 +367,16 @@ class RunService:
                 # Что бы ни случилось (в том числе сбой чтения прогона из БД), подписчики SSE
                 # получают `done`: иначе поток висел бы вечно. Повтор `done` шина игнорирует.
                 # Если прогона нет в БД без ошибки чтения, закрывать нечего.
-                if run is not None or sys.exc_info()[0] is not None:
-                    lost = run or self._lost_run(run_id)
-                    await self._publish(lost, RunEventKind.DONE, lost)
+                try:
+                    if run is not None or sys.exc_info()[0] is not None:
+                        lost = run or self._lost_run(run_id)
+                        await self._publish(lost, RunEventKind.DONE, lost)
+                finally:
+                    # Клиент остаётся в словаре, если прогон не стартовал (неактивен, сбой срока
+                    # или публикации): без закрытия утекли бы соединения и сокеты.
+                    leftover = self._pipelines.pop(run_id, None)
+                    if leftover is not None:
+                        await leftover.release()
 
     def _lost_run(self, run_id: UUID) -> Run:
         """Заглушка для финального `done`, когда прогон не удалось прочитать из БД."""

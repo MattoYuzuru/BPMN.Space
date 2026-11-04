@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { formatClock } from '@/shared/lib/format'
+import { SOURCE_TRUST, unreadablePagesLabel } from '@/entities/source'
+import { formatClock, formatMoney } from '@/shared/lib/format'
 import { Badge, IconButton, Slider, Tag, type TreeItem, TreeView } from '@/shared/ui'
 import { Caption, Section, Specimen, SpecimenGrid } from './kit'
 
@@ -19,9 +20,9 @@ const MATERIALS: TreeItem[] = [
             <Badge tone="accent" icon="sparkles">
               ИИ
             </Badge>
-            <Badge variant="outline">извлечено</Badge>
+            <Badge variant="outline">{SOURCE_TRUST.extracted.short}</Badge>
             <span className="type-caption text-fg-subtle" data-numeric>
-              $0,42
+              {formatMoney(0.42)}
             </span>
           </>
         ),
@@ -40,7 +41,7 @@ const MATERIALS: TreeItem[] = [
             id: 'screen-1',
             label: 'Описание экрана заявки',
             icon: 'photo',
-            meta: <Badge variant="outline">по кадрам</Badge>,
+            meta: <Badge variant="outline">{SOURCE_TRUST.observed.short}</Badge>,
           },
         ],
       },
@@ -53,10 +54,10 @@ const MATERIALS: TreeItem[] = [
     meta: (
       <>
         <Badge tone="amber" variant="outline">
-          2 страницы без текста
+          {unreadablePagesLabel([12, 15])}
         </Badge>
         <Badge tone="amber" variant="outline">
-          пересказ
+          {SOURCE_TRUST.summary.short}
         </Badge>
       </>
     ),
@@ -131,14 +132,14 @@ export function MaterialsSection() {
               <Badge tone="accent" icon="user">
                 Агент
               </Badge>
-              <Badge variant="outline">извлечено</Badge>
-              <Badge variant="outline">по кадрам</Badge>
-              <Badge variant="outline">внешний</Badge>
+              <Badge variant="outline">{SOURCE_TRUST.extracted.short}</Badge>
+              <Badge variant="outline">{SOURCE_TRUST.observed.short}</Badge>
+              <Badge variant="outline">{SOURCE_TRUST.external.short}</Badge>
               <Badge tone="accent" variant="outline">
-                от агента
+                {SOURCE_TRUST.agent.short}
               </Badge>
               <Badge tone="amber" variant="outline">
-                пересказ
+                {SOURCE_TRUST.summary.short}
               </Badge>
             </div>
             <div className="flex flex-wrap items-center gap-2">

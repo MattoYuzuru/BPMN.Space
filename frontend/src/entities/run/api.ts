@@ -108,11 +108,17 @@ export function useStartRun(projectId: string) {
       const caps = picked && cachedModelCapabilities(client, picked.credentialId, picked.model)
       const choice = choiceRequest(picked, caps || undefined)
       if (typeof input === 'string') return startRun(projectId, input, choice)
-      const { budget, ...rest } = input
-      const profile = budget ? { ...(choice.profile ?? {}), budget } : choice.profile
+      const { budget, profile: inputProfile, ...rest } = input
+      // Объектный вход (диалог оценки, перестройка) тоже обязан нести выбранный ключ и модель.
+      const profile = {
+        ...(choice.profile ?? {}),
+        ...(inputProfile ?? {}),
+        ...(budget ? { budget } : {}),
+      }
       return startRun(projectId, rest.mode, {
+        ...choice,
         ...rest,
-        ...(profile ? { profile } : {}),
+        ...(Object.keys(profile).length > 0 ? { profile } : {}),
       })
     },
     onSuccess: (run) => {

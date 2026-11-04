@@ -100,7 +100,14 @@ def test_semantic_review_and_effort_change_the_plan() -> None:
     assert review.tokens.max > plain.tokens.max
     low = estimate_run(_inputs(effort="low"))
     high = estimate_run(_inputs(effort="max"))
-    assert high.tokens.max > low.tokens.max
+    # Уровень effort меняет ожидаемый ответ (минимум диапазона); верхняя граница — лимит
+    # max_tokens каждого запроса и от effort не зависит.
+    assert high.tokens.min > low.tokens.min
+    assert high.cost is not None
+    assert low.cost is not None
+    assert high.cost.min_usd is not None
+    assert low.cost.min_usd is not None
+    assert high.cost.min_usd > low.cost.min_usd
 
 
 def test_analyze_mode_has_no_structure_stage() -> None:
@@ -295,3 +302,93 @@ def test_run_keeps_cost_after_calls_and_shows_it_in_api(
 def test_run_cost_is_none_without_calls() -> None:
     assert RunCost.of(LlmCallTotals()) is None
     assert CostRange(min_usd=None, max_usd=None).currency == "USD"
+
+
+# ---------- ревью волны 2: лимиты запросов, длительность и полнота ----------
+
+
+def test_stage_output_cap_is_multiplied_by_calls() -> None:
+    """Верхняя граница ответа этапа — лимит запроса × число запросов, а не один лимит."""
+    estimate = estimate_run(_inputs(source_chars=720_000, semantic_review=True))
+    stages = {item.stage: item for item in estimate.breakdown}
+    chunk_tokens = 12_000  # 24 000 знаков / 2 знака на токен
+    chunk_overhead = 2_000
+    prompt_overhead = 8_000
+
+    analysis = stages["analyze"]
+    assert analysis.calls == IntRange(min=30, max=33)  # 30 порций + 3 исправления
+    assert analysis.tokens_in.max == (chunk_tokens + chunk_overhead + prompt_overhead) * 33
+    assert analysis.tokens_out.max == 16_384 * 33
+
+    evidence = stages["evidence"]
+    assert evidence.calls == IntRange(min=30, max=30)
+    assert evidence.tokens_in.max == (chunk_tokens + chunk_overhead) * 30
+    assert evidence.tokens_out.max == 4_096 * 30
+
+    structure = stages["structure"]
+    assert structure.calls == IntRange(min=1, max=4)
+    assert structure.tokens_out.max == 128_000 * 4
+
+    review = stages["review"]
+    assert review.calls == IntRange(min=30, max=33)
+    assert review.tokens_out.max == 4_096 * 33
+
+
+def test_duration_does_not_multiply_stage_tokens_by_calls_twice() -> None:
+    """Время этапа = calls × база + токены входа/выхода, а не calls × (токены этапа)."""
+    estimate = estimate_run(_inputs(source_chars=720_000, mode=RunMode.ANALYZE))
+    analysis = estimate.breakdown[0]
+    expected = (
+        analysis.calls.max * 6 + analysis.tokens_in.max / 3_000 + analysis.tokens_out.max / 60
+    )
+    assert abs(estimate.duration_sec.max - round(expected)) <= 1
+    # Верхняя граница обзора 30 порций укладывается в разумный срок, а не в сутки.
+    assert estimate.duration_sec.max < 12 * 3600
+
+
+def test_estimate_scales_linearly_with_chunks() -> None:
+    half = estimate_run(_inputs(source_chars=720_000, mode=RunMode.ANALYZE))
+    full = estimate_run(_inputs(source_chars=1_440_000, mode=RunMode.ANALYZE))
+    token_ratio = full.tokens.max / half.tokens.max
+    duration_ratio = full.duration_sec.max / half.duration_sec.max
+    assert 1.8 <= token_ratio <= 2.2
+    assert 1.7 <= duration_ratio <= 2.3  # было бы ≈4 при двойном умножении на calls
+
+
+async def test_neutral_failed_calls_do_not_make_cost_incomplete() -> None:
+    """Остановка по бюджету до запроса к провайдеру — не «неполная стоимость» навсегда."""
+    repos = InMemoryStore().repositories()
+    run_id = uuid4()
+    await _add_calls_for_completeness(repos.llm_calls, run_id)
+    totals = await repos.llm_calls.totals(run_id)
+    assert totals.calls == 2
+    assert totals.neutral_calls == 1
+    assert totals.complete is True
+    run_cost = RunCost.of(totals)
+    assert run_cost is not None
+    assert run_cost.complete is True
+    assert run_cost.cost_usd == 0.25
+
+
+async def _add_calls_for_completeness(repo, run_id: UUID) -> None:
+    await repo.add(
+        LlmCall(
+            id=uuid4(),
+            run_id=run_id,
+            stage="analyze",
+            request={},
+            response={"error": "Бюджет прогона исчерпан"},
+        )
+    )
+    await repo.add(
+        LlmCall(
+            id=uuid4(),
+            run_id=run_id,
+            stage="analyze",
+            request={},
+            response={},
+            tokens_in=100,
+            tokens_out=10,
+            cost_usd=0.25,
+        )
+    )

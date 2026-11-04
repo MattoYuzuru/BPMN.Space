@@ -12,6 +12,7 @@ import {
   monthlyLimitParts,
   monthlyLimitText,
   providerLabel,
+  providersForKinds,
   providersText,
 } from './model'
 
@@ -103,5 +104,31 @@ describe('ключи инструментов', () => {
     expect(capabilityState(card())).toBe('ready')
     expect(capabilityState(card({ keys: 0 }))).toBe('empty')
     expect(capabilityState(card({ keys: 0, last_error_code: 'auth' }))).toBe('error')
+  })
+})
+
+describe('провайдеры по типам задач', () => {
+  it('Deepgram остаётся для распознавания, но не предлагается для моделей', () => {
+    const capabilities: CapabilityCard[] = [
+      card({ kinds: ['speech_to_text'], providers: [{ id: 'deepgram', label: 'Deepgram' }] }),
+      card({
+        capability: 'llm',
+        kinds: ['llm'],
+        providers: [
+          { id: 'anthropic', label: 'Anthropic' },
+          { id: 'openai', label: 'OpenAI' },
+        ],
+      }),
+    ]
+    expect(providersForKinds(capabilities, ['llm']).map((item) => item.id)).toEqual([
+      'anthropic',
+      'openai',
+    ])
+    expect(providersForKinds(capabilities, ['speech_to_text']).map((item) => item.id)).toEqual([
+      'deepgram',
+    ])
+    expect(
+      providersForKinds(capabilities, ['llm', 'speech_to_text']).map((item) => item.id),
+    ).toEqual(['anthropic', 'deepgram', 'openai'])
   })
 })

@@ -138,3 +138,43 @@ describe('диалог запуска с оценкой', () => {
     expect(screen.getByRole('button', { name: 'Повторить' })).toBeInTheDocument()
   })
 })
+
+describe('разбор бюджета в диалоге', () => {
+  it('понимает разряды и копейки, отправляет оба лимита', async () => {
+    const { user, calls } = mount()
+    await screen.findByText(/\$1,8–3,2/)
+    await user.type(screen.getByLabelText(/В долларах/), '1 000,50')
+    await user.type(screen.getByLabelText(/В токенах/), '100 000')
+    await waitFor(() =>
+      expect(
+        estimateCalls(calls).some(
+          (call) =>
+            JSON.stringify((call.body as { profile?: unknown }).profile) ===
+            JSON.stringify({ budget: { cost_usd: 1000.5, tokens: 100000 } }),
+        ),
+      ).toBe(true),
+    )
+    await user.click(screen.getByRole('button', { name: 'Запустить анализ' }))
+    await waitFor(() =>
+      expect(calls.some((call) => call.method === 'POST' && call.path.endsWith('/runs'))).toBe(
+        true,
+      ),
+    )
+    const start = calls.find((call) => call.method === 'POST' && call.path.endsWith('/runs'))
+    expect(start?.body).toMatchObject({
+      profile: { budget: { cost_usd: 1000.5, tokens: 100000 } },
+    })
+  })
+
+  it('мусор в поле — ошибка и выключенный запуск, без молчаливого усечения', async () => {
+    const { user } = mount()
+    await screen.findByText(/\$1,8–3,2/)
+    await user.type(screen.getByLabelText(/В долларах/), '10abc')
+    expect(await screen.findByText(/Введите сумму числом/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Запустить анализ' })).toBeDisabled()
+    await user.clear(screen.getByLabelText(/В долларах/))
+    await user.type(screen.getByLabelText(/В токенах/), '10,5')
+    expect(await screen.findByText(/целое число токенов/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Запустить анализ' })).toBeDisabled()
+  })
+})

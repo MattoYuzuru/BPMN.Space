@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { expect, type Locator, type Page, test } from '@playwright/test'
-import { createExampleProject, DEMO_PROJECT_ID, questionCard } from './support'
+import { confirmRunDialog, createExampleProject, DEMO_PROJECT_ID, questionCard } from './support'
 
 /**
  * Набор скриншотов ключевых экранов для команды и жюри: `make screenshots` → reports/screenshots.
@@ -178,6 +178,7 @@ test('08–09 ход и итог анализа проекта из пример
   await open(page, `/projects/${projectId}`)
   await hideToasts(page)
   await page.getByRole('button', { name: 'Анализ', exact: true }).click()
+  await confirmRunDialog(page, 'analyze')
   const card = page.getByRole('status', { name: /Ход прогона/ })
   // Середина анализа: модель ищет участников и шаги (≈2,4 с при MOCK_DELAY_SCALE=1).
   await expect(card.locator('li[aria-current="step"]')).toContainText('Ищу участников', {

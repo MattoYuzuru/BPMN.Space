@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   availableProviders,
   CAPABILITY,
@@ -10,10 +10,12 @@ import {
   type CredentialProvider,
   PROVIDER_HINTS,
   PROVIDER_HINTS_DATE,
+  providersForKinds,
   useCreateToolCredential,
   useUpdateToolCredential,
 } from '@/entities/tool-credential'
 import { errorMessage } from '@/shared/api/client'
+import { parseIntegerInput, parseMoneyInput } from '@/shared/lib/number-input'
 import {
   Button,
   Checkbox,
@@ -54,18 +56,24 @@ const FALLBACK_PROVIDERS: CredentialProvider[] = [
   { id: 'groq', label: 'Groq' },
 ]
 
-function limitField(minutes: string, requests: string, cost: string) {
-  const parsed = {
-    minutes: Number.parseInt(minutes, 10),
-    requests: Number.parseInt(requests, 10),
-    cost_usd: Number.parseFloat(cost.replace(',', '.')),
-  }
+function parseLimitFields(minutes: string, requests: string, cost: string) {
+  const parsedMinutes = parseIntegerInput(minutes, 'Введите целое число минут')
+  const parsedRequests = parseIntegerInput(requests, 'Введите целое число запросов')
+  const parsedCost = parseMoneyInput(cost)
   const limit = {
-    minutes: Number.isFinite(parsed.minutes) && parsed.minutes > 0 ? parsed.minutes : null,
-    requests: Number.isFinite(parsed.requests) && parsed.requests > 0 ? parsed.requests : null,
-    cost_usd: Number.isFinite(parsed.cost_usd) && parsed.cost_usd > 0 ? parsed.cost_usd : null,
+    minutes: parsedMinutes.value,
+    requests: parsedRequests.value,
+    cost_usd: parsedCost.value,
   }
-  return limit.minutes === null && limit.requests === null && limit.cost_usd === null ? null : limit
+  const empty = limit.minutes === null && limit.requests === null && limit.cost_usd === null
+  return {
+    limit: empty ? null : limit,
+    errors: {
+      minutes: parsedMinutes.error,
+      requests: parsedRequests.error,
+      cost: parsedCost.error,
+    },
+  }
 }
 
 /**
@@ -85,8 +93,11 @@ export function CredentialDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const editing = credential !== null
-  const providers = availableProviders(capabilities)
-  const options = providers.length > 0 ? providers : FALLBACK_PROVIDERS
+  const providers = useMemo(() => availableProviders(capabilities), [capabilities])
+  const options = useMemo(
+    () => (providers.length > 0 ? providers : FALLBACK_PROVIDERS),
+    [providers],
+  )
   const create = useCreateToolCredential()
   const update = useUpdateToolCredential()
   const [kinds, setKinds] = useState<CredentialKind[]>(credential?.kinds ?? ['llm'])
@@ -104,6 +115,15 @@ export function CredentialDialog({
     credential?.monthly_limit?.cost_usd != null ? String(credential.monthly_limit.cost_usd) : '',
   )
   const [error, setError] = useState<string>()
+  // Провайдеры фильтруются по выбранным типам задач: Deepgram не предлагается для моделей.
+  const kindProviders = useMemo(() => providersForKinds(capabilities, kinds), [capabilities, kinds])
+  const visibleOptions = kindProviders.length > 0 ? kindProviders : options
+  useEffect(() => {
+    if (editing || visibleOptions.length === 0) return
+    if (!visibleOptions.some((item) => item.id === provider))
+      setProvider(visibleOptions[0]?.id ?? '')
+  }, [editing, provider, visibleOptions])
+  const limits = parseLimitFields(minutes, requests, cost)
   const pending = create.isPending || update.isPending
   const hasLlm = kinds.includes('llm')
   const compatible = provider === 'openai_compatible'
@@ -113,7 +133,10 @@ export function CredentialDialog({
     (editing || (apiKey.trim().length > 0 && provider.length > 0)) &&
     (editing || !compatible || baseUrl.trim().length > 0) &&
     Number.isFinite(priorityValue) &&
-    priorityValue >= 0
+    priorityValue >= 0 &&
+    !limits.errors.minutes &&
+    !limits.errors.requests &&
+    !limits.errors.cost
 
   const close = (next: boolean) => {
     if (!next && pending) return
@@ -125,7 +148,7 @@ export function CredentialDialog({
 
   const submit = () => {
     setError(undefined)
-    const limit = limitField(minutes, requests, cost)
+    const limit = limits.limit
     if (editing) {
       update.mutate(
         {
@@ -136,7 +159,8 @@ export function CredentialDialog({
           enabled,
           is_default: hasLlm ? isDefault : false,
           monthly_limit: limit,
-          clear_monthly_limit: false,
+          // Пустые поля лимита — осознанно снять ограничение.
+          clear_monthly_limit: limit === null,
         },
         {
           onSuccess: () => {
@@ -261,12 +285,16 @@ export function CredentialDialog({
                 aria-label="Провайдер"
                 value={provider}
                 onValueChange={setProvider}
-                options={options.map((item) => ({ value: item.id, label: item.label }))}
+                options={visibleOptions.map((item) => ({ value: item.id, label: item.label }))}
               />
             </Field>
           )}
 
-          <Field label="Название" hint="Необязательно: «Рабочий», «Личный»">
+          <Field
+            label="Название"
+            hint="Необязательно: «Рабочий», «Личный»"
+            error={editing ? error : undefined}
+          >
             <Input
               name="label"
               autoComplete="off"
@@ -326,21 +354,21 @@ export function CredentialDialog({
           <fieldset className="flex flex-col gap-3">
             <legend className="type-label mb-1 text-fg">Лимит на месяц</legend>
             <div className="grid grid-cols-3 gap-3">
-              <Field label="Минуты" optional>
+              <Field label="Минуты" optional error={limits.errors.minutes ?? undefined}>
                 <Input
                   inputMode="numeric"
                   value={minutes}
                   onChange={(event) => setMinutes(event.target.value)}
                 />
               </Field>
-              <Field label="Запросы" optional>
+              <Field label="Запросы" optional error={limits.errors.requests ?? undefined}>
                 <Input
                   inputMode="numeric"
                   value={requests}
                   onChange={(event) => setRequests(event.target.value)}
                 />
               </Field>
-              <Field label="Доллары" optional>
+              <Field label="Доллары" optional error={limits.errors.cost ?? undefined}>
                 <Input
                   inputMode="decimal"
                   value={cost}

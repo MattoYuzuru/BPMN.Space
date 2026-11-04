@@ -111,3 +111,22 @@ describe('настройки → инструменты', () => {
     })
   })
 })
+
+describe('правка ключа', () => {
+  it('пустые поля лимита снимают ограничение явно', async () => {
+    const { user, calls } = mount()
+    await screen.findByText('Рабочий Deepgram')
+    await user.click(screen.getByRole('button', { name: 'Изменить ключ «Рабочий Deepgram»' }))
+    const dialog = await screen.findByRole('dialog')
+    const minutes = within(dialog).getByLabelText(/Минуты/)
+    expect(minutes).toHaveValue('40')
+    await user.clear(minutes)
+    await user.click(within(dialog).getByRole('button', { name: 'Сохранить' }))
+    await waitFor(() => expect(calls.some((call) => call.method === 'PATCH')).toBe(true))
+    expect(calls.find((call) => call.method === 'PATCH')?.body).toMatchObject({
+      monthly_limit: null,
+      clear_monthly_limit: true,
+      default_model: null,
+    })
+  })
+})

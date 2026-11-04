@@ -13,6 +13,7 @@ from app.domain.models import (
     LintIssue,
     Quote,
     RunMode,
+    RunStatus,
     Version,
     VersionOrigin,
     VersionSummary,
@@ -224,7 +225,13 @@ class VersionService:
             # ему правка не мешает. Блокировка проекта общая с запуском прогона, поэтому
             # проверка не обгоняется.
             active = await repos.runs.active_for_project(project_id)
-            if active is not None and active.mode is RunMode.BUILD:
+            # Прогон в `waiting` ждёт решения пользователя и сам не движется: ручное сохранение
+            # не теряется, а продолжение сборки увидит изменённую голову и попросит новый прогон.
+            if (
+                active is not None
+                and active.mode is RunMode.BUILD
+                and active.status is not RunStatus.WAITING
+            ):
                 raise ConflictError(
                     "Сейчас идёт сборка схемы — дождитесь её завершения и сохраните правку снова, "
                     "иначе новая версия перекроет её"

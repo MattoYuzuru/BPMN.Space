@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { createExampleProject } from './support'
+import { confirmRunDialog, createExampleProject } from './support'
 
 /** Настоящий интерфейс и EventSource; записанный прогон без модели/искусственных backend-пауз. */
 async function recordedRun(
@@ -56,6 +56,7 @@ test('быстрый анализ завершает этапы, итог вид
   const card = page.getByRole('status', { name: /Ход прогона/ })
   for (let round = 0; round < 2; round++) {
     await page.getByRole('button', { name: 'Анализ', exact: true }).click()
+    await confirmRunDialog(page, 'analyze')
     await expect(card.getByRole('list', { name: 'Этапы прогона' })).toBeVisible()
     await expect(card).toContainText('Анализ завершён')
     const shown = Date.now()
@@ -70,6 +71,7 @@ for (const status of ['failed', 'cancelled'] as const) {
     await recordedRun(page, projectId, status)
     await page.goto(`/projects/${projectId}`)
     await page.getByRole('button', { name: 'Анализ', exact: true }).click()
+    await confirmRunDialog(page, 'analyze')
     const card = page.getByRole('status', { name: /Ход прогона/ })
     await expect(card).toContainText(status === 'failed' ? 'Прогон остановлен' : 'Прогон отменён')
     await expect(card).not.toContainText('Анализ завершён')
@@ -90,6 +92,7 @@ test('долгий прогон остаётся в работе; reduced motion
   await recordedRun(page, projectId, 'succeeded', 1200)
   await page.goto(`/projects/${projectId}`)
   await page.getByRole('button', { name: 'Анализ', exact: true }).click()
+  await confirmRunDialog(page, 'analyze')
   const card = page.getByRole('status', { name: /Ход прогона/ })
   await expect(card.getByRole('list', { name: 'Этапы прогона' })).toBeVisible()
   await expect(card).toContainText('Анализ завершён')

@@ -6,7 +6,6 @@ import {
   projectCapabilities,
   projectQueryOptions,
 } from '@/entities/project'
-import { useStartRun } from '@/entities/run'
 import { useSession } from '@/entities/session'
 import { projectVersionSource, type VersionSource } from '@/entities/version'
 import { AddTextDialog, AddVoiceDialog } from '@/features/add-source/add-source-dialogs'
@@ -325,8 +324,8 @@ function WorkspaceCommands() {
 }
 
 function useWorkspaceCommands(api: WorkspaceApi): CommandGroup | null {
-  const start = useStartRun(api.project.id)
   const setDialog = useWorkspaceUi((state) => state.setDialog)
+  const openRunDialog = useWorkspaceUi((state) => state.openRunDialog)
   const setSheet = useWorkspaceUi((state) => state.setSheet)
   const project = api.project
   const running = isRunning(project.status)
@@ -341,7 +340,7 @@ function useWorkspaceCommands(api: WorkspaceApi): CommandGroup | null {
         icon: 'sparkles',
         keywords: ['analyze', 'вопросы', 'прогон'],
         disabled: running || noSources,
-        onSelect: () => start.mutate('analyze'),
+        onSelect: () => openRunDialog('analyze'),
       },
       {
         id: 'run-build',
@@ -349,7 +348,7 @@ function useWorkspaceCommands(api: WorkspaceApi): CommandGroup | null {
         icon: 'diagram',
         keywords: ['build', 'схема', 'bpmn', 'прогон'],
         disabled: running || noSources,
-        onSelect: () => start.mutate('build'),
+        onSelect: () => openRunDialog('build'),
       },
       {
         id: 'add-text',
@@ -389,5 +388,5 @@ function useWorkspaceCommands(api: WorkspaceApi): CommandGroup | null {
         },
       ],
     }
-  }, [project, canEdit, running, noSources, hasVersion, start.mutate, setDialog, setSheet])
+  }, [project, canEdit, running, noSources, hasVersion, openRunDialog, setDialog, setSheet])
 }

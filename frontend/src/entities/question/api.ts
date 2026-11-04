@@ -24,7 +24,11 @@ export function upsertQuestion(client: QueryClient, projectId: string, question:
     return {
       ...project,
       questions,
-      summary: shiftSummary(project.summary, previous.status, question.status),
+      // Сводка проекта считает только бизнес-вопросы (технические — отдельная вкладка).
+      summary:
+        previous.category === 'technical' || question.category === 'technical'
+          ? project.summary
+          : shiftSummary(project.summary, previous.status, question.status),
     }
   })
 }

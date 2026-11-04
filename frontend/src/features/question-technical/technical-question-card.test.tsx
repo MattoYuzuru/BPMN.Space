@@ -29,7 +29,10 @@ const question: Question = {
   updated_at: '2026-11-04T10:00:00Z',
 }
 
-function mount(onOpenSettings = vi.fn()) {
+function mount(
+  onOpenSettings = vi.fn(),
+  budget?: { cost_usd?: number | null; tokens?: number | null } | null,
+) {
   const calls = stubApi({
     'POST /api/v1/questions/q1/actions': (call) => ({
       body: {
@@ -42,7 +45,12 @@ function mount(onOpenSettings = vi.fn()) {
   const rendered = renderUi(
     <QueryClientProvider client={new QueryClient()}>
       <TooltipProvider>
-        <TechnicalQuestionCard question={question} projectId="p1" onOpenSettings={onOpenSettings} />
+        <TechnicalQuestionCard
+          question={question}
+          projectId="p1"
+          budget={budget}
+          onOpenSettings={onOpenSettings}
+        />
       </TooltipProvider>
     </QueryClientProvider>,
   )
@@ -94,5 +102,28 @@ describe('карточка технического вопроса', () => {
       action: 'raise_budget',
       budget: { cost_usd: 15, tokens: null },
     })
+  })
+})
+
+it('показывает текущий бюджет и не позволяет снять токеновый лимит', async () => {
+  const { user, calls } = mount(vi.fn(), { cost_usd: 10, tokens: 200_000 })
+  await user.click(screen.getByRole('button', { name: 'Поднять бюджет' }))
+  const dialog = await screen.findByRole('dialog')
+  expect(within(dialog).getByText(/Сейчас: \$10 и 200\s+тыс\. токенов/)).toBeInTheDocument()
+  const cost = within(dialog).getByLabelText(/В долларах/)
+  const tokens = within(dialog).getByLabelText(/В токенах/)
+  expect(cost).toHaveValue('10')
+  expect(tokens).toHaveValue('200000')
+  await user.clear(cost)
+  await user.type(cost, '5')
+  expect(within(dialog).getByText(/Не меньше текущего/)).toBeInTheDocument()
+  expect(within(dialog).getByRole('button', { name: 'Поднять бюджет' })).toBeDisabled()
+  await user.clear(cost)
+  await user.type(cost, '15')
+  await user.click(within(dialog).getByRole('button', { name: 'Поднять бюджет' }))
+  await waitFor(() => expect(calls.some((call) => call.method === 'POST')).toBe(true))
+  expect(calls.find((call) => call.method === 'POST')?.body).toEqual({
+    action: 'raise_budget',
+    budget: { cost_usd: 15, tokens: 200_000 },
   })
 })

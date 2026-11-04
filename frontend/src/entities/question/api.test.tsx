@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { type ProjectDetail, projectKeys } from '@/entities/project'
-import { useQuestionAction } from './api'
+import { upsertQuestion, useQuestionAction } from './api'
 import type { Question } from './model'
 
 const toastError = vi.fn()
@@ -106,5 +106,26 @@ describe('useQuestionAction', () => {
       'Ответ не сохранён',
       expect.objectContaining({ description: 'Вопрос уже решён' }),
     )
+  })
+})
+
+describe('сводка и технические вопросы', () => {
+  it('технический вопрос не меняет счётчики бизнес-вопросов', () => {
+    const client = new QueryClient()
+    client.setQueryData(projectKeys.detail('p-1'), project)
+    const technical: Question = {
+      ...question,
+      id: 'tq-1',
+      code: 'TQ-1',
+      kind: 'budget_reached',
+      category: 'technical',
+      blocking: true,
+    }
+    upsertQuestion(client, 'p-1', technical)
+    const afterAdd = client.getQueryData<ProjectDetail>(projectKeys.detail('p-1'))
+    expect(afterAdd?.summary).toEqual(project.summary)
+    upsertQuestion(client, 'p-1', { ...technical, status: 'resolved' })
+    const afterResolve = client.getQueryData<ProjectDetail>(projectKeys.detail('p-1'))
+    expect(afterResolve?.summary).toEqual(project.summary)
   })
 })

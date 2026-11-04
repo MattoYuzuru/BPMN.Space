@@ -354,14 +354,17 @@ class LlmCall:
 class LlmCallTotals:
     """Итог вызовов модели по прогону и по этапам (для стоимости в интерфейсе).
 
-    `priced_calls` — сколько вызовов имеет цену; `usage_calls` — сколько сообщило токены.
-    `complete` означает, что у каждого вызова известны и токены, и цена. `stages` — разбивка
-    по названию этапа пайплайна (analyze, structure, …).
+    `priced_calls` — сколько вызовов имеет цену; `usage_calls` — сколько сообщило токены;
+    `neutral_calls` — вызовы, прерванные до запроса к провайдеру (ошибка без токенов).
+    `complete` означает, что у каждого состоявшегося вызова известны и токены, и цена: шаг,
+    который не дошёл до модели, не делает итог неполным навсегда. `stages` — разбивка по
+    названию этапа пайплайна (analyze, structure, …).
     """
 
     calls: int = 0
     usage_calls: int = 0
     priced_calls: int = 0
+    neutral_calls: int = 0
     tokens_in: int = 0
     tokens_out: int = 0
     cache_read_tokens: int = 0
@@ -371,7 +374,10 @@ class LlmCallTotals:
 
     @property
     def complete(self) -> bool:
-        return self.calls > 0 and self.usage_calls == self.calls and self.priced_calls == self.calls
+        if self.calls <= 0:
+            return False
+        measured = self.calls - self.neutral_calls
+        return self.usage_calls == measured and self.priced_calls == measured
 
     @classmethod
     def of_stages(cls, stages: dict[str, "LlmCallTotals"]) -> "LlmCallTotals":
@@ -381,6 +387,7 @@ class LlmCallTotals:
             total.calls += item.calls
             total.usage_calls += item.usage_calls
             total.priced_calls += item.priced_calls
+            total.neutral_calls += item.neutral_calls
             total.tokens_in += item.tokens_in
             total.tokens_out += item.tokens_out
             total.cache_read_tokens += item.cache_read_tokens

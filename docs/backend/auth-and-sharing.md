@@ -123,7 +123,7 @@ SSE прогона принимает токен и закрывается по�
 | `projects:write` | `POST /projects`, `POST /projects/from-example` (только токен без ограничения проектами), `PATCH /projects/{id}`, `PUT /projects/{id}/diagram`, контрольная точка версии |
 | `sources:write` | `POST /projects/{id}/sources/{text,file,sample}`, `PATCH /sources/{id}`; загрузка аудио или видео в `sources/file` — ещё и `runs:start` (запись расшифровывает платный провайдер) |
 | `sources:delete` | `DELETE /sources/{id}` |
-| `runs:start` | `POST /projects/{id}/runs`, `POST /runs/{id}/cancel`, помощник (`/projects/{id}/assistant`, `/assistant/chat`), `POST /transcriptions` — платные вызовы на ключах владельца |
+| `runs:start` | `POST /projects/{id}/runs`, `POST /runs/{id}/cancel`, `POST /runs/{id}/resume`, помощник (`/projects/{id}/assistant`, `/assistant/chat`), `POST /transcriptions` — платные вызовы на ключах владельца |
 | `questions:answer` | `POST /questions/{id}/{answer,ignore,reopen}` |
 | любой действующий токен | `GET /auth/me`, `GET /auth/session` |
 

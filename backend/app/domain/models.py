@@ -57,11 +57,50 @@ class SourceStatus(StrEnum):
 
 
 class QuestionKind(StrEnum):
+    """Бизнес-вопрос: касается процесса и влияет на граф (RFC §2.2)."""
+
     MISSING_ACTOR = "missing_actor"
     AMBIGUOUS_CONDITION = "ambiguous_condition"
     UNCLEAR_ORDER = "unclear_order"
     MISSING_OUTCOME = "missing_outcome"
     CONFLICT = "conflict"
+
+
+class QuestionCategory(StrEnum):
+    """Категория вопроса (RFC-0006, шаг 2): бизнес-вопрос или технический.
+
+    Технические вопросы касаются материалов и запуска, на граф не влияют и в IR не попадают.
+    """
+
+    BUSINESS = "business"
+    TECHNICAL = "technical"
+
+
+class TechnicalQuestionKind(StrEnum):
+    """Тип технического вопроса: что именно мешает прогону или чтению материалов."""
+
+    QUOTA_EXHAUSTED = "quota_exhausted"
+    CREDENTIAL_INVALID = "credential_invalid"
+    CAPABILITY_MISSING = "capability_missing"
+    BUDGET_REACHED = "budget_reached"
+    INPUT_INCOMPLETE = "input_incomplete"
+
+
+class QuestionActionKind(StrEnum):
+    """Действие по техническому вопросу вместо текстового ответа (RFC-0006)."""
+
+    OPEN_SETTINGS = "open_settings"
+    RETRY = "retry"
+    CONTINUE_WITHOUT = "continue_without"
+    RAISE_BUDGET = "raise_budget"
+
+
+QUESTION_ACTION_LABELS: dict[QuestionActionKind, str] = {
+    QuestionActionKind.OPEN_SETTINGS: "Открыть настройки",
+    QuestionActionKind.RETRY: "Повторить",
+    QuestionActionKind.CONTINUE_WITHOUT: "Продолжить без этого",
+    QuestionActionKind.RAISE_BUDGET: "Поднять бюджет",
+}
 
 
 class Severity(StrEnum):
@@ -86,6 +125,8 @@ class RunMode(StrEnum):
 class RunStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
+    # Ждёт действия пользователя по блокирующему техническому вопросу (RFC-0006).
+    WAITING = "waiting"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -211,11 +252,20 @@ class Source:
 
 
 @dataclass(slots=True, kw_only=True)
+class QuestionAction:
+    """Действие по техническому вопросу; подпись показывает интерфейс, payload — параметры."""
+
+    kind: QuestionActionKind
+    label: str
+    payload: dict[str, Any] = field(default_factory=dict[str, Any])
+
+
+@dataclass(slots=True, kw_only=True)
 class Question:
     id: UUID
     project_id: UUID
     code: str
-    kind: QuestionKind
+    kind: QuestionKind | TechnicalQuestionKind
     severity: Severity
     status: QuestionStatus
     text: str
@@ -227,6 +277,15 @@ class Question:
     element_ids: list[str] = field(default_factory=list[str])
     answer: Answer | None = None
     run_id: UUID | None = None  # внутреннее: прогон, который создал вопрос (для счётчика «новых»)
+    # RFC-0006, шаг 2: бизнес-вопрос (по умолчанию) или технический; у технического — действия
+    # вместо текстового ответа; блокирующий технический вопрос переводит прогон в `waiting`.
+    category: QuestionCategory = QuestionCategory.BUSINESS
+    actions: list[QuestionAction] = field(default_factory=list[QuestionAction])
+    blocking: bool = False
+
+    @property
+    def is_technical(self) -> bool:
+        return self.category is QuestionCategory.TECHNICAL
 
 
 @dataclass(slots=True, kw_only=True)

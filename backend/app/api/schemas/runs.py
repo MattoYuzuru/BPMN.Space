@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import Field, RootModel, model_validator
 
+from app.api.schemas.budget import RunBudget
 from app.api.schemas.common import ApiModel
 from app.api.schemas.questions import Question
 from app.api.schemas.versions import Version
@@ -31,9 +32,20 @@ class RunProfile(ApiModel):
     semantic_review: bool | None = Field(
         default=None, description="Смысловая сверка схемы; null — настройка сервера"
     )
+    budget: RunBudget | None = Field(
+        default=None,
+        description=(
+            "Бюджет прогона: токены и/или деньги. Достигнутый бюджет переводит прогон "
+            "в `waiting` с блокирующим техническим вопросом"
+        ),
+    )
 
     def to_domain(self) -> DomainRunProfile:
-        return DomainRunProfile(effort=self.effort, semantic_review=self.semantic_review)
+        return DomainRunProfile(
+            effort=self.effort,
+            semantic_review=self.semantic_review,
+            budget=self.budget.to_domain() if self.budget is not None else None,
+        )
 
     @classmethod
     def of(cls, stored: object) -> "RunProfile | None":

@@ -1924,6 +1924,14 @@
             ],
             "description": "Фрагмент источника, вызвавший вопрос"
           },
+          "actions": {
+            "description": "Действия технического вопроса; у бизнес-вопроса пусто",
+            "items": {
+              "$ref": "#/components/schemas/QuestionAction"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
           "answer": {
             "anyOf": [
               {
@@ -1938,6 +1946,17 @@
             "description": "Что модель сделает, если вопрос проигнорировать",
             "title": "Assumption",
             "type": "string"
+          },
+          "blocking": {
+            "default": false,
+            "description": "Блокирующий технический вопрос переводит прогон в `waiting`",
+            "title": "Blocking",
+            "type": "boolean"
+          },
+          "category": {
+            "$ref": "#/components/schemas/QuestionCategory",
+            "default": "business",
+            "description": "`business` влияет на граф, `technical` касается материалов и запуска"
           },
           "code": {
             "description": "Номер внутри проекта: Q-1, Q-2, …",
@@ -1974,7 +1993,16 @@
             "type": "string"
           },
           "kind": {
-            "$ref": "#/components/schemas/QuestionKind"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuestionKind"
+              },
+              {
+                "$ref": "#/components/schemas/TechnicalQuestionKind"
+              }
+            ],
+            "description": "Тип: бизнес-вопрос процесса или технический вопрос запуска",
+            "title": "Kind"
           },
           "project_id": {
             "format": "uuid",
@@ -2013,6 +2041,66 @@
         "title": "Question",
         "type": "object"
       },
+      "QuestionAction": {
+        "description": "Действие по техническому вопросу вместо текстового ответа.",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/QuestionActionKind",
+            "description": "open_settings — открыть настройки; retry — повторить; continue_without — продолжить без этого; raise_budget — поднять бюджет"
+          },
+          "label": {
+            "description": "Подпись для интерфейса",
+            "title": "Label",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          }
+        },
+        "required": [
+          "kind",
+          "label"
+        ],
+        "title": "QuestionAction",
+        "type": "object"
+      },
+      "QuestionActionKind": {
+        "description": "Действие по техническому вопросу вместо текстового ответа (RFC-0006).",
+        "enum": [
+          "open_settings",
+          "retry",
+          "continue_without",
+          "raise_budget"
+        ],
+        "title": "QuestionActionKind",
+        "type": "string"
+      },
+      "QuestionActionRequest": {
+        "description": "Действие по техническому вопросу; для `raise_budget` нужен новый бюджет.",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/QuestionActionKind"
+          },
+          "budget": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunBudget"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Новый бюджет для действия `raise_budget` (только рост)"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "QuestionActionRequest",
+        "type": "object"
+      },
       "QuestionAnswerCreate": {
         "properties": {
           "text": {
@@ -2028,6 +2116,15 @@
         "title": "QuestionAnswerCreate",
         "type": "object"
       },
+      "QuestionCategory": {
+        "description": "Категория вопроса (RFC-0006, шаг 2): бизнес-вопрос или технический.\n\nТехнические вопросы касаются материалов и запуска, на граф не влияют и в IR не попадают.",
+        "enum": [
+          "business",
+          "technical"
+        ],
+        "title": "QuestionCategory",
+        "type": "string"
+      },
       "QuestionEventData": {
         "properties": {
           "question": {
@@ -2041,6 +2138,7 @@
         "type": "object"
       },
       "QuestionKind": {
+        "description": "Бизнес-вопрос: касается процесса и влияет на граф (RFC §2.2).",
         "enum": [
           "missing_actor",
           "ambiguous_condition",
@@ -2289,6 +2387,39 @@
           "started_at"
         ],
         "title": "Run",
+        "type": "object"
+      },
+      "RunBudget": {
+        "description": "Бюджет одного прогона: хотя бы одна граница должна быть задана.\n\nДостигнутый бюджет не роняет прогон: он переходит в `waiting` с блокирующим техническим\nвопросом `budget_reached`, и после решения пользователя продолжается.",
+        "properties": {
+          "cost_usd": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Лимит стоимости в долларах по ценам справочника на момент вызова",
+            "title": "Cost Usd"
+          },
+          "tokens": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Лимит суммы входных и выходных токенов прогона",
+            "title": "Tokens"
+          }
+        },
+        "title": "RunBudget",
         "type": "object"
       },
       "RunCost": {
@@ -2648,6 +2779,17 @@
       "RunProfile": {
         "description": "Профиль прогона (RFC-0005). Пусто — умолчания сервера и модели.",
         "properties": {
+          "budget": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunBudget"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Бюджет прогона: токены и/или деньги. Достигнутый бюджет переводит прогон в `waiting` с блокирующим техническим вопросом"
+          },
           "effort": {
             "anyOf": [
               {
@@ -2735,6 +2877,7 @@
         "enum": [
           "queued",
           "running",
+          "waiting",
           "succeeded",
           "failed",
           "cancelled"
@@ -3615,6 +3758,18 @@
           "workspace"
         ],
         "title": "TargetRoute",
+        "type": "string"
+      },
+      "TechnicalQuestionKind": {
+        "description": "Тип технического вопроса: что именно мешает прогону или чтению материалов.",
+        "enum": [
+          "quota_exhausted",
+          "credential_invalid",
+          "capability_missing",
+          "budget_reached",
+          "input_incomplete"
+        ],
+        "title": "TechnicalQuestionKind",
         "type": "string"
       },
       "TourState": {
@@ -6940,6 +7095,7 @@
     },
     "/api/v1/projects/{project_id}/questions": {
       "get": {
+        "description": "Вопросы проекта: `category=technical` — отдельная вкладка технических вопросов.",
         "operationId": "list_questions",
         "parameters": [
           {
@@ -6966,6 +7122,22 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/QuestionCategory"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
             }
           }
         ],
@@ -8110,6 +8282,115 @@
         ]
       }
     },
+    "/api/v1/questions/{question_id}/actions": {
+      "post": {
+        "description": "Действие по техническому вопросу: настройки, повтор, продолжить без этого, бюджет.\n\nДействия с прогоном (`retry`, `continue_without`, `raise_budget`) продолжают ожидающий\nпрогон и поэтому по токену доступа требуют ещё и право `runs:start`.",
+        "operationId": "apply_question_action",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "question_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Question Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuestionActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Question"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Конфликт состояния"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Apply Question Action",
+        "tags": [
+          "questions"
+        ]
+      }
+    },
     "/api/v1/questions/{question_id}/answer": {
       "post": {
         "description": "Ответ создаёт источник `kind=answer`; вопрос становится `answered`.\nСледующий прогон подтвердит ответ (`resolved`) или вернёт вопрос (`open`).",
@@ -8671,6 +8952,105 @@
           }
         },
         "summary": "Run Events",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/resume": {
+      "post": {
+        "description": "Продолжить прогон, ждущий действия по техническому вопросу (`waiting` → `queued`).\n\nОткрытые блокирующие технические вопросы этого прогона закрываются как принятые без\nдействия; работа начинается заново с первого этапа, бюджет считает всё потраченное.",
+        "operationId": "resume_run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Конфликт состояния"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Resume Run",
         "tags": [
           "runs"
         ]

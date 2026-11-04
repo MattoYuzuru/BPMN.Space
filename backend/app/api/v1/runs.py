@@ -142,6 +142,29 @@ async def cancel_run(
     return Run.of(run, cost=await container.runs.cost(run_id))
 
 
+@router.post(
+    "/runs/{run_id}/resume",
+    dependencies=[require_scope(ApiScope.RUNS_START)],
+    responses=errors(401, 403, 404, 409, 410, 422),
+)
+async def resume_run(
+    run_id: UUID,
+    request: Request,
+    container: ContainerDep,
+    user: OptionalUserDep,
+) -> Run:
+    """Продолжить прогон, ждущий действия по техническому вопросу (`waiting` → `queued`).
+
+    Открытые блокирующие технические вопросы этого прогона закрываются как принятые без
+    действия; работа начинается заново с первого этапа, бюджет считает всё потраченное.
+    """
+    await ensure_resource_access(
+        request, container, run_id, user, resource=ResourceKind.RUN, write=True
+    )
+    run = await container.runs.resume_waiting(run_id)
+    return Run.of(run, cost=await container.runs.cost(run_id))
+
+
 def _event_data(  # noqa: PLR0911 — по одному возврату на тип SSE-события
     event: DomainRunEvent, *, cost: DomainRunCost | None = None
 ) -> ApiModel:

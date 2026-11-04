@@ -218,6 +218,7 @@ class ModelResolver:
                 checked = checked_profile(checked, resolved.capabilities, resolved.model)
                 if resolved.source == SOURCE_SERVER:
                     self._check_server_profile(checked, resolved)
+                self._check_budget(checked, resolved)
             except (UnsupportedEffortError, InvalidInputError) as error:
                 await resolved.release()
                 raise InvalidInputError(str(error)) from None
@@ -232,6 +233,26 @@ class ModelResolver:
             resolved.source,
             checked,
         )
+
+    def _check_budget(self, profile: RunProfile, resolved: ResolvedModel) -> None:
+        """Бюджет должен быть проверяемым: иначе молчаливое обещание остановки.
+
+        Бюджет в деньгах требует известных цен модели; mock не сообщает токены, поэтому на нём
+        ни один бюджет не сработает. В этих случаях — 422 с понятным объяснением.
+        """
+        budget = profile.budget
+        if budget is None:
+            return
+        if resolved.provider == PROVIDER_MOCK:
+            raise InvalidInputError(
+                "Бюджет прогона нельзя проверить на демонстрационной модели: "
+                "добавьте ключ модели в настройках"
+            )
+        if budget.cost_usd is not None and resolved.capabilities.prices is None:
+            raise InvalidInputError(
+                "Бюджет в деньгах нельзя проверить: у модели нет цен в справочнике. "
+                "Задайте бюджет в токенах или выберите модель с известными ценами"
+            )
 
     def _check_server_profile(self, profile: RunProfile, resolved: ResolvedModel) -> None:
         """Модель сервера платит оператор: глубже его потолка и со сверкой, которую он

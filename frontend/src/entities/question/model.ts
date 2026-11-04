@@ -3,7 +3,8 @@ import type { BadgeTone, IconName } from '@/shared/ui'
 
 export type Question = Schemas['Question']
 export type QuestionStatus = Schemas['QuestionStatus']
-export type QuestionKind = Schemas['QuestionKind']
+// Бизнес-вопросы процесса и технические вопросы запуска (RFC-0006) живут в одном поле.
+export type QuestionKind = Schemas['QuestionKind'] | Schemas['TechnicalQuestionKind']
 export type Severity = Schemas['Severity']
 export type QuestionsSummary = Schemas['QuestionsSummary']
 
@@ -13,6 +14,11 @@ export const QUESTION_KIND: Record<QuestionKind, { label: string; icon: IconName
   unclear_order: { label: 'Неясный порядок', icon: 'route' },
   missing_outcome: { label: 'Не описан исход', icon: 'flag' },
   conflict: { label: 'Источники расходятся', icon: 'conflict' },
+  quota_exhausted: { label: 'Закончилась квота', icon: 'alert-circle' },
+  credential_invalid: { label: 'Ключ отклонён', icon: 'key' },
+  capability_missing: { label: 'Нет нужной возможности', icon: 'settings' },
+  budget_reached: { label: 'Исчерпан бюджет', icon: 'clock' },
+  input_incomplete: { label: 'Материал прочитан не полностью', icon: 'info' },
 }
 
 export const SEVERITY: Record<Severity, { label: string; tone: BadgeTone; rank: number }> = {

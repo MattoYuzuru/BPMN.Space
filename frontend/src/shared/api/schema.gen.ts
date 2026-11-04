@@ -575,7 +575,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Questions */
+        /**
+         * List Questions
+         * @description Вопросы проекта: `category=technical` — отдельная вкладка технических вопросов.
+         */
         get: operations["list_questions"];
         put?: never;
         post?: never;
@@ -775,6 +778,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/questions/{question_id}/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Question Action
+         * @description Действие по техническому вопросу: настройки, повтор, продолжить без этого, бюджет.
+         *
+         *     Действия с прогоном (`retry`, `continue_without`, `raise_budget`) продолжают ожидающий
+         *     прогон и поэтому по токену доступа требуют ещё и право `runs:start`.
+         */
+        post: operations["apply_question_action"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/questions/{question_id}/answer": {
         parameters: {
             query?: never;
@@ -888,6 +914,29 @@ export interface paths {
         get: operations["run_events"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Run
+         * @description Продолжить прогон, ждущий действия по техническому вопросу (`waiting` → `queued`).
+         *
+         *     Открытые блокирующие технические вопросы этого прогона закрываются как принятые без
+         *     действия; работа начинается заново с первого этапа, бюджет считает всё потраченное.
+         */
+        post: operations["resume_run"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1908,12 +1957,28 @@ export interface components {
         Question: {
             /** @description Фрагмент источника, вызвавший вопрос */
             about?: components["schemas"]["Quote"] | null;
+            /**
+             * Actions
+             * @description Действия технического вопроса; у бизнес-вопроса пусто
+             */
+            actions?: components["schemas"]["QuestionAction"][];
             answer?: components["schemas"]["Answer"] | null;
             /**
              * Assumption
              * @description Что модель сделает, если вопрос проигнорировать
              */
             assumption: string;
+            /**
+             * Blocking
+             * @description Блокирующий технический вопрос переводит прогон в `waiting`
+             * @default false
+             */
+            blocking: boolean;
+            /**
+             * @description `business` влияет на граф, `technical` касается материалов и запуска
+             * @default business
+             */
+            category: components["schemas"]["QuestionCategory"];
             /**
              * Code
              * @description Номер внутри проекта: Q-1, Q-2, …
@@ -1936,7 +2001,11 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            kind: components["schemas"]["QuestionKind"];
+            /**
+             * Kind
+             * @description Тип: бизнес-вопрос процесса или технический вопрос запуска
+             */
+            kind: components["schemas"]["QuestionKind"] | components["schemas"]["TechnicalQuestionKind"];
             /**
              * Project Id
              * Format: uuid
@@ -1952,6 +2021,38 @@ export interface components {
              */
             updated_at: string;
         };
+        /**
+         * QuestionAction
+         * @description Действие по техническому вопросу вместо текстового ответа.
+         */
+        QuestionAction: {
+            /** @description open_settings — открыть настройки; retry — повторить; continue_without — продолжить без этого; raise_budget — поднять бюджет */
+            kind: components["schemas"]["QuestionActionKind"];
+            /**
+             * Label
+             * @description Подпись для интерфейса
+             */
+            label: string;
+            /** Payload */
+            payload?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * QuestionActionKind
+         * @description Действие по техническому вопросу вместо текстового ответа (RFC-0006).
+         * @enum {string}
+         */
+        QuestionActionKind: "open_settings" | "retry" | "continue_without" | "raise_budget";
+        /**
+         * QuestionActionRequest
+         * @description Действие по техническому вопросу; для `raise_budget` нужен новый бюджет.
+         */
+        QuestionActionRequest: {
+            action: components["schemas"]["QuestionActionKind"];
+            /** @description Новый бюджет для действия `raise_budget` (только рост) */
+            budget?: components["schemas"]["RunBudget"] | null;
+        };
         /** QuestionAnswerCreate */
         QuestionAnswerCreate: {
             /**
@@ -1960,12 +2061,21 @@ export interface components {
              */
             text: string;
         };
+        /**
+         * QuestionCategory
+         * @description Категория вопроса (RFC-0006, шаг 2): бизнес-вопрос или технический.
+         *
+         *     Технические вопросы касаются материалов и запуска, на граф не влияют и в IR не попадают.
+         * @enum {string}
+         */
+        QuestionCategory: "business" | "technical";
         /** QuestionEventData */
         QuestionEventData: {
             question: components["schemas"]["Question"];
         };
         /**
          * QuestionKind
+         * @description Бизнес-вопрос: касается процесса и влияет на граф (RFC §2.2).
          * @enum {string}
          */
         QuestionKind: "missing_actor" | "ambiguous_condition" | "unclear_order" | "missing_outcome" | "conflict";
@@ -2075,6 +2185,25 @@ export interface components {
              * @description Предупреждения прогона, не мешающие результату: например, часть материалов не поместилась в контекст модели и была обрезана или пропущена
              */
             warnings?: string[];
+        };
+        /**
+         * RunBudget
+         * @description Бюджет одного прогона: хотя бы одна граница должна быть задана.
+         *
+         *     Достигнутый бюджет не роняет прогон: он переходит в `waiting` с блокирующим техническим
+         *     вопросом `budget_reached`, и после решения пользователя продолжается.
+         */
+        RunBudget: {
+            /**
+             * Cost Usd
+             * @description Лимит стоимости в долларах по ценам справочника на момент вызова
+             */
+            cost_usd?: number | null;
+            /**
+             * Tokens
+             * @description Лимит суммы входных и выходных токенов прогона
+             */
+            tokens?: number | null;
         };
         /**
          * RunCost
@@ -2228,6 +2357,8 @@ export interface components {
          * @description Профиль прогона (RFC-0005). Пусто — умолчания сервера и модели.
          */
         RunProfile: {
+            /** @description Бюджет прогона: токены и/или деньги. Достигнутый бюджет переводит прогон в `waiting` с блокирующим техническим вопросом */
+            budget?: components["schemas"]["RunBudget"] | null;
             /**
              * Effort
              * @description Глубина работы модели: low, medium, high, xhigh, max. Уровень, которого модель не поддерживает, — 422; у модели без рассуждения поле игнорируется
@@ -2266,7 +2397,7 @@ export interface components {
          * RunStatus
          * @enum {string}
          */
-        RunStatus: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+        RunStatus: "queued" | "running" | "waiting" | "succeeded" | "failed" | "cancelled";
         /**
          * RunSummary
          * @description Итог прогона по вопросам («решено 2 · осталось 2 · новых 1»).
@@ -2677,6 +2808,12 @@ export interface components {
          * @enum {string}
          */
         TargetRoute: "projects" | "workspace";
+        /**
+         * TechnicalQuestionKind
+         * @description Тип технического вопроса: что именно мешает прогону или чтению материалов.
+         * @enum {string}
+         */
+        TechnicalQuestionKind: "quota_exhausted" | "credential_invalid" | "capability_missing" | "budget_reached" | "input_incomplete";
         /** TourState */
         TourState: {
             /**
@@ -5003,6 +5140,7 @@ export interface operations {
         parameters: {
             query?: {
                 status?: components["schemas"]["QuestionStatus"] | null;
+                category?: components["schemas"]["QuestionCategory"] | null;
             };
             header?: never;
             path: {
@@ -5824,6 +5962,86 @@ export interface operations {
             };
         };
     };
+    apply_question_action: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Question"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Конфликт состояния */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     answer_question: {
         parameters: {
             query?: never;
@@ -6215,6 +6433,82 @@ export interface operations {
             };
             /** @description Не найдено */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resume_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Run"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Конфликт состояния */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -485,7 +485,10 @@ erDiagram
 | POST | `/api/v1/transcriptions` | аудио → `{text, duration_sec, language}` (аналитик правит перед отправкой) |
 | POST | `/api/v1/projects/{id}/runs` | запустить прогон `{mode: analyze \| build}` → `202 Run` (у `Run` есть `warnings`: например, контекст модели был обрезан); `409`, если прогон уже идёт или нет источников |
 | POST | `/api/v1/projects/{id}/runs/estimate` | оценка до запуска `{mode, credential_id, model, profile}` → `200 RunEstimate` (диапазоны токенов, денег, длительности, разбивка по этапам, `complete=false` при неизвестных ценах) |
-| GET | `/api/v1/runs/{id}` · `/runs/{id}/events` | статус прогона с потраченным (`cost`: токены, кеш, деньги, этапы) · SSE: `stage`, `question`, `summary`, `version`, `usage`, `error`, `done` |
+| POST | `/api/v1/runs/{id}/resume` | продолжить прогон в `waiting` после действия по техническому вопросу → `200 Run`; 409, если прогон не ждёт |
+| POST | `/api/v1/questions/{id}/actions` | действие по техническому вопросу `{action, budget?}` → `200 Question`; продолжает ожидающий прогон |
+| GET | `/api/v1/runs/{id}` · `/runs/{id}/events` | статус прогона с потраченным (`cost`: токены, кеш, деньги, этапы) · SSE: `stage`, `question`, `summary`, `version`, `usage`, `error`, `done`; в `waiting` `done` не приходит |
+| GET | `/api/v1/projects/{id}/questions?category=` | вопросы проекта; `business` и `technical` — отдельные вкладки |
 | GET | `/api/v1/projects/{id}/questions?status=` | вопросы проекта |
 | POST | `/api/v1/questions/{id}/answer` | ответ текстом (голос — через `/transcriptions`) → источник `answer` |
 | POST | `/api/v1/questions/{id}/ignore` · `/reopen` | принять допущение · вернуть вопрос; недопустимый переход → `409` |

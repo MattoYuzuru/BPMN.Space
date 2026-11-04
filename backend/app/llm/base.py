@@ -35,6 +35,23 @@ class ContextOverflowError(RuntimeError):
     """Провайдер отклонил запрос как длиннее окна модели: можно повторить порциями."""
 
 
+class CachedPrefixPrompt(str):
+    """Текст запроса со стабильным началом, которое повторяется между вызовами.
+
+    Для всех адаптеров это обычная строка `prefix + rest` (у OpenAI-совместимых провайдеров
+    кеш префикса автоматический). Anthropic кеширует только по явным границам блоков,
+    поэтому его адаптер отправляет `prefix` отдельным блоком с `cache_control`: повторы
+    сборки графа и порции сверки не оплачивают одни и те же источники и граф заново.
+    """
+
+    prefix: str
+
+    def __new__(cls, prefix: str, rest: str) -> "CachedPrefixPrompt":
+        value = super().__new__(cls, prefix + rest)
+        value.prefix = prefix
+        return value
+
+
 class BudgetReachedError(Exception):
     """Мягкая остановка прогона: достигнут бюджет токенов или денег (RFC-0005, шаг 5).
 

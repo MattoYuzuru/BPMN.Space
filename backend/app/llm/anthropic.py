@@ -18,6 +18,7 @@ import httpx2
 
 from app.llm.base import (
     CONTEXT_OVERFLOW_MESSAGE,
+    CachedPrefixPrompt,
     ContextOverflowError,
     OutputTruncatedError,
     is_context_overflow,
@@ -193,6 +194,24 @@ def _tool_turn(message: anthropic.types.Message) -> ToolTurn:
     )
 
 
+def _user_content(user: str) -> str | list[dict[str, object]]:
+    """Стабильное начало запроса — отдельный блок с явной границей кеша.
+
+    Верхнеуровневый `cache_control` ставит границу только в конце запроса: если меняется
+    хвост (черновик и ошибки repair, порция сверки), прежний кеш не находится. Явная граница
+    после `prefix` позволяет повторам читать источники и граф из кеша.
+    """
+    if not isinstance(user, CachedPrefixPrompt) or not user.prefix:
+        return user
+    rest = user[len(user.prefix) :]
+    blocks: list[dict[str, object]] = [
+        {"type": "text", "text": user.prefix, "cache_control": {"type": "ephemeral"}}
+    ]
+    if rest:
+        blocks.append({"type": "text", "text": rest})
+    return blocks
+
+
 class AnthropicClient:
     def __init__(
         self,
@@ -231,7 +250,7 @@ class AnthropicClient:
             "model": self._config.model,
             "max_tokens": max_tokens if json_mode else min(max_tokens, _CHAT_MAX_TOKENS),
             "system": [{"type": "text", "text": system + (_JSON_ONLY if json_mode else "")}],
-            "messages": [{"role": "user", "content": user}],
+            "messages": [{"role": "user", "content": _user_content(user)}],
             "cache_control": {"type": "ephemeral"},
         }
         level = self.effort_for(effort)

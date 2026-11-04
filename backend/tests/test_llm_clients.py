@@ -12,7 +12,13 @@ import pytest
 from pydantic import SecretStr
 
 from app.llm.anthropic import AnthropicClient
-from app.llm.base import OutputTruncatedError, PipelineError, run_deadline, track_usage
+from app.llm.base import (
+    CachedPrefixPrompt,
+    OutputTruncatedError,
+    PipelineError,
+    run_deadline,
+    track_usage,
+)
 from app.llm.client import (
     LlmAuthError,
     LlmConfig,
@@ -433,6 +439,24 @@ def _status_error(cls: type[anthropic.APIStatusError], code: int, **headers: str
         response=httpx.Response(code, headers=headers, request=request),  # type: ignore[arg-type]
         body=None,
     )
+
+
+async def test_anthropic_caches_stable_prefix_as_separate_block() -> None:
+    sdk = _Sdk(_message("{}"))
+    client = _anthropic(sdk)
+    prompt = CachedPrefixPrompt('{"sources": "длинный текст"', ', "errors": ["x"]}')
+    await client.complete("СИСТЕМА", prompt, json_mode=True, max_tokens=1000)
+    content = sdk.calls[0]["messages"][0]["content"]
+    # Явная граница кеша после стабильного начала: repair читает источники из кеша.
+    assert content == [
+        {
+            "type": "text",
+            "text": '{"sources": "длинный текст"',
+            "cache_control": {"type": "ephemeral"},
+        },
+        {"type": "text", "text": ', "errors": ["x"]}'},
+    ]
+    assert "".join(block["text"] for block in content) == str(prompt)
 
 
 async def test_anthropic_request_omits_forbidden_sampling_and_thinking() -> None:

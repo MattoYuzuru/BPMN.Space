@@ -17,8 +17,8 @@ from app.domain.bpmn.ir import GraphIR, GraphValidationError, SourceReference, v
 from app.domain.bpmn.manual import ManualPolicy, semantic_value
 from app.domain.bpmn.xsd import xsd_errors
 from app.domain.models import LintIssue, LintSeverity, QuestionStatus, Quote
-from app.llm.base import PipelineError
-from app.llm.semantic_review import review_semantics
+from app.llm.base import CachedPrefixPrompt, PipelineError
+from app.llm.semantic_review import SEMANTIC_ROUNDS, review_semantics
 
 SYSTEM = """Ты строишь проверяемый BPMN-граф, а не XML и не линейный список.
 Верни JSON IR schema_version=1 с title, lanes, nodes и flows по JSON Schema ниже.
@@ -57,6 +57,10 @@ _MAX_QUOTE_HINTS = 12
 _MAX_TOPOLOGY_HINTS = 8
 _MAX_HINT_TEXT = 480
 _MAX_HINT_FLOWS = 12
+# Попыток генерации графа: первая и три исправления (ADR-0008).
+_ATTEMPTS = 4
+_MAX_SEMANTIC_WARNINGS = 10
+_SEMANTIC_WARNING_CHARS = 600
 
 
 class GraphRejectedError(Exception):
@@ -139,22 +143,30 @@ async def generate_graph(
         "analysis": [q.text for q in analysis.new_questions],
     }
     schema = json.dumps(GraphIR.model_json_schema(), ensure_ascii=False)
+    # Источники и вопросы одинаковы во всех попытках: стабильное начало запроса кешируется.
+    payload_json = json.dumps(payload, ensure_ascii=False)
     errors: list[str] = []
     repair_hints: dict[str, Any] = {}
     draft_data: object = None
-    for attempt in range(4):
-        prompt = dict(payload)
+    semantic_rounds = 0
+    # Последний граф, прошедший grounding, топологию и ручную политику, с замечаниями сверки:
+    # если исправление сломает структуру, публикуется он, а не сбой всей сборки.
+    accepted: tuple[GraphIR, dict[str, Quote], list[dict[str, Any]], list[str]] | None = None
+    for attempt in range(_ATTEMPTS):
+        tail = "}"
         if attempt:
-            prompt.update(
-                draft=draft_data,
-                errors=errors,
-                repair_hints=repair_hints,
-                instruction="Исправь адресные ошибки, сохрани подтверждённые и manual элементы",
-            )
+            repair = {
+                "draft": draft_data,
+                "errors": errors,
+                "repair_hints": repair_hints,
+                "instruction": "Исправь адресные ошибки, сохрани подтверждённые и manual элементы",
+            }
+            tail = ", " + json.dumps(repair, ensure_ascii=False)[1:]
         graph: GraphIR | None = None
         try:
             raw = await complete(
-                SYSTEM + "\nJSON Schema:\n" + schema, json.dumps(prompt, ensure_ascii=False)
+                SYSTEM + "\nJSON Schema:\n" + schema,
+                CachedPrefixPrompt(payload_json[:-1], tail),
             )
             draft_data = json.loads(raw)
             graph = GraphIR.model_validate(draft_data)
@@ -174,30 +186,20 @@ async def generate_graph(
                     graph, trace, context, policy, current, verify_quote=verify_quote
                 )
             validate_graph(graph)
-            if semantic_review:
+            notes: list[str] = []
+            if semantic_review and semantic_rounds < SEMANTIC_ROUNDS:
+                semantic_rounds += 1
                 review_context = replace(
                     context, manual_overrides=policy.dump() if policy else context.manual_overrides
                 )
                 # Сверка идёт порциями: им свой (меньший) лимит ответа, если он задан.
-                semantic_errors = await review_semantics(
-                    graph, review_context, review_complete or complete
-                )
-                if semantic_errors:
-                    raise GraphValidationError(semantic_errors)
-            bindings = _bindings(graph)
-            warnings = [
-                f"Сохранена ручная правка «{c['element_id']}»; противоречие вынесено в вопросы"
-                for c in conflicts
-            ]
-            return DiagramDraft(
-                xml=compile_graph(graph),
-                trace=trace,
-                ir=graph.canonical(),
-                bindings=bindings,
-                warnings=warnings,
-                conflicts=conflicts,
-                manual_overrides=policy.dump() if policy else None,
-            )
+                report = await review_semantics(graph, review_context, review_complete or complete)
+                notes = _semantic_warnings(report.errors, report.unchecked_parts)
+                accepted = (graph, trace, conflicts, notes)
+                can_repair = semantic_rounds < SEMANTIC_ROUNDS and attempt + 1 < _ATTEMPTS
+                if report.errors and can_repair:
+                    raise GraphValidationError(report.errors)
+            return _draft(graph, trace, conflicts, policy, notes)
         except (json.JSONDecodeError, ValidationError, GraphValidationError) as error:
             if isinstance(error, ValidationError):
                 errors = [f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in error.errors()][
@@ -208,9 +210,50 @@ async def generate_graph(
             else:
                 errors = ["JSON: ответ не является JSON-объектом IR"]
             repair_hints = _repair_hints(graph, context, errors)
+    if accepted is not None:
+        graph, trace, conflicts, notes = accepted
+        return _draft(graph, trace, conflicts, policy, notes)
     raise PipelineError(
         "Не удалось проверить BPMN IR после трёх исправлений: " + "; ".join(errors[:5])
     )
+
+
+def _draft(
+    graph: GraphIR,
+    trace: dict[str, Quote],
+    conflicts: list[dict[str, Any]],
+    policy: ManualPolicy | None,
+    notes: list[str],
+) -> DiagramDraft:
+    warnings = [
+        f"Сохранена ручная правка «{c['element_id']}»; противоречие вынесено в вопросы"
+        for c in conflicts
+    ]
+    return DiagramDraft(
+        xml=compile_graph(graph),
+        trace=trace,
+        ir=graph.canonical(),
+        bindings=_bindings(graph),
+        warnings=[*warnings, *notes],
+        conflicts=conflicts,
+        manual_overrides=policy.dump() if policy else None,
+    )
+
+
+def _semantic_warnings(errors: list[str], unchecked_parts: int) -> list[str]:
+    """Незакрытые замечания сверки — в отчёт прогона, а не в отказ публикации."""
+    notes = [
+        f"Смысловая сверка: {error[:_SEMANTIC_WARNING_CHARS]}"
+        for error in errors[:_MAX_SEMANTIC_WARNINGS]
+    ]
+    if len(errors) > _MAX_SEMANTIC_WARNINGS:
+        notes.append(f"Смысловая сверка: ещё замечаний — {len(errors) - _MAX_SEMANTIC_WARNINGS}")
+    if unchecked_parts:
+        notes.append(
+            "Смысловая сверка не выполнена для части материалов "
+            f"(порций: {unchecked_parts}): ответ проверяющего не подтвердился источником"
+        )
+    return notes
 
 
 def _repair_hints(graph: GraphIR | None, context: RunContext, errors: list[str]) -> dict[str, Any]:

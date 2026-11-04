@@ -221,7 +221,7 @@ function RunCard({
                   : formatDuration(elapsed)}
           </span>
         </div>
-        {waiting && (
+        {waiting && canCancel && (
           <Button
             size="sm"
             variant="primary"
@@ -231,7 +231,7 @@ function RunCard({
             Продолжить
           </Button>
         )}
-        {actualView.status === 'running' && canCancel && (
+        {(actualView.status === 'running' || waiting) && canCancel && (
           <Button
             size="sm"
             variant="ghost"
@@ -290,21 +290,29 @@ function RunCard({
 /** Стоимость прогона и разбивка по этапам (RFC-0005): обновляется потоком `usage`. */
 function RunCostBlock({ cost, budgetUsd }: { cost: RunCost | null; budgetUsd: number | null }) {
   const spent = cost?.cost_usd ?? null
-  if (spent === null && budgetUsd === null) return null
+  if (!cost && budgetUsd === null) return null
+  const hasMoney = spent !== null || budgetUsd !== null
   return (
     <div
       className="mt-3 border-t border-border pt-3"
       {...tourAnchor(TOUR_ANCHORS.runCost)}
       data-testid="run-cost"
     >
-      <CostMeter
-        size="sm"
-        label="Стоимость"
-        spent={spent}
-        budget={budgetUsd}
-        incomplete={cost ? !cost.complete : false}
-        incompleteNote="Стоимость известна не полностью: у части шагов нет цен. Это не ошибка прогона."
-      />
+      {hasMoney ? (
+        <CostMeter
+          size="sm"
+          label="Стоимость"
+          spent={spent}
+          budget={budgetUsd}
+          incomplete={cost ? !cost.complete : false}
+          incompleteNote="Стоимость известна не полностью: у части шагов нет цен. Это не ошибка прогона."
+        />
+      ) : (
+        <p className="flex items-center gap-1 type-caption text-amber-fg">
+          <Icon name="alert-triangle" size={14} />
+          Цены модели неизвестны: стоимость в деньгах не рассчитана
+        </p>
+      )}
       {cost && (
         <span className="mt-1 block type-caption text-fg-subtle" data-numeric>
           {formatTokens(cost.tokens_in + cost.tokens_out)} токенов{' \u00B7 '}

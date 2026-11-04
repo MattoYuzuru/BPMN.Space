@@ -96,7 +96,9 @@ class ProjectMemberRow(Base):
 class ProjectShareLinkRow(Base):
     __tablename__ = "project_share_links"
     __table_args__ = (
-        CheckConstraint("role IN ('viewer', 'editor')", name="ck_project_share_links_role"),
+        CheckConstraint(
+            "role IN ('viewer', 'editor', 'reviewer')", name="ck_project_share_links_role"
+        ),
         CheckConstraint(
             "expires_at IS NULL OR expires_at > created_at",
             name="ck_project_share_links_expiry",
@@ -118,6 +120,8 @@ class ProjectShareLinkRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Область проверки: id дорожек схемы (BPMN lane). Пусто — весь проект.
+    lane_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
 
 
 class SourceRow(Base):
@@ -293,6 +297,11 @@ class QuestionRow(Base):
     # Провенанс ответа (RFC-0007): `agent` — ответ записал внешний агент владельца токена.
     answer_via: Mapped[str | None] = mapped_column(String(32))
     answer_via_name: Mapped[str | None] = mapped_column(String(80))
+    # Ответ дан по ссылке проверки (RFC-0007 шаг 3).
+    answer_share_link_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("project_share_links.id", ondelete="SET NULL"),
+    )
     run_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("runs.id", ondelete="SET NULL")
     )
@@ -459,6 +468,12 @@ class ApiTokenRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Токен проверки (RFC-0007 шаг 3): выдан по ссылке reviewer, ограничен её областью.
+    share_link_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("project_share_links.id", ondelete="SET NULL"),
+    )
+    lane_ids: Mapped[list[str] | None] = mapped_column(JSONB)
 
 
 class LlmCallRow(Base):

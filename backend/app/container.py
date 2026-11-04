@@ -47,6 +47,7 @@ from app.services.model_resolver import ModelResolver
 from app.services.onboarding import OnboardingService
 from app.services.projects import ProjectService
 from app.services.questions import QuestionService
+from app.services.review import ReviewerService
 from app.services.runs import RunService
 from app.services.samples import SampleService
 from app.services.sharing import SharingService
@@ -160,6 +161,7 @@ class Container:
     api_tokens: ApiTokenService
     access: AccessService
     sharing: SharingService
+    review: ReviewerService
     onboarding: OnboardingService
     samples: SampleService
     realtime: RealtimeHub
@@ -339,6 +341,7 @@ def build_container(
     # зависимости нет: RunService получает сервис вопросов параметром).
     technical_questions.bind_run_actions(runs)
 
+    api_tokens = ApiTokenService(repos, runtime=runtime)
     return Container(
         settings=settings,
         repos=repos,
@@ -376,9 +379,10 @@ def build_container(
             adapter_client_factory=adapter_client_factory,
             anthropic_effort=settings.anthropic_effort_default(),
         ),
-        api_tokens=ApiTokenService(repos, runtime=runtime),
+        api_tokens=api_tokens,
         access=access,
         sharing=SharingService(access, runtime=runtime),
+        review=ReviewerService(repos, api_tokens=api_tokens, runtime=runtime),
         onboarding=onboarding,
         samples=SampleService(sources, samples=SAMPLES),
         realtime=realtime,

@@ -30,10 +30,12 @@ __all__ = [
     "ensure_resource_access",
     "get_active_share_link",
     "has_stream_project_access",
+    "is_review_token",
     "project_roles",
     "require_account",
     "require_scope",
     "require_token_scope",
+    "review_lane_ids",
     "token_project_ids",
 ]
 
@@ -70,6 +72,20 @@ def token_project_ids(request: Request) -> frozenset[UUID] | None:
     return frozenset(token.project_ids)
 
 
+def is_review_token(request: Request) -> bool:
+    """Запрос пришёл по токену проверки, выданному ссылкой reviewer (RFC-0007, шаг 3)."""
+    token = current_api_token(request)
+    return token is not None and token.is_review()
+
+
+def review_lane_ids(request: Request) -> tuple[str, ...] | None:
+    """Область проверки токена: tuple дорожек (пустой — весь проект) или None вне проверки."""
+    token = current_api_token(request)
+    if token is None or not token.is_review():
+        return None
+    return token.lane_ids or ()
+
+
 def require_account(request: Request, user: UserRow | None) -> UUID | None:
     """При включённой auth гостям — 401; без auth стенд однопользовательский."""
     if request.app.state.auth_enabled and user is None:
@@ -84,23 +100,44 @@ async def ensure_project_access(
     user: UserRow | None,
     *,
     write: bool,
+    allow_reviewer: bool = False,
 ) -> ProjectRole:
-    """Скрывать чужие проекты как 404 и запрещать viewer изменяющие запросы."""
+    """Скрывать чужие проекты как 404 и запрещать роли без права изменяющие запросы.
+
+    Токен проверки (RFC-0007, шаг 3) даёт псевдо-роль `REVIEWER`: чтение проекта и — только с
+    `allow_reviewer=True` — ответы на вопросы области. Смену проекта, источников и схемы
+    запрещает. Живость ссылки проверена аутентификацией токена при каждом запросе.
+    """
     if not request.app.state.auth_enabled:
         return ProjectRole.OWNER
-    user_id = require_account(request, user)
-    assert user_id is not None  # noqa: S101 — require_account пропускает гостя только без auth
     token = current_api_token(request)
-    if token is not None and not token.allows_project(project_id):
-        # Проект вне токена неотличим от чужого: тот же 404, без квитанции об удалении.
-        raise NotFoundError("Проект не найден")
-    role = await container.access.project_role(project_id, user_id)
-    if role is None:
-        if await container.access.project_was_deleted(project_id, user_id):
-            raise DeletedProjectError()
-        raise NotFoundError("Проект не найден")
-    if write and role is ProjectRole.VIEWER:
-        raise ForbiddenError("Для изменения проекта нужны права редактора")
+    review = token is not None and token.is_review()
+    if review:
+        # У токена проверки нет членства: вход в проект — через проект ссылки.
+        assert token is not None  # noqa: S101 — review выводится из токена
+        if not token.allows_project(project_id):
+            raise NotFoundError("Проект не найден")
+        role = ProjectRole.REVIEWER
+    else:
+        user_id = require_account(request, user)
+        assert user_id is not None  # noqa: S101 — без auth роль всегда owner
+        if token is not None and not token.allows_project(project_id):
+            # Проект вне токена неотличим от чужого: тот же 404, без квитанции об удалении.
+            raise NotFoundError("Проект не найден")
+        role = await container.access.project_role(project_id, user_id)
+        if role is None:
+            if await container.access.project_was_deleted(project_id, user_id):
+                raise DeletedProjectError()
+            raise NotFoundError("Проект не найден")
+    if write and role not in {ProjectRole.OWNER, ProjectRole.EDITOR}:
+        if role is ProjectRole.REVIEWER and allow_reviewer:
+            return role
+        if role is ProjectRole.VIEWER:
+            raise ForbiddenError("Для изменения проекта нужны права редактора")
+        raise ForbiddenError(
+            "Ссылка проверки не позволяет менять проект: доступны чтение схемы и ответы "
+            "на вопросы выбранных дорожек"
+        )
     return role
 
 
@@ -110,7 +147,13 @@ async def project_roles(
     """Роль для каждой карточки списка; без auth стенд однопользовательский — всё своё."""
     if not request.app.state.auth_enabled:
         return dict.fromkeys(project_ids, ProjectRole.OWNER)
-    return await container.access.project_roles(project_ids, user.id if user else None)
+    roles = await container.access.project_roles(project_ids, user.id if user else None)
+    token = current_api_token(request)
+    if token is not None and token.is_review():
+        for project_id in project_ids:
+            if token.allows_project(project_id):
+                roles[project_id] = ProjectRole.REVIEWER
+    return roles
 
 
 async def ensure_resource_access(
@@ -121,13 +164,17 @@ async def ensure_resource_access(
     *,
     resource: ResourceKind,
     write: bool,
+    allow_reviewer: bool = False,
 ) -> ProjectRole:
     """Проверить доступ через проект-владелец объекта."""
     if not request.app.state.auth_enabled:
         return ProjectRole.OWNER
-    require_account(request, user)
+    if not is_review_token(request):
+        require_account(request, user)
     project_id = await container.access.resource_project_id(resource, resource_id)
-    return await ensure_project_access(request, container, project_id, user, write=write)
+    return await ensure_project_access(
+        request, container, project_id, user, write=write, allow_reviewer=allow_reviewer
+    )
 
 
 async def get_active_share_link(container: Container, token: str) -> ShareLink:

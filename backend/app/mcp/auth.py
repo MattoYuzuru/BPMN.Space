@@ -64,6 +64,7 @@ __all__ = [
     "identity_of",
     "prompt_policy",
     "resource_policy",
+    "review_scope",
     "tool_policy",
 ]
 
@@ -253,7 +254,12 @@ class McpAuthMiddleware:
         secret = bearer_secret(request)
         try:
             owner = (
-                await token_owner(self._container.api_tokens, self._container.database, secret)
+                await token_owner(
+                    self._container.api_tokens,
+                    self._container.database,
+                    secret,
+                    access=self._container.access,
+                )
                 if secret is not None
                 else None
             )
@@ -309,21 +315,47 @@ def begin_tool(ctx: Context[Any, Any], name: str) -> McpIdentity:
     return identity
 
 
-async def ensure_project(identity: McpIdentity, project_id: UUID, *, write: bool) -> ProjectRole:
-    """Тот же доступ, что в REST: чужой проект — `404`, viewer на изменение — `403`.
+def review_scope(identity: McpIdentity) -> tuple[str, ...] | None:
+    """Область проверки токена: tuple дорожек (пустой — весь проект) или None вне проверки."""
+    if not identity.token.is_review():
+        return None
+    return identity.token.lane_ids or ()
+
+
+async def ensure_project(
+    identity: McpIdentity,
+    project_id: UUID,
+    *,
+    write: bool,
+    allow_reviewer: bool = False,
+) -> ProjectRole:
+    """Тот же доступ, что в REST: чужой проект — `404`, роль без права на изменение — `403`.
 
     Токен ограничивает проекты (`project_ids`): проект вне списка неотличим от чужого.
+    Токен проверки (RFC-0007, шаг 3) получает псевдо-роль `REVIEWER`: чтение проекта и —
+    только с `allow_reviewer=True` — ответы на вопросы области; менять проект нельзя.
     """
     container = identity.container
     if not identity.token.allows_project(project_id):
         raise NotFoundError("Проект не найден")
-    role = await container.access.project_role(project_id, identity.user.id)
-    if role is None:
-        if await container.access.project_was_deleted(project_id, identity.user.id):
-            raise DeletedProjectError()
-        raise NotFoundError("Проект не найден")
-    if write and role is ProjectRole.VIEWER:
-        raise ForbiddenError("Для изменения проекта нужны права редактора")
+    if identity.token.is_review():
+        # Живость ссылки проверена аутентификацией токена при каждом запросе.
+        role = ProjectRole.REVIEWER
+    else:
+        role = await container.access.project_role(project_id, identity.user.id)
+        if role is None:
+            if await container.access.project_was_deleted(project_id, identity.user.id):
+                raise DeletedProjectError()
+            raise NotFoundError("Проект не найден")
+    if write and role not in {ProjectRole.OWNER, ProjectRole.EDITOR}:
+        if role is ProjectRole.REVIEWER and allow_reviewer:
+            return role
+        if role is ProjectRole.VIEWER:
+            raise ForbiddenError("Для изменения проекта нужны права редактора")
+        raise ForbiddenError(
+            "Ссылка проверки не позволяет менять проект: доступны чтение схемы и ответы "
+            "на вопросы выбранных дорожек"
+        )
     return role
 
 
@@ -333,7 +365,8 @@ async def ensure_resource(
     resource_id: UUID,
     *,
     write: bool,
+    allow_reviewer: bool = False,
 ) -> ProjectRole:
     """Доступ к объекту через проект-владелец: неизвестный объект и чужой проект — `404`."""
     project_id = await identity.container.access.resource_project_id(resource, resource_id)
-    return await ensure_project(identity, project_id, write=write)
+    return await ensure_project(identity, project_id, write=write, allow_reviewer=allow_reviewer)

@@ -23,6 +23,8 @@ def _token(row: ApiTokenRow) -> ApiToken:
         created_at=row.created_at,
         last_used_at=row.last_used_at,
         revoked_at=row.revoked_at,
+        share_link_id=row.share_link_id,
+        lane_ids=tuple(row.lane_ids) if row.lane_ids is not None else None,
     )
 
 
@@ -83,6 +85,8 @@ class SqlApiTokenRepository:
                     created_at=token.created_at,
                     last_used_at=token.last_used_at,
                     revoked_at=token.revoked_at,
+                    share_link_id=token.share_link_id,
+                    lane_ids=list(token.lane_ids) if token.lane_ids is not None else None,
                 )
             )
             return True

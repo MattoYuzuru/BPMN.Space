@@ -24,7 +24,7 @@ from mcp_types import ToolAnnotations
 from pydantic import Field
 
 from app.domain.access import ProjectScope, ResourceKind
-from app.domain.bpmn.document import BpmnFormatError
+from app.domain.bpmn.document import BpmnDocument, BpmnFormatError
 from app.domain.models import (
     ANSWER_VIA_AGENT,
     RunMode,
@@ -39,6 +39,7 @@ from app.mcp.auth import (
     begin_tool,
     ensure_project,
     ensure_resource,
+    review_scope,
 )
 from app.mcp.diagram import (
     lane_selection,
@@ -58,7 +59,12 @@ from app.mcp.serializers import (
     version_summary,
 )
 from app.services.common import utc_now
-from app.services.errors import InvalidInputError, ServiceError, StaleVersionError
+from app.services.errors import (
+    InvalidInputError,
+    NotFoundError,
+    ServiceError,
+    StaleVersionError,
+)
 from app.services.runs import RunProfile
 
 __all__ = ["MAX_READ_CHARS", "register_tools"]
@@ -142,6 +148,15 @@ def _bpmn_format_error(error: BpmnFormatError) -> ToolError:
     return ToolError(str(error))
 
 
+def _scope_element_ids(document: BpmnDocument, scope: tuple[str, ...]) -> set[str]:
+    """Элементы схемы в области проверки: id дорожек и их узлы."""
+    ids = set(scope)
+    for node in document.nodes.values():
+        if node.lane_id in ids:
+            ids.add(node.id)
+    return ids
+
+
 def register_tools(  # noqa: PLR0915 — регистрация всех инструментов в одном месте
     server: MCPServer,
     *,
@@ -171,21 +186,24 @@ def register_tools(  # noqa: PLR0915 — регистрация всех инс�
         identity = begin_tool(ctx, "list_projects")
         with service_errors():
             token_ids = identity.token.project_ids
+            review = identity.token.is_review()
             page = await container.projects.list(
                 cursor=None,
                 limit=limit,
                 query=query,
-                owner_id=identity.user.id,
-                scope_to_user=True,
+                owner_id=None if review else identity.user.id,
+                scope_to_user=not review,
                 scope=ProjectScope.ALL,
                 only_ids=frozenset(token_ids) if token_ids is not None else None,
             )
             roles = await container.access.project_roles(
                 [view.project.id for view in page.items], identity.user.id
             )
+            default_role = "reviewer" if review else "viewer"
             return {
                 "items": [
-                    project_card(view, roles.get(view.project.id, "viewer")) for view in page.items
+                    project_card(view, roles.get(view.project.id, default_role))
+                    for view in page.items
                 ],
                 "total": page.total,
             }
@@ -208,6 +226,9 @@ def register_tools(  # noqa: PLR0915 — регистрация всех инс�
             pid = uuid_or_404(project_id, "project_id")
             role = await ensure_project(identity, pid, write=False)
             detail = await container.projects.detail(pid)
+            scope = review_scope(identity)
+            if scope is not None:
+                detail = await container.review.filter_detail(pid, detail, scope)
             return project_detail(detail, role.value)
 
     @server.tool(
@@ -436,11 +457,16 @@ def register_tools(  # noqa: PLR0915 — регистрация всех инс�
             pid = uuid_or_404(project_id, "project_id")
             await ensure_project(identity, pid, write=False)
             questions = await container.questions.list(pid, status=None)
+            scope = review_scope(identity)
+            if scope is not None:
+                questions = await container.review.filter_questions(pid, questions, scope)
             selection = None
             if lane:
                 version = await latest_version(container, pid)
                 document = await parse_document_async(version.xml)
                 selection = lane_selection(document, lane)
+                if scope is not None and selection.lane_id not in scope:
+                    raise InvalidInputError("Дорожка вне области проверки")
                 questions = [
                     question
                     for question in questions
@@ -469,12 +495,21 @@ def register_tools(  # noqa: PLR0915 — регистрация всех инс�
         identity = begin_tool(ctx, "answer_question")
         with service_errors():
             qid = uuid_or_404(question_id, "question_id")
-            await ensure_resource(identity, ResourceKind.QUESTION, qid, write=True)
+            project_id = await container.access.resource_project_id(ResourceKind.QUESTION, qid)
+            await ensure_resource(
+                identity, ResourceKind.QUESTION, qid, write=True, allow_reviewer=True
+            )
+            scope = review_scope(identity)
+            if scope is not None:
+                question = await container.questions.get(qid)
+                if not await container.review.question_in_scope(project_id, question, scope):
+                    raise NotFoundError("Вопрос не найден")
             question = await container.questions.answer(
                 qid,
                 text=text,
                 via=ANSWER_VIA_AGENT,
                 via_name=identity.token.name,
+                share_link_id=identity.token.share_link_id,
             )
             return question_view(question)
 
@@ -635,8 +670,18 @@ def register_tools(  # noqa: PLR0915 — регистрация всех инс�
             except BpmnFormatError as error:
                 raise _bpmn_format_error(error) from None
             detail = await container.projects.detail(pid)
+            scope = review_scope(identity)
+            if scope is not None:
+                detail = await container.review.filter_detail(pid, detail, scope)
             selection = lane_selection(document, lane) if lane else None
-            element_ids = selection.element_ids if selection is not None else None
+            if selection is not None and scope is not None and selection.lane_id not in scope:
+                raise InvalidInputError("Дорожка вне области проверки")
+            if selection is not None:
+                element_ids: set[str] | None = set(selection.element_ids)
+            elif scope is not None:
+                element_ids = _scope_element_ids(document, scope)
+            else:
+                element_ids = None
             evidence = [
                 {
                     "element_id": element_id,
@@ -658,6 +703,7 @@ def register_tools(  # noqa: PLR0915 — регистрация всех инс�
                 "lanes": [lane_item.name for lane_item in document.lanes],
                 "ir": project_ir_summary(document, detail),
                 "lane": selection.to_json() if selection is not None else None,
+                "review_scope": list(scope) if scope is not None else None,
                 "evidence": evidence[:MAX_LIST],
                 "questions": [question_view(question) for question in questions[:MAX_LIST]],
             }

@@ -29,6 +29,10 @@ class Answer(ApiModel):
     via_name: str | None = Field(
         default=None, description="Название токена доступа, которым ответил агент"
     )
+    share_link_id: UUID | None = Field(
+        default=None,
+        description="Ответ дан по ссылке проверки (RFC-0007, шаг 3): id ссылки",
+    )
 
 
 class QuestionAction(ApiModel):

@@ -1,8 +1,250 @@
 {
   "components": {
     "schemas": {
+      "AgentActivity": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentActivityEvent"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "AgentActivity",
+        "type": "object"
+      },
+      "AgentActivityEvent": {
+        "description": "Событие журнала активности агента в проекте (v1 — из существующих данных).",
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "kind": {
+            "description": "`source_added` — агент добавил материал, `answer_added` — ответ",
+            "title": "Kind",
+            "type": "string"
+          },
+          "question_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Code"
+          },
+          "question_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Id"
+          },
+          "share_link_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ответ дан по ссылке проверки, если задано",
+            "title": "Share Link Id"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "token_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Название токена доступа",
+            "title": "Token Name"
+          }
+        },
+        "required": [
+          "kind",
+          "at"
+        ],
+        "title": "AgentActivityEvent",
+        "type": "object"
+      },
+      "AgentPrompt": {
+        "description": "Готовый текст для агента проверяющего: без секрета ссылки и ключей.",
+        "properties": {
+          "lane_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Lane Ids",
+            "type": "array"
+          },
+          "lanes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Lanes",
+            "type": "array"
+          },
+          "questions_recap": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewQuestionRecap"
+            },
+            "title": "Questions Recap",
+            "type": "array"
+          },
+          "text": {
+            "description": "Готовый промпт «проверь дорожку» для вставки в агента",
+            "title": "Text",
+            "type": "string"
+          },
+          "whole_project": {
+            "title": "Whole Project",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "text",
+          "whole_project"
+        ],
+        "title": "AgentPrompt",
+        "type": "object"
+      },
+      "AgentTokenIssued": {
+        "description": "Токен агента по ссылке проверки: секрет показывается один раз.",
+        "properties": {
+          "command": {
+            "description": "Команда `claude mcp add …` с уже подставленным токеном",
+            "title": "Command",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "lane_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Lane Ids",
+            "type": "array"
+          },
+          "mcp_url": {
+            "description": "Адрес MCP-сервера для подключения",
+            "title": "Mcp Url",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "secret": {
+            "description": "Секрет вида `bps_…`; в списке токенов его нет",
+            "title": "Secret",
+            "type": "string"
+          },
+          "token_id": {
+            "format": "uuid",
+            "title": "Token Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token_id",
+          "secret",
+          "name",
+          "project_id",
+          "expires_at",
+          "mcp_url",
+          "command"
+        ],
+        "title": "AgentTokenIssued",
+        "type": "object"
+      },
       "Answer": {
         "properties": {
+          "share_link_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ответ дан по ссылке проверки (RFC-0007, шаг 3): id ссылки",
+            "title": "Share Link Id"
+          },
           "source_id": {
             "description": "Источник `kind=answer` с текстом ответа",
             "format": "uuid",
@@ -2449,7 +2691,8 @@
         "enum": [
           "owner",
           "editor",
-          "viewer"
+          "viewer",
+          "reviewer"
         ],
         "title": "ProjectRole",
         "type": "string"
@@ -2809,6 +3052,78 @@
           "quote"
         ],
         "title": "Quote",
+        "type": "object"
+      },
+      "ReviewQuestionRecap": {
+        "description": "Вопрос области в готовом промпте: без ответов и внутренних полей.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "element_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Element Ids",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "text",
+          "status",
+          "severity"
+        ],
+        "title": "ReviewQuestionRecap",
+        "type": "object"
+      },
+      "ReviewScope": {
+        "description": "Область проверки: дорожки схемы, которые видит коллега.",
+        "properties": {
+          "lane_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Lane Ids",
+            "type": "array"
+          },
+          "lanes": {
+            "description": "Названия дорожек для интерфейса",
+            "items": {
+              "type": "string"
+            },
+            "title": "Lanes",
+            "type": "array"
+          },
+          "whole_project": {
+            "description": "Пустая область — весь проект",
+            "title": "Whole Project",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "whole_project"
+        ],
+        "title": "ReviewScope",
         "type": "object"
       },
       "Run": {
@@ -3700,8 +4015,17 @@
                 "type": "null"
               }
             ],
-            "description": "Срок ссылки в днях: 7, 30, 365 (год) или 0 (без срока). Для совместимости null/пропуск выбирает 30 дней. Одинаковые варианты доступны для viewer и editor.",
+            "description": "Срок ссылки в днях: 7, 30, 365 (год) или 0 (без срока). Для совместимости null/пропуск выбирает 30 дней. Одинаковые варианты для viewer, editor и reviewer.",
             "title": "Expires In Days"
+          },
+          "lane_ids": {
+            "description": "Область проверки для role=reviewer: id дорожек схемы (допустимы и названия), пусто — весь проект. Для viewer/editor не задаётся",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "title": "Lane Ids",
+            "type": "array"
           },
           "role": {
             "$ref": "#/components/schemas/ShareRole"
@@ -3736,6 +4060,13 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "lane_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Lane Ids",
+            "type": "array"
           },
           "role": {
             "$ref": "#/components/schemas/ShareRole"
@@ -3780,6 +4111,13 @@
             "title": "Id",
             "type": "string"
           },
+          "lane_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Lane Ids",
+            "type": "array"
+          },
           "revoked_at": {
             "anyOf": [
               {
@@ -3809,7 +4147,8 @@
       "ShareRole": {
         "enum": [
           "viewer",
-          "editor"
+          "editor",
+          "reviewer"
         ],
         "title": "ShareRole",
         "type": "string"
@@ -3825,11 +4164,15 @@
           },
           "role": {
             "$ref": "#/components/schemas/ShareRole"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ReviewScope"
           }
         },
         "required": [
           "role",
           "editor_requires_account",
+          "scope",
           "detail"
         ],
         "title": "SharedProject",
@@ -6907,7 +7250,7 @@
     },
     "/api/v1/projects": {
       "get": {
-        "description": "Проекты: сначала недавно изменённые. Курсорная пагинация. Гостям — 401.",
+        "description": "Проекты: сначала недавно изменённые. Курсорная пагинация. Гостям — 401.\n\nТокен проверки не даёт членства: его проект виден отдельной карточкой с ролью reviewer,\nбез общего списка чужих проектов владельца.",
         "operationId": "list_projects",
         "parameters": [
           {
@@ -7237,7 +7580,7 @@
         ]
       },
       "get": {
-        "description": "Проект целиком: источники, вопросы, последняя версия (без XML), активный прогон.",
+        "description": "Проект целиком: источники, вопросы, последняя версия (без XML), активный прогон.\n\nПо токену проверки вопросы и счётчики сужены до области-дорожек ссылки (RFC-0007).",
         "operationId": "get_project",
         "parameters": [
           {
@@ -7405,6 +7748,95 @@
           }
         ],
         "summary": "Update Project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/agent-activity": {
+      "get": {
+        "description": "Журнал активности агента в проекте (v1): добавленные материалы и ответы.\n\nСобирается из существующих данных (`sources.origin=agent`, `questions.answer.via=agent`),\nбез отдельной таблицы событий. Доступен участникам проекта, но не по ссылке проверки.",
+        "operationId": "project_agent_activity",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentActivity"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Project Agent Activity",
         "tags": [
           "projects"
         ]
@@ -10089,7 +10521,7 @@
     },
     "/api/v1/shares/{token}": {
       "get": {
-        "description": "Открыть проект по ссылке. Ссылка на чтение работает без входа (гостям тоже).",
+        "description": "Открыть проект по ссылке. Ссылка на чтение и проверку работает без входа (гостям тоже).\n\nУ ссылки проверки (reviewer) вопросы и счётчики сужены до области-дорожек: остальное —\nчтение схемы и оснований; менять проект такая ссылка не даёт.",
         "operationId": "read_shared_project",
         "parameters": [
           {
@@ -10242,6 +10674,182 @@
         ]
       }
     },
+    "/api/v1/shares/{token}/agent-prompt": {
+      "get": {
+        "description": "Готовый текст «проверь дорожку» для агента коллеги.\n\nБез секрета ссылки: промпт можно вставить в своего агента без аккаунта и без токена.",
+        "operationId": "read_agent_prompt",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPrompt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Read Agent Prompt",
+        "tags": [
+          "sharing"
+        ]
+      }
+    },
+    "/api/v1/shares/{token}/agent-token": {
+      "post": {
+        "description": "Выпустить токен агента для вошедшего получателя ссылки проверки.\n\nТокен: права `projects:read` и `questions:answer`, только проект ссылки, срок — срок\nссылки. Секрет показывается один раз. Отзыв или истечение ссылки закрывают токен\nмгновенно: ссылка проверяется при каждом запросе токена.",
+        "operationId": "issue_agent_token",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTokenIssued"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Конфликт состояния"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Issue Agent Token",
+        "tags": [
+          "sharing"
+        ]
+      }
+    },
     "/api/v1/shares/{token}/collaboration-ticket": {
       "post": {
         "operationId": "issue_share_ticket",
@@ -10336,6 +10944,98 @@
         "summary": "Issue Share Ticket",
         "tags": [
           "collaboration"
+        ]
+      }
+    },
+    "/api/v1/shares/{token}/questions": {
+      "get": {
+        "description": "Вопросы по ссылке: у проверки — только область-дорожки, у просмотра — все.\n\nТехнические вопросы запуска проверяющему не показываются: они решаются действием.",
+        "operationId": "read_shared_questions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Question"
+                  },
+                  "title": "Response Read Shared Questions",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Read Shared Questions",
+        "tags": [
+          "sharing"
         ]
       }
     },

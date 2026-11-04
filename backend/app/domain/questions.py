@@ -12,10 +12,21 @@ import re
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import cast
 from uuid import UUID
 
 from app.domain.analysis import AnalysisResult, ContextSource
-from app.domain.models import Answer, Question, QuestionStatus, Quote, RunSummary
+from app.domain.models import (
+    QUESTION_ACTION_LABELS,
+    Answer,
+    Question,
+    QuestionAction,
+    QuestionActionKind,
+    QuestionStatus,
+    Quote,
+    RunSummary,
+    TechnicalQuestionKind,
+)
 
 STATUS_LABELS: dict[QuestionStatus, str] = {
     QuestionStatus.OPEN: "открыт",
@@ -24,6 +35,73 @@ STATUS_LABELS: dict[QuestionStatus, str] = {
     QuestionStatus.RESOLVED: "решён",
     QuestionStatus.OBSOLETE: "устарел",
 }
+
+
+def default_actions(kind: TechnicalQuestionKind) -> list[QuestionAction]:
+    """Действия, которые предлагает технический вопрос этого типа (RFC-0006).
+
+    У бюджета — поднять бюджет и открыть настройки; у квоты и неверного ключа — повторить;
+    у нехватки возможности — продолжить без неё. Действия не заменяют текстовый ответ.
+    """
+    kinds: dict[TechnicalQuestionKind, tuple[QuestionActionKind, ...]] = {
+        TechnicalQuestionKind.BUDGET_REACHED: (
+            QuestionActionKind.RAISE_BUDGET,
+            QuestionActionKind.OPEN_SETTINGS,
+        ),
+        TechnicalQuestionKind.QUOTA_EXHAUSTED: (
+            QuestionActionKind.OPEN_SETTINGS,
+            QuestionActionKind.RETRY,
+            QuestionActionKind.CONTINUE_WITHOUT,
+        ),
+        TechnicalQuestionKind.CREDENTIAL_INVALID: (
+            QuestionActionKind.OPEN_SETTINGS,
+            QuestionActionKind.RETRY,
+        ),
+        TechnicalQuestionKind.CAPABILITY_MISSING: (
+            QuestionActionKind.OPEN_SETTINGS,
+            QuestionActionKind.CONTINUE_WITHOUT,
+        ),
+        TechnicalQuestionKind.INPUT_INCOMPLETE: (QuestionActionKind.CONTINUE_WITHOUT,),
+    }
+    return [
+        QuestionAction(kind=action, label=QUESTION_ACTION_LABELS[action]) for action in kinds[kind]
+    ]
+
+
+def actions_to_json(actions: Sequence[QuestionAction]) -> list[dict[str, object]]:
+    """Сериализация действий в JSONB: тип, подпись и параметры."""
+    return [
+        {"kind": action.kind.value, "label": action.label, "payload": dict(action.payload)}
+        for action in actions
+    ]
+
+
+def actions_from_json(values: object) -> list[QuestionAction]:
+    """Разбор JSONB действий; неизвестный тип отбрасывается, а не ломает вопрос."""
+    if not isinstance(values, list):
+        return []
+    actions: list[QuestionAction] = []
+    for raw in cast("list[object]", values):
+        if not isinstance(raw, dict):
+            continue
+        data = cast("dict[str, object]", raw)
+        try:
+            kind = QuestionActionKind(str(data.get("kind")))
+        except ValueError:
+            continue
+        label = data.get("label")
+        payload = data.get("payload")
+        actions.append(
+            QuestionAction(
+                kind=kind,
+                label=label if isinstance(label, str) and label else QUESTION_ACTION_LABELS[kind],
+                payload=dict(cast("dict[str, object]", payload))
+                if isinstance(payload, dict)
+                else {},
+            )
+        )
+    return actions
+
 
 _ANSWERABLE = {QuestionStatus.OPEN}
 _IGNORABLE = {QuestionStatus.OPEN}
@@ -133,6 +211,10 @@ def reconcile(
     источнике; ссылки на несуществующие вопросы и недопустимые переходы отбрасываются
     с объяснением в `rejected`. Новые вопросы с уже существующим текстом не дублируются.
     """
+    # Технические вопросы не участвуют в сверке бизнес-решений и в IR не попадают, но код
+    # нового бизнес-вопроса нумеруется по всем вопросам проекта: коды не пересекаются.
+    all_codes = list(questions)
+    questions = [q for q in questions if not q.is_technical]
     by_code = {q.code: q for q in questions}
     by_source = {s.id: s for s in sources}
     outcome = ReconcileOutcome()
@@ -189,7 +271,7 @@ def reconcile(
         created = Question(
             id=new_id(),
             project_id=project_id,
-            code=next_code(all_questions),
+            code=next_code(all_codes),
             kind=spec.kind,
             severity=spec.severity,
             status=QuestionStatus.OPEN,
@@ -202,6 +284,7 @@ def reconcile(
             run_id=run_id,
         )
         all_questions.append(created)
+        all_codes.append(created)
         outcome.created.append(created)
 
     outcome.summary = run_summary(all_questions, run_id=run_id, resolved_now=resolved_now)
@@ -228,6 +311,8 @@ def run_summary(questions: Iterable[Question], *, run_id: UUID, resolved_now: in
     """Итог прогона: решено в нём, осталось открытыми, новых; игнорируется и отвечено — сейчас."""
     summary = RunSummary(resolved=resolved_now)
     for q in questions:
+        if q.is_technical:
+            continue
         if q.status is QuestionStatus.OPEN:
             if q.run_id == run_id:
                 summary.new += 1
@@ -248,6 +333,8 @@ def project_summary(questions: Iterable[Question], *, latest_run_id: UUID | None
     """
     summary = RunSummary()
     for q in questions:
+        if q.is_technical:
+            continue
         if q.status is QuestionStatus.RESOLVED:
             summary.resolved += 1
         elif q.status is QuestionStatus.OPEN:

@@ -11,12 +11,13 @@ from app.api.access import (
     ensure_project_access,
     ensure_resource_access,
     require_scope,
+    require_token_scope,
 )
 from app.api.auth import OptionalUserDep
 from app.api.deps import ContainerDep
 from app.api.schemas.common import errors
-from app.api.schemas.questions import Question, QuestionAnswerCreate
-from app.domain.models import QuestionStatus
+from app.api.schemas.questions import Question, QuestionActionRequest, QuestionAnswerCreate
+from app.domain.models import QuestionActionKind, QuestionCategory, QuestionStatus
 from app.domain.onboarding import ChecklistItem
 
 router = APIRouter(tags=["questions"])
@@ -27,15 +28,17 @@ router = APIRouter(tags=["questions"])
     dependencies=[require_scope(ApiScope.PROJECTS_READ)],
     responses=errors(401, 404, 410, 422),
 )
-async def list_questions(
+async def list_questions(  # noqa: PLR0917 — сигнатура FastAPI-эндпоинта
     project_id: UUID,
     request: Request,
     container: ContainerDep,
     user: OptionalUserDep,
     status: Annotated[QuestionStatus | None, Query()] = None,
+    category: Annotated[QuestionCategory | None, Query()] = None,
 ) -> list[Question]:
+    """Вопросы проекта: `category=technical` — отдельная вкладка технических вопросов."""
     await ensure_project_access(request, container, project_id, user, write=False)
-    questions = await container.questions.list(project_id, status=status)
+    questions = await container.questions.list(project_id, status=status, category=category)
     return [Question.model_validate(q) for q in questions]
 
 
@@ -97,3 +100,33 @@ async def reopen_question(
         request, container, question_id, user, resource=ResourceKind.QUESTION, write=True
     )
     return Question.model_validate(await container.questions.reopen(question_id))
+
+
+@router.post(
+    "/questions/{question_id}/actions",
+    dependencies=[require_scope(ApiScope.QUESTIONS_ANSWER)],
+    responses=errors(401, 403, 404, 409, 410, 422),
+)
+async def apply_question_action(
+    question_id: UUID,
+    body: QuestionActionRequest,
+    request: Request,
+    container: ContainerDep,
+    user: OptionalUserDep,
+) -> Question:
+    """Действие по техническому вопросу: настройки, повтор, продолжить без этого, бюджет.
+
+    Действия с прогоном (`retry`, `continue_without`, `raise_budget`) продолжают ожидающий
+    прогон и поэтому по токену доступа требуют ещё и право `runs:start`.
+    """
+    await ensure_resource_access(
+        request, container, question_id, user, resource=ResourceKind.QUESTION, write=True
+    )
+    if body.action is not QuestionActionKind.OPEN_SETTINGS:
+        require_token_scope(request, ApiScope.RUNS_START)
+    question = await container.technical_questions.apply_action(
+        question_id,
+        body.action,
+        budget=body.budget.to_domain() if body.budget is not None else None,
+    )
+    return Question.model_validate(question)

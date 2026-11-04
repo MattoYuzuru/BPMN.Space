@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from app.domain.analysis import AnalysisResult, DiagramDraft, RunContext
+from app.llm.capabilities import Budget
 
 DEADLINE_MESSAGE = (
     "Прогон не уложился в отведённое время. Повторите его или уменьшите объём материалов"
@@ -32,6 +33,20 @@ class OutputTruncatedError(RuntimeError):
 
 class ContextOverflowError(RuntimeError):
     """Провайдер отклонил запрос как длиннее окна модели: можно повторить порциями."""
+
+
+class BudgetReachedError(Exception):
+    """Мягкая остановка прогона: достигнут бюджет токенов или денег (RFC-0005, шаг 5).
+
+    Это не сбой модели: прогон переходит в `waiting` с блокирующим техническим вопросом, а
+    после решения пользователя продолжается. Наследуется не от `RuntimeError`, чтобы не быть
+    преобразованным в общую ошибку пайплайна.
+    """
+
+    def __init__(self, message: str, *, budget: Budget | None = None) -> None:
+        super().__init__(message)
+        self.message = message
+        self.budget = budget
 
 
 CONTEXT_OVERFLOW_MESSAGE = "Запрос не поместился в окно модели"
@@ -107,6 +122,7 @@ _usage: ContextVar[LlmUsage | None] = ContextVar("llm_usage", default=None)
 # Накопитель за весь прогон (не сбрасывается на каждом шаге): нужен бюджету и итогу стоимости.
 _totals: ContextVar[LlmUsage | None] = ContextVar("llm_usage_totals", default=None)
 _deadline: ContextVar[float | None] = ContextVar("llm_deadline", default=None)
+_budget: ContextVar[Budget | None] = ContextVar("llm_budget", default=None)
 
 
 @contextmanager
@@ -121,9 +137,15 @@ def track_usage() -> Iterator[LlmUsage]:
 
 
 @contextmanager
-def track_run_usage() -> Iterator[LlmUsage]:
-    """Накопитель токенов за весь прогон: шаги пишут в него через `record_usage`."""
+def track_run_usage(initial: LlmUsage | None = None) -> Iterator[LlmUsage]:
+    """Накопитель токенов за весь прогон: шаги пишут в него через `record_usage`.
+
+    `initial` — уже потраченное до этого исполнения (продолжение прогона после `waiting`):
+    бюджет считается по всему прогону, а не только по последней попытке.
+    """
     totals = LlmUsage()
+    if initial is not None:
+        totals.add(initial)
     token = _totals.set(totals)
     try:
         yield totals
@@ -170,3 +192,18 @@ def remaining_sec() -> float | None:
     """Сколько секунд осталось до срока прогона; `None` — срока нет."""
     deadline = _deadline.get()
     return None if deadline is None else deadline - time.monotonic()
+
+
+@contextmanager
+def run_budget(budget: Budget | None) -> Iterator[None]:
+    """Бюджет прогона: пайплайн проверяет его перед каждым запросом к модели."""
+    token = _budget.set(budget)
+    try:
+        yield
+    finally:
+        _budget.reset(token)
+
+
+def current_budget() -> Budget | None:
+    """Бюджет текущего прогона; `None` — без бюджета (или вне прогона)."""
+    return _budget.get()

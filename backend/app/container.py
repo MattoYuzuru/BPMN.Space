@@ -46,6 +46,7 @@ from app.services.runs import RunService
 from app.services.samples import SampleService
 from app.services.sharing import SharingService
 from app.services.sources import SourceService
+from app.services.technical_questions import TechnicalQuestionService
 from app.services.versions import VersionService
 
 
@@ -139,6 +140,7 @@ class Container:
     projects: ProjectService
     sources: SourceService
     questions: QuestionService
+    technical_questions: TechnicalQuestionService
     runs: RunService
     versions: VersionService
     examples: ExampleService
@@ -257,6 +259,28 @@ def build_container(
         ),
     )
 
+    # Технические вопросы — общая точка для бюджета (здесь) и инструментов (волна C).
+    technical_questions = TechnicalQuestionService(repos, runtime=runtime)
+    runs = RunService(
+        repos,
+        resolver=resolver,
+        bpmn_tools=bpmn_tools,
+        events=InMemoryRunEventBus(),
+        spawner=spawner,
+        runtime=runtime,
+        max_concurrent=settings.max_concurrent_runs,
+        pace=_mock_pace(settings),
+        context_budget_chars=settings.context_budget_chars(),
+        deadline_sec=settings.run_deadline_sec,
+        deadline_for=settings.run_deadline,
+        progress=onboarding,
+        broadcast=realtime.publish,
+        technical=technical_questions,
+    )
+    # Вопросу нужен прогон для действий «повторить» и «поднять бюджет» (циклической
+    # зависимости нет: RunService получает сервис вопросов параметром).
+    technical_questions.bind_run_actions(runs)
+
     return Container(
         settings=settings,
         repos=repos,
@@ -266,21 +290,8 @@ def build_container(
         projects=ProjectService(repos, examples=EXAMPLES, runtime=runtime, storage=storage),
         sources=sources,
         questions=QuestionService(repos, runtime=runtime),
-        runs=RunService(
-            repos,
-            resolver=resolver,
-            bpmn_tools=bpmn_tools,
-            events=InMemoryRunEventBus(),
-            spawner=spawner,
-            runtime=runtime,
-            max_concurrent=settings.max_concurrent_runs,
-            pace=_mock_pace(settings),
-            context_budget_chars=settings.context_budget_chars(),
-            deadline_sec=settings.run_deadline_sec,
-            deadline_for=settings.run_deadline,
-            progress=onboarding,
-            broadcast=realtime.publish,
-        ),
+        technical_questions=technical_questions,
+        runs=runs,
         versions=VersionService(
             repos,
             bpmn_tools=bpmn_tools,

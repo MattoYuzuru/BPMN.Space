@@ -130,6 +130,7 @@ STAGE_LABELS: dict[RunStage, str] = {
 }
 
 QUEUED_LABEL = "В очереди"
+WAITING_LABEL = "Ждёт вашего действия"
 SUCCEEDED_LABEL = "Готово"
 FAILED_LABEL = "Ошибка"
 CANCELLED_LABEL = "Остановлено"
@@ -142,7 +143,9 @@ _BUILD_STAGES = (
     RunStage.LAYOUT,
 )
 
-ACTIVE_STATUSES = frozenset({RunStatus.QUEUED, RunStatus.RUNNING})
+# Прогон, занимающий проект: `waiting` тоже активен — ждёт действия по техническому вопросу,
+# и второй прогон по проекту начинать нельзя (это же условие в частичном уникальном индексе).
+ACTIVE_STATUSES = frozenset({RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.WAITING})
 
 
 def stages_for(mode: RunMode) -> tuple[RunStage, ...]:
@@ -163,6 +166,8 @@ def stage_label(status: RunStatus, stage: RunStage | None) -> str:
         return FAILED_LABEL
     if status is RunStatus.CANCELLED:
         return CANCELLED_LABEL
+    if status is RunStatus.WAITING:
+        return WAITING_LABEL
     if status is RunStatus.QUEUED or stage is None:
         return QUEUED_LABEL
     return STAGE_LABELS[stage]

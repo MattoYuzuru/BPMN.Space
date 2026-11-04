@@ -19,12 +19,16 @@ from app.domain.analysis import (
 from app.domain.questions import normalize
 from app.llm.base import (
     DEADLINE_MESSAGE,
+    BudgetReachedError,
     ContextOverflowError,
     PipelineError,
+    current_budget,
     remaining_sec,
+    usage_totals,
 )
 from app.llm.capabilities import ModelCapabilities, RunProfile, nearest_effort
 from app.llm.client import LlmClient
+from app.llm.estimate import cost_of_usage
 from app.llm.evidence_context import prepare_evidence_context
 from app.llm.graph_generation import generate_graph
 from app.llm.question_analysis import QuestionAnalyzer, whole_project_request
@@ -320,9 +324,35 @@ class LlmPipeline:
         except RuntimeError as error:
             raise PipelineError(str(error)) from error
 
+    def _check_budget(self) -> None:
+        """Мягкая остановка по бюджету прогона (RFC-0005, шаг 5) перед запросом к модели.
+
+        Считается по накопителю всего прогона, включая израсходованное до продолжения после
+        `waiting`. Достигнутый бюджет не роняет прогон: сервис переводит его в `waiting` с
+        блокирующим техническим вопросом, и после решения пользователя работа продолжается.
+        """
+        budget = current_budget()
+        totals = usage_totals()
+        if budget is None or totals is None:
+            return
+        spent = totals.tokens_in + totals.tokens_out
+        if budget.tokens is not None and spent >= budget.tokens:
+            raise BudgetReachedError(
+                f"Бюджет прогона {budget.tokens} токенов исчерпан: потрачено {spent}",
+                budget=budget,
+            )
+        if budget.cost_usd is not None:
+            cost = cost_of_usage(totals, self._capabilities.prices).cost_usd
+            if cost is not None and cost >= budget.cost_usd:
+                raise BudgetReachedError(
+                    f"Бюджет прогона ${budget.cost_usd:g} исчерпан: потрачено ≈ ${cost:.2f}",
+                    budget=budget,
+                )
+
     async def _complete(
         self, system: str, prompt: str, *, json_mode: bool, max_tokens: int | None = None
     ) -> str:
+        self._check_budget()
         remaining = remaining_sec()
         if remaining is not None and remaining <= 0:
             raise PipelineError(DEADLINE_MESSAGE)

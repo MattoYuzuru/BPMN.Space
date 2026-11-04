@@ -22,6 +22,7 @@ from app.domain.analysis import MAX_SOURCE_TEXT_CHARS, ContextSource, RunContext
 from app.domain.models import (
     Project,
     Question,
+    QuestionCategory,
     Source,
     SourceKind,
     SourceOrigin,
@@ -212,7 +213,9 @@ def build_run_context(
         project_id=project.id,
         project_title=project.title,
         sources=fitted,
-        questions=deepcopy(list(questions)),
+        # Технические вопросы (RFC-0006) касаются материалов и запуска, а не процесса:
+        # в контекст модели и в IR они не идут.
+        questions=deepcopy([q for q in questions if q.category is QuestionCategory.BUSINESS]),
         current_xml=latest.xml if latest else None,
         current_trace=dict(latest.trace) if latest else {},
         base_version_id=latest.id if latest else None,

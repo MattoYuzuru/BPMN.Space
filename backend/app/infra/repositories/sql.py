@@ -24,6 +24,7 @@ from app.domain.models import (
     LlmCallTotals,
     Project,
     Question,
+    QuestionCategory,
     QuestionKind,
     QuestionStatus,
     Quote,
@@ -39,12 +40,13 @@ from app.domain.models import (
     SourceOrigin,
     SourceStatus,
     SourceTrust,
+    TechnicalQuestionKind,
     Version,
     VersionDiff,
     VersionOrigin,
     VersionSummary,
 )
-from app.domain.questions import normalize
+from app.domain.questions import actions_from_json, actions_to_json, normalize
 from app.domain.runs import ACTIVE_STATUSES
 from app.domain.sources import (
     derivation_from_json,
@@ -140,7 +142,7 @@ def _question(row: QuestionRow) -> Question:
         id=row.id,
         project_id=row.project_id,
         code=row.code,
-        kind=QuestionKind(row.kind),
+        kind=_question_kind(row.kind),
         severity=Severity(row.severity),
         status=QuestionStatus(row.status),
         text=row.text,
@@ -152,7 +154,18 @@ def _question(row: QuestionRow) -> Question:
         element_ids=list(row.element_ids),
         answer=answer,
         run_id=row.run_id,
+        category=QuestionCategory(row.category),
+        actions=actions_from_json(row.actions),
+        blocking=row.blocking,
     )
+
+
+def _question_kind(value: str) -> QuestionKind | TechnicalQuestionKind:
+    """Тип вопроса: бизнес-вопросы и технические хранятся в одной колонке."""
+    try:
+        return QuestionKind(value)
+    except ValueError:
+        return TechnicalQuestionKind(value)
 
 
 def _run(row: RunRow) -> Run:
@@ -674,6 +687,9 @@ class SqlQuestionRepository:
             answer_source_id=item.answer.source_id if item.answer else None,
             answer_text=item.answer.text if item.answer else None,
             run_id=item.run_id,
+            category=item.category.value,
+            actions=actions_to_json(item.actions),
+            blocking=item.blocking,
         )
 
     async def add(self, question: Question) -> None:

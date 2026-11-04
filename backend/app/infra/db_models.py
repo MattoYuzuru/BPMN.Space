@@ -23,7 +23,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Uuid,
-    text,
+)
+from sqlalchemy import (
+    text as sql_text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
@@ -72,7 +74,7 @@ class ProjectRow(Base):
         index=True,
     )
     public_read_only: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default=text("false")
+        Boolean, nullable=False, default=False, server_default=sql_text("false")
     )
 
 
@@ -205,7 +207,7 @@ class RunRow(Base):
     )
     error: Mapped[str | None] = mapped_column(Text)
     warnings: Mapped[list[str]] = mapped_column(
-        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+        JSONB, nullable=False, default=list, server_default=sql_text("'[]'::jsonb")
     )
     created_by: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
@@ -236,7 +238,7 @@ class UserOnboardingRow(Base):
         ForeignKey("projects.id", ondelete="SET NULL", name="fk_user_onboarding_tour_project"),
     )
     checklist_hidden: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default=text("false")
+        Boolean, nullable=False, default=False, server_default=sql_text("false")
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -263,6 +265,7 @@ class QuestionRow(Base):
     __table_args__ = (
         UniqueConstraint("project_id", "code", name="uq_questions_project_code"),
         UniqueConstraint("answer_source_id", name="uq_questions_answer_source_id"),
+        CheckConstraint("category IN ('business', 'technical')", name="ck_questions_category"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
@@ -289,6 +292,16 @@ class QuestionRow(Base):
     answer_text: Mapped[str | None] = mapped_column(Text)
     run_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("runs.id", ondelete="SET NULL")
+    )
+    # RFC-0006, шаг 2: категория вопроса, действия технического вопроса и блокирующий флаг.
+    category: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="business", server_default="business"
+    )
+    actions: Mapped[list[Any]] = mapped_column(
+        JSONB, nullable=False, server_default=sql_text("'[]'::jsonb")
+    )
+    blocking: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=sql_text("false")
     )
 
 
@@ -338,26 +351,26 @@ class DiagramVersionRow(Base):
     # ADR-0010: сессии правок и контрольные точки.
     label: Mapped[str | None] = mapped_column(String(120))
     checkpoint: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default=text("false")
+        Boolean, nullable=False, default=False, server_default=sql_text("false")
     )
     session_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     saved_count: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=1, server_default=text("1")
+        Integer, nullable=False, default=1, server_default=sql_text("1")
     )
     # Цитаты не изменились с прошлой версии: `trace` пуст, читаются у ближайшего владельца.
     trace_inherited: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default=text("false")
+        Boolean, nullable=False, default=False, server_default=sql_text("false")
     )
     # То же для отчёта; счётчики хранятся отдельно, чтобы список истории не читал JSONB.
     report_inherited: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default=text("false")
+        Boolean, nullable=False, default=False, server_default=sql_text("false")
     )
     lint_count: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default=text("0")
+        Integer, nullable=False, default=0, server_default=sql_text("0")
     )
     assumption_count: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default=text("0")
+        Integer, nullable=False, default=0, server_default=sql_text("0")
     )
 
 
@@ -386,7 +399,7 @@ class UserLlmCredentialRow(Base):
     key_hint: Mapped[str] = mapped_column(String(8), nullable=False)
     default_model: Mapped[str | None] = mapped_column(String(128))
     is_default: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default=text("false")
+        Boolean, nullable=False, default=False, server_default=sql_text("false")
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -452,7 +465,7 @@ Index(
     "uq_runs_active_project",
     RunRow.project_id,
     unique=True,
-    postgresql_where=text("status IN ('queued', 'running')"),
+    postgresql_where=sql_text("status IN ('queued', 'running', 'waiting')"),
 )
 
 
@@ -460,7 +473,7 @@ Index(
     "uq_user_llm_credentials_default",
     UserLlmCredentialRow.user_id,
     unique=True,
-    postgresql_where=text("is_default"),
+    postgresql_where=sql_text("is_default"),
 )
 
 

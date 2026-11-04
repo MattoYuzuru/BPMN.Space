@@ -1,14 +1,20 @@
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from uuid import uuid4
 
 import pytest
 
 from app.domain.analysis import AnalysisResult, ContextSource, RunContext
 from app.domain.models import SourceKind
-from app.llm.base import PipelineError
-from app.llm.pipeline import _verified_quote
-from tests.llm_helpers import ScriptedPipeline
+from app.llm.base import (
+    BudgetReachedError,
+    PipelineError,
+    run_budget,
+    track_run_usage,
+)
+from app.llm.capabilities import Budget, ModelCapabilities, ModelPrices
+from app.llm.pipeline import LlmPipeline, _verified_quote
+from tests.llm_helpers import ScriptedClient, ScriptedPipeline
 
 _NO_SLEEP = lambda _seconds: None  # noqa: E731 — тесты не ждут настоящих пауз
 
@@ -246,3 +252,29 @@ async def test_chat_uses_injected_model_and_returns_answer() -> None:
     assert "недоверенные данные" in seen[0][0]
     assert "Оператор проверяет заявление." in seen[0][1]
     assert "С чего начинается процесс?" in seen[0][1]
+
+
+@pytest.mark.asyncio
+async def test_budget_stops_before_next_request_in_pipeline() -> None:
+    """Мягкая остановка бюджета: проверка перед запросом, а не после ответа."""
+    client = ScriptedClient(lambda _s, _u: "{}", usage=(100, 20, 0, 0))
+    prices = ModelPrices(
+        input=4.0, output=20.0, cache_read=0.2, cache_write=5.0, checked_on=date(2026, 10, 6)
+    )
+    pipeline = LlmPipeline(
+        client,
+        provider="anthropic",
+        model="claude-opus-5-5",
+        capabilities=ModelCapabilities(chars_per_token=2.0, prices=prices),
+    )
+    with track_run_usage(), run_budget(Budget(tokens=10)):
+        # До первого запроса потрачено ноль — он разрешён.
+        assert await pipeline._complete("s", "u", json_mode=True) == "{}"
+        with pytest.raises(BudgetReachedError, match="токенов"):
+            await pipeline._complete("s", "u", json_mode=True)
+    with track_run_usage(), run_budget(Budget(cost_usd=0.0001)):
+        assert await pipeline._complete("s", "u", json_mode=True) == "{}"
+        with pytest.raises(BudgetReachedError, match="исчерпан"):
+            await pipeline._complete("s", "u", json_mode=True)
+    # Без бюджета запросы идут как обычно.
+    assert await pipeline._complete("s", "u", json_mode=True) == "{}"

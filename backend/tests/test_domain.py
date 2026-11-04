@@ -197,7 +197,7 @@ def test_exact_question_text_does_not_merge_different_source_contexts() -> None:
             new_questions=[
                 NewQuestion(
                     text=old.text,
-                    kind=old.kind,
+                    kind=QuestionKind(old.kind),
                     severity=old.severity,
                     assumption="Не определён",
                     about=Quote(source_id=second.id, quote=second.content),

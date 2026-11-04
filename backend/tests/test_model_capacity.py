@@ -591,10 +591,18 @@ def test_profile_and_limits_are_stored_and_sent_to_the_provider(stack: Stack) ->
         )
         assert started.status_code == 202, started.text
         body = started.json()
-        assert body["profile"] == {"effort": "high", "semantic_review": False}
+        assert body["profile"] == {
+            "effort": "high",
+            "semantic_review": False,
+            "budget": None,
+        }
     saved = stack.container.repos.runs._items[UUID(body["id"])]  # type: ignore[attr-defined]
     execution = saved.ir["execution"]
-    assert execution["profile"] == {"effort": "high", "semantic_review": False}
+    assert execution["profile"] == {
+        "effort": "high",
+        "semantic_review": False,
+        "budget": None,
+    }
     assert execution["limits"] == {
         "context_budget_chars": 120_000,
         "json_max_tokens": 16_384,
@@ -613,7 +621,11 @@ def test_model_without_reasoning_ignores_effort(stack: Stack) -> None:
             json={"mode": RunMode.ANALYZE.value, "profile": {"effort": "max"}},
         )
     assert started.status_code == 202, started.text
-    assert started.json()["profile"] == {"effort": None, "semantic_review": None}
+    assert started.json()["profile"] == {
+        "effort": None,
+        "semantic_review": None,
+        "budget": None,
+    }
 
 
 # ---------- сквозные прогоны: бюджет модели и восстановление после рестарта ----------

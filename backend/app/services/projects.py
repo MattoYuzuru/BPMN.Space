@@ -10,9 +10,7 @@ from app.domain.models import (
     Project,
     ProjectStatus,
     Question,
-    QuestionStatus,
     Run,
-    RunStatus,
     RunSummary,
     Source,
     SourceKind,
@@ -22,11 +20,10 @@ from app.domain.models import (
 from app.domain.pagination import Cursor, InvalidCursorError
 from app.domain.projects import default_source_title, derive_status
 from app.domain.questions import project_summary
-from app.domain.runs import ACTIVE_STATUSES
 from app.domain.versions import rechecked_version
 from app.fixtures import read_text
 from app.fixtures.types import Example
-from app.infra.repositories.base import Repositories
+from app.infra.repositories.base import ProjectStats, Repositories
 from app.infra.storage import FileStorage
 from app.services.common import Runtime, get_project
 from app.services.errors import ConflictError, InvalidInputError, NotFoundError
@@ -89,6 +86,24 @@ def _clean_description(description: str | None) -> str | None:
     return description or None
 
 
+def _build_view(project: Project, stats: ProjectStats) -> ProjectView:
+    return ProjectView(
+        project=project,
+        status=derive_status(
+            has_sources=stats.has_material,
+            open_questions=stats.questions_open,
+            active_run_mode=stats.active_run_mode,
+        ),
+        counts=ProjectCounts(
+            sources=stats.sources,
+            questions_open=stats.questions_open,
+            questions_resolved=stats.questions_resolved,
+            versions=stats.versions,
+        ),
+        lanes=list(stats.lanes),
+    )
+
+
 class ProjectService:
     def __init__(
         self,
@@ -103,50 +118,13 @@ class ProjectService:
         self._rt = runtime
         self._storage = storage
 
-    async def _view(
-        self,
-        project: Project,
-        *,
-        sources: Sequence[Source] | None = None,
-        questions: Sequence[Question] | None = None,
-        versions: Sequence[Version] | None = None,
-        active_run: Run | None = None,
-        active_known: bool = False,
-    ) -> ProjectView:
-        repos = self._repos
-        sources = (
-            sources if sources is not None else await repos.sources.list_by_project(project.id)
-        )
-        if questions is None:
-            questions = await repos.questions.list_by_project(project.id)
-        versions = (
-            versions
-            if versions is not None
-            else await repos.versions.list_by_project(project.id, include_xml=False)
-        )
-        if not active_known:
-            active_run = await repos.runs.active_for_project(project.id)
-        material = [
-            s
-            for s in sources
-            if s.kind is not SourceKind.ANSWER and s.active and s.status is not SourceStatus.FAILED
-        ]
-        open_count = sum(1 for q in questions if q.status is QuestionStatus.OPEN)
-        return ProjectView(
-            project=project,
-            status=derive_status(
-                has_sources=bool(material),
-                open_questions=open_count,
-                active_run_mode=active_run.mode if active_run else None,
-            ),
-            counts=ProjectCounts(
-                sources=sum(1 for s in sources if s.kind is not SourceKind.ANSWER),
-                questions_open=open_count,
-                questions_resolved=sum(1 for q in questions if q.status is QuestionStatus.RESOLVED),
-                versions=len(versions),
-            ),
-            lanes=list(versions[0].lanes) if versions else [],
-        )
+    async def _views(self, projects: Sequence[Project]) -> list[ProjectView]:
+        """Карточки пачкой: счётчики приходят агрегатами БД, а не загрузкой строк."""
+        stats = await self._repos.projects.stats([p.id for p in projects]) if projects else {}
+        return [_build_view(p, stats.get(p.id, ProjectStats())) for p in projects]
+
+    async def _view(self, project: Project) -> ProjectView:
+        return (await self._views([project]))[0]
 
     async def list(
         self,
@@ -158,7 +136,7 @@ class ProjectService:
         scope_to_user: bool = False,
         scope: ProjectScope = ProjectScope.ALL,
     ) -> ProjectPage:
-        """Курсорная страница. TODO(real): #6 счётчики — одним агрегирующим SQL-запросом."""
+        """Курсорная страница; счётчики карточек считает БД агрегатами, без N+1."""
         limit = min(max(limit, 1), MAX_PAGE)
         try:
             after = Cursor.decode(cursor).key() if cursor else None
@@ -177,7 +155,7 @@ class ProjectService:
         projects = projects[:limit]
         last = projects[-1] if projects else None
         return ProjectPage(
-            items=[await self._view(p) for p in projects],
+            items=await self._views(projects),
             next_cursor=Cursor(last.updated_at, last.id).encode() if has_more and last else None,
             total=await self._repos.projects.count(
                 query=query, owner_id=owner_id, scope_to_user=scope_to_user, scope=scope
@@ -192,26 +170,17 @@ class ProjectService:
         project = await get_project(repos, project_id)
         sources = await repos.sources.list_by_project(project_id)
         questions = await repos.questions.list_by_project(project_id)
-        versions = await repos.versions.list_by_project(project_id, include_xml=False)
-        latest = await repos.versions.get(versions[0].id) if versions else None
-        runs = await repos.runs.list_by_project(project_id)
-        active = next((r for r in runs if r.status in ACTIVE_STATUSES), None)
-        finished = [r for r in runs if r.status is RunStatus.SUCCEEDED]
-        view = await self._view(
-            project,
-            sources=sources,
-            questions=questions,
-            versions=versions,
-            active_run=active,
-            active_known=True,
-        )
+        latest = await repos.versions.latest(project_id)
+        active = await repos.runs.active_for_project(project_id)
+        last_run_id = await repos.runs.last_succeeded_id(project_id)
+        view = await self._view(project)
         return ProjectDetail(
             view=view,
             sources=sources,
             questions=questions,
             latest_version=rechecked_version(latest) if latest is not None else None,
             active_run=active,
-            summary=project_summary(questions, latest_run_id=finished[-1].id if finished else None),
+            summary=project_summary(questions, latest_run_id=last_run_id),
         )
 
     async def create(
@@ -226,7 +195,7 @@ class ProjectService:
             updated_at=now,
         )
         await self._repos.projects.add(project, owner_id=owner_id)
-        return await self._view(project, sources=[], questions=[], versions=[], active_known=True)
+        return _build_view(project, ProjectStats())
 
     async def create_from_example(
         self, example_id: str, *, owner_id: UUID | None = None

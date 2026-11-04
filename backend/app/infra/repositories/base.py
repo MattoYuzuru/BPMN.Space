@@ -1,6 +1,6 @@
 """Интерфейсы репозиториев. В приложении используется SQL-реализация, в тестах — in-memory."""
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime
@@ -14,6 +14,7 @@ from app.domain.models import (
     Question,
     QuestionStatus,
     Run,
+    RunMode,
     Source,
     SourceStatus,
     Version,
@@ -42,6 +43,19 @@ class AccessProjectMissingError(Exception):
     """Проект удалён между проверкой ссылки и изменением состава участников."""
 
 
+@dataclass(frozen=True, slots=True)
+class ProjectStats:
+    """Агрегаты карточки проекта; считаются в БД без загрузки содержимого."""
+
+    sources: int = 0  # без ответов на вопросы
+    has_material: bool = False  # есть активный нефейловый источник (не ответ)
+    questions_open: int = 0
+    questions_resolved: int = 0
+    versions: int = 0
+    lanes: tuple[str, ...] = ()  # дорожки последней версии
+    active_run_mode: RunMode | None = None
+
+
 class ActiveRunConflictError(Exception):
     """В БД уже есть активный прогон этого проекта (гарантия уникального индекса)."""
 
@@ -54,6 +68,13 @@ class ProjectRepository(Protocol):
         ...
 
     async def get(self, project_id: UUID) -> Project | None: ...
+    async def stats(self, project_ids: Sequence[UUID]) -> dict[UUID, ProjectStats]:
+        """Агрегаты карточек: число запросов не зависит от числа проектов.
+
+        Проекты без данных возвращаются с нулевыми значениями.
+        """
+        ...
+
     async def update(self, project: Project) -> None:
         """Меняет только название и описание (`updated_at` — через `touch`)."""
         ...
@@ -175,6 +196,9 @@ class RunRepository(Protocol):
         ...
 
     async def active_for_project(self, project_id: UUID) -> Run | None: ...
+    async def last_succeeded_id(self, project_id: UUID) -> UUID | None:
+        """Id последнего успешного прогона (по `started_at`) без загрузки IR и анализа."""
+        ...
 
 
 class VersionRepository(Protocol):

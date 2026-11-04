@@ -20,6 +20,11 @@
 Длинные документы, XLSX/PPTX, страницы PDF без текста и расшифровка записей:
 [ADR-0012](docs/adr/0012-long-documents-and-media.md), пределы — `docs/backend/generation-quality.md`.
 
+Предложено, не реализовано: агентный режим ([RFC-0004](docs/rfc/0004-agent-mode.md)), бюджеты из
+возможностей модели, effort и оценка стоимости ([RFC-0005](docs/rfc/0005-full-model-capacity-and-cost.md)),
+инструменты по ключам пользователя и производные источники ([RFC-0006](docs/rfc/0006-tools-connectors-and-derived-sources.md)),
+MCP и токены для внешних агентов ([RFC-0007](docs/rfc/0007-external-agents-mcp.md)).
+
 Сессии правок и контрольные точки (автосохранения сливаются в версию): [ADR-0010](docs/adr/0010-editing-sessions-and-checkpoints.md).
 Удаление и выход участника: [ADR-0009](docs/adr/0009-project-deletion-and-leaving.md).
 `DELETE /projects/{id}` зависит от роли: owner удаляет для всех, участник выходит сам.

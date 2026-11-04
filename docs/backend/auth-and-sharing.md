@@ -123,7 +123,7 @@ SSE прогона принимает токен и закрывается по�
 | `projects:write` | `POST /projects`, `POST /projects/from-example` (только токен без ограничения проектами), `PATCH /projects/{id}`, `PUT /projects/{id}/diagram`, контрольная точка версии |
 | `sources:write` | `POST /projects/{id}/sources/{text,file,sample}`, `PATCH /sources/{id}`; загрузка аудио или видео в `sources/file` — ещё и `runs:start` (запись расшифровывает платный провайдер) |
 | `sources:delete` | `DELETE /sources/{id}` |
-| `runs:start` | `POST /projects/{id}/runs`, `POST /runs/{id}/cancel`, помощник (`/projects/{id}/assistant`, `/assistant/chat`), `POST /transcriptions` — платные вызовы на ключах владельца |
+| `runs:start` | `POST /projects/{id}/runs`, `POST /runs/{id}/cancel`, помощник (`/projects/{id}/assistant`, `/assistant/chat`), `POST /transcriptions` — платные вызовы на ключах вызывающего пользователя |
 | `questions:answer` | `POST /questions/{id}/{answer,ignore,reopen}` |
 | любой действующий токен | `GET /auth/me`, `GET /auth/session` |
 
@@ -131,7 +131,8 @@ SSE прогона принимает токен и закрывается по�
 «sources:write» (добавлять и изменять источники)…».
 
 **Что через токен нельзя** (`403` «Это действие недоступно по токену доступа…»): управлять
-токенами, ключами моделей (`/me/llm-credentials`), ссылками доступа и участниками, принимать
+токенами, ключами пользователя (`/me/credentials`, `/me/llm-credentials`), ссылками доступа и
+участниками, принимать
 ссылки, удалять проект или выходить из него, онбординг, билеты комнаты и presence. Вход,
 регистрация и выход работают только через cookie. Маршрут закрыт по умолчанию: открыт только тот,
 у которого объявлено право `require_scope(...)` в декораторе (или `APIRouter(dependencies=…)`;

@@ -3,6 +3,7 @@
 - [Архитектура и API](rfc/0001-architecture.md)
 - [Совместная работа в реальном времени](rfc/0002-realtime-collaboration.md)
 - [Воспроизведение BPMN и модель бизнес-времени](rfc/0003-process-playback-and-timing.md)
+- [Агентный режим: инструменты для чтения источников](rfc/0004-agent-mode.md)
 - Backend:
   - [Аккаунты и общий доступ к проектам](backend/auth-and-sharing.md)
   - [Постоянное хранение данных](backend/persistence.md)

@@ -52,6 +52,16 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Старый код не знает статуса `waiting`: прогон-ожидание навсегда «завис» бы в выдаче
+    # (и падал бы при разборе `RunStatus`). При откате закрываем такие прогоны как failed.
+    op.execute(
+        sa.text(
+            "UPDATE runs SET status = 'failed', "
+            "error = COALESCE(error, 'Прогон остановлен при откате на предыдущую версию'), "
+            "finished_at = COALESCE(finished_at, now()) "
+            "WHERE status = 'waiting'"
+        )
+    )
     op.drop_index("uq_runs_active_project", table_name="runs")
     op.create_index(
         "uq_runs_active_project",

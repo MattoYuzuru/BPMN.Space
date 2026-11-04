@@ -6,18 +6,32 @@ from datetime import datetime
 from typing import Any, cast
 from uuid import UUID
 
+# Возможности производных узлов волны 3 живут в `domain/media.py` (нужны и `domain/models.py`
+# для `feeds_model`); здесь — реэкспорт для удобства вызывающего кода.
+from app.domain.media import KEY_FRAMES, MEDIA_FEED, OCR, SUMMARY, VISION
 from app.domain.models import MediaInfo, Source, SourceDerivation
+
+# Реэкспорт возможностей нужен вызывающему коду; `__all__` снимает вопросы линтеров.
+__all__ = [
+    "KEY_FRAMES",
+    "MEDIA_FEED",
+    "OCR",
+    "SPEECH_TO_TEXT",
+    "SUMMARY",
+    "TRANSCRIPT_TITLE",
+    "VISION",
+    "derivation_frame_keys",
+    "derivation_from_json",
+    "derivation_to_json",
+    "descendants",
+    "media_from_json",
+    "media_to_json",
+    "transcript_segments",
+]
 
 # Возможность «речь → текст» (RFC-0006): расшифровка записи — производный источник.
 SPEECH_TO_TEXT = "speech_to_text"
 TRANSCRIPT_TITLE = "Расшифровка"
-# Возможности производных узлов волны 3. `frames` и `media_feed` — работа кода (ffmpeg и
-# сведение ленты), поэтому провайдер у них не модель; `ocr`, `vision` и `summary` — модель.
-OCR = "ocr"
-VISION = "vision"
-KEY_FRAMES = "frames"
-MEDIA_FEED = "media_feed"
-SUMMARY = "summary"
 
 
 def derivation_frame_keys(source: Source) -> list[str]:

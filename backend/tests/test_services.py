@@ -21,6 +21,7 @@ from app.infra.tasks import AsyncioTaskSpawner
 from app.ingest.parsers import (
     DocumentParseError,
     LocalDocumentParser,
+    ScanOnlyPdfError,
     UnsupportedFormatError,
     decode_text,
 )
@@ -243,7 +244,7 @@ async def test_parsers() -> None:
     text = await parser.parse(file_name="process.pdf", data=pdf)
     assert "[Страница 1]\nSubmit an application" in text
     assert "[Страница 2]\nThe manager approves the application" in text
-    with pytest.raises(DocumentParseError, match="не найден текстовый слой"):
+    with pytest.raises(ScanOnlyPdfError, match="нет текстового слоя"):
         await parser.parse(file_name="scan.pdf", data=_make_pdf([""]))
     with pytest.raises(DocumentParseError, match="Не удалось прочитать PDF"):
         await parser.parse(file_name="broken.pdf", data=b"not a PDF")

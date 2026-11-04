@@ -47,6 +47,7 @@ from app.ingest.parsers import (
     SUPPORTED_EXTENSIONS,
     DocumentParseError,
     DocumentParser,
+    ScanOnlyPdfError,
     UnsupportedFormatError,
     detect_format,
     is_slow,
@@ -586,6 +587,13 @@ class SourceService:
         """Результат разбора как набор полей источника: `status`, `content`, `error`, `warning`."""
         try:
             parsed = await self._parser.parse_document(file_name=file_name, data=data)
+        except ScanOnlyPdfError as error:
+            # Чистый скан: источник пока `failed`, но страницы сохраняем — OCR может его спасти.
+            return {
+                "status": SourceStatus.FAILED,
+                "error": str(error),
+                "unreadable_pages": list(error.pages),
+            }
         except DocumentParseError as error:
             return {"status": SourceStatus.FAILED, "error": str(error)}
         text = parsed.text
@@ -645,7 +653,10 @@ class SourceService:
         async with self._repos.atomic() as repos:
             await repos.projects.lock(source.project_id)
             await repos.sources.patch(source_id, changes, only_status=SourceStatus.PROCESSING)
-        if changes.get("status") is SourceStatus.READY and changes.get("unreadable_pages"):
+        if changes.get("unreadable_pages") and changes.get("status") in {
+            SourceStatus.READY,
+            SourceStatus.FAILED,
+        }:
             await self._ocr_scans(source_id, initiator_id=initiator_id)
 
     async def _ocr_scans(self, source_id: UUID, *, initiator_id: UUID | None) -> None:
@@ -657,7 +668,8 @@ class SourceService:
         if self._derivations is None:
             return
         source = await self._repos.sources.get(source_id)
-        if source is None or source.status is not SourceStatus.READY:
+        # `failed` — чистый скан без текстового слоя: OCR может перевести источник в `ready`.
+        if source is None or source.status not in {SourceStatus.READY, SourceStatus.FAILED}:
             return
         node = await self._derivations.prepare_ocr(source, initiator_id=initiator_id)
         if node is None:
@@ -750,7 +762,9 @@ class SourceService:
         duration = transcript.duration_sec or source.duration_sec
         return transcript, transcript_segments(transcript.content, duration)
 
-    async def retry_ocr(self, source_id: UUID, *, initiator_id: UUID | None) -> Source:
+    async def retry_ocr(  # noqa: PLR0912 — проверки состояния источника читаются по порядку
+        self, source_id: UUID, *, initiator_id: UUID | None
+    ) -> Source:
         """Повтор OCR сканов PDF после настройки ключа или разового решения аналитика.
 
         `«Повторить»` технического вопроса возвращает `derived`-узел, если модель нашлась, и
@@ -762,6 +776,11 @@ class SourceService:
         if not (source.file_name or "").lower().endswith(".pdf"):
             raise InvalidInputError("OCR сканов доступен только для PDF")
         if not source.unreadable_pages:
+            if source.status is SourceStatus.FAILED:
+                raise ConflictError(
+                    "В файле нет страниц, которые можно распознать: проверьте, что PDF "
+                    "не повреждён и не защищён паролем"
+                )
             raise ConflictError("Все страницы уже распознаны: повторять OCR нечего")
         if source.status is SourceStatus.PROCESSING:
             raise ConflictError("Файл ещё разбирается — повторите после окончания разбора")

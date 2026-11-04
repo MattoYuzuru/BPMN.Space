@@ -23,6 +23,7 @@ from app.ingest.frames import (
     FRAME_PROFILES,
     ExtractedFrame,
     FrameCandidate,
+    FrameExtractionError,
     FrameExtractor,
     MediaProfile,
     _dhash,
@@ -34,7 +35,7 @@ from app.ingest.frames import (
 )
 from app.llm.anthropic import AnthropicClient
 from app.llm.base import track_usage
-from app.llm.capabilities import ModelCapabilities, ModelPrices
+from app.llm.capabilities import ModelCapabilities, ModelPrices, capabilities_for
 from app.llm.mock import MockPipeline
 from app.llm.multimodal import (
     DATA_MARKER,
@@ -109,6 +110,8 @@ async def test_anthropic_sends_image_and_document_blocks() -> None:
     assert call["max_tokens"] == 512
     assert usage.tokens_in == 10
     assert usage.tokens_out == 5
+    # Разовые мультимодальные запросы не пишут кеш (запись стоит 1,25× входа).
+    assert "cache_control" not in call
 
     pdf = document_attachment(b"%PDF-1.4 fake", label="скан.pdf")
     await client.complete_document(
@@ -216,6 +219,24 @@ def test_media_attachment_validates_kind_and_size() -> None:
     assert MAX_DOCUMENT_BYTES == 32 * 1024 * 1024
 
 
+def test_openai_capabilities_declare_vision_and_pdf_by_family() -> None:
+    gpt4o = capabilities_for("openai", "gpt-4o")
+    assert gpt4o.vision
+    assert gpt4o.pdf_input
+    gpt5 = capabilities_for("openai", "gpt-5")
+    assert gpt5.vision
+    assert gpt5.pdf_input
+    # o1 — текстовая модель без изображений; o3/o4 изображения принимают.
+    o1 = capabilities_for("openai", "o1")
+    assert not o1.vision
+    assert not o1.pdf_input
+    o3 = capabilities_for("openai", "o3-mini")
+    assert o3.vision
+    assert o3.pdf_input
+    # Неизвестная совместимая модель не обещает multimodal: иначе capability_missing не сработает.
+    assert not capabilities_for("openai_compatible", "local-7b").vision
+
+
 # --- выбор модели для vision/PDF ----------------------------------------------------------
 
 
@@ -318,15 +339,19 @@ async def test_resolve_media_capability_missing_without_vision_model() -> None:
 # --- разбор ответов модели ---------------------------------------------------------------
 
 
-def test_parse_ocr_response_prefers_json_and_falls_back_to_markers() -> None:
-    payload = json.dumps({"pages": {"12": "Текст 12", "13": "Текст 13", "99": "лишняя"}})
-    parsed = parse_ocr_response(payload, (12, 13))
-    assert parsed == {12: "Текст 12", 13: "Текст 13"}
-    markers = "[Страница 12]\nПервый\n\n[Страница 13]\nВторой"
-    assert parse_ocr_response(markers, (12, 13)) == {12: "Первый", 13: "Второй"}
-    # Без разметки текст не теряется: относится к первой странице части.
-    assert parse_ocr_response("просто текст", (12, 13)) == {12: "просто текст"}
-    assert parse_ocr_response("", (12,)) == {}
+def test_parse_ocr_response_uses_sequential_pages_and_never_raw_json() -> None:
+    # Модель видит фрагмент 1..N и отвечает порядковыми номерами: перевод в исходные — у сервиса.
+    payload = json.dumps({"pages": {"1": "Первый", "2": "Второй", "99": "лишняя"}})
+    assert parse_ocr_response(payload, (1, 2)) == {1: "Первый", 2: "Второй"}
+    markers = "[Страница 1]\nПервый\n\n[Страница 2]\nВторой"
+    assert parse_ocr_response(markers, (1, 2)) == {1: "Первый", 2: "Второй"}
+    # Разобранный JSON с непригодными страницами не подменяется сырым ответом.
+    assert parse_ocr_response(json.dumps({"pages": {"x": "?"}}), (1, 2)) == {}
+    assert parse_ocr_response(json.dumps({"other": 1}), (1, 2)) == {}
+    # Без разметки сырой текст принимается только для одной страницы фрагмента.
+    assert parse_ocr_response("просто текст", (1,)) == {1: "просто текст"}
+    assert parse_ocr_response("просто текст", (1, 2)) == {}
+    assert parse_ocr_response("", (1,)) == {}
     assert json_object('```json\n{"a": 1}\n```') == {"a": 1}
     assert json_object("не json") is None
 
@@ -376,12 +401,19 @@ def test_dhash_hamming_and_dedupe() -> None:
         FrameCandidate(at_sec=1.0, path=Path("a/2.jpg")),
         FrameCandidate(at_sec=60.0, path=Path("a/3.jpg")),
     ]
-    kept = extractor._dedupe(candidates, [0, 0, 0b111_111_111], limit=10)
+    kept = extractor._dedupe(
+        candidates,
+        {candidates[0].path: 0, candidates[1].path: 0, candidates[2].path: 0b111_111_111},
+        limit=10,
+    )
     assert [item.at_sec for item in kept] == [0.0, 60.0]
 
+    sampled_candidates = [
+        FrameCandidate(at_sec=float(index), path=Path(f"x/{index}.jpg")) for index in range(10)
+    ]
     sampled = extractor._dedupe(
-        [FrameCandidate(at_sec=float(index), path=Path("x")) for index in range(10)],
-        [(1 << (index * 10)) - 1 for index in range(10)],
+        sampled_candidates,
+        {item.path: (1 << (index * 10)) - 1 for index, item in enumerate(sampled_candidates)},
         limit=3,
     )
     assert len(sampled) == 3
@@ -412,6 +444,15 @@ def test_media_profiles_and_estimate() -> None:
     detailed = estimate_media(duration_sec=600, media_profile="detailed", has_video=True)
     assert 0 < detailed.frames_min <= detailed.frames_max <= 600
     assert detailed.vision_requests >= 1
+    # Серверный предел MEDIA_FRAME_MAX_FRAMES учитывается в оценке.
+    capped = estimate_media(
+        duration_sec=600, media_profile="detailed", has_video=True, frame_max_cap=10
+    )
+    assert capped.frames_max <= 10
+    # Краткое содержание входит в диапазон только для видео с кадрами.
+    assert detailed.summary_cost.max_usd is not None
+    assert detailed.summary_cost.max_usd > 0
+    assert audio.summary_cost.max_usd == 0
     assert detailed.total_cost.min_usd is not None
     assert detailed.total_cost.max_usd is not None
     assert detailed.total_cost.min_usd <= detailed.total_cost.max_usd
@@ -467,3 +508,52 @@ async def test_real_ffmpeg_extracts_frames_and_dedupes(tmp_path: Path) -> None:
     assert frames, "даже статичный экран даёт хотя бы первый кадр"
     assert frames[0].data.startswith(b"\xff\xd8"), "кадры сохраняются JPEG"
     assert frames[0].index == 1
+
+
+# --- регрессии ревью: dhash по правильным кадрам ------------------------------------------
+
+
+class _HashScriptedExtractor(FrameExtractor):
+    """ffmpeg-хеши подменены: проверяем сопоставление «путь → кадр», а не сами пиксели."""
+
+    def __init__(self, mapping: dict[str, int]) -> None:
+        super().__init__()
+        self.mapping = mapping
+
+    async def _hash_sequence(self, paths: list[Path]) -> list[int | None]:
+        return [self.mapping[path.name] for path in paths]
+
+
+async def test_hashes_are_keyed_by_path_not_directory_order() -> None:
+    extractor = _HashScriptedExtractor({"scene1.jpg": 1, "scene2.jpg": 2, "periodic.jpg": 3})
+    candidates = [
+        FrameCandidate(at_sec=0.0, path=Path("scene/scene1.jpg")),
+        FrameCandidate(at_sec=10.0, path=Path("interval/periodic.jpg")),
+        FrameCandidate(at_sec=20.0, path=Path("scene/scene2.jpg")),
+    ]
+    hashes = await extractor._hashes(candidates)
+    assert hashes == {
+        Path("scene/scene1.jpg"): 1,
+        Path("interval/periodic.jpg"): 3,
+        Path("scene/scene2.jpg"): 2,
+    }
+    # Одинаковые хеши от разных проходов всё равно считаются дублями.
+    same = [
+        FrameCandidate(at_sec=0.0, path=Path("scene/a.jpg")),
+        FrameCandidate(at_sec=1.0, path=Path("interval/b.jpg")),
+    ]
+    dedupe = FrameExtractor(dedup_bits=0)
+    kept = dedupe._dedupe(same, {Path("scene/a.jpg"): 7, Path("interval/b.jpg"): 7}, limit=10)
+    assert [item.at_sec for item in kept] == [0.0]
+
+
+async def test_hashes_failure_does_not_drop_frames() -> None:
+    class _Failing(FrameExtractor):
+        async def _hash_sequence(self, paths: list[Path]) -> list[int | None]:
+            raise FrameExtractionError("ffmpeg сломался")
+
+    extractor = _Failing()
+    candidates = [FrameCandidate(at_sec=0.0, path=Path("a.jpg"))]
+    assert await extractor._hashes(candidates) == {}
+    kept = extractor._dedupe(candidates, {}, limit=10)
+    assert kept == candidates

@@ -152,6 +152,7 @@ def build_frame_extractor(settings: Settings) -> FrameExtractor:
         frame_width=settings.media_frame_width,
         dedup_bits=settings.media_frame_dedup_bits,
         max_frames_cap=settings.media_frame_max_frames,
+        max_concurrent_extractions=settings.media_frame_max_concurrent,
     )
 
 
@@ -326,6 +327,7 @@ def build_container(
         vision_max_tokens=settings.media_vision_max_tokens,
         ocr_pages_per_request=settings.ocr_pages_per_request,
         ocr_max_tokens=settings.ocr_max_tokens,
+        ocr_tokens_per_page=settings.ocr_tokens_per_page,
         summary_max_tokens=settings.media_summary_max_tokens,
         parallel_requests=settings.llm_parallel_requests,
         max_text_chars=settings.max_text_chars,

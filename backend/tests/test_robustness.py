@@ -31,7 +31,12 @@ from app.domain.runs import RunEventKind
 from app.fixtures import read_bpmn
 from app.infra.repositories.memory import InMemoryStore
 from app.ingest.context import describe_context, fit_sources
-from app.ingest.parsers import DocumentParseError, LocalDocumentParser, _pdf_text
+from app.ingest.parsers import (
+    DocumentParseError,
+    LocalDocumentParser,
+    ParsedDocument,
+    _pdf_document,
+)
 from app.llm.base import PipelineError, record_usage, run_deadline, track_usage
 from app.llm.openai_compatible import DeepSeekPipeline
 from app.main import create_app
@@ -373,17 +378,17 @@ async def test_pdf_page_limit() -> None:
 
 def test_pdf_stops_at_its_deadline() -> None:
     with pytest.raises(DocumentParseError, match="слишком много времени"):
-        _pdf_text(_pdf(2), max_pages=10, max_chars=1000, deadline=0.0)
+        _pdf_document(_pdf(2), max_pages=10, max_chars=1000, deadline=0.0)
 
 
 async def test_parsing_timeout_does_not_block_event_loop(monkeypatch: pytest.MonkeyPatch) -> None:
     import time  # noqa: PLC0415
 
-    def slow(*_args: object, **_kwargs: object) -> str:
+    def slow(*_args: object, **_kwargs: object) -> ParsedDocument:
         time.sleep(0.5)
-        return "текст"
+        return ParsedDocument(text="текст")
 
-    monkeypatch.setattr("app.ingest.parsers._pdf_text", slow)
+    monkeypatch.setattr("app.ingest.parsers._pdf_document", slow)
     parser = LocalDocumentParser(timeout_sec=0.05)
     ticks = 0
 
@@ -407,11 +412,11 @@ async def test_parsing_uses_dedicated_executor_not_default_pool(
 
     names: list[str] = []
 
-    def work(*_args: object, **_kwargs: object) -> str:
+    def work(*_args: object, **_kwargs: object) -> ParsedDocument:
         names.append(threading.current_thread().name)
-        return "текст"
+        return ParsedDocument(text="текст")
 
-    monkeypatch.setattr("app.ingest.parsers._pdf_text", work)
+    monkeypatch.setattr("app.ingest.parsers._pdf_document", work)
     parser = LocalDocumentParser()
     assert await parser.parse(file_name="x.pdf", data=b"%PDF") == "текст"
     assert names[0].startswith("doc-parse")
@@ -420,11 +425,11 @@ async def test_parsing_uses_dedicated_executor_not_default_pool(
 async def test_stuck_parsing_does_not_starve_default_pool(monkeypatch: pytest.MonkeyPatch) -> None:
     release = __import__("threading").Event()
 
-    def stuck(*_args: object, **_kwargs: object) -> str:
+    def stuck(*_args: object, **_kwargs: object) -> ParsedDocument:
         release.wait(5)
-        return "текст"
+        return ParsedDocument(text="текст")
 
-    monkeypatch.setattr("app.ingest.parsers._pdf_text", stuck)
+    monkeypatch.setattr("app.ingest.parsers._pdf_document", stuck)
     parser = LocalDocumentParser(timeout_sec=0.05)
     try:
         for _ in range(2):  # занимаем оба слота выделенного пула

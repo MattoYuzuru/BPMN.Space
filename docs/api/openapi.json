@@ -116,7 +116,7 @@
         "properties": {
           "file": {
             "contentMediaType": "application/octet-stream",
-            "description": ".txt, .md, .csv, .docx или .pdf",
+            "description": ".txt, .md, .csv, .docx, .xlsx, .pptx, .pdf или аудио/видео (.mp3 .wav .ogg .opus .m4a .flac .aac .webm .mp4 .mov .mkv)",
             "title": "File",
             "type": "string"
           },
@@ -1956,6 +1956,26 @@
           "title": {
             "title": "Title",
             "type": "string"
+          },
+          "unreadable_pages": {
+            "description": "Номера страниц PDF без текстового слоя (сканы): их текст не извлечён",
+            "items": {
+              "type": "integer"
+            },
+            "title": "Unreadable Pages",
+            "type": "array"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Для `status=ready`: источник прочитан не полностью (см. `unreadable_pages`)",
+            "title": "Warning"
           }
         },
         "required": [
@@ -5131,7 +5151,7 @@
     },
     "/api/v1/projects/{project_id}/sources/file": {
       "post": {
-        "description": "Документ. `.txt`/`.md`/`.csv` готовы сразу; `.docx`/`.pdf` приходят в `processing`\nи становятся `ready` или `failed` в фоне — обновляйте проект, пока есть `processing`.",
+        "description": "Документ или запись. `.txt`/`.md`/`.csv` готовы сразу; `.docx`/`.xlsx`/`.pptx`/`.pdf` и\nаудио/видео приходят в `processing` и становятся `ready` или `failed` в фоне — обновляйте\nпроект, пока есть `processing`. Страницы PDF без текста дают `ready` с `warning`.\nЗаписи пишутся на диск потоком (лимит `MAX_MEDIA_BYTES`), документы — `MAX_UPLOAD_BYTES`.",
         "operationId": "create_file_source",
         "parameters": [
           {

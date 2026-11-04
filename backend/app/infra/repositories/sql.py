@@ -100,6 +100,8 @@ def _source(row: SourceRow) -> Source:
         duration_sec=row.duration_sec,
         question_id=row.question_id,
         error=row.error,
+        warning=row.warning,
+        unreadable_pages=list(row.unreadable_pages or []),
         file_key=row.file_key,
         digest=row.digest,
     )
@@ -372,7 +374,18 @@ class SqlProjectRepository:
             return int(await session.scalar(statement) or 0)
 
 
-_PATCHABLE_SOURCE_FIELDS = frozenset({"title", "content", "status", "active", "error"})
+_PATCHABLE_SOURCE_FIELDS = frozenset(
+    {
+        "title",
+        "content",
+        "status",
+        "active",
+        "error",
+        "warning",
+        "unreadable_pages",
+        "duration_sec",
+    }
+)
 
 
 class SqlSourceRepository:
@@ -396,6 +409,8 @@ class SqlSourceRepository:
             duration_sec=item.duration_sec,
             question_id=item.question_id,
             error=item.error,
+            warning=item.warning,
+            unreadable_pages=item.unreadable_pages or None,
             file_key=item.file_key,
             digest=item.digest,
         )

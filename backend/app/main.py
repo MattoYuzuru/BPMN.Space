@@ -22,7 +22,7 @@ from app.container import Container, build_container
 from app.infra.seed import build_seed
 from app.log_filters import install_log_filters
 from app.services.api_tokens import bearer_secret
-from app.services.auth import optional_user
+from app.services.auth import SESSION_COOKIE, optional_user
 from app.services.presence import PresenceRegistry
 
 
@@ -40,6 +40,41 @@ def _openapi(app: FastAPI) -> dict[str, Any]:
         components.setdefault(name, definition)
     app.openapi_schema = schema
     return schema
+
+
+def _install_csrf(app: FastAPI, settings: Settings) -> None:
+    """Double-submit CSRF для изменяющих запросов API; правила для токенов доступа (RFC-0007)."""
+    account_register = settings.api_prefix + "/auth/register"
+    account_session = settings.api_prefix + "/auth/session/"
+
+    @app.middleware("http")
+    async def csrf_protection(request, call_next):
+        path = request.url.path
+        unsafe = request.method not in {"GET", "HEAD", "OPTIONS", "TRACE"}
+        is_api = path.startswith(settings.api_prefix + "/")
+        # Вход, регистрация и выход (FastAPI Users) работают только с cookie: заголовок
+        # `Authorization` там не используется и не должен отключать CSRF (RFC-0007).
+        account_route = path == account_register or path.startswith(account_session)
+        if settings.auth_enabled and account_route and "authorization" in request.headers:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "detail": "Вход, регистрация и выход — только в браузере, без токена доступа"
+                },
+            )
+        # Запрос с `Authorization: Bearer` и без cookie-сессии аутентифицируется только токеном
+        # доступа. Чужой сайт не может добавить этот заголовок без CORS-preflight, поэтому
+        # double-submit CSRF к таким запросам не применяется. Если cookie-сессия всё же пришла,
+        # CSRF проверяется как обычно.
+        token_only = bearer_secret(request) is not None and SESSION_COOKIE not in request.cookies
+        if settings.auth_enabled and unsafe and is_api and not token_only:
+            cookie = request.cookies.get(CSRF_COOKIE)
+            header = request.headers.get("x-csrf-token")
+            if not cookie or not header or not secrets.compare_digest(cookie, header):
+                return JSONResponse(
+                    status_code=403, content={"detail": "CSRF-токен отсутствует или не совпадает"}
+                )
+        return await call_next(request)
 
 
 def create_app(settings: Settings | None = None, *, container: Container | None = None) -> FastAPI:
@@ -86,22 +121,7 @@ def create_app(settings: Settings | None = None, *, container: Container | None 
         allow_credentials=True,
     )
 
-    @app.middleware("http")
-    async def csrf_protection(request, call_next):
-        unsafe = request.method not in {"GET", "HEAD", "OPTIONS", "TRACE"}
-        is_api = request.url.path.startswith(settings.api_prefix + "/")
-        # Запрос с `Authorization: Bearer` аутентифицируется только токеном доступа, cookie
-        # тогда не используется. Чужой сайт не может добавить этот заголовок без CORS-preflight,
-        # поэтому double-submit CSRF к таким запросам не применяется (RFC-0007).
-        bearer = bearer_secret(request) is not None
-        if settings.auth_enabled and unsafe and is_api and not bearer:
-            cookie = request.cookies.get(CSRF_COOKIE)
-            header = request.headers.get("x-csrf-token")
-            if not cookie or not header or not secrets.compare_digest(cookie, header):
-                return JSONResponse(
-                    status_code=403, content={"detail": "CSRF-токен отсутствует или не совпадает"}
-                )
-        return await call_next(request)
+    _install_csrf(app, settings)
 
     shares_prefix = settings.api_prefix + "/shares/"
 

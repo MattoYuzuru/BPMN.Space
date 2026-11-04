@@ -521,11 +521,17 @@ class InMemoryApiTokenRepository:
         item = next((t for t in self._items.values() if t.token_hash == token_hash), None)
         return copy.deepcopy(item) if item else None
 
-    async def count_active(self, user_id: UUID, now: datetime) -> int:
-        return sum(1 for t in self._items.values() if t.user_id == user_id and t.is_active(now))
-
-    async def add(self, token: ApiToken) -> None:
+    async def add_within_limit(self, token: ApiToken, *, max_active: int) -> bool:
+        # Между await нет переключений: подсчёт и вставка атомарны сами.
+        active = sum(
+            1
+            for t in self._items.values()
+            if t.user_id == token.user_id and t.is_active(token.created_at)
+        )
+        if active >= max_active:
+            return False
         self._items[token.id] = copy.deepcopy(token)
+        return True
 
     async def revoke(self, token_id: UUID, at: datetime) -> None:
         item = self._items.get(token_id)

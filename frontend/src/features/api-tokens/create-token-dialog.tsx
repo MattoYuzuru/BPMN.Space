@@ -12,6 +12,7 @@ import {
   useTokenProjectChoices,
 } from '@/entities/api-token'
 import { errorMessage } from '@/shared/api/client'
+import { useCopy } from '@/shared/hooks/use-copy'
 import {
   Button,
   Card,
@@ -29,7 +30,6 @@ import {
   Skeleton,
   Textarea,
 } from '@/shared/ui'
-import { useCopy } from './use-copy'
 
 const FORM_ID = 'create-api-token-form'
 
@@ -68,6 +68,9 @@ export function CreateTokenDialog({
   const [created, setCreated] = useState<ApiTokenCreated | null>(null)
 
   const close = (next: boolean) => {
+    // Пока сервер создаёт токен, окно не закрывается (Esc, подложка, «Отмена»): иначе токен
+    // появится на сервере, а его секрет, показываемый один раз, потеряется.
+    if (!next && create.isPending) return
     if (!next) {
       setForm(EMPTY)
       setError(undefined)
@@ -100,6 +103,7 @@ export function CreateTokenDialog({
     <Dialog open={open} onOpenChange={close}>
       <DialogContent
         size="lg"
+        hideClose={create.isPending}
         title={created ? 'Токен создан' : 'Создать токен'}
         description={
           created
@@ -113,7 +117,7 @@ export function CreateTokenDialog({
             </Button>
           ) : (
             <>
-              <Button variant="ghost" onClick={() => close(false)}>
+              <Button variant="ghost" disabled={create.isPending} onClick={() => close(false)}>
                 Отмена
               </Button>
               <Button

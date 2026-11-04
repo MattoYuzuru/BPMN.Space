@@ -22,6 +22,7 @@ from app.api.access import (
     ensure_resource_access,
     require_account,
     require_scope,
+    require_token_scope,
 )
 from app.api.auth import OptionalUserDep
 from app.api.deps import ContainerDep
@@ -101,6 +102,8 @@ async def create_file_source(  # noqa: PLR0917 - multipart form fields are separ
     await ensure_project_access(request, container, project_id, user, write=True)
     file_name = file.filename or "document.txt"
     if is_media(file_name):
+        # Запись расшифровывает платный провайдер: по токену нужно ещё и право запусков.
+        require_token_scope(request, ApiScope.RUNS_START)
         source = await container.sources.create_media(
             project_id, file_name=file_name, mime=file.content_type, read=file.read, title=title
         )

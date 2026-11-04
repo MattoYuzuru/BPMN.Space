@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import func, or_, select, text, update
 
 from app.domain.api_tokens import ApiScope, ApiToken
 from app.infra.db_models import ApiTokenRow
@@ -51,23 +51,25 @@ class SqlApiTokenRepository:
             )
             return _token(row) if row else None
 
-    async def count_active(self, user_id: UUID, now: datetime) -> int:
-        async with self.sessions() as session:
-            return int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(ApiTokenRow)
-                    .where(
-                        ApiTokenRow.user_id == user_id,
-                        ApiTokenRow.revoked_at.is_(None),
-                        ApiTokenRow.expires_at > now,
-                    )
-                )
-                or 0
-            )
-
-    async def add(self, token: ApiToken) -> None:
+    async def add_within_limit(self, token: ApiToken, *, max_active: int) -> bool:
+        """Вставить токен, если у владельца меньше `max_active` действующих. Подсчёт и вставка —
+        одна транзакция под блокировкой строки пользователя: параллельные создания одного
+        пользователя не превышают лимит."""
         async with self.sessions.begin() as session:
+            await session.execute(
+                text("SELECT id FROM users WHERE id = :id FOR UPDATE"), {"id": token.user_id}
+            )
+            active = await session.scalar(
+                select(func.count())
+                .select_from(ApiTokenRow)
+                .where(
+                    ApiTokenRow.user_id == token.user_id,
+                    ApiTokenRow.revoked_at.is_(None),
+                    ApiTokenRow.expires_at > token.created_at,
+                )
+            )
+            if int(active or 0) >= max_active:
+                return False
             session.add(
                 ApiTokenRow(
                     id=token.id,
@@ -83,6 +85,7 @@ class SqlApiTokenRepository:
                     revoked_at=token.revoked_at,
                 )
             )
+            return True
 
     async def revoke(self, token_id: UUID, at: datetime) -> None:
         async with self.sessions.begin() as session:

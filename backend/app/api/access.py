@@ -8,7 +8,11 @@ from fastapi import Depends, Request
 from app.container import Container
 from app.domain.access import ProjectRole, ResourceKind, ShareLink
 from app.domain.api_tokens import ApiScope, TokenPolicy
-from app.services.api_tokens import current_api_token, token_policy_marker
+from app.services.api_tokens import (
+    current_api_token,
+    scope_denied_message,
+    token_policy_marker,
+)
 from app.services.auth import UserRow, stream_user
 from app.services.errors import (
     DeletedProjectError,
@@ -29,6 +33,7 @@ __all__ = [
     "project_roles",
     "require_account",
     "require_scope",
+    "require_token_scope",
     "token_project_ids",
 ]
 
@@ -40,8 +45,21 @@ def require_scope(scope: ApiScope | None, *, all_projects: bool = False) -> Any:
     роль в проекте. Проверку выполняет аутентификация по токену (`services/auth.token_user`):
     маршрут без объявления по токену недоступен (`403`), так что новые маршруты закрыты по
     умолчанию. `scope=None` — достаточно любого действующего токена.
+
+    Ставьте в декоратор маршрута (или `APIRouter(dependencies=[...])` — она входит в сам
+    маршрут). Пометка в `include_router(dependencies=[...])` не попадает в `route.dependant`
+    исходного маршрута и не учитывается: такой маршрут по токену остаётся закрытым
+    (`tests/test_api_tokens.py`).
     """
     return Depends(token_policy_marker(TokenPolicy(scope, all_projects=all_projects)))
+
+
+def require_token_scope(request: Request, scope: ApiScope) -> None:
+    """Дополнительное право, которое зависит от тела запроса (например, медиафайл ведёт к
+    платной расшифровке). Cookie-сессию не ограничивает."""
+    token = current_api_token(request)
+    if token is not None and not token.has_scope(scope):
+        raise ForbiddenError(scope_denied_message(scope))
 
 
 def token_project_ids(request: Request) -> frozenset[UUID] | None:

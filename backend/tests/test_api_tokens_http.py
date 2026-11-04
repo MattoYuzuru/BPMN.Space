@@ -27,12 +27,13 @@ from app.api.v1 import runs as runs_api
 from app.api.v1.runs import run_events
 from app.domain.api_tokens import hash_secret
 from app.infra.db_models import ApiTokenRow
-from app.services.auth import stream_user
+from app.services.auth import SESSION_COOKIE, stream_user
 from tests.test_auth_http import (  # noqa: F401 — фикстура `stack` подключается импортом
     API,
     DEMO,
     MIGRATIONS_DIR,
     NOBODY,
+    PASSWORD,
     Account,
     Stack,
     _finished_project,
@@ -264,8 +265,9 @@ async def test_token_cannot_manage_account_secrets_or_sharing(stack: Stack) -> N
         response = await agent.request(method, path, **kwargs)
         assert response.status_code == 403, (method, path, response.text)
         assert "недоступно по токену" in response.json()["detail"]
-    # Выход работает только с cookie: без неё по токену сессию не закрыть.
-    assert (await agent.post("/auth/session/logout")).status_code == 401
+    # Вход, регистрация и выход с заголовком Authorization отклоняются целиком.
+    for path in ("/auth/session/logout", "/auth/session/login", "/auth/register"):
+        assert (await agent.post(path)).status_code == 403, path
     assert (await owner.get(f"/projects/{project}")).status_code == 200
     assert len((await owner.get("/me/api-tokens")).json()["items"]) == 1
 
@@ -287,6 +289,110 @@ async def test_csrf_is_skipped_for_bearer_and_kept_for_cookie(stack: Stack) -> N
         "/projects", json={"title": "x"}, headers={"authorization": "Bearer bps_" + "y" * 43}
     )
     assert mixed.status_code == 401
+    # С cookie-сессией CSRF нужен даже при заголовке Bearer: заголовок его не отключает.
+    secret = agent.secret
+    cookie_and_token = await owner.http.post(
+        f"{API}/projects", json={"title": "x"}, headers={"authorization": f"Bearer {secret}"}
+    )
+    assert cookie_and_token.status_code == 403
+    assert cookie_and_token.json() == {"detail": "CSRF-токен отсутствует или не совпадает"}
+
+
+async def test_account_routes_reject_bearer_with_cookie(stack: Stack) -> None:
+    """Воспроизведение ревью: cookie + `Bearer junk` без CSRF не должны входить и выходить."""
+    owner = await stack.user("token-account-routes@example.com")
+    junk = {"authorization": "Bearer junk"}
+
+    logout = await owner.http.post(f"{API}/auth/session/logout", headers=junk)
+    assert logout.status_code == 403
+    with_csrf = await owner.post("/auth/session/logout", headers=junk)
+    assert with_csrf.status_code == 403
+    assert (await owner.get("/auth/me")).status_code == 200  # сессия жива
+
+    guest = await stack.guest()
+    login = await guest.http.post(
+        f"{API}/auth/session/login",
+        data={"username": owner.email, "password": PASSWORD},
+        headers=junk,
+    )
+    assert login.status_code == 403
+    assert SESSION_COOKIE not in login.cookies
+    register = await guest.http.post(
+        f"{API}/auth/register",
+        json={"email": "token-reg@example.com", "password": PASSWORD},
+        headers=junk,
+    )
+    assert register.status_code == 403
+    # Без заголовка всё работает как раньше.
+    assert (await owner.post("/auth/session/logout")).status_code == 204
+
+
+async def test_disabled_account_token_gets_401_everywhere(stack: Stack) -> None:
+    owner = await stack.user("token-disabled@example.com")
+    agent = Agent(stack, (await _issue(owner, scopes=ALL_SCOPES))["secret"])
+    assert (await agent.get("/projects")).status_code == 200
+    async with stack.database.sessions.begin() as session:
+        await session.execute(
+            text("UPDATE users SET is_active = false WHERE id = :id"), {"id": UUID(owner.user_id)}
+        )
+    unknown = await Agent(stack, "bps_" + "z" * 43).get("/projects")
+    for method, path in (
+        ("GET", "/projects"),
+        ("GET", "/me/api-tokens"),
+        ("GET", "/me/llm-credentials"),
+        ("DELETE", f"/projects/{NOBODY}"),
+    ):
+        response = await agent.request(method, path)
+        assert response.status_code == 401, (method, path, response.text)
+        assert response.json() == unknown.json()
+
+
+async def test_media_upload_by_token_needs_runs_start(stack: Stack) -> None:
+    owner = await stack.user("token-media@example.com")
+    project = (await owner.post("/projects", json={"title": "Записи"})).json()["id"]
+    writer = Agent(stack, (await _issue(owner, scopes=["sources:write"]))["secret"])
+    media = {"file": ("call.webm", b"\x1a\x45\xdf\xa3" + b"0" * 64, "audio/webm")}
+
+    denied = await writer.post(f"/projects/{project}/sources/file", files=media)
+    assert denied.status_code == 403
+    assert "runs:start" in denied.json()["detail"]
+    document = await writer.post(
+        f"/projects/{project}/sources/file",
+        files={"file": ("notes.txt", "Заявку согласует отдел".encode(), "text/plain")},
+    )
+    assert document.status_code == 201, document.text
+
+    both = Agent(stack, (await _issue(owner, scopes=["sources:write", "runs:start"]))["secret"])
+    allowed = await both.post(f"/projects/{project}/sources/file", files=media)
+    assert allowed.status_code == 201, allowed.text
+    # Cookie-сессия не ограничена правами токена.
+    by_owner = await owner.post(f"/projects/{project}/sources/file", files=media)
+    assert by_owner.status_code == 201, by_owner.text
+
+
+async def test_restricted_token_hides_resources_of_other_projects(stack: Stack) -> None:
+    owner = await stack.user("token-resources@example.com")
+    hidden = await _finished_project(owner)
+    allowed = (await owner.post("/projects", json={"title": "Разрешённый"})).json()["id"]
+    agent = Agent(stack, (await _issue(owner, scopes=ALL_SCOPES, project_ids=[allowed]))["secret"])
+
+    calls = [
+        ("GET", f"/runs/{hidden['run']}", {}),
+        ("GET", f"/runs/{hidden['run']}/events", {}),
+        ("POST", f"/runs/{hidden['run']}/cancel", {}),
+        ("GET", f"/versions/{hidden['version']}", {}),
+        ("GET", f"/versions/{hidden['version']}/xml", {}),
+        ("POST", f"/questions/{hidden['question']}/answer", {"json": {"text": "Ответ"}}),
+        ("POST", f"/questions/{hidden['question']}/ignore", {}),
+        ("PATCH", f"/sources/{hidden['source']}", {"json": {"title": "Новое"}}),
+        ("DELETE", f"/sources/{hidden['source']}", {}),
+        ("GET", f"/projects/{hidden['project']}/questions", {}),
+    ]
+    for method, path, kwargs in calls:
+        response = await agent.request(method, path, **kwargs)
+        assert response.status_code == 404, (method, path, response.text)
+    # Владелец через cookie по-прежнему видит всё.
+    assert (await owner.get(f"/versions/{hidden['version']}")).status_code == 200
 
 
 async def test_last_used_is_not_rewritten_within_a_minute(stack: Stack) -> None:

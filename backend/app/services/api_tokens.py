@@ -51,6 +51,7 @@ __all__ = [
     "check_route_policy",
     "current_api_token",
     "route_token_policy",
+    "scope_denied_message",
     "token_policy_marker",
 ]
 
@@ -99,11 +100,6 @@ class ApiTokenService:
             raise InvalidInputError(f"Срок токена — от 1 до {MAX_TTL_DAYS} дней")
         projects = await self._checked_projects(project_ids, can_access)
         now = self._rt.clock()
-        if await self._repo.count_active(user_id, now) >= MAX_ACTIVE_TOKENS_PER_USER:
-            raise ConflictError(
-                f"Достигнут лимит действующих токенов ({MAX_ACTIVE_TOKENS_PER_USER}): "
-                "отзовите ненужные"
-            )
         secret = generate_secret()
         token = ApiToken(
             id=self._rt.new_id(),
@@ -116,7 +112,11 @@ class ApiTokenService:
             expires_at=now + timedelta(days=days),
             created_at=now,
         )
-        await self._repo.add(token)
+        if not await self._repo.add_within_limit(token, max_active=MAX_ACTIVE_TOKENS_PER_USER):
+            raise ConflictError(
+                f"Достигнут лимит действующих токенов ({MAX_ACTIVE_TOKENS_PER_USER}): "
+                "отзовите ненужные"
+            )
         return token, secret
 
     @staticmethod
@@ -210,6 +210,13 @@ def route_token_policy(route: Any) -> tuple[TokenPolicy, ...]:
     return cached
 
 
+def scope_denied_message(scope: ApiScope) -> str:
+    return (
+        f"Токену не хватает права «{scope.value}» ({SCOPE_LABELS[scope]}). Создайте токен с "
+        "этим правом в Настройках → «Доступ для агентов»"
+    )
+
+
 def check_route_policy(connection: HTTPConnection, token: ApiToken) -> None:
     """403, если маршрут закрыт для токенов или токену не хватает права."""
     policies = route_token_policy(connection.scope.get("route"))
@@ -220,11 +227,7 @@ def check_route_policy(connection: HTTPConnection, token: ApiToken) -> None:
         )
     for policy in policies:
         if policy.scope is not None and not token.has_scope(policy.scope):
-            raise ForbiddenError(
-                f"Токену не хватает права «{policy.scope.value}» "
-                f"({SCOPE_LABELS[policy.scope]}). Создайте токен с этим правом в "
-                "Настройках → «Доступ для агентов»"
-            )
+            raise ForbiddenError(scope_denied_message(policy.scope))
         if policy.all_projects and token.project_ids is not None:
             raise ForbiddenError(
                 "Токен ограничен выбранными проектами и не может создавать новые: "

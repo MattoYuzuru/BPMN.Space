@@ -143,3 +143,25 @@ def test_limits_can_be_disabled() -> None:
     )
     with TestClient(create_app(settings, container=build_container(settings))) as client:
         assert {client.get(f"{API}/examples").status_code for _ in range(5)} == {200}
+
+
+def test_access_token_limit_has_own_table_and_skips_junk() -> None:
+    secret = "bps_" + "r" * 43  # сгенерированное значение формата токена, не настоящий токен
+    with _client(rate_limit_api_per_min=2) as client:
+        limits = client.app.state.rate_limits  # type: ignore[attr-defined]
+        statuses = [
+            client.get(
+                f"{API}/examples",
+                headers={"authorization": f"Bearer {secret}", "x-forwarded-for": f"10.0.0.{n}"},
+            ).status_code
+            for n in range(3)
+        ]
+        assert statuses == [200, 200, 429]  # лимит на токен — сверх лимита на IP
+        for n in range(5):
+            junk = client.get(
+                f"{API}/examples",
+                headers={"authorization": f"Bearer junk-{n}", "x-forwarded-for": f"10.0.1.{n}"},
+            )
+            assert junk.status_code == 200
+        assert len(limits.api_token._hits) == 1
+        assert not any(key.startswith("token:") for key in limits.api._hits)

@@ -9,6 +9,8 @@ import {
 import { Button, Dialog, DialogContent, Field, Input, Switch } from '@/shared/ui'
 import { ModelSelect } from './model-select'
 
+const FORM_ID = 'edit-credential-form'
+
 /** Название, модель по умолчанию и признак «ключ по умолчанию». Сам ключ не меняется — только заменой. */
 export function EditCredentialDialog({
   credential,
@@ -50,13 +52,21 @@ function EditForm({ credential, onClose }: { credential: LlmCredential; onClose:
           <Button variant="ghost" onClick={onClose}>
             Отмена
           </Button>
-          <Button variant="primary" loading={update.isPending} onClick={save}>
+          <Button variant="primary" type="submit" form={FORM_ID} loading={update.isPending}>
             Сохранить
           </Button>
         </>
       }
     >
-      <div className="flex flex-col gap-4">
+      <form
+        id={FORM_ID}
+        className="flex flex-col gap-4"
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault()
+          save()
+        }}
+      >
         <Field label="Название">
           <Input
             name="label"
@@ -73,7 +83,7 @@ function EditForm({ credential, onClose }: { credential: LlmCredential; onClose:
           disabled={credential.is_default}
           onCheckedChange={setIsDefault}
         />
-      </div>
+      </form>
     </DialogContent>
   )
 }

@@ -51,7 +51,7 @@ export function ModelPicker() {
           </Button>
         </PopoverTrigger>
       </Tooltip>
-      <PopoverContent align="end" className="w-80">
+      <PopoverContent align="end" className="w-80" aria-label="Выбор модели">
         <PickerBody
           items={items}
           loading={credentials.isPending}

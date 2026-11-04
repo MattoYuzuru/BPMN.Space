@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   keyMask,
   type LlmCredential,
@@ -28,13 +28,20 @@ export function CredentialsSection() {
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<LlmCredential | null>(null)
   const [deleting, setDeleting] = useState<LlmCredential | null>(null)
+  const titleRef = useRef<HTMLHeadingElement>(null)
+  const deletedRef = useRef(false)
   const storage = credentials.data?.storage_available ?? true
   const items = credentials.data?.items ?? []
 
   return (
     <section aria-labelledby="models-title" className="flex flex-col gap-4">
       <div className="flex items-center gap-3">
-        <h2 id="models-title" className="type-heading flex-1 text-fg">
+        <h2
+          id="models-title"
+          ref={titleRef}
+          tabIndex={-1}
+          className="type-heading flex-1 text-fg outline-none"
+        >
           Модели и ключи
         </h2>
         <Button
@@ -89,13 +96,23 @@ export function CredentialsSection() {
       <EditCredentialDialog credential={editing} onClose={() => setEditing(null)} />
       <ConfirmDialog
         open={deleting !== null}
-        onOpenChange={(open) => !open && setDeleting(null)}
+        onOpenChange={(open) => {
+          if (open) return
+          setDeleting(null)
+          // Кнопка удалённой строки исчезла: фокус переводим на заголовок раздела, а не в никуда.
+          if (deletedRef.current) {
+            deletedRef.current = false
+            window.setTimeout(() => titleRef.current?.focus(), 100)
+          }
+        }}
         title={`Удалить ключ «${deleting?.label ?? ''}»?`}
         description="Ключ стирается с сервера. Прогоны, которые идут с ним сейчас, завершатся ошибкой."
         confirmLabel="Удалить"
         tone="danger"
         onConfirm={async () => {
-          if (deleting) await remove.mutateAsync(deleting.id)
+          if (!deleting) return
+          await remove.mutateAsync(deleting.id)
+          deletedRef.current = true
         }}
       />
     </section>

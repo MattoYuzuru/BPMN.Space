@@ -11,6 +11,7 @@ import { Button, Dialog, DialogContent, Field, Input, SegmentedControl, toast } 
 import { KeyField } from './key-field'
 import { ModelSelect } from './model-select'
 
+const FORM_ID = 'add-credential-form'
 const EMPTY = { provider: 'anthropic' as LlmProvider, label: '', baseUrl: '', apiKey: '' }
 
 /**
@@ -88,7 +89,8 @@ export function AddCredentialDialog({
         }
         footer={
           created ? (
-            <Button variant="primary" loading={update.isPending} onClick={finish}>
+            // Прежнее поле формы исчезло: фокус переводим на кнопку, а не теряем.
+            <Button variant="primary" autoFocus loading={update.isPending} onClick={finish}>
               Готово
             </Button>
           ) : (
@@ -100,7 +102,8 @@ export function AddCredentialDialog({
                 variant="primary"
                 loading={create.isPending}
                 disabled={!canSubmit}
-                onClick={submit}
+                type="submit"
+                form={FORM_ID}
               >
                 Проверить и сохранить
               </Button>
@@ -112,6 +115,7 @@ export function AddCredentialDialog({
           <ModelSelect credential={created} value={model} onChange={setModel} />
         ) : (
           <form
+            id={FORM_ID}
             className="flex flex-col gap-4"
             noValidate
             onSubmit={(event) => {

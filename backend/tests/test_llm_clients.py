@@ -391,7 +391,11 @@ def _anthropic(sdk: _Sdk, **kw: Any) -> AnthropicClient:
 
 def _status_error(cls: type[anthropic.APIStatusError], code: int, **headers: str) -> Any:
     request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
-    return cls("x", response=httpx.Response(code, headers=headers, request=request), body=None)
+    return cls(
+        "x",
+        response=httpx.Response(code, headers=headers, request=request),  # type: ignore[arg-type]
+        body=None,
+    )
 
 
 async def test_anthropic_request_omits_forbidden_sampling_and_thinking() -> None:
@@ -445,7 +449,7 @@ async def test_anthropic_usage_counts_cache_and_stop_reasons() -> None:
 async def test_anthropic_typed_errors_map_to_retry_and_auth_semantics() -> None:
     sdk = _Sdk(
         _status_error(anthropic.RateLimitError, 429, **{"retry-after": "3"}),
-        anthropic.APITimeoutError(request=httpx.Request("POST", "https://x")),
+        anthropic.APITimeoutError(request=httpx.Request("POST", "https://x")),  # type: ignore[arg-type]
         _message("{}"),
     )
     client = _anthropic(sdk)
@@ -466,7 +470,14 @@ async def test_anthropic_typed_errors_map_to_retry_and_auth_semantics() -> None:
         await bad.complete("s", "u", json_mode=True, max_tokens=1)
 
     conn = _anthropic(
-        _Sdk(*[anthropic.APIConnectionError(request=httpx.Request("POST", "https://x"))] * 3)
+        _Sdk(
+            *[
+                anthropic.APIConnectionError(
+                    request=httpx.Request("POST", "https://x")  # type: ignore[arg-type]
+                )
+            ]
+            * 3
+        )
     )
     with pytest.raises(RuntimeError, match="связаться"):
         await conn.complete("s", "u", json_mode=True, max_tokens=1)

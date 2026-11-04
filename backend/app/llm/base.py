@@ -1,6 +1,6 @@
 """Интерфейс LLM-пайплайна (RFC §5.1): два шага — «анализ» и «структура».
 
-Реализации: `openai_compatible.py` (сверка вопросов и GraphIR v1, XML строит код) и
+Реализации: `pipeline.py` (сверка вопросов и GraphIR v1, XML строит код) и
 `mock.py` (записанные ответы из `app/fixtures/playbook.py`). Граф, ограниченный repair-цикл
 и поддерживаемый поднабор описаны в `docs/backend/generation-quality.md`.
 

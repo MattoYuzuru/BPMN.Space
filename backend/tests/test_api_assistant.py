@@ -2,6 +2,7 @@ import json
 
 import httpx
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from app.config import Settings
 from app.container import build_container
@@ -37,7 +38,7 @@ def test_configured_assistant_uses_openai_compatible_provider_configuration() ->
         mock_delay_scale=0,
         auth_enabled=False,
         llm_provider="openai_compatible",
-        llm_api_key="test-only",
+        llm_api_key=SecretStr("test-only"),
         llm_base_url="https://llm.example.test/v1",
         llm_model="approved-model",
     )
@@ -75,7 +76,7 @@ def test_local_draft_chat_sends_its_source_without_persisting_it() -> None:
         mock_delay_scale=0,
         auth_enabled=False,
         llm_provider="deepseek",
-        deepseek_api_key="test-only",
+        deepseek_api_key=SecretStr("test-only"),
     )
     requests: list[httpx.Request] = []
     transport = json_transport(lambda _request: ok_chat("Шаги следуют по порядку."), requests)

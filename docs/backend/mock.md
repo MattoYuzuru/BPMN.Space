@@ -17,7 +17,7 @@ Deepgram (`STT_PROVIDER=deepgram`). Заглушки стоят за интер�
 flowchart TB
     api["api/ — роуты v1, схемы контракта, SSE, ошибки {detail}"] --> services
     services["services/ — сценарии: projects, sources, questions, runs, versions, catalog"] --> llm & ingest & infra & domain
-    llm["llm/ — ProcessPipeline · openai_compatible.py · question_analysis.py · graph_generation.py · mock.py"] --> domain
+    llm["llm/ — ProcessPipeline · pipeline.py · client/openai/anthropic/openai_compatible.py · question_analysis.py · graph_generation.py · mock.py"] --> domain
     ingest["ingest/ — parsers.py · stt.py · context.py"] --> domain
     infra["infra/ — repositories/ · events.py · tasks.py · bpmn_tools.py · storage.py · seed.py"] --> domain
     domain["domain/ — модели, вопросы и сверка, статусы, курсор, bpmn/ (IR, импортёр, manual policy, компилятор, дифф, XSD)"]

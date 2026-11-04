@@ -1,9 +1,14 @@
-export { upsertQuestion, useQuestionAction } from './api'
+export { upsertQuestion, useQuestionAction, useQuestionTechnicalAction } from './api'
 export {
   countByGroup,
+  isTechnical,
+  QUESTION_ACTION,
   QUESTION_KIND,
   QUESTION_STATUS,
   type Question,
+  type QuestionAction,
+  type QuestionActionKind,
+  type QuestionCategory,
   type QuestionGroup,
   type QuestionKind,
   type QuestionStatus,
@@ -13,4 +18,5 @@ export {
   type Severity,
   shiftSummary,
   sortQuestions,
+  technicalQuestions,
 } from './model'

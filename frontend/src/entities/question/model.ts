@@ -5,6 +5,9 @@ export type Question = Schemas['Question']
 export type QuestionStatus = Schemas['QuestionStatus']
 // Бизнес-вопросы процесса и технические вопросы запуска (RFC-0006) живут в одном поле.
 export type QuestionKind = Schemas['QuestionKind'] | Schemas['TechnicalQuestionKind']
+export type QuestionCategory = Schemas['QuestionCategory']
+export type QuestionActionKind = Schemas['QuestionActionKind']
+export type QuestionAction = Schemas['QuestionAction']
 export type Severity = Schemas['Severity']
 export type QuestionsSummary = Schemas['QuestionsSummary']
 
@@ -19,6 +22,38 @@ export const QUESTION_KIND: Record<QuestionKind, { label: string; icon: IconName
   capability_missing: { label: 'Нет нужной возможности', icon: 'settings' },
   budget_reached: { label: 'Исчерпан бюджет', icon: 'clock' },
   input_incomplete: { label: 'Материал прочитан не полностью', icon: 'info' },
+}
+
+/**
+ * Действия технического вопроса (RFC-0006). Текст и состав приходят с сервера; здесь — иконка,
+ * вариант кнопки и значение сигнала обучения для каждого вида.
+ */
+export const QUESTION_ACTION: Record<
+  QuestionActionKind,
+  {
+    icon: IconName
+    variant: 'primary' | 'secondary' | 'ghost'
+    signal: 'retry' | 'settings' | 'skip' | 'budget'
+  }
+> = {
+  open_settings: { icon: 'settings', variant: 'secondary', signal: 'settings' },
+  retry: { icon: 'refresh', variant: 'secondary', signal: 'retry' },
+  continue_without: { icon: 'arrow-right', variant: 'ghost', signal: 'skip' },
+  raise_budget: { icon: 'bolt', variant: 'primary', signal: 'budget' },
+}
+
+/** Технический вопрос касается материалов и запуска, а не процесса (RFC-0006). */
+export function isTechnical(question: Question): boolean {
+  return question.category === 'technical'
+}
+
+/** Открытые технические вопросы: блокирующие важнее, дальше — по номеру. */
+export function technicalQuestions(questions: readonly Question[]): Question[] {
+  return questions
+    .filter((question) => isTechnical(question) && question.status === 'open')
+    .sort(
+      (a, b) => Number(b.blocking) - Number(a.blocking) || codeNumber(a.code) - codeNumber(b.code),
+    )
 }
 
 export const SEVERITY: Record<Severity, { label: string; tone: BadgeTone; rank: number }> = {

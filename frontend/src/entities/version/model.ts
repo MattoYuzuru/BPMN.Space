@@ -39,6 +39,13 @@ export function comparisonBase<T extends Pick<VersionSummary, 'number' | 'checkp
   return older.find(isMilestone) ?? older[0]
 }
 
+/** В загруженной истории есть контрольная точка или сборка раньше `number` (база уже определена). */
+export function hasMilestoneBefore<
+  T extends Pick<VersionSummary, 'number' | 'checkpoint' | 'origin'>,
+>(list: readonly T[], number: number): boolean {
+  return list.some((item) => item.number < number && isMilestone(item))
+}
+
 /** Вставляет сохранённую версию в список истории: тот же номер (слитая сессия) заменяется. */
 export function upsertVersion<T extends Pick<VersionSummary, 'id' | 'number'>>(
   list: readonly T[],

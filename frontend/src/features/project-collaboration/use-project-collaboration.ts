@@ -197,7 +197,7 @@ export function useProjectCollaboration(projectId: string, shareToken?: string, 
               })
             }
             if (typeof event.version_id === 'string') {
-              void queryClient.invalidateQueries({ queryKey: versionKeys.list(projectId) })
+              void queryClient.invalidateQueries({ queryKey: versionKeys.all(projectId) })
               if (shareToken) {
                 void queryClient.invalidateQueries({ queryKey: shareKeys.shared(shareToken) })
               }
@@ -205,7 +205,7 @@ export function useProjectCollaboration(projectId: string, shareToken?: string, 
           } else if (event.type === 'resync.required') {
             emit(event)
             void queryClient.invalidateQueries({ queryKey: projectKeys.detail(projectId) })
-            void queryClient.invalidateQueries({ queryKey: versionKeys.list(projectId) })
+            void queryClient.invalidateQueries({ queryKey: versionKeys.all(projectId) })
           }
         }
         socket.onclose = () => {

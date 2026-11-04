@@ -3,6 +3,7 @@ import {
   comparisonBase,
   diagramElements,
   elementTypeLabel,
+  hasMilestoneBefore,
   upsertVersion,
   type VersionSummary,
   versionKind,
@@ -102,5 +103,15 @@ describe('история версий', () => {
     expect(versionKind(item(1, { checkpoint: true }))).toBe('checkpoint')
     expect(versionKind(item(1, { origin: 'generated' }))).toBe('build')
     expect(versionKind(item(1))).toBe('session')
+  })
+})
+
+describe('база маркера «добавлено»', () => {
+  const entry = (number: number, checkpoint = false) =>
+    ({ number, checkpoint, origin: 'manual' }) as const
+  it('знает, найдена ли контрольная точка раньше версии', () => {
+    expect(hasMilestoneBefore([entry(3), entry(2)], 3)).toBe(false)
+    expect(hasMilestoneBefore([entry(3), entry(2), entry(1, true)], 3)).toBe(true)
+    expect(hasMilestoneBefore([entry(3, true)], 3)).toBe(false)
   })
 })

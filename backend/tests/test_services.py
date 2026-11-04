@@ -484,11 +484,11 @@ async def test_execute_releases_model_client_when_run_never_starts() -> None:
     )
     run_id = uuid4()
     runs._pipelines[run_id] = Tracked(
-        pipeline=None,
+        pipeline=ScriptedPipeline(api_key="test-only", complete=lambda _s, _p: "{}"),
         provider="x",
         model="m",
         credential_id=None,
-        source="user",  # type: ignore[arg-type]
+        source="user",
     )
     await runs._execute(run_id)
     assert released == [True]

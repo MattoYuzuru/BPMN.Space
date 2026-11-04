@@ -12,6 +12,30 @@
           "text": {
             "title": "Text",
             "type": "string"
+          },
+          "via": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`agent` — ответ записал внешний агент владельца токена (MCP, RFC-0007); null — человек в интерфейсе",
+            "title": "Via"
+          },
+          "via_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Название токена доступа, которым ответил агент",
+            "title": "Via Name"
           }
         },
         "required": [

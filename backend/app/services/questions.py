@@ -29,7 +29,16 @@ class QuestionService:
         await get_project(self._repos, project_id)
         return await self._repos.questions.list_by_project(project_id, status=status)
 
-    async def answer(self, question_id: UUID, *, text: str) -> Question:
+    async def answer(
+        self,
+        question_id: UUID,
+        *,
+        text: str,
+        via: str | None = None,
+        via_name: str | None = None,
+    ) -> Question:
+        """Ответ создаёт источник `kind=answer`. `via=agent` — ответ записан внешним агентом
+        владельца токена (MCP, RFC-0007); провенанс сохраняется у вопроса (`Answer.via`)."""
         question = await get_question(self._repos, question_id)
         text = text.strip()
         if not text:
@@ -50,7 +59,9 @@ class QuestionService:
                 question_id=current.id,
             )
             try:
-                rules.answer(current, source_id=source.id, text=text, now=now)
+                rules.answer(
+                    current, source_id=source.id, text=text, now=now, via=via, via_name=via_name
+                )
             except rules.QuestionTransitionError as error:
                 raise ConflictError(str(error)) from error
             await repos.sources.add(source)

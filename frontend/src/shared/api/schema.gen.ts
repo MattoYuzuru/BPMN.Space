@@ -1079,6 +1079,16 @@ export interface components {
             source_id: string;
             /** Text */
             text: string;
+            /**
+             * Via
+             * @description `agent` — ответ записал внешний агент владельца токена (MCP, RFC-0007); null — человек в интерфейсе
+             */
+            via?: string | null;
+            /**
+             * Via Name
+             * @description Название токена доступа, которым ответил агент
+             */
+            via_name?: string | null;
         };
         /**
          * ApiScope

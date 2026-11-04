@@ -131,7 +131,12 @@ def _source(row: SourceRow) -> Source:
 
 def _question(row: QuestionRow) -> Question:
     answer = (
-        Answer(source_id=row.answer_source_id, text=row.answer_text or "")
+        Answer(
+            source_id=row.answer_source_id,
+            text=row.answer_text or "",
+            via=row.answer_via,
+            via_name=row.answer_via_name,
+        )
         if row.answer_source_id
         else None
     )
@@ -672,6 +677,8 @@ class SqlQuestionRepository:
             element_ids=item.element_ids,
             answer_source_id=item.answer.source_id if item.answer else None,
             answer_text=item.answer.text if item.answer else None,
+            answer_via=item.answer.via if item.answer else None,
+            answer_via_name=item.answer.via_name if item.answer else None,
             run_id=item.run_id,
         )
 
@@ -711,6 +718,8 @@ class SqlQuestionRepository:
                 evidence=_quote_json(question.evidence),
                 answer_source_id=question.answer.source_id if question.answer else None,
                 answer_text=question.answer.text if question.answer else None,
+                answer_via=question.answer.via if question.answer else None,
+                answer_via_name=question.answer.via_name if question.answer else None,
                 updated_at=question.updated_at,
             )
         )

@@ -12,6 +12,14 @@ from app.domain.models import QuestionKind, QuestionStatus, Severity
 class Answer(ApiModel):
     source_id: UUID = Field(description="Источник `kind=answer` с текстом ответа")
     text: str
+    via: str | None = Field(
+        default=None,
+        description="`agent` — ответ записал внешний агент владельца токена (MCP, RFC-0007); "
+        "null — человек в интерфейсе",
+    )
+    via_name: str | None = Field(
+        default=None, description="Название токена доступа, которым ответил агент"
+    )
 
 
 class Question(ApiModel):

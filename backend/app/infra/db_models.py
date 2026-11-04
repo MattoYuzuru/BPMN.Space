@@ -284,6 +284,9 @@ class QuestionRow(Base):
         Uuid(as_uuid=True), ForeignKey("sources.id", ondelete="SET NULL")
     )
     answer_text: Mapped[str | None] = mapped_column(Text)
+    # Провенанс ответа (RFC-0007): `agent` — ответ записал внешний агент владельца токена.
+    answer_via: Mapped[str | None] = mapped_column(String(32))
+    answer_via_name: Mapped[str | None] = mapped_column(String(80))
     run_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("runs.id", ondelete="SET NULL")
     )

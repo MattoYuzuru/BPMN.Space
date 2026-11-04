@@ -118,10 +118,18 @@ class Quote:
     quote: str
 
 
+#: Провенанс ответа: его записал внешний агент владельца токена (RFC-0007), а не человек.
+ANSWER_VIA_AGENT = "agent"
+
+
 @dataclass(slots=True, kw_only=True)
 class Answer:
     source_id: UUID
     text: str
+    # `via=agent` — ответ пришёл через MCP внешнего агента; `via_name` — название токена.
+    # Сервер не может проверить, читал ли человек ответ перед отправкой, и не делает вид, что может.
+    via: str | None = None
+    via_name: str | None = None
 
 
 @dataclass(slots=True, kw_only=True)

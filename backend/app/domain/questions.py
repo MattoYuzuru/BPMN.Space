@@ -44,11 +44,20 @@ def _reject(question: Question, action: str) -> QuestionTransitionError:
     return QuestionTransitionError(f"Вопрос {question.code} {label} — {action} нельзя")
 
 
-def answer(question: Question, *, source_id: UUID, text: str, now: datetime) -> None:
+def answer(
+    question: Question,
+    *,
+    source_id: UUID,
+    text: str,
+    now: datetime,
+    via: str | None = None,
+    via_name: str | None = None,
+) -> None:
+    """Ответ человека или внешнего агента (`via=agent`) с провенансом."""
     if question.status not in _ANSWERABLE:
         raise _reject(question, "ответить на него")
     question.status = QuestionStatus.ANSWERED
-    question.answer = Answer(source_id=source_id, text=text)
+    question.answer = Answer(source_id=source_id, text=text, via=via, via_name=via_name)
     question.updated_at = now
 
 
@@ -80,7 +89,13 @@ def drop_answer(question: Question, *, now: datetime) -> None:
 
 def update_answer_text(question: Question, *, text: str, now: datetime) -> None:
     if question.answer is not None:
-        question.answer = Answer(source_id=question.answer.source_id, text=text)
+        # Провенанс «через агента» не стирается правкой текста: он относится к авторству ответа.
+        question.answer = Answer(
+            source_id=question.answer.source_id,
+            text=text,
+            via=question.answer.via,
+            via_name=question.answer.via_name,
+        )
         question.updated_at = now
 
 

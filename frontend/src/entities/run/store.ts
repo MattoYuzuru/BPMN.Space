@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { registerAccountReset } from '@/shared/lib/account-reset'
 import { initialRunView, type Run, type RunEvent, type RunView, reduceRun } from './model'
 
 interface RunStore {
@@ -68,6 +69,8 @@ export const useRunStore = create<RunStore>((set) => ({
       return { views, expanded, presented }
     }),
 }))
+
+registerAccountReset(() => useRunStore.setState({ views: {}, expanded: {}, presented: {} }))
 
 export function useRunView(projectId: string): RunView | undefined {
   return useRunStore((state) => state.views[projectId])

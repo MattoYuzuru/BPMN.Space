@@ -8,19 +8,23 @@ import {
   addedElementIds,
   comparisonBase,
   diagramElements,
+  hasMilestoneBefore,
   useCheckpointVersion,
   useSaveDiagram,
   versionKeys,
   versionLabel,
 } from '@/entities/version'
-import { CollaboratorOverlay } from '@/features/project-collaboration/collaborator-overlay'
+import {
+  CollaboratorOverlay,
+  createViewportStore,
+} from '@/features/project-collaboration/collaborator-overlay'
 import { useProjectCollaboration } from '@/features/project-collaboration/use-project-collaboration'
 import { ApiError, errorMessage } from '@/shared/api/client'
 import { useDebouncedCallback } from '@/shared/hooks/use-debounced'
 import { cn } from '@/shared/lib/cn'
 import { floatingPanel } from '@/shared/lib/motion'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
-import { Button, Skeleton, toast } from '@/shared/ui'
+import { Button, ConfirmDialog, Skeleton, toast } from '@/shared/ui'
 import { type DiagramEditorHandle, LazyDiagramEditor } from '@/widgets/diagram-editor'
 import { RunProgress } from '@/widgets/run-progress/run-progress'
 import { useWorkspace } from '@/widgets/workspace/model'
@@ -48,12 +52,20 @@ export function DiagramPanel() {
     viewedVersionId,
     selectedQuestionId,
     versions,
+    viewVersion,
     collaborationShareToken,
   } = useWorkspace()
   const queryClient = useQueryClient()
   const latest = project.latest_version
   const versionId = viewedVersionId ?? latest?.id
   const version = useQuery({ ...versions.detail(versionId ?? ''), enabled: !!versionId })
+  // Версию могла вытеснить правка соавтора (слияние сессии заменяет запись): список обновляем.
+  const versionGone = version.error instanceof ApiError && version.error.status === 404
+  useEffect(() => {
+    if (!versionGone) return
+    void queryClient.invalidateQueries({ queryKey: versionKeys.all(project.id) })
+    void queryClient.invalidateQueries({ queryKey: projectKeys.detail(project.id) })
+  }, [versionGone, project.id, queryClient])
   // История нужна только для базы сравнения «добавлено в версии»; страница общая с боковой панелью.
   const history = useInfiniteQuery({ ...versions.pages(project.id), enabled: !!latest })
   const run = useRunView(project.id)
@@ -86,7 +98,9 @@ export function DiagramPanel() {
   const draftEpochRef = useRef(0)
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const canvasBoundsRef = useRef<HTMLDivElement>(null)
-  const [viewportRevision, setViewportRevision] = useState(0)
+  // Сдвиг/масштаб холста перерисовывает только оверлей курсоров, не всю панель.
+  const [viewport] = useState(createViewportStore)
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [selection, setSelection] = useState<string[]>([])
   const selectionRef = useRef<string[]>(selection)
   selectionRef.current = selection
@@ -97,7 +111,19 @@ export function DiagramPanel() {
     remoteUpdateRef.current = update
     setRemoteUpdate(update)
   }, [])
-  const collaboration = useProjectCollaboration(project.id, collaborationShareToken, isLatest)
+  // Комната остаётся подключённой и при просмотре старой версии: присутствие и «К версии N» свежие.
+  const collaboration = useProjectCollaboration(project.id, collaborationShareToken)
+  const { subscribe: subscribeCollaboration } = collaboration
+  const sendPresence = collaboration.sendPresence
+  // Старая версия — только просмотр: свои курсор и выбор не рассылаем (координаты другой схемы).
+  const isLatestRef = useRef(isLatest)
+  isLatestRef.current = isLatest
+  const sendLivePresence = useCallback<typeof sendPresence>(
+    (update) => {
+      if (isLatestRef.current) sendPresence(update)
+    },
+    [sendPresence],
+  )
 
   const enqueueSave = useCallback(
     (xml: string) => {
@@ -234,39 +260,41 @@ export function DiagramPanel() {
     }
   }, [loadedVersion])
 
-  useEffect(() => {
-    const event = collaboration.event
-    if (!event) return
-    const eventVersionId =
-      event.type === 'diagram.version'
-        ? event.version_id
-        : event.type === 'ready'
-          ? event.head_version_id
-          : event.type === 'run.changed' && event.status === 'succeeded'
+  // Каждое событие комнаты обрабатывается отдельно: два события в одном пакете не теряются.
+  useEffect(
+    () =>
+      subscribeCollaboration((event) => {
+        const eventVersionId =
+          event.type === 'diagram.version'
             ? event.version_id
-            : undefined
-    if (typeof eventVersionId !== 'string' || eventVersionId === headVersionRef.current) return
-    // Событие собственного сохранения может обогнать HTTP-ответ. После ответа сравним точный id;
-    // одинаковый actor не различает вкладки одного аккаунта и локальные вкладки без авторизации.
-    if (savingRef.current) return
-    if (draftXmlRef.current || serializationPendingRef.current) {
-      const id = eventVersionId
-      if (remoteUpdate?.id !== id) {
-        markRemoteUpdate({
-          id,
-          number:
-            typeof event.number === 'number'
-              ? event.number
-              : typeof event.head_version_number === 'number'
-                ? event.head_version_number
-                : undefined,
-        })
-      }
-      return
-    }
-    void queryClient.invalidateQueries({ queryKey: projectKeys.detail(project.id) })
-    void queryClient.invalidateQueries({ queryKey: versionKeys.all(project.id) })
-  }, [collaboration.event, markRemoteUpdate, project.id, queryClient, remoteUpdate?.id])
+            : event.type === 'ready'
+              ? event.head_version_id
+              : event.type === 'run.changed' && event.status === 'succeeded'
+                ? event.version_id
+                : undefined
+        if (typeof eventVersionId !== 'string' || eventVersionId === headVersionRef.current) return
+        // Событие собственного сохранения может обогнать HTTP-ответ. После ответа сравним точный id;
+        // одинаковый actor не различает вкладки одного аккаунта и локальные вкладки без авторизации.
+        if (savingRef.current) return
+        if (draftXmlRef.current || serializationPendingRef.current) {
+          if (remoteUpdateRef.current?.id !== eventVersionId) {
+            markRemoteUpdate({
+              id: eventVersionId,
+              number:
+                typeof event.number === 'number'
+                  ? event.number
+                  : typeof event.head_version_number === 'number'
+                    ? event.head_version_number
+                    : undefined,
+            })
+          }
+          return
+        }
+        void queryClient.invalidateQueries({ queryKey: projectKeys.detail(project.id) })
+        void queryClient.invalidateQueries({ queryKey: versionKeys.all(project.id) })
+      }),
+    [subscribeCollaboration, markRemoteUpdate, project.id, queryClient],
+  )
 
   const lastCursor = useRef<{ x: number; y: number } | null>(null)
   const dragStart = useRef<{
@@ -294,10 +322,11 @@ export function DiagramPanel() {
         ) {
           setInspected(null)
         }
-        collaboration.sendPresence({
+        const selected = selectionRef.current
+        sendLivePresence({
           cursor: lastCursor.current,
-          selection,
-          activity: canEdit && selection.length ? 'editing' : 'idle',
+          selection: selected,
+          activity: canEdit && selected.length ? 'editing' : 'idle',
           ...(drag && event.buttons !== 0
             ? {
                 drag: {
@@ -333,7 +362,7 @@ export function DiagramPanel() {
       const cursor = bounds?.contains(event.target as Node)
         ? (editorRef.current?.screenToDiagram(event.clientX, event.clientY) ?? lastCursor.current)
         : lastCursor.current
-      collaboration.sendPresence({
+      sendLivePresence({
         cursor,
         selection: selectionRef.current,
         activity: canEdit && selectionRef.current.length ? 'editing' : 'idle',
@@ -361,26 +390,26 @@ export function DiagramPanel() {
       document.removeEventListener('pointerup', handlePointerUp, true)
       document.removeEventListener('pointercancel', handlePointerUp, true)
     }
-  }, [canEdit, collaboration.sendPresence, editorRef, selection])
+  }, [canEdit, sendLivePresence, editorRef])
   const handleSelectionChange = useCallback(
     (elementIds: string[]) => {
       setSelection(elementIds)
-      collaboration.sendPresence({
+      sendLivePresence({
         cursor: lastCursor.current,
         selection: elementIds,
         activity: canEdit && elementIds.length ? 'editing' : 'idle',
       })
     },
-    [canEdit, collaboration.sendPresence],
+    [canEdit, sendLivePresence],
   )
   useEffect(() => {
-    if (!collaboration.connected) return
-    collaboration.sendPresence({
+    if (!collaboration.connected || !isLatest) return
+    sendLivePresence({
       cursor: lastCursor.current,
       selection,
       activity: canEdit && selection.length ? 'editing' : 'idle',
     })
-  }, [canEdit, collaboration.connected, collaboration.sendPresence, selection])
+  }, [canEdit, collaboration.connected, sendLivePresence, selection, isLatest])
   const downloadDraft = useCallback(async () => {
     try {
       const draft = serializationPendingRef.current
@@ -391,49 +420,70 @@ export function DiagramPanel() {
       const link = document.createElement('a')
       link.href = href
       link.download = `${project.title || 'diagram'}-draft.bpmn`
+      // Safari и Firefox требуют ссылку в документе, а адрес — живым до начала загрузки.
+      link.hidden = true
+      document.body.append(link)
       link.click()
-      URL.revokeObjectURL(href)
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(href), 1000)
       return true
     } catch {
       toast.error('Черновик не скачался. Попробуйте ещё раз.')
       return false
     }
   }, [editorRef, project.title])
-  const loadRemoteVersion = useCallback(async () => {
-    setOpeningRemote(true)
-    try {
-      if (!(await downloadDraft())) return
-      editorRef.current?.cancelPendingChanges()
-      debouncedSave.cancel()
-      draftEpochRef.current += 1
-      markRemoteUpdate(null)
-      draftXmlRef.current = null
-      serializationPendingRef.current = false
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: projectKeys.detail(project.id) }),
-        queryClient.invalidateQueries({ queryKey: versionKeys.all(project.id) }),
-      ])
-      setSaveStatus('idle')
-    } finally {
-      setOpeningRemote(false)
-    }
-  }, [debouncedSave.cancel, downloadDraft, editorRef, markRemoteUpdate, project.id, queryClient])
+  const openRemoteVersion = useCallback(
+    async (saveDraft: boolean) => {
+      setOpeningRemote(true)
+      try {
+        if (saveDraft && !(await downloadDraft())) return
+        editorRef.current?.cancelPendingChanges()
+        debouncedSave.cancel()
+        draftEpochRef.current += 1
+        markRemoteUpdate(null)
+        draftXmlRef.current = null
+        serializationPendingRef.current = false
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: projectKeys.detail(project.id) }),
+          queryClient.invalidateQueries({ queryKey: versionKeys.all(project.id) }),
+        ])
+        setSaveStatus('idle')
+      } finally {
+        setOpeningRemote(false)
+      }
+    },
+    [debouncedSave.cancel, downloadDraft, editorRef, markRemoteUpdate, project.id, queryClient],
+  )
+  const loadRemoteVersion = useCallback(() => openRemoteVersion(true), [openRemoteVersion])
+  const discardDraft = useCallback(() => openRemoteVersion(false), [openRemoteVersion])
 
   const elements = useMemo(() => diagramElements(xml), [xml])
 
   // База маркера «добавлено» — ближайшая более ранняя контрольная точка или сборка, а не номер − 1:
   // правки одной сессии сливаются в одну версию.
-  const previous = useMemo(
-    () =>
-      comparisonBase(
-        history.data?.pages.flatMap((page) => page.items) ?? [],
-        version.data?.number ?? 0,
-      ),
-    [history.data, version.data?.number],
+  const loadedHistory = useMemo(
+    () => history.data?.pages.flatMap((page) => page.items) ?? [],
+    [history.data],
   )
+  const viewedNumber = version.data?.number ?? 0
+  const previous = useMemo(
+    () => comparisonBase(loadedHistory, viewedNumber),
+    [loadedHistory, viewedNumber],
+  )
+  // Ближайшей контрольной точки может не оказаться в первой странице: подгружаем историю, пока
+  // она не найдётся или не кончится. До этого база неокончательна, XML не запрашиваем.
+  const baseSettled =
+    hasMilestoneBefore(loadedHistory, viewedNumber) || history.hasNextPage === false
+  const { fetchNextPage, hasNextPage, isFetchingNextPage } = history
+  useEffect(() => {
+    if (markers.added && viewedNumber > 0 && !baseSettled && hasNextPage && !isFetchingNextPage) {
+      void fetchNextPage()
+    }
+  }, [markers.added, viewedNumber, baseSettled, hasNextPage, isFetchingNextPage, fetchNextPage])
+  // Маркеры считаем на клиенте от этой базы: серверный дифф (против номера − 1) для неё не годится.
   const previousXml = useQuery({
     ...versions.detail(previous?.id ?? ''),
-    enabled: markers.added && !!previous && (version.data?.diff.added ?? 0) > 0,
+    enabled: markers.added && !!previous && baseSettled,
   })
 
   const selectedQuestion = project.questions.find((question) => question.id === selectedQuestionId)
@@ -456,8 +506,7 @@ export function DiagramPanel() {
     (handle: DiagramEditorHandle) => {
       editorRef.current = handle
       handle.setRemoteSelections(
-        collaboration.presence
-          .getSnapshot()
+        (isLatestRef.current ? collaboration.presence.getSnapshot() : [])
           .filter(
             (participant) =>
               participant.session_id !== collaboration.localSessionId &&
@@ -469,8 +518,7 @@ export function DiagramPanel() {
           })),
       )
       handle.setRemoteMoves(
-        collaboration.presence
-          .getSnapshot()
+        (isLatestRef.current ? collaboration.presence.getSnapshot() : [])
           .filter(
             (participant) =>
               participant.session_id !== collaboration.localSessionId && participant.drag !== null,
@@ -583,10 +631,24 @@ export function DiagramPanel() {
               setInspected(null)
           }}
           onPointerLeave={() =>
-            collaboration.sendPresence({ cursor: null, selection, activity: 'idle' })
+            sendLivePresence({ cursor: null, selection: selectionRef.current, activity: 'idle' })
           }
         >
-          {versionId && version.isPending && !xml ? (
+          {versionGone ? (
+            <div role="status" className="absolute inset-0 grid place-items-center p-6">
+              <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+                <p className="type-ui text-fg-muted">
+                  Эта версия объединена с более поздней правкой и больше недоступна. История
+                  обновлена.
+                </p>
+                {viewedVersionId && (
+                  <Button size="sm" onClick={() => viewVersion(undefined)}>
+                    К текущей версии
+                  </Button>
+                )}
+              </div>
+            </div>
+          ) : versionId && version.isPending && !xml ? (
             <CanvasSkeleton />
           ) : (
             <LazyDiagramEditor
@@ -599,7 +661,7 @@ export function DiagramPanel() {
               onChange={handleChange}
               onChangePending={handleChangePending}
               onSelectionChange={handleSelectionChange}
-              onViewportChange={() => setViewportRevision((value) => value + 1)}
+              onViewportChange={viewport.bump}
               onReady={handleReady}
               onElementClick={handleElementClick}
               onError={(error) =>
@@ -614,14 +676,15 @@ export function DiagramPanel() {
             />
           )}
 
-          <CollaboratorOverlay
-            presence={collaboration.presence}
-            localSessionId={collaboration.localSessionId}
-            editorRef={editorRef}
-            boundsRef={canvasBoundsRef}
-            viewportRevision={viewportRevision}
-          />
-          <span hidden data-viewport-revision={viewportRevision} />
+          {isLatest && (
+            <CollaboratorOverlay
+              presence={collaboration.presence}
+              localSessionId={collaboration.localSessionId}
+              editorRef={editorRef}
+              boundsRef={canvasBoundsRef}
+              viewport={viewport}
+            />
+          )}
 
           {remoteUpdate && (
             <div
@@ -641,6 +704,14 @@ export function DiagramPanel() {
                   disabled={openingRemote}
                 >
                   Скачать черновик
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setConfirmDiscard(true)}
+                  disabled={openingRemote}
+                >
+                  Отменить мои правки
                 </Button>
                 <Button size="sm" onClick={loadRemoteVersion} disabled={openingRemote}>
                   Открыть новую версию
@@ -691,6 +762,15 @@ export function DiagramPanel() {
           className="w-80 shrink-0 border-l border-border bg-surface"
         />
       </div>
+      <ConfirmDialog
+        open={confirmDiscard}
+        onOpenChange={setConfirmDiscard}
+        title="Отменить несохранённые правки?"
+        description="Ваши изменения в этом окне будут потеряны, откроется версия коллеги. Если они нужны, сначала скачайте черновик."
+        confirmLabel="Отменить правки"
+        tone="danger"
+        onConfirm={discardDraft}
+      />
       {selectedQuestion && !selectedQuestion.element_ids.some((id) => elements.has(id)) && (
         <span className="sr-only" aria-live="polite">
           Элементов вопроса {selectedQuestion.code} нет на этой версии схемы

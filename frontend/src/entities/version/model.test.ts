@@ -3,6 +3,7 @@ import {
   comparisonBase,
   diagramElements,
   elementTypeLabel,
+  hasMilestoneBefore,
   upsertVersion,
   type VersionSummary,
   versionKind,
@@ -29,6 +30,15 @@ describe('элементы схемы', () => {
     expect([...elements.keys()]).toEqual(['Pool', 'Lane_A', 'Start', 'Task_A', 'Flow_1'])
     expect(elements.get('Start')?.name).toBe('Нужно подключение')
     expect(elements.get('Task_A')?.type).toBe('task')
+  })
+
+  it('не разбирает один и тот же XML повторно', () => {
+    const parse = vi.spyOn(DOMParser.prototype, 'parseFromString')
+    const source = xml('<bpmn:task id="Cache_Probe" />')
+    const first = diagramElements(source)
+    expect(diagramElements(source)).toBe(first)
+    expect(parse).toHaveBeenCalledTimes(1)
+    parse.mockRestore()
   })
 
   it('не падает на битом XML', () => {
@@ -93,5 +103,15 @@ describe('история версий', () => {
     expect(versionKind(item(1, { checkpoint: true }))).toBe('checkpoint')
     expect(versionKind(item(1, { origin: 'generated' }))).toBe('build')
     expect(versionKind(item(1))).toBe('session')
+  })
+})
+
+describe('база маркера «добавлено»', () => {
+  const entry = (number: number, checkpoint = false) =>
+    ({ number, checkpoint, origin: 'manual' }) as const
+  it('знает, найдена ли контрольная точка раньше версии', () => {
+    expect(hasMilestoneBefore([entry(3), entry(2)], 3)).toBe(false)
+    expect(hasMilestoneBefore([entry(3), entry(2), entry(1, true)], 3)).toBe(true)
+    expect(hasMilestoneBefore([entry(3, true)], 3)).toBe(false)
   })
 })

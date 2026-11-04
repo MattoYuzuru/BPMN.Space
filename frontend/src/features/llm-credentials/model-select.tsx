@@ -25,7 +25,13 @@ export function ModelSelect({
     if (!value && first) onChange(first)
   }, [value, first, onChange])
 
-  if (models.isPending) return <Skeleton className="h-8 w-full" />
+  if (models.isPending) {
+    return (
+      <div role="status" aria-busy="true" aria-label="Загружаю список моделей">
+        <Skeleton className="h-8 w-full" />
+      </div>
+    )
+  }
   return (
     <Field
       label={label}

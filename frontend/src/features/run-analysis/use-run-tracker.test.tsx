@@ -208,6 +208,20 @@ describe('useRunTracker: сигналы обучения', () => {
     ])
   })
 
+  it('таймер ожидания проекта не переживает размонтирование', async () => {
+    const { client, unmount } = setup(run())
+    // Перечитывание проекта не завершается: остаётся только предельный таймер.
+    vi.spyOn(client, 'invalidateQueries').mockReturnValue(new Promise(() => {}))
+    const before = vi.getTimerCount()
+    await act(async () => {
+      stream.handlers?.onEvent(done({}))
+      await vi.advanceTimersByTimeAsync(10)
+    })
+    expect(vi.getTimerCount()).toBeGreaterThan(before)
+    unmount()
+    expect(vi.getTimerCount()).toBeLessThanOrEqual(before)
+  })
+
   it('упавший прогон без схемы: status failed, hasDiagram false', async () => {
     setup(run(), project({ latest_version: null, questions: [] }))
     signals.length = 0

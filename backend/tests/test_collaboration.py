@@ -297,3 +297,25 @@ def test_manual_save_rejects_stale_base_without_creating_a_version(client: TestC
     assert stale.json()["code"] == "stale_version"
     assert stale.json()["head_version_id"] == saved.json()["id"]
     assert stale.json()["head_version_number"] == saved.json()["number"]
+
+
+def test_checkpoint_is_broadcast_to_room(client: TestClient) -> None:
+    """Контрольная точка соавтора доходит до комнаты: история у остальных обновится."""
+    project_id = str(DEMO_PROJECT_ID)
+    head = client.get(f"{API}/projects/{project_id}").json()["latest_version"]["id"]
+    ticket = client.post(f"{API}/projects/{project_id}/collaboration-ticket").json()["ticket"]
+    with client.websocket_connect(
+        f"{API}/projects/{project_id}/collaboration/ws",
+        subprotocols=["bpmn.collaboration.v1", f"bpmn.ticket.{ticket}"],
+    ) as socket:
+        socket.receive_json()  # ready
+        socket.receive_json()  # presence.snapshot
+        response = client.post(
+            f"{API}/projects/{project_id}/versions/{head}/checkpoint", json={"label": "Согласовано"}
+        )
+        assert response.status_code == 200
+        event = socket.receive_json()
+        socket.close()
+    assert event["type"] == "version.checkpoint"
+    assert event["version_id"] == head
+    assert event["label"] == "Согласовано"

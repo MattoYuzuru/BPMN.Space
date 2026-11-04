@@ -253,7 +253,8 @@ export interface paths {
          * @description Проверка ключа для каждого типа: отказ провайдера — `ok=false` с понятной причиной.
          *
          *     Успешная проверка снимает отметку ошибки и снова включает ключ, отключённый после отказа
-         *     провайдера. Для возможностей волны 3 проверка честно отвечает, что пока недоступна.
+         *     провайдера. Для vision/OCR/видео/озвучки проверка честно отвечает, что пока недоступна:
+         *     веб-поиск и чтение страниц проверяются настоящим запросом провайдера.
          */
         post: operations["check_credential"];
         delete?: never;
@@ -436,6 +437,26 @@ export interface paths {
          * @description Начать тур заново: `active`, шаг `project.create`, без учебного проекта.
          */
         post: operations["restart_tour"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/tool-catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tool Catalog
+         * @description Возможности, провайдеры, где взять ключ и что закрывает модель (данные на 04.11.2026).
+         */
+        get: operations["tool_catalog"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3348,6 +3369,92 @@ export interface components {
          */
         TechnicalQuestionKind: "quota_exhausted" | "credential_invalid" | "capability_missing" | "budget_reached" | "input_incomplete";
         /**
+         * ToolCatalogCapability
+         * @description Карточка возможности: что делает, каким инструментом видит модель и чем закрыть.
+         */
+        ToolCatalogCapability: {
+            /**
+             * Capability
+             * @enum {string}
+             */
+            capability: "llm" | "speech_to_text" | "ocr" | "vision" | "video_understanding" | "web_search" | "web_fetch" | "tts";
+            /** Description */
+            description: string;
+            /**
+             * Kinds
+             * @description Типы ключей, закрывающие возможность
+             */
+            kinds: ("llm" | "speech_to_text" | "ocr" | "vision" | "video" | "web_search" | "web_fetch" | "tts")[];
+            /** Label */
+            label: string;
+            /**
+             * Model Coverage
+             * @description Что закрывает ключ модели без отдельного ключа
+             */
+            model_coverage?: string | null;
+            /** Providers */
+            providers: components["schemas"]["ToolCatalogProvider"][];
+            /**
+             * Tool
+             * @description Имя инструмента, которое увидит модель
+             */
+            tool: string;
+        };
+        /**
+         * ToolCatalogProvider
+         * @description Провайдер: где взять ключ, бесплатный уровень и поддержка в коде.
+         */
+        ToolCatalogProvider: {
+            /**
+             * Free Tier
+             * @description Что даёт бесплатный уровень
+             */
+            free_tier?: string | null;
+            /** Id */
+            id: string;
+            /**
+             * Key Url
+             * @description Страница, где взять ключ; null — ключ и адрес выдаёт ваш сервер
+             */
+            key_url?: string | null;
+            /** Label */
+            label: string;
+            /**
+             * Model Covers
+             * @description Возможность закрывает ключ модели, отдельный ключ не нужен
+             */
+            model_covers: boolean;
+            /**
+             * Notes
+             * @description Ограничения и особенности провайдера
+             */
+            notes?: string | null;
+            /**
+             * Rf
+             * @description Данные размещаются в РФ
+             */
+            rf: boolean;
+            /**
+             * Supported
+             * @description Есть адаптер в коде: такой ключ можно добавить
+             */
+            supported: boolean;
+        };
+        /**
+         * ToolCatalogResponse
+         * @description Каталог провайдеров с датой проверки; дополняет карточки `/me/credentials`.
+         */
+        ToolCatalogResponse: {
+            /** Capabilities */
+            capabilities: components["schemas"]["ToolCatalogCapability"][];
+            /**
+             * Checked On
+             * Format: date
+             * @description Дата проверки цен, бесплатных уровней и ссылок
+             */
+            checked_on: string;
+        };
+        /**
          * ToolUnavailableErrorResponse
          * @description Возможность не выполнена (RFC-0006): причина, прогресс и альтернативы.
          *
@@ -5086,6 +5193,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
+        };
+    };
+    tool_catalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolCatalogResponse"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

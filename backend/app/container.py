@@ -54,7 +54,9 @@ from app.services.samples import SampleService
 from app.services.sharing import SharingService
 from app.services.sources import SourceService
 from app.services.technical_questions import TechnicalQuestionService
+from app.services.tool_catalog import ToolCatalogService
 from app.services.versions import VersionService
+from app.services.web_tools import WebTools
 
 
 def _server_pipeline(settings: Settings, transport: httpx.AsyncBaseTransport | None):
@@ -171,6 +173,8 @@ class Container:
     assistant: AssistantService
     estimate: EstimateService
     credentials: CredentialService
+    tool_catalog: ToolCatalogService
+    web_tools: WebTools
     api_tokens: ApiTokenService
     access: AccessService
     sharing: SharingService
@@ -326,6 +330,8 @@ def build_container(
         parallel_requests=settings.llm_parallel_requests,
         max_text_chars=settings.max_text_chars,
     )
+    tool_catalog = ToolCatalogService(registry)
+    web_tools = WebTools(router, incident_sink=incident_sink, runtime=runtime)
     sources = SourceService(
         repos,
         parser=LocalDocumentParser(
@@ -398,6 +404,8 @@ def build_container(
         ),
         assistant=AssistantService(repos, resolver=resolver),
         estimate=EstimateService(repos, resolver=resolver, settings=settings, runtime=runtime),
+        tool_catalog=tool_catalog,
+        web_tools=web_tools,
         credentials=CredentialService(
             repos,
             cipher=cipher,

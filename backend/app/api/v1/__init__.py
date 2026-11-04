@@ -15,6 +15,7 @@ from app.api.v1 import (
     runs,
     sharing,
     sources,
+    tool_catalog,
     versions,
 )
 
@@ -31,6 +32,7 @@ for module in (
     onboarding,
     llm_credentials,
     credentials,
+    tool_catalog,
     api_tokens,
     presence,
 ):

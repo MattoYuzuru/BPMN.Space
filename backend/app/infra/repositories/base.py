@@ -32,6 +32,7 @@ from app.domain.onboarding import (
     TourStepKey,
     UserOnboarding,
 )
+from app.domain.sources import SourceSearchHit
 
 type PageKey = tuple[datetime, UUID]
 
@@ -161,6 +162,16 @@ class SourceRepository(Protocol):
 
     async def fail_processing(self, error: str) -> int:
         """Все источники в `processing` → `failed` с причиной `error`; возвращает их число."""
+        ...
+
+    async def search(self, project_id: UUID, query: str, *, limit: int) -> list[SourceSearchHit]:
+        """Полнотекстовый поиск по источникам проекта для агентного режима (RFC-0004).
+
+        Ищет по названию и тексту только тех источников, которые читает модель (активные,
+        готовые, с текстом, не краткое содержание). PostgreSQL использует FTS `russian`
+        (индекс миграции `0024_agent_search`), in-memory реализация повторяет контракт
+        упрощённо: совпадения слов без стемминга. `limit` — максимум попаданий.
+        """
         ...
 
 

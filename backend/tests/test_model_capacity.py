@@ -595,6 +595,8 @@ def test_profile_and_limits_are_stored_and_sent_to_the_provider(stack: Stack) ->
             "effort": "high",
             "semantic_review": False,
             "budget": None,
+            "mode": "pipeline",
+            "max_steps": None,
         }
     saved = stack.container.repos.runs._items[UUID(body["id"])]  # type: ignore[attr-defined]
     execution = saved.ir["execution"]
@@ -602,6 +604,8 @@ def test_profile_and_limits_are_stored_and_sent_to_the_provider(stack: Stack) ->
         "effort": "high",
         "semantic_review": False,
         "budget": None,
+        "mode": "pipeline",
+        "max_steps": None,
     }
     assert execution["limits"] == {
         "context_budget_chars": 120_000,
@@ -625,6 +629,8 @@ def test_model_without_reasoning_ignores_effort(stack: Stack) -> None:
         "effort": None,
         "semantic_review": None,
         "budget": None,
+        "mode": "pipeline",
+        "max_steps": None,
     }
 
 

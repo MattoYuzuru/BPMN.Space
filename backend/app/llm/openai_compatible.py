@@ -36,10 +36,12 @@ from app.llm.client import (
 from app.llm.multimodal import MediaAttachment, MediaUnsupportedError
 from app.llm.net_guard import UnsafeBaseUrlError, ensure_public_host, normalize_base_url
 from app.llm.pinned_transport import Resolver, pinned_transport
+from app.llm.tools import ConversationMessage, ToolDefinition, ToolTurn, ToolUse
 
 _CHAT_MAX_TOKENS = 4096
 _HTTP_ERROR = 400
 _ERROR_SNIFF_BYTES = 4096
+_REFUSAL_FINISH_REASONS = frozenset({"content_filter"})
 
 
 def _retry_after(response: httpx.Response) -> float | None:
@@ -274,6 +276,87 @@ class OpenAICompatibleClient:
         except (KeyError, IndexError, TypeError, ValueError, AttributeError):
             raise RuntimeError("Сервис модели вернул ответ неизвестной структуры") from None
 
+    def build_tools_body(
+        self,
+        system: str,
+        messages: Sequence[ConversationMessage],
+        tools: Sequence[ToolDefinition],
+        *,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> dict[str, Any]:
+        """Тело агентного хода: `tools`/`tool_calls` Chat Completions, без JSON-режима."""
+        body: dict[str, Any] = {
+            "model": self._config.model,
+            "stream": False,
+            self.token_param: max_tokens,
+            "messages": [
+                {"role": "system", "content": system},
+                *_tool_messages(messages),
+            ],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.input_schema,
+                    },
+                }
+                for tool in tools
+            ],
+        }
+        thinking = self.thinking_for(effort)
+        if thinking is not None:
+            body["thinking"] = {"type": "enabled" if thinking else "disabled"}
+        self.apply_effort(body, effort)
+        return body
+
+    async def complete_with_tools(
+        self,
+        system: str,
+        messages: Sequence[ConversationMessage],
+        tools: Sequence[ToolDefinition],
+        *,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> ToolTurn:
+        if not tools:
+            raise ValueError("Агентный ход требует хотя бы одного инструмента")
+        body = self.build_tools_body(system, messages, tools, max_tokens=max_tokens, effort=effort)
+        raw = await self._post("/chat/completions", body)
+        try:
+            payload = json.loads(raw)
+            choice = payload["choices"][0]
+            usage = payload.get("usage") or {}
+            record_usage(
+                tokens_in=token_count(usage.get("prompt_tokens")),
+                tokens_out=token_count(usage.get("completion_tokens")),
+                cache_read=_cache_read_tokens(usage),
+                cache_write=_cache_write_tokens(usage),
+            )
+            finish = choice.get("finish_reason")
+            if finish == "length":
+                raise OutputTruncatedError(
+                    "Ответ модели обрезан по лимиту длины: результат неполный и не применён"
+                )
+            message = choice["message"]
+            if message.get("refusal") or finish in _REFUSAL_FINISH_REASONS:
+                raise LlmRefusalError(
+                    "Модель отказалась отвечать на этот запрос. "
+                    "Измените материалы или выберите другую модель"
+                )
+            uses = _tool_uses(message.get("tool_calls"))
+            content = message.get("content")
+            text = content.strip() if isinstance(content, str) else ""
+            if not uses and not text:
+                raise RuntimeError("Модель вернула пустой ответ без запросов инструментов")
+            return ToolTurn(text=text or None, tool_uses=uses, stop_reason=finish)
+        except json.JSONDecodeError:
+            raise RuntimeError("Сервис модели вернул ответ в некорректном формате") from None
+        except (KeyError, IndexError, TypeError, ValueError, AttributeError):
+            raise RuntimeError("Сервис модели вернул ответ неизвестной структуры") from None
+
     async def list_models(self) -> list[ModelInfo]:
         raw = await self._request("GET", "/models", None, timeout_sec=15.0, retries=False)
         try:
@@ -379,6 +462,65 @@ class OpenAICompatibleClient:
 def _operator_url(raw: str) -> str:
     """Адрес из настроек оператора: HTTPS, либо HTTP для localhost (как раньше)."""
     return normalize_base_url(raw, allowed_private_hosts=("localhost", "127.0.0.1", "::1"))
+
+
+def _tool_messages(messages: Sequence[ConversationMessage]) -> list[dict[str, Any]]:
+    """Общий разговор → сообщения Chat Completions: assistant с `tool_calls`, затем `tool`."""
+    converted: list[dict[str, Any]] = []
+    for message in messages:
+        if message.role == "tool":
+            converted.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": message.tool_use_id,
+                    "content": message.text,
+                }
+            )
+        elif message.role == "user":
+            converted.append({"role": "user", "content": message.text})
+        else:
+            item: dict[str, Any] = {"role": "assistant", "content": message.text or None}
+            if message.tool_uses:
+                item["tool_calls"] = [
+                    {
+                        "id": use.id,
+                        "type": "function",
+                        "function": {"name": use.name, "arguments": use.arguments},
+                    }
+                    for use in message.tool_uses
+                ]
+            converted.append(item)
+    return converted
+
+
+def _tool_uses(raw: object) -> tuple[ToolUse, ...]:
+    """`tool_calls` ответа OpenAI: имя обязательно, отсутствующий id заменяется стабильным."""
+    if not isinstance(raw, list):
+        return ()
+    uses: list[ToolUse] = []
+    for index, item in enumerate(raw):
+        if not isinstance(item, dict):
+            raise ValueError("tool_calls: ожидался объект")
+        function = item.get("function")
+        if not isinstance(function, dict):
+            raise ValueError("tool_calls: нет function")
+        name = function.get("name")
+        if not isinstance(name, str) or not name:
+            raise ValueError("tool_calls: нет имени функции")
+        arguments = function.get("arguments")
+        if isinstance(arguments, dict):
+            arguments = json.dumps(arguments, ensure_ascii=False)
+        if not isinstance(arguments, str) or not arguments.strip():
+            arguments = "{}"
+        call_id = item.get("id")
+        uses.append(
+            ToolUse(
+                id=call_id if isinstance(call_id, str) and call_id else f"call_{index}",
+                name=name,
+                arguments=arguments,
+            )
+        )
+    return tuple(uses)
 
 
 def _cache_read_tokens(usage: dict[str, Any]) -> int:

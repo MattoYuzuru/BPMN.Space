@@ -33,13 +33,18 @@
 содержание, профили обработки и оценка, плеер с HTTP Range и таймкодами
 ([media-and-derived-sources.md](docs/backend/media-and-derived-sources.md)); шаг 6 частично —
 веб-поиск (Tavily, Brave, Exa) и чтение страниц (Jina Reader, Firecrawl), сервис инструментов
-для агентного режима и каталог провайдеров ([web-tools.md](docs/backend/web-tools.md));
-роль ссылки `reviewer`, готовый промпт и токен агента по ссылке, журнал активности
+агентного режима и каталог провайдеров ([web-tools.md](docs/backend/web-tools.md)); роль ссылки
+`reviewer`, промпт и токен агента по ссылке, журнал активности
 ([auth-and-sharing.md](docs/backend/auth-and-sharing.md), [mcp.md](docs/backend/mcp.md)).
-Отдельные ключи/адаптеры `vision` и `ocr` (Mistral/Yandex), `video_understanding` и озвучка
-остаются контрактами адаптеров: vision и OCR в этой волне выполняет модель ключа `llm`.
-Предложено, не реализовано: шаг 7 RFC-0006 (ревизии производных), OAuth для MCP, UI проверки
-коллеги и e2e-сценарий агента (фронтовая волна).
+Реализован шаг 1 агентного режима ([RFC-0004](docs/rfc/0004-agent-mode.md),
+[agent-mode.md](docs/backend/agent-mode.md)): `LlmClient.complete_with_tools`, инструменты
+только-чтения (FTS `russian`, миграция `0024_agent_search`), цикл до проверяемого `submit`,
+бюджет ходов/токенов/денег и восстановление; включается `LLM_AGENT_MODE=true` и
+`RunProfile.mode=agent` только для моделей с инструментами. Отдельные ключи/адаптеры `vision` и
+`ocr` (Mistral/Yandex), `video_understanding` и озвучка остаются контрактами: vision и OCR
+выполняет модель ключа `llm`. Предложено, не реализовано: шаг 7 RFC-0006 (ревизии производных),
+OAuth для MCP, UI проверки коллеги и агентского режима (фронтовая волна), рабочие модели
+`worker`/`delegate`.
 
 Сессии правок и контрольные точки (автосохранения сливаются в версию): [ADR-0010](docs/adr/0010-editing-sessions-and-checkpoints.md).
 Удаление и выход участника: [ADR-0009](docs/adr/0009-project-deletion-and-leaving.md).
@@ -51,6 +56,7 @@
 |---|---|
 | `backend/` | FastAPI, Python 3.13, uv. Слои `api → services → (llm, ingest, infra) → domain` (проверяет import-linter). PostgreSQL/Alembic описаны в `docs/backend/persistence.md`; оставшиеся заглушки — `docs/backend/mock.md` |
 | `backend/app/llm/{question_analysis,graph_generation}.py`, `domain/bpmn/{ir,compiler,importer,manual,xsd}.py` | порционная сверка вопросов с проверкой оснований, граф IR v1, компилятор, приоритет ручных правок и offline XSD — `docs/backend/generation-quality.md` |
+| `backend/app/llm/{agent,tools,budget}.py`, `services/agent_run.py`, миграция `0024_agent_search` | агентный режим RFC-0004: `complete_with_tools`, инструменты `list_sources`/`read_source`/`search_sources`/`list_questions`/`propose_question`/`check_graph`/`submit`, цикл с бюджетом ходов и восстановлением — `docs/backend/agent-mode.md` |
 | `infra/bpmn-tools/`, `backend/app/infra/bpmn_tools.py` | внутренний Node layout/lint и HTTP-адаптер; точные пределы и команды — `infra/bpmn-tools/README.md` |
 | `frontend/src/entities/{session,share}`, маршруты `/login`, `/share/$token` | аккаунты и общий доступ: правила — `docs/backend/auth-and-sharing.md`, UI-паттерны — стайлгайд §16 |
 | `frontend/src/features/onboarding`, `widgets/onboarding-root`, `shared/lib/{tour-anchors,onboarding-signals}.ts` | обучение: движок тура, сценарий из 11 шагов, приветствие, подсказки-указатели, якоря `data-tour`, сигналы приложения — `docs/frontend/onboarding.md`, паттерн — стайлгайд §10 |

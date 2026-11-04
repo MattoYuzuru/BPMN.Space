@@ -3136,6 +3136,16 @@ export interface components {
              */
             effort?: ("low" | "medium" | "high" | "xhigh" | "max") | null;
             /**
+             * Max Steps
+             * @description Лимит ходов агента (только с mode=agent); не больше серверного LLM_AGENT_MAX_STEPS. Достигнутый лимит — мягкая остановка `waiting` с вопросом budget_reached
+             */
+            max_steps?: number | null;
+            /**
+             * Mode
+             * @description Режим прогона: `pipeline` — фиксированный конвейер, `agent` — модель сама читает источники инструментами (RFC-0004). `agent` доступен только с ключом оператора LLM_AGENT_MODE и моделью с инструментами; иначе 422
+             */
+            mode?: ("pipeline" | "agent") | null;
+            /**
              * Semantic Review
              * @description Смысловая сверка схемы; null — настройка сервера
              */

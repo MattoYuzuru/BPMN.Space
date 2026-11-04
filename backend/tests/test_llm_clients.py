@@ -22,6 +22,7 @@ from app.llm.client import (
 )
 from app.llm.openai import OpenAIClient
 from app.llm.openai_compatible import OpenAICompatibleClient
+from app.llm.tools import ConversationMessage, ToolDefinition, ToolUse
 from tests.llm_helpers import json_transport, no_sleep, ok_chat
 
 SECRET = "sk-test-SECRET-0123456789abcdef"  # noqa: S105
@@ -584,3 +585,184 @@ def test_secret_redaction_removes_key_like_text() -> None:
     assert SECRET not in cleaned
     assert "abcdefghijkl" not in cleaned
     assert "zzzzzzzzzzzz" not in cleaned
+
+
+# ---------- агентный режим: tool_use / tool_calls (RFC-0004) ----------
+
+
+def _tool_definitions() -> list[ToolDefinition]:
+    return [
+        ToolDefinition(
+            name="read_source",
+            description="Прочитать фрагмент",
+            input_schema={
+                "type": "object",
+                "properties": {"source_id": {"type": "string"}},
+                "required": ["source_id"],
+            },
+        )
+    ]
+
+
+def _tool_conversation() -> list[ConversationMessage]:
+    return [
+        ConversationMessage(role="user", text="Изучи материалы"),
+        ConversationMessage(
+            role="assistant",
+            text="Читаю регламент",
+            tool_uses=(ToolUse(id="call-1", name="read_source", arguments='{"source_id": "s1"}'),),
+        ),
+        ConversationMessage(role="tool", text='{"ok": true}', tool_use_id="call-1"),
+    ]
+
+
+def _anthropic_tool_message(*blocks: Any, stop: str = "tool_use") -> Any:
+    return SimpleNamespace(
+        content=list(blocks),
+        stop_reason=stop,
+        usage=SimpleNamespace(
+            input_tokens=20,
+            output_tokens=8,
+            cache_read_input_tokens=5,
+            cache_creation_input_tokens=0,
+        ),
+    )
+
+
+def _text_block(text: str) -> Any:
+    return SimpleNamespace(type="text", text=text)
+
+
+def _tool_block(block_id: str, name: str, arguments: dict[str, Any]) -> Any:
+    return SimpleNamespace(type="tool_use", id=block_id, name=name, input=arguments)
+
+
+@pytest.mark.asyncio
+async def test_anthropic_complete_with_tools_translates_blocks_and_records_usage() -> None:
+    sdk = _Sdk(
+        _anthropic_tool_message(
+            _text_block("Смотрю"), _tool_block("call-2", "read_source", {"source_id": "s1"})
+        )
+    )
+    client = _anthropic(sdk)
+    with track_usage() as usage:
+        answer = await client.complete_with_tools(
+            "СИСТЕМА", _tool_conversation(), _tool_definitions(), max_tokens=2_000, effort="high"
+        )
+    assert answer.text == "Смотрю"
+    assert answer.tool_uses[0].name == "read_source"
+    assert answer.tool_uses[0].id == "call-2"
+    assert answer.tool_uses[0].parsed_arguments() == {"source_id": "s1"}
+    assert answer.stop_reason == "tool_use"
+    assert (usage.tokens_in, usage.tokens_out, usage.cache_read_tokens) == (25, 8, 5)
+    request = sdk.calls[0]
+    assert request["tools"] == [
+        {
+            "name": "read_source",
+            "description": "Прочитать фрагмент",
+            "input_schema": {
+                "type": "object",
+                "properties": {"source_id": {"type": "string"}},
+                "required": ["source_id"],
+            },
+        }
+    ]
+    assert request["system"] == [{"type": "text", "text": "СИСТЕМА"}]
+    assert request["output_config"] == {"effort": "high"}
+    messages = request["messages"]
+    assert messages[0] == {"role": "user", "content": [{"type": "text", "text": "Изучи материалы"}]}
+    assert messages[1]["role"] == "assistant"
+    assert messages[1]["content"] == [
+        {"type": "text", "text": "Читаю регламент"},
+        {"type": "tool_use", "id": "call-1", "name": "read_source", "input": {"source_id": "s1"}},
+    ]
+    # Результат инструмента — одно user-сообщение с tool_result (требование API).
+    assert messages[2] == {
+        "role": "user",
+        "content": [
+            {
+                "type": "tool_result",
+                "tool_use_id": "call-1",
+                "content": '{"ok": true}',
+                "is_error": False,
+            }
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_anthropic_complete_with_tools_rejects_truncated_answer() -> None:
+    sdk = _Sdk(_anthropic_tool_message(_text_block("нач"), stop="max_tokens"))
+    with pytest.raises(OutputTruncatedError, match="обрезан"):
+        await _anthropic(sdk).complete_with_tools(
+            "S", _tool_conversation(), _tool_definitions(), max_tokens=10
+        )
+
+
+def _tool_chat_response(payload: dict[str, Any], *, finish: str = "tool_calls") -> httpx.Response:
+    body = {
+        "choices": [{"message": payload, "finish_reason": finish}],
+        "usage": {
+            "prompt_tokens": 30,
+            "completion_tokens": 12,
+            "prompt_tokens_details": {"cached_tokens": 10},
+        },
+    }
+    return httpx.Response(200, json=body)
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_complete_with_tools_translates_tools_and_history() -> None:
+    requests: list[httpx.Request] = []
+    response_payload = {
+        "content": None,
+        "tool_calls": [
+            {
+                "id": "call-9",
+                "type": "function",
+                "function": {"name": "read_source", "arguments": '{"source_id": "s1"}'},
+            }
+        ],
+    }
+    client = OpenAICompatibleClient(
+        _config(),
+        transport=json_transport(lambda _r: _tool_chat_response(response_payload), requests),
+    )
+    with track_usage() as usage:
+        answer = await client.complete_with_tools(
+            "СИСТЕМА", _tool_conversation(), _tool_definitions(), max_tokens=3_000
+        )
+    assert answer.text is None
+    assert answer.tool_uses == (
+        ToolUse(id="call-9", name="read_source", arguments='{"source_id": "s1"}'),
+    )
+    assert (usage.tokens_in, usage.tokens_out, usage.cache_read_tokens) == (30, 12, 10)
+    body = json.loads(requests[0].content)
+    assert body["tools"][0]["type"] == "function"
+    assert body["tools"][0]["function"]["name"] == "read_source"
+    assert body["messages"][0] == {"role": "system", "content": "СИСТЕМА"}
+    assert body["messages"][1] == {"role": "user", "content": "Изучи материалы"}
+    assistant = body["messages"][2]
+    assert assistant["role"] == "assistant"
+    assert assistant["content"] == "Читаю регламент"
+    assert assistant["tool_calls"][0]["function"]["arguments"] == '{"source_id": "s1"}'
+    assert body["messages"][3] == {
+        "role": "tool",
+        "tool_call_id": "call-1",
+        "content": '{"ok": true}',
+    }
+    assert "response_format" not in body
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_complete_with_tools_rejects_truncated_answer() -> None:
+    client = OpenAICompatibleClient(
+        _config(),
+        transport=json_transport(
+            lambda _r: _tool_chat_response({"content": "нач"}, finish="length")
+        ),
+    )
+    with pytest.raises(OutputTruncatedError, match="обрезан"):
+        await client.complete_with_tools(
+            "S", _tool_conversation(), _tool_definitions(), max_tokens=5
+        )

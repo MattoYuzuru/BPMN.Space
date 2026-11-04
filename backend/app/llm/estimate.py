@@ -124,6 +124,9 @@ class EstimateInput:
     effort: str | None = None
     # Калибровка `count_tokens` по образцу текста; `None` — значение справочника.
     chars_per_token: float | None = None
+    # Агентный режим RFC-0004: один этап «агентные ходы» вместо этапов конвейера.
+    agent_mode: bool = False
+    agent_max_steps: int = 24
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,19 +195,32 @@ def estimate_run(inputs: EstimateInput) -> RunEstimate:
     effort_factor = EFFORT_OUTPUT_FACTOR.get(effort, 1.0)
 
     stages: list[StageEstimate] = []
-    stages.append(
-        _analysis_stage(
-            inputs,
-            total_tokens=total_tokens,
-            overhead=overhead,
-            fits=fits,
-            chunk_count=chunk_count,
-            effort_factor=effort_factor,
-            chars_per_token=chars_per_token,
-            prices=prices,
+    if inputs.agent_mode:
+        # Диапазон агентного прогона: от «прочитал оглавление и сдал» до лимита ходов.
+        stages.append(
+            _agent_stage(
+                inputs,
+                overhead=overhead,
+                total_tokens=total_tokens,
+                effort_factor=effort_factor,
+                chars_per_token=chars_per_token,
+                prices=prices,
+            )
         )
-    )
-    if inputs.mode is RunMode.BUILD:
+    else:
+        stages.append(
+            _analysis_stage(
+                inputs,
+                total_tokens=total_tokens,
+                overhead=overhead,
+                fits=fits,
+                chunk_count=chunk_count,
+                effort_factor=effort_factor,
+                chars_per_token=chars_per_token,
+                prices=prices,
+            )
+        )
+    if not inputs.agent_mode and inputs.mode is RunMode.BUILD:
         if not fits:
             stages.append(
                 _evidence_stage(
@@ -259,6 +275,11 @@ def estimate_run(inputs: EstimateInput) -> RunEstimate:
     notes = [
         "Оценка приблизительная: число запросов и длина ответов зависят от материалов и модели"
     ]
+    if inputs.agent_mode:
+        notes.append(
+            "Агентный режим: число ходов и объём чтения выбирает модель; верхняя граница — "
+            "лимит ходов и бюджет прогона"
+        )
     if inputs.questions:
         notes.append(f"Вопросов в проекте: {inputs.questions}; ответы и допущения идут в контекст")
     cost: CostRange | None = None
@@ -333,6 +354,43 @@ def _duration(calls: int, tokens_in: int, tokens_out: int) -> float:
         CALL_BASE_SEC + tokens_out / OUTPUT_TOKENS_PER_SEC + tokens_in / PREFILL_TOKENS_PER_SEC
     )
     return calls * per_call
+
+
+def _agent_stage(
+    inputs: EstimateInput,
+    *,
+    overhead: int,
+    total_tokens: int,
+    effort_factor: float,
+    chars_per_token: float,
+    prices: ModelPrices | None,
+) -> StageEstimate:
+    """Агентные ходы (RFC-0004): от «оглавление и submit» до исчерпания лимита ходов.
+
+    Точное число ходов решает модель. Нижняя граница — два хода (оглавление и submit),
+    верхняя — `agent_max_steps`; вход одного хода ограничен бюджетом источников, выход —
+    максимумом ответа модели. Оценка честно помечается приблизительной в `notes`.
+    """
+    steps = max(inputs.agent_max_steps, 2)
+    index_tokens = math.ceil(2_000 / chars_per_token)
+    per_call_in = IntRange(
+        min=overhead + index_tokens,
+        max=overhead + max(min(total_tokens, inputs.budget_chars // 2), index_tokens),
+    )
+    per_call_out = _output_range(
+        per_call_in, cap=inputs.json_max_tokens, effort_factor=effort_factor, short=True
+    )
+    calls = IntRange(min=2, max=steps)
+    tokens_in = IntRange(min=per_call_in.min * calls.min, max=per_call_in.max * calls.max)
+    tokens_out = IntRange(min=per_call_out.min * calls.min, max=per_call_out.max * calls.max)
+    return StageEstimate(
+        stage="agent",
+        label="Агентные ходы",
+        calls=calls,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        cost=_stage_cost(prices, tokens_in=tokens_in, tokens_out=tokens_out),
+    )
 
 
 def _analysis_stage(

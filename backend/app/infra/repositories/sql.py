@@ -8,7 +8,18 @@ from enum import Enum
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import CursorResult, and_, case, delete, func, or_, select, tuple_, update
+from sqlalchemy import (
+    CursorResult,
+    and_,
+    case,
+    delete,
+    func,
+    or_,
+    select,
+    text,
+    tuple_,
+    update,
+)
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import defer
@@ -49,6 +60,7 @@ from app.domain.models import (
 from app.domain.questions import actions_from_json, actions_to_json, normalize
 from app.domain.runs import ACTIVE_STATUSES
 from app.domain.sources import (
+    SourceSearchHit,
     derivation_from_json,
     derivation_to_json,
     media_from_json,
@@ -671,6 +683,52 @@ class SqlSourceRepository:
                 )
             ).all()
             return [_source(row) for row in rows]
+
+    async def search(self, project_id: UUID, query: str, *, limit: int) -> list[SourceSearchHit]:
+        """FTS `russian` по названию и тексту источников; индекс — миграция 0024.
+
+        Запрос повторяет выражение индекса `to_tsvector('russian', title || ' ' || content)`
+        буквально: иначе планировщик не сопоставит условие с индексом. `ts_headline` отдаёт
+        фрагмент вокруг совпадения — полный текст источника через поиск не отдаётся.
+        """
+        phrase = query.strip()
+        if not phrase or limit <= 0:
+            return []
+        statement = text(
+            """
+            SELECT id, title,
+                   ts_headline('russian', content, plainto_tsquery('russian', :query),
+                               'MaxWords=60, MinWords=20, MaxFragments=1') AS snippet,
+                   ts_rank_cd(to_tsvector('russian', title || ' ' || content),
+                              plainto_tsquery('russian', :query)) AS rank
+            FROM sources
+            WHERE project_id = :project_id
+              AND active
+              AND status = 'ready'
+              AND trust <> 'summary'
+              AND length(btrim(content)) > 0
+              AND to_tsvector('russian', title || ' ' || content)
+                  @@ plainto_tsquery('russian', :query)
+            ORDER BY rank DESC, created_at
+            LIMIT :limit
+            """
+        )
+        async with self.sessions() as session:
+            rows = (
+                await session.execute(
+                    statement,
+                    {"project_id": project_id, "query": phrase, "limit": min(limit, 20)},
+                )
+            ).all()
+        return [
+            SourceSearchHit(
+                source_id=row.id,
+                title=row.title,
+                snippet=row.snippet or "",
+                rank=float(row.rank or 0.0),
+            )
+            for row in rows
+        ]
 
 
 class SqlQuestionRepository:

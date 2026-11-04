@@ -24,8 +24,10 @@ from app.llm.capabilities import (
     EFFORT_LEVELS,
     ModelCapabilities,
     RunProfile,
+    UnsupportedAgentModeError,
     UnsupportedEffortError,
     capabilities_for,
+    checked_agent_profile,
     checked_profile,
 )
 from app.llm.client import PROVIDER_MOCK, LlmConfig, redact_secrets
@@ -172,6 +174,8 @@ class ModelResolver:
         runtime: Runtime | None = None,
         production: bool = False,
         server_max_effort: str | None = None,
+        agent_enabled: bool = False,
+        agent_max_steps: int = 24,
     ) -> None:
         self._repos = repos
         self._server = server_pipeline
@@ -181,6 +185,10 @@ class ModelResolver:
         self._production = production
         # Потолок effort для модели сервера (`LLM_SERVER_MAX_EFFORT`): ключ оператора общий.
         self._server_max_effort = server_max_effort
+        # Агентный режим RFC-0004: выключен, пока оператор не включил `LLM_AGENT_MODE`;
+        # `agent_max_steps` — серверный потолок ходов для профиля прогона.
+        self._agent_enabled = agent_enabled
+        self._agent_max_steps = max(agent_max_steps, 1)
 
     @property
     def server_pipeline(self) -> ProcessPipeline | None:
@@ -357,10 +365,17 @@ class ModelResolver:
         if validate:
             try:
                 checked = checked_profile(checked, resolved.capabilities, resolved.model)
+                checked = checked_agent_profile(
+                    checked,
+                    resolved.capabilities,
+                    resolved.model,
+                    enabled=self._agent_enabled,
+                    max_steps=self._agent_max_steps,
+                )
                 if resolved.source == SOURCE_SERVER:
                     self._check_server_profile(checked, resolved)
                 self._check_budget(checked, resolved)
-            except (UnsupportedEffortError, InvalidInputError) as error:
+            except (UnsupportedEffortError, UnsupportedAgentModeError, InvalidInputError) as error:
                 await resolved.release()
                 raise InvalidInputError(str(error)) from None
         pipeline = resolved.pipeline

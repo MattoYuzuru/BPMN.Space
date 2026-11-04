@@ -22,6 +22,12 @@ EFFORT_LEVELS: tuple[Effort, ...] = ("low", "medium", "high", "xhigh", "max")
 _ALL_EFFORTS: tuple[Effort, ...] = EFFORT_LEVELS
 _BASIC_EFFORTS: tuple[Effort, ...] = ("low", "medium", "high")
 
+# Режим прогона (RFC-0004, RFC-0005): конвейер или агент с инструментами.
+type AgentMode = Literal["pipeline", "agent"]
+PIPELINE_MODE: AgentMode = "pipeline"
+AGENT_MODE: AgentMode = "agent"
+AGENT_MODES: tuple[AgentMode, ...] = (PIPELINE_MODE, AGENT_MODE)
+
 EFFORT_LABELS: dict[str, str] = {
     "low": "быстро",
     "medium": "обычно",
@@ -389,17 +395,26 @@ class Budget:
 
 @dataclass(frozen=True, slots=True)
 class RunProfile:
-    """Профиль одного прогона: `None` — умолчание сервера и модели. Ключей не содержит."""
+    """Профиль одного прогона: `None` — умолчание сервера и модели. Ключей не содержит.
+
+    `mode` — `pipeline` (фиксированный конвейер) или `agent` (RFC-0004: модель сама читает
+    источники инструментами). `max_steps` — лимит ходов агента для этого прогона; допустим
+    только с `mode=agent` и не больше серверного потолка (`LLM_AGENT_MAX_STEPS`).
+    """
 
     effort: Effort | None = None
     semantic_review: bool | None = None
     budget: Budget | None = None
+    mode: AgentMode | None = None
+    max_steps: int | None = None
 
     def to_json(self) -> dict[str, Any]:
         return {
             "effort": self.effort,
             "semantic_review": self.semantic_review,
             "budget": self.budget.to_json() if self.budget is not None else None,
+            "mode": self.mode,
+            "max_steps": self.max_steps,
         }
 
     @classmethod
@@ -408,15 +423,25 @@ class RunProfile:
             return cls()
         effort = value.get("effort")
         review = value.get("semantic_review")
+        mode = value.get("mode")
+        steps = value.get("max_steps")
         return cls(
             effort=effort if effort in EFFORT_LEVELS else None,
             semantic_review=review if isinstance(review, bool) else None,
             budget=Budget.from_json(value.get("budget")),
+            mode=mode if mode in AGENT_MODES else None,
+            max_steps=steps
+            if isinstance(steps, int) and not isinstance(steps, bool) and steps > 0
+            else None,
         )
 
 
 class UnsupportedEffortError(ValueError):
     """Модель не поддерживает запрошенный уровень; сообщение — для пользователя."""
+
+
+class UnsupportedAgentModeError(ValueError):
+    """Агентный режим недоступен: выключен оператором, модель без инструментов или лимит ходов."""
 
 
 def checked_profile(profile: RunProfile, capabilities: ModelCapabilities, model: str) -> RunProfile:
@@ -431,5 +456,43 @@ def checked_profile(profile: RunProfile, capabilities: ModelCapabilities, model:
         raise UnsupportedEffortError(
             f"Модель {model} не поддерживает уровень «{EFFORT_LABELS[profile.effort]}». "
             f"Доступно: {allowed}"
+        )
+    return profile
+
+
+def checked_agent_profile(
+    profile: RunProfile,
+    capabilities: ModelCapabilities,
+    model: str,
+    *,
+    enabled: bool,
+    max_steps: int,
+) -> RunProfile:
+    """Проверяет режим и лимит ходов по возможностям модели и настройке оператора.
+
+    `enabled` — флаг `LLM_AGENT_MODE` (по умолчанию выключен): агентный режим включает
+    оператор. `max_steps` — серверный потолок; профиль может попросить меньше, но не больше.
+    Возвращает профиль с явным режимом: без запроса — `pipeline`.
+    """
+    if profile.max_steps is not None and profile.mode != AGENT_MODE:
+        raise UnsupportedAgentModeError(
+            "Лимит ходов задаётся только для агентного режима (profile.mode=agent)"
+        )
+    if profile.mode is None:
+        return replace(profile, mode=PIPELINE_MODE)
+    if profile.mode == PIPELINE_MODE:
+        return profile
+    if not enabled:
+        raise UnsupportedAgentModeError(
+            "Агентный режим выключен администратором (LLM_AGENT_MODE). Выберите режим конвейера"
+        )
+    if not capabilities.tools:
+        raise UnsupportedAgentModeError(
+            f"Модель {model} не поддерживает инструменты: агентный режим недоступен. "
+            "Выберите модель с инструментами (например, Claude 5.5) или режим конвейера"
+        )
+    if profile.max_steps is not None and profile.max_steps > max_steps:
+        raise UnsupportedAgentModeError(
+            f"Лимит ходов агента не больше {max_steps} (LLM_AGENT_MAX_STEPS)"
         )
     return profile

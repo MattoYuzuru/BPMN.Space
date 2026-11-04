@@ -2,6 +2,7 @@
 
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, cast
 from uuid import UUID
@@ -40,6 +41,21 @@ def derivation_frame_keys(source: Source) -> list[str]:
         if isinstance(key, str):
             keys.append(key)
     return keys
+
+
+@dataclass(frozen=True, slots=True)
+class SourceSearchHit:
+    """Попадание полнотекстового поиска по источникам для агентного режима (RFC-0004).
+
+    `snippet` — фрагмент вокруг совпадения с подсветкой, `rank` — оценка релевантности
+    (`ts_rank_cd` у PostgreSQL, счётчик совпадений у in-memory реализации). Тексты источников
+    целиком через поиск не отдаются: модель читает нужный фрагмент `read_source`.
+    """
+
+    source_id: UUID
+    title: str
+    snippet: str
+    rank: float = 0.0
 
 
 def derivation_to_json(value: SourceDerivation | None) -> dict[str, Any] | None:

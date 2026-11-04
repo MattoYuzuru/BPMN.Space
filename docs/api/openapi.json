@@ -3939,6 +3939,35 @@
             "description": "Глубина работы модели: low, medium, high, xhigh, max. Уровень, которого модель не поддерживает, — 422; у модели без рассуждения поле игнорируется",
             "title": "Effort"
           },
+          "max_steps": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Лимит ходов агента (только с mode=agent); не больше серверного LLM_AGENT_MAX_STEPS. Достигнутый лимит — мягкая остановка `waiting` с вопросом budget_reached",
+            "title": "Max Steps"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pipeline",
+                  "agent"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Режим прогона: `pipeline` — фиксированный конвейер, `agent` — модель сама читает источники инструментами (RFC-0004). `agent` доступен только с ключом оператора LLM_AGENT_MODE и моделью с инструментами; иначе 422",
+            "title": "Mode"
+          },
           "semantic_review": {
             "anyOf": [
               {

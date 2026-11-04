@@ -43,7 +43,7 @@ from app.domain.onboarding import (
 )
 from app.domain.questions import normalize
 from app.domain.runs import ACTIVE_STATUSES
-from app.domain.sources import descendants
+from app.domain.sources import SourceSearchHit, descendants
 from app.infra.repositories.base import PageKey, ProjectStats, Repositories
 
 
@@ -305,6 +305,71 @@ class InMemorySourceRepository:
     async def list_by_project(self, project_id: UUID) -> list[Source]:
         items = [s for s in self._items.values() if s.project_id == project_id]
         return [copy.deepcopy(s) for s in sorted(items, key=lambda s: (s.created_at, s.id))]
+
+    async def search(self, project_id: UUID, query: str, *, limit: int) -> list[SourceSearchHit]:
+        """Упрощённый заменитель PostgreSQL FTS для тестов и режима без БД (RFC-0004).
+
+        Стемминга и релевантности `ts_rank_cd` нет: слова запроса ищутся без учёта регистра
+        и «ё», `rank` — число совпадений. Контракт тот же: активные готовые источники с
+        текстом, без кратких содержаний; полный текст не отдаётся, только фрагмент.
+        """
+        words = _query_words(query)
+        if not words or limit <= 0:
+            return []
+        hits: list[SourceSearchHit] = []
+        for source in self._items.values():
+            if source.project_id != project_id or not source.feeds_model:
+                continue
+            haystack = _fold(source.title) + "\n" + _fold(source.content)
+            score = sum(haystack.count(word) for word in words)
+            if score == 0:
+                continue
+            hits.append(
+                SourceSearchHit(
+                    source_id=source.id,
+                    title=source.title,
+                    snippet=_snippet(source.content, words),
+                    rank=float(score),
+                )
+            )
+        hits.sort(key=lambda hit: (-hit.rank, hit.title))
+        return hits[:limit]
+
+
+def _fold(text: str) -> str:
+    """Нижний регистр и «ё»→«е»: длины строк совпадают, смещения годятся для среза оригинала."""
+    return text.casefold().replace("ё", "е")
+
+
+_MIN_QUERY_WORD = 2
+_MAX_QUERY_WORDS = 10
+
+
+def _query_words(query: str) -> list[str]:
+    words: list[str] = []
+    for raw in _fold(query).split():
+        word = "".join(char for char in raw if char.isalnum() or char in "_-")
+        if len(word) >= _MIN_QUERY_WORD and word not in words:
+            words.append(word)
+        if len(words) == _MAX_QUERY_WORDS:
+            break
+    return words
+
+
+_SNIPPET_CHARS = 400
+_SNIPPET_LEAD = 120
+
+
+def _snippet(content: str, words: list[str]) -> str:
+    """Фрагмент вокруг первого совпадения: как `ts_headline`, но без подсветки."""
+    folded = _fold(content)
+    positions = [folded.find(word) for word in words]
+    found = [position for position in positions if position >= 0]
+    start = max(min(found) - _SNIPPET_LEAD, 0) if found else 0
+    end = min(start + _SNIPPET_CHARS, len(content))
+    prefix = "…" if start > 0 else ""
+    suffix = "…" if end < len(content) else ""
+    return f"{prefix}{content[start:end].strip()}{suffix}"
 
 
 def _code_number(question: Question) -> int:

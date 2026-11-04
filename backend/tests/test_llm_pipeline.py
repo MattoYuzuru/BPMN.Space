@@ -13,7 +13,7 @@ from app.llm.base import (
     track_run_usage,
 )
 from app.llm.capabilities import Budget, ModelCapabilities, ModelPrices
-from app.llm.pipeline import LlmPipeline, _verified_quote
+from app.llm.pipeline import LlmPipeline, verified_quote
 from tests.llm_helpers import ScriptedClient, ScriptedPipeline
 
 _NO_SLEEP = lambda _seconds: None  # noqa: E731 — тесты не ждут настоящих пауз
@@ -29,7 +29,7 @@ def test_verified_quote_accepts_pdf_line_wraps_and_returns_verbatim_source() -> 
         created_at=datetime.now(UTC),
     )
 
-    verified_id, excerpt = _verified_quote(
+    verified_id, excerpt = verified_quote(
         [source],
         str(source_id),
         "СОТРУДНИК проверяет комплектность документов: «Лист сверки с учетом даты».",
@@ -47,7 +47,7 @@ def test_verified_quote_rejects_a_fabricated_suffix_after_a_long_valid_prefix() 
         content="а" * 1200,
         created_at=datetime.now(UTC),
     )
-    assert _verified_quote([source], str(source.id), source.content + " ВЫДУМАННЫЙ ФАКТ") == (
+    assert verified_quote([source], str(source.id), source.content + " ВЫДУМАННЫЙ ФАКТ") == (
         None,
         None,
     )
@@ -61,7 +61,7 @@ def test_verified_quote_preserves_a_fact_after_expanded_pdf_whitespace() -> None
         content="Инженер" + " " * 1300 + "готовит акт.",
         created_at=datetime.now(UTC),
     )
-    assert _verified_quote([source], str(source.id), "Инженер готовит акт.") == (
+    assert verified_quote([source], str(source.id), "Инженер готовит акт.") == (
         source.id,
         source.content,
     )

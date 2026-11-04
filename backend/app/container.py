@@ -28,6 +28,7 @@ from app.ingest.frames import FrameExtractor
 from app.ingest.media import FfmpegRunner, MediaTranscriber
 from app.ingest.parsers import LocalDocumentParser
 from app.ingest.stt import MockSpeechToText, SpeechToText
+from app.llm.agent import AgentLimits
 from app.llm.client import LlmClient, LlmConfig
 from app.llm.factory import build_client, build_pipeline, call_knobs
 from app.llm.mock import MockPipeline
@@ -260,6 +261,8 @@ def build_container(
         runtime=runtime,
         production=settings.is_production,
         server_max_effort=settings.llm_server_max_effort,
+        agent_enabled=settings.llm_agent_mode,
+        agent_max_steps=settings.llm_agent_max_steps,
     )
 
     def adapter_client(base_url: str, user_supplied: bool, timeout_sec: float) -> httpx.AsyncClient:
@@ -376,6 +379,12 @@ def build_container(
         progress=onboarding,
         broadcast=realtime.publish,
         technical=technical_questions,
+        agent_limits=AgentLimits(
+            max_steps=settings.llm_agent_max_steps,
+            read_max_chars=settings.llm_agent_read_max_chars,
+            search_limit=settings.llm_agent_search_limit,
+            search_snippet_chars=settings.llm_agent_search_snippet_chars,
+        ),
     )
     # Вопросу нужен прогон для действий «повторить» и «поднять бюджет» (циклической
     # зависимости нет: RunService получает сервис вопросов параметром).

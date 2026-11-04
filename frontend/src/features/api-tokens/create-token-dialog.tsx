@@ -12,6 +12,7 @@ import {
   useTokenProjectChoices,
 } from '@/entities/api-token'
 import { errorMessage } from '@/shared/api/client'
+import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import {
   Button,
@@ -92,7 +93,11 @@ export function CreateTokenDialog({
         expires_in_days: Number(form.days),
       },
       {
-        onSuccess: (token) => setCreated(token),
+        onSuccess: (token) => {
+          setCreated(token)
+          // Тур по волнам 2–4 ждёт этот факт: токен реально создан на сервере.
+          emitOnboardingSignal({ type: 'agent.token.created', id: token.id, name: token.name })
+        },
         onError: (failure) => setError(errorMessage(failure)),
       },
     )
@@ -292,8 +297,9 @@ function CreatedToken({ token }: { token: ApiTokenCreated }) {
           value={commandText}
           copyMessage="Команда скопирована"
           copyLabel="Копировать команду"
-          hint="MCP-сервер пока не запущен: команда заработает после обновления продукта."
+          hint="Сервер подключения появится в одном из ближайших обновлений."
           multiline
+          onCopied={() => emitOnboardingSignal({ type: 'agent.command.copied' })}
         />
       </div>
       <Card variant="sunken" padding="sm" className="flex items-start gap-2">

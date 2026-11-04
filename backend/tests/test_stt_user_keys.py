@@ -25,6 +25,7 @@ from app.container import Container, build_container
 from app.domain.capabilities import (
     Capability,
     CapabilityError,
+    CapabilityUnavailableError,
     CredentialKind,
     ErrorClass,
 )
@@ -559,3 +560,33 @@ def test_transcription_http_returns_text_from_user_deepgram_key() -> None:
     assert listen.headers["Authorization"] == f"Token {USER_KEY}"
     assert USER_KEY not in response.text
     del stack
+
+
+async def test_without_server_stt_user_without_key_gets_add_key_message() -> None:
+    # STT_PROVIDER=none: запасного пути нет, вместо заготовленного текста — «добавьте ключ».
+    harness = await _make_harness(with_key=False)
+    routed = RoutedSpeechToText(harness.router, server=None)
+
+    with pytest.raises(CapabilityUnavailableError) as caught:
+        await routed.for_user(harness.user_id).transcribe(b"audio", mime="audio/mpeg")
+
+    assert "Добавьте ключ" in (caught.value.outcome.message or "")
+    assert harness.server_impl.calls == 0
+
+
+def test_production_accepts_stt_none_and_builds_without_server_provider() -> None:
+    settings = _http_settings(
+        app_env="production",
+        stt_provider="none",
+        deepgram_api_key=None,
+        bpmn_tools_url="http://127.0.0.1:1",
+    )
+    settings.validate_for_runtime()
+    container = build_container(settings)
+    assert container is not None
+
+
+def test_production_rejects_mock_stt() -> None:
+    settings = _http_settings(app_env="production", stt_provider="mock")
+    with pytest.raises(ValueError, match="STT_PROVIDER=none"):
+        settings.validate_for_runtime()

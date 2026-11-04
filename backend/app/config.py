@@ -355,7 +355,8 @@ class Settings(BaseSettings):
         if self.stt_provider.lower() == "mock":
             raise ValueError(
                 "Production не принимает STT_PROVIDER=mock: задайте STT_PROVIDER=deepgram "
-                "и DEEPGRAM_API_KEY, иначе записи превратились бы в заготовленный текст"
+                "и DEEPGRAM_API_KEY или STT_PROVIDER=none (только ключи пользователей), "
+                "иначе записи превратились бы в заготовленный текст"
             )
         if self.llm_provider.lower() == "mock" and not self.credentials_encryption_key:
             raise ValueError(

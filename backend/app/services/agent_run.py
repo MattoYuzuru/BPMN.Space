@@ -28,6 +28,7 @@ from app.domain.models import (
     SourceStatus,
     SourceTrust,
 )
+from app.infra.bpmn_tools import BpmnToolsError
 from app.llm.agent import (
     AGENT_PROMPT_VERSION,
     AgentInput,
@@ -45,6 +46,8 @@ type GraphLint = Callable[[str], Awaitable[list[LintIssue]]]
 
 # Сколько последних вызовов инструментов хранить в ir.execution.agent: аудит, не архив.
 MAX_RECORDED_TOOLS = 100
+# Длина ответа на вопрос в оглавлении `list_questions`: полный текст есть в вопросах проекта.
+MAX_QUESTION_ANSWER_INPUT = 500
 RECORD_VERSION = AGENT_PROMPT_VERSION
 
 
@@ -142,6 +145,11 @@ def build_agent_input(
             kind=question.kind.value,
             text=question.text,
             assumption=question.assumption,
+            answer=(
+                question.answer.text[:MAX_QUESTION_ANSWER_INPUT]
+                if question.answer is not None and question.answer.text.strip()
+                else None
+            ),
         )
         for question in context.questions
     ]
@@ -190,6 +198,12 @@ async def check_submitted_graph(
         return await accept_submitted_ir(data, context, verify_quote, lint=lint)
     except GraphRejectedError as error:
         raise AgentRejectedError(error.errors) from None
+    except BpmnToolsError as error:
+        # Сбой bpmn-tools — инфраструктура, а не «некорректные аргументы»: модели не надо
+        # повторять тот же проверочный вызов и жечь ходы. Прогон честно завершится ошибкой.
+        raise PipelineError(
+            "Проверка схемы недоступна: bpmn-tools не ответил. Повторите прогон позже"
+        ) from error
 
 
 async def restore_submission(

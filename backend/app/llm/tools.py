@@ -56,6 +56,11 @@ class ConversationMessage:
     - `user`: текст задачи или уточнения;
     - `assistant`: текст модели и/или запросы инструментов;
     - `tool`: результат инструмента (`tool_use_id` обязателен), `is_error` — сбой инструмента.
+
+    `provider_blocks` — сырые блоки ответа ассистента от провайдера, которые нельзя
+    восстановить из текста и `tool_uses`. Anthropic требует вернуть в следующем запросе
+    блоки `thinking`/`redacted_thinking` с подписью; без них цикл инструментов у моделей
+    с постоянно включённым рассуждением отклоняется. Остальные адаптеры поле не используют.
     """
 
     role: ToolRole
@@ -63,21 +68,29 @@ class ConversationMessage:
     tool_uses: tuple[ToolUse, ...] = field(default_factory=tuple[ToolUse, ...])
     tool_use_id: str | None = None
     is_error: bool = False
+    provider_blocks: tuple[dict[str, Any], ...] = field(default_factory=tuple[dict[str, Any], ...])
 
     def __post_init__(self) -> None:
         if self.role == "tool" and not self.tool_use_id:
             raise ValueError("Результату инструмента нужен tool_use_id")
         if self.role != "assistant" and self.tool_uses:
             raise ValueError("Запросы инструментов бывают только в ответе ассистента")
+        if self.role != "assistant" and self.provider_blocks:
+            raise ValueError("Сырые блоки провайдера бывают только в ответе ассистента")
 
 
 @dataclass(frozen=True, slots=True)
 class ToolTurn:
-    """Ответ модели в режиме инструментов: текст и запросы инструментов (может быть пусто)."""
+    """Ответ модели в режиме инструментов: текст, запросы инструментов и сырые блоки.
+
+    `provider_blocks` — блоки ответа в формате провайдера (например, `thinking` с подписью
+    у Anthropic): агентный цикл возвращает их в следующем сообщении ассистента без изменений.
+    """
 
     text: str | None = None
     tool_uses: tuple[ToolUse, ...] = field(default_factory=tuple[ToolUse, ...])
     stop_reason: str | None = None
+    provider_blocks: tuple[dict[str, Any], ...] = field(default_factory=tuple[dict[str, Any], ...])
 
     @property
     def has_actions(self) -> bool:

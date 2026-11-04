@@ -89,11 +89,51 @@ def _text_of(message: anthropic.types.Message) -> str:
     return "".join(block.text for block in message.content if block.type == "text")
 
 
+def _block_dict(block: object) -> dict[str, object]:
+    """Блок ответа Anthropic → JSON-совместимый словарь для повторной отправки.
+
+    SDK отдаёт pydantic-объекты (`model_dump`); записанные тесты — простые объекты, поэтому
+    есть запасной разбор по `type`. Так в истории сохраняются `thinking` и
+    `redacted_thinking` с подписью, без которых цикл инструментов у моделей 5.5 отклоняется.
+    """
+    dump = getattr(block, "model_dump", None)
+    if callable(dump):
+        raw = dump(exclude_none=True, mode="json")
+        if isinstance(raw, dict):
+            return {str(key): value for key, value in raw.items()}
+    kind = str(getattr(block, "type", ""))
+    if kind == "text":
+        return {"type": "text", "text": str(getattr(block, "text", ""))}
+    if kind == "thinking":
+        return {
+            "type": "thinking",
+            "thinking": str(getattr(block, "thinking", "")),
+            "signature": str(getattr(block, "signature", "")),
+        }
+    if kind == "redacted_thinking":
+        return {"type": "redacted_thinking", "data": str(getattr(block, "data", ""))}
+    if kind == "tool_use":
+        return {
+            "type": "tool_use",
+            "id": str(getattr(block, "id", "")),
+            "name": str(getattr(block, "name", "")),
+            "input": getattr(block, "input", {}) or {},
+        }
+    return {"type": kind} if kind else {}
+
+
+def _provider_blocks(message: anthropic.types.Message) -> tuple[dict[str, object], ...]:
+    """Все блоки ответа (включая рассуждение) — для возврата в следующем сообщении."""
+    return tuple(_block_dict(block) for block in message.content)
+
+
 def _tool_messages(messages: Sequence[ConversationMessage]) -> list[dict[str, object]]:
     """Общий разговор → сообщения Anthropic; результаты подряд идут одним user-сообщением.
 
     API требует: после assistant с `tool_use` следующий user содержит `tool_result` на каждый
     запрос. Несколько параллельных инструментов — один список блоков, а не несколько сообщений.
+    Ответ ассистента с `provider_blocks` отправляется исходными блоками: подпись рассуждения
+    нельзя восстановить из текста.
     """
     converted: list[dict[str, object]] = []
     pending_results: list[dict[str, object]] = []
@@ -114,18 +154,21 @@ def _tool_messages(messages: Sequence[ConversationMessage]) -> list[dict[str, ob
         if message.role == "user":
             converted.append({"role": "user", "content": [{"type": "text", "text": message.text}]})
             continue
-        blocks: list[dict[str, object]] = []
-        if message.text.strip():
-            blocks.append({"type": "text", "text": message.text})
-        blocks.extend(
-            {
-                "type": "tool_use",
-                "id": use.id,
-                "name": use.name,
-                "input": use.parsed_arguments(),
-            }
-            for use in message.tool_uses
-        )
+        if message.provider_blocks:
+            blocks = [dict(block) for block in message.provider_blocks]
+        else:
+            blocks = []
+            if message.text.strip():
+                blocks.append({"type": "text", "text": message.text})
+            blocks.extend(
+                {
+                    "type": "tool_use",
+                    "id": use.id,
+                    "name": use.name,
+                    "input": use.parsed_arguments(),
+                }
+                for use in message.tool_uses
+            )
         if blocks:
             converted.append({"role": "assistant", "content": blocks})
     if pending_results:
@@ -142,7 +185,12 @@ def _tool_turn(message: anthropic.types.Message) -> ToolTurn:
     )
     if not uses and not text:
         raise RuntimeError("Модель вернула пустой ответ без запросов инструментов")
-    return ToolTurn(text=text or None, tool_uses=uses, stop_reason=message.stop_reason)
+    return ToolTurn(
+        text=text or None,
+        tool_uses=uses,
+        stop_reason=message.stop_reason,
+        provider_blocks=_provider_blocks(message),
+    )
 
 
 class AnthropicClient:

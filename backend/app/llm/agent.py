@@ -41,14 +41,14 @@ from app.llm.base import (
     DEADLINE_MESSAGE,
     BudgetReachedError,
     LlmUsage,
+    OutputTruncatedError,
     PipelineError,
-    current_budget,
     remaining_sec,
     track_usage,
 )
 from app.llm.budget import check_run_budget
 from app.llm.capabilities import ModelCapabilities
-from app.llm.client import LlmClient
+from app.llm.client import LlmClient, LlmRefusalError
 from app.llm.estimate import cost_of_usage
 from app.llm.tools import (
     ConversationMessage,
@@ -64,6 +64,7 @@ AGENT_PROMPT_VERSION = "agent-mode-1"
 
 MAX_QUESTION_TEXT = 1_000
 MAX_QUESTION_ASSUMPTION = 1_000
+MAX_QUESTION_ANSWER = 500
 MAX_QUOTE_CHARS = 1_200
 MAX_QUESTION_QUOTES = 3
 MAX_PROPOSALS = 50
@@ -72,6 +73,8 @@ MAX_SEARCH_QUERY = 200
 MIN_SEARCH_QUERY = 2
 MAX_SOURCE_LIST = 100
 NO_TOOL_NUDGES = 1
+# Во сколько раз больше попаданий запросить, чтобы после фильтра по снимку остался лимит.
+OVERSAMPLE_SEARCH = 3
 
 _DEFAULT_QUESTION_KIND = QuestionKind.MISSING_OUTCOME
 _DEFAULT_SEVERITY = Severity.MAJOR
@@ -91,7 +94,7 @@ __all__ = [
 ]
 
 type VerifyQuote = Callable[[list[ContextSource], object, object], tuple[UUID | None, str | None]]
-type SearchSources = Callable[[str], Awaitable[list[SourceSearchHit]]]
+type SearchSources = Callable[[str, int], Awaitable[list[SourceSearchHit]]]
 type CheckGraph = Callable[[dict[str, Any]], Awaitable[DiagramDraft]]
 type TurnCallback = Callable[["AgentTurn"], Awaitable[None]]
 
@@ -150,6 +153,7 @@ class AgentQuestionView:
     kind: str
     text: str
     assumption: str
+    answer: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,6 +230,26 @@ class AgentOutcome:
 
 def _sha(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
+
+
+def _strip_highlight(snippet: str) -> str:
+    """Убирает подсветку `ts_headline` (`<b>`): модель получает текст, а не HTML."""
+    return snippet.replace("<b>", "").replace("</b>", "")
+
+
+def _error_label(error: BaseException) -> str:
+    """Короткий класс сбоя для журнала хода: без текста провайдера и деталей исключения."""
+    if isinstance(error, OutputTruncatedError):
+        return "ответ модели обрезан по лимиту длины"
+    if isinstance(error, LlmRefusalError):
+        return "модель отказалась отвечать"
+    if isinstance(error, asyncio.CancelledError):
+        return "прогон отменён"
+    if isinstance(error, BudgetReachedError):
+        return "достигнут бюджет прогона"
+    if isinstance(error, PipelineError):
+        return "сбой проверки или инструмента"
+    return "сбой провайдера модели"
 
 
 def _json(value: object) -> str:
@@ -414,8 +438,9 @@ def tool_definitions(limits: AgentLimits) -> tuple[ToolDefinition, ...]:
             name="search_sources",
             description=(
                 "Полнотекстовый поиск по источникам проекта (русская морфология): слова запроса, "
-                "фрагменты с совпадениями и id источника. Не отдаёт полный текст — читай найденное "
-                "read_source со смещения."
+                "фрагменты с совпадениями и id источника. Смотрит название и первые 100 тыс. "
+                "знаков текста: хвост длинного документа читай read_source. Не отдаёт полный "
+                "текст — читай найденное read_source со смещения."
             ),
             input_schema={
                 "type": "object",
@@ -531,7 +556,13 @@ class AgentRunner:
         self._step = task.steps_spent
 
     async def run(self) -> AgentOutcome:
-        """Крутит ходы до принятого submit; лимит ходов и бюджет — мягкая остановка."""
+        """Крутит ходы до принятого submit; лимит ходов и бюджет — мягкая остановка.
+
+        Каждый оплаченный ход попадает в журнал (`on_turn`) даже при текстовом ответе без
+        инструментов, сбое инструмента, обрезке или отказе провайдера и отмене: иначе бюджет,
+        стоимость и счётчик ходов после рестарта или продолжения занижаются. Запись хода идёт
+        в `finally` и доводится до конца, даже если прогон отменяют повторно.
+        """
         tools = tool_definitions(self._limits)
         messages: list[ConversationMessage] = [
             ConversationMessage(role="user", text=self._initial_message())
@@ -539,10 +570,11 @@ class AgentRunner:
         budget = _budget_description(self._task)
         spent = self._task.steps_spent
         if spent >= self._limits.max_steps:
+            # Лимит ходов — не бюджет токенов/денег: budget не передаётся, иначе пользователю
+            # предлагают «поднять бюджет», который к исчерпанию ходов отношения не имеет.
             raise BudgetReachedError(
                 f"Лимит ходов агента ({self._limits.max_steps}) уже израсходован"
                 + (f" ({budget})" if budget else ""),
-                budget=current_budget(),
             )
         nudges = 0
         for index in range(spent + 1, self._limits.max_steps + 1):
@@ -552,10 +584,44 @@ class AgentRunner:
                 raise PipelineError(DEADLINE_MESSAGE)
             self._step = index
             started = time.perf_counter()
-            with track_usage() as usage:
-                turn: ToolTurn = await self._complete(messages, tools)
+            usage = LlmUsage()
+            try:
+                with track_usage() as tracked:
+                    usage = tracked
+                    turn = await self._complete(messages, tools)
+            except BaseException as error:
+                # Провайдер уже списал запрос (usage записан адаптером) — фиксируем ход.
+                await self._flush_turn(
+                    self._turn_record(
+                        index=index,
+                        started=started,
+                        usage=usage,
+                        tool_names=(),
+                        journal=(),
+                        ok=False,
+                        error=_error_label(error),
+                    )
+                )
+                raise
             if not turn.tool_uses:
-                messages.append(ConversationMessage(role="assistant", text=turn.text or ""))
+                messages.append(
+                    ConversationMessage(
+                        role="assistant",
+                        text=turn.text or "",
+                        provider_blocks=turn.provider_blocks,
+                    )
+                )
+                await self._flush_turn(
+                    self._turn_record(
+                        index=index,
+                        started=started,
+                        usage=usage,
+                        tool_names=(),
+                        journal=(),
+                        ok=False,
+                        error="текстовый ответ без вызова инструмента",
+                    )
+                )
                 if nudges < NO_TOOL_NUDGES:
                     nudges += 1
                     messages.append(
@@ -574,10 +640,36 @@ class AgentRunner:
                 )
             messages.append(
                 ConversationMessage(
-                    role="assistant", text=turn.text or "", tool_uses=turn.tool_uses
+                    role="assistant",
+                    text=turn.text or "",
+                    tool_uses=turn.tool_uses,
+                    provider_blocks=turn.provider_blocks,
                 )
             )
-            await self._run_tools(turn, messages, index, started, usage)
+            entries: list[dict[str, Any]] = []
+            failure: BaseException | None = None
+            try:
+                await self._run_tools(turn, messages, index, entries)
+            except BaseException as error:  # ход уже оплачен, его надо записать
+                failure = error
+                raise
+            finally:
+                ok = failure is None and all(item["ok"] for item in entries)
+                if failure is not None:
+                    label = _error_label(failure)
+                else:
+                    label = None if ok else "сбой инструмента"
+                await self._flush_turn(
+                    self._turn_record(
+                        index=index,
+                        started=started,
+                        usage=usage,
+                        tool_names=tuple(use.name for use in turn.tool_uses),
+                        journal=tuple(entries),
+                        ok=ok,
+                        error=label,
+                    )
+                )
             if self._outcome is not None:
                 # Журнал submit-хода дописывается после его результата: снимок в `_submit`
                 # сделан до записи самого вызова.
@@ -585,8 +677,46 @@ class AgentRunner:
         raise BudgetReachedError(
             f"Лимит ходов агента ({self._limits.max_steps}) исчерпан: результат не сдан"
             + (f"; {budget}" if budget else ""),
-            budget=current_budget(),
         )
+
+    def _turn_record(
+        self,
+        *,
+        index: int,
+        started: float,
+        usage: LlmUsage,
+        tool_names: tuple[str, ...],
+        journal: tuple[dict[str, Any], ...],
+        ok: bool,
+        error: str | None,
+    ) -> AgentTurn:
+        """Снимок оплаченного хода: токены, стоимость, задержка и хеши инструментов."""
+        latency_ms = max(0, round((time.perf_counter() - started) * 1000))
+        cost = cost_of_usage(usage if usage.requests else None, self._capabilities.prices)
+        return AgentTurn(
+            index=index,
+            tool_names=tool_names,
+            journal=journal,
+            ok=ok,
+            usage=usage,
+            latency_ms=latency_ms,
+            cost_usd=cost.cost_usd,
+            price_checked_on=cost.checked_on,
+            error=error,
+        )
+
+    async def _flush_turn(self, record: AgentTurn) -> None:
+        """Записывает ход через `on_turn`; запись доводится до конца при отмене прогона."""
+        if self._on_turn is None:
+            return
+        task = asyncio.ensure_future(self._on_turn(record))
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # Отмена не должна оставить оплаченный ход без строки llm_calls и без счётчика
+            # шагов в ir.execution: дожидаемся записи и только потом пробрасываем отмену.
+            await asyncio.gather(task, return_exceptions=True)
+            raise
 
     async def _complete(
         self, messages: list[ConversationMessage], tools: Sequence[ToolDefinition]
@@ -604,30 +734,18 @@ class AgentRunner:
         turn: ToolTurn,
         messages: list[ConversationMessage],
         index: int,
-        started: float,
-        usage: LlmUsage,
+        entries: list[dict[str, Any]],
     ) -> None:
-        """Выполняет запросы одного хода по очереди и пишет ход в журнал и `llm_calls`."""
-        results: list[str] = []
-        entries: list[dict[str, Any]] = []
-        ok = True
-        error: str | None = None
+        """Выполняет запросы одного хода; сбой инфраструктуры пробрасывается как PipelineError.
+
+        `entries` заполняется по мере вызовов: если ход прервётся, уже выполненные вызовы
+        останутся в журнале оплаченного хода.
+        """
         for use in turn.tool_uses:
             if self._outcome is not None:
                 break
             self._call_count += 1
-            try:
-                result, is_error, submitted = await self._execute_tool(use)
-            except (BudgetReachedError, PipelineError):
-                raise
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:  # сбой инструмента не должен ронять прогон
-                result, is_error, submitted = _failed(f"Сбой инструмента: {exc}"), True, False
-            results.append(result)
-            if is_error:
-                ok = False
-                error = error or f"Сбой инструмента {use.name}"
+            result, is_error, submitted = await self._execute_tool(use)
             entries.append(
                 {
                     "call": self._call_count,
@@ -644,21 +762,6 @@ class AgentRunner:
             )
             if submitted:
                 break
-        latency_ms = max(0, round((time.perf_counter() - started) * 1000))
-        cost = cost_of_usage(usage if usage.requests else None, self._capabilities.prices)
-        record = AgentTurn(
-            index=index,
-            tool_names=tuple(use.name for use in turn.tool_uses),
-            journal=tuple(entries),
-            ok=ok,
-            usage=usage,
-            latency_ms=latency_ms,
-            cost_usd=cost.cost_usd,
-            price_checked_on=cost.checked_on,
-            error=error,
-        )
-        if self._on_turn is not None:
-            await self._on_turn(record)
 
     async def _execute_tool(self, use: ToolUse) -> tuple[str, bool, bool]:
         """Один вызов инструмента: (JSON-результат, это ошибка, submit принят)."""
@@ -681,9 +784,20 @@ class AgentRunner:
         try:
             return await handler()
         except AgentRejectedError as error:
+            # Проверка данных: ошибки адресные и возвращаются модели, проект не меняется.
             return _rejected(error.errors), False, False
-        except (ValueError, TypeError, KeyError) as error:
-            return _failed(f"Некорректные аргументы: {error}"), True, False
+        except (TypeError, KeyError):
+            # Сломанная форма аргументов: это ошибка модели, а не инфраструктуры.
+            return _failed("Некорректные аргументы инструмента: проверь схему вызова"), True, False
+        except (BudgetReachedError, PipelineError, asyncio.CancelledError):
+            raise
+        except Exception as error:  # инфраструктура (bpmn-tools, БД, сеть) — не вина модели
+            # Сбой проверки (например, недоступный bpmn-tools) нельзя выдавать модели как
+            # «некорректные аргументы»: она повторяла бы тот же вызов и жгла ходы. Сырой текст
+            # исключения тоже не уходит провайдеру.
+            raise PipelineError(
+                "Инструмент агента временно недоступен: повторите прогон позже"
+            ) from error
 
     # --- инструменты чтения ---
 
@@ -756,16 +870,28 @@ class AgentRunner:
         if not isinstance(query, str) or len(query.strip()) < MIN_SEARCH_QUERY:
             return _failed("query: строка от 2 символов"), True, False
         phrase = query.strip()[:MAX_SEARCH_QUERY]
-        hits = await self._search(phrase)
-        results = [
-            {
-                "source_id": str(hit.source_id),
-                "title": hit.title[:200],
-                "snippet": hit.snippet[: self._limits.search_snippet_chars],
-                "rank": round(hit.rank, 4),
-            }
-            for hit in hits[: self._limits.search_limit]
-        ]
+        # Поиск идёт по текущей базе, а агент читает снимок прогона: источники, добавленные
+        # после старта, и навигационные производные (общая лента, кадры) в выдачу не попадают,
+        # иначе лимит занимают дубликаты, а read_source отвечает «нет текста». Поэтому берём
+        # запас и фильтруем по снимку и читаемости.
+        hits = await self._search(phrase, self._limits.search_limit * OVERSAMPLE_SEARCH)
+        results: list[dict[str, Any]] = []
+        seen: set[UUID] = set()
+        for hit in hits:
+            source = self._sources.get(hit.source_id)
+            if source is None or not source.readable or hit.source_id in seen:
+                continue
+            seen.add(hit.source_id)
+            results.append(
+                {
+                    "source_id": str(hit.source_id),
+                    "title": hit.title[:200],
+                    "snippet": _strip_highlight(hit.snippet)[: self._limits.search_snippet_chars],
+                    "rank": round(hit.rank, 4),
+                }
+            )
+            if len(results) >= self._limits.search_limit:
+                break
         notice = None
         if not results:
             notice = "Совпадений нет: измени слова или посмотри list_sources"
@@ -779,6 +905,9 @@ class AgentRunner:
                 "kind": question.kind,
                 "text": question.text[:MAX_QUESTION_TEXT],
                 "assumption": question.assumption[:MAX_QUESTION_ASSUMPTION],
+                # Ответ аналитика тоже нужен: по нему видно, что уже решено и что нельзя
+                # повторно спрашивать. Длина ограничена, полный текст есть в вопросах проекта.
+                "answer": (question.answer or "")[:MAX_QUESTION_ANSWER] or None,
             }
             for question in self._task.questions[:MAX_QUESTION_LIST]
         ]

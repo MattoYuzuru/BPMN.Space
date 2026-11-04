@@ -34,6 +34,11 @@ __all__ = [
 SPEECH_TO_TEXT = "speech_to_text"
 TRANSCRIPT_TITLE = "Расшифровка"
 
+# Сколько знаков источника индексирует и ищет полнотекстовый поиск агентного режима:
+# tsvector PostgreSQL ограничен 1 МБ, а текст источника бывает до миллиона знаков.
+# Хвост длинного документа агент читает `read_source`, а не ищет.
+FTS_INDEXED_CHARS = 100_000
+
 
 def derivation_frame_keys(source: Source) -> list[str]:
     """Ключи файлов кадров из `derivation.params` производного узла (для уборки хранилища).

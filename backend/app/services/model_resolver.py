@@ -194,6 +194,11 @@ class ModelResolver:
     def server_pipeline(self) -> ProcessPipeline | None:
         return self._server
 
+    @property
+    def agent_enabled(self) -> bool:
+        """Флаг оператора `LLM_AGENT_MODE`: нужен и восстановленному агентному прогону."""
+        return self._agent_enabled
+
     @server_pipeline.setter
     def server_pipeline(self, value: ProcessPipeline | None) -> None:
         self._server = value

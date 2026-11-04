@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import { type ProjectDetail, projectKeys } from '@/entities/project'
 import { stubApi } from '@/test/api-stub'
 import { useSaveDiagram, versionKeys } from './api'
-import type { Version, VersionDetail } from './model'
+import { toSummary, type Version, type VersionDetail, type VersionSummary } from './model'
 
 const initial: Version = {
   id: 'v-1',
@@ -16,6 +16,13 @@ const initial: Version = {
   report: { xsd_valid: true, lint: [], assumptions: [] },
   trace: {},
   lanes: [],
+  label: null,
+  checkpoint: false,
+  session_started_at: '2026-10-07T10:00:00Z',
+  updated_at: '2026-10-07T10:00:00Z',
+  saved_count: 1,
+  lint_count: 0,
+  assumption_count: 0,
 }
 
 function setup(saved: Version) {
@@ -28,6 +35,10 @@ function setup(saved: Version) {
   } as unknown as ProjectDetail
   client.setQueryData(projectKeys.detail('p-1'), project)
   client.setQueryData(versionKeys.list('p-1'), [initial])
+  client.setQueryData(versionKeys.pages('p-1'), {
+    pages: [{ items: [initial], next_before: null }],
+    pageParams: [undefined],
+  })
   vi.spyOn(client, 'invalidateQueries').mockResolvedValue()
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
@@ -48,7 +59,9 @@ it('идентичное сохранение возвращает прежню�
       await result.current.mutateAsync({ xml: '<same/>', baseVersionId: initial.id })
     })
     expect(client.getQueryData<ProjectDetail>(projectKeys.detail('p-1'))?.counts.versions).toBe(1)
-    expect(client.getQueryData<Version[]>(versionKeys.list('p-1'))).toEqual([initial])
+    expect(client.getQueryData<VersionSummary[]>(versionKeys.list('p-1'))).toEqual([
+      toSummary(initial),
+    ])
   }
 })
 
@@ -59,7 +72,9 @@ it('новая версия увеличивает счётчик и получ�
     await result.current.mutateAsync({ xml: '<changed/>', baseVersionId: initial.id })
   })
   expect(client.getQueryData<ProjectDetail>(projectKeys.detail('p-1'))?.counts.versions).toBe(2)
-  expect(client.getQueryData<Version[]>(versionKeys.list('p-1'))).toEqual([saved, initial])
+  expect(
+    client.getQueryData<VersionSummary[]>(versionKeys.list('p-1'))?.map((item) => item.id),
+  ).toEqual(['v-2', 'v-1'])
   expect(client.getQueryData<VersionDetail>(versionKeys.detail(saved.id))?.xml).toBe('<changed/>')
 })
 
@@ -79,4 +94,29 @@ it('ответ уже учтённой новой версии не увелич
     await result.current.mutateAsync({ xml: '<changed/>', baseVersionId: initial.id })
   })
   expect(client.getQueryData<ProjectDetail>(projectKeys.detail('p-1'))?.counts.versions).toBe(2)
+})
+
+it('слитая сессия правок (тот же номер, новый id) заменяет запись, а не добавляет', async () => {
+  const merged = { ...initial, id: 'v-1b', saved_count: 2 }
+  const { result, client } = setup(merged)
+  await act(async () => {
+    await result.current.mutateAsync({ xml: '<merged/>', baseVersionId: initial.id })
+  })
+  expect(client.getQueryData<ProjectDetail>(projectKeys.detail('p-1'))?.counts.versions).toBe(1)
+  expect(client.getQueryData<VersionSummary[]>(versionKeys.list('p-1'))).toEqual([
+    toSummary(merged),
+  ])
+  const pages = client.getQueryData<{ pages: { items: VersionSummary[] }[] }>(
+    versionKeys.pages('p-1'),
+  )
+  expect(pages?.pages[0]?.items).toEqual([toSummary(merged)])
+})
+
+it('сохранение не перечитывает список версий и не показывает тост успеха', async () => {
+  const saved = { ...initial, id: 'v-2', number: 2 }
+  const { result, client } = setup(saved)
+  await act(async () => {
+    await result.current.mutateAsync({ xml: '<changed/>', baseVersionId: initial.id })
+  })
+  expect(client.invalidateQueries).not.toHaveBeenCalled()
 })

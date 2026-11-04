@@ -6,7 +6,7 @@ import { sessionKeys } from '@/entities/session'
 import { TooltipProvider } from '@/shared/ui'
 import { stubApi } from '@/test/api-stub'
 import { type WorkspaceApi, WorkspaceContext } from '@/widgets/workspace/model'
-import { DiagramToolbar } from './diagram-toolbar'
+import { DiagramToolbar, type SaveStatus } from './diagram-toolbar'
 
 const USER = { id: 'u1', email: 'a@example.com' }
 const state: OnboardingState = {
@@ -16,7 +16,11 @@ const state: OnboardingState = {
   tour_text_suggestion: '',
 }
 
-function mount(toggle: (active?: boolean) => boolean) {
+function mount(
+  toggle: (active?: boolean) => boolean,
+  status: SaveStatus = 'idle',
+  onRetry?: () => void,
+) {
   const calls = stubApi({ 'POST /api/v1/me/onboarding/events': { status: 204 } })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   client.setQueryData(sessionKeys.all, { auth_enabled: true, user: USER })
@@ -34,8 +38,8 @@ function mount(toggle: (active?: boolean) => boolean) {
             latestNumber={1}
             isLatest
             ready
-            saving={false}
-            saved={false}
+            saveStatus={status}
+            onRetry={onRetry}
             markers={{ assumptions: false, added: false }}
             onMarkersChange={() => {}}
             propertiesOpen={false}
@@ -66,5 +70,30 @@ describe('таймлайн процесса и чек-лист', () => {
     await user.click(screen.getByRole('button', { name: 'Остановить таймлайн' }))
     expect(active).toBe(false)
     expect(events(calls)).toHaveLength(0)
+  })
+})
+
+describe('индикатор сохранения', () => {
+  const noop = () => false
+
+  it('область озвучивания есть всегда и пуста, пока правок не было', () => {
+    mount(noop)
+    expect(screen.getByRole('status')).toBeEmptyDOMElement()
+  })
+
+  it.each([
+    ['saving', 'Сохраняется…'],
+    ['saved', 'Сохранено'],
+    ['error', 'Не сохранено'],
+  ] as const)('состояние %s', (status, text) => {
+    mount(noop, status)
+    expect(screen.getByRole('status')).toHaveTextContent(text)
+  })
+
+  it('после ошибки можно повторить сохранение', async () => {
+    const retry = vi.fn()
+    mount(noop, 'error', retry)
+    await userEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    expect(retry).toHaveBeenCalledOnce()
   })
 })

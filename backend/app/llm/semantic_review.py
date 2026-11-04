@@ -42,7 +42,9 @@ async def _review_part(
                 "assumptions": [
                     {"code": q.code, "text": q.assumption}
                     for q in context.questions
-                    if q.status in (QuestionStatus.OPEN, QuestionStatus.IGNORED)
+                    # Технические вопросы — о материалах и запуске, не о процессе (RFC-0006).
+                    if not q.is_technical
+                    and q.status in (QuestionStatus.OPEN, QuestionStatus.IGNORED)
                 ],
                 "manual_overrides": context.manual_overrides,
             },

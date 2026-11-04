@@ -459,6 +459,8 @@ class InMemoryLlmCallRepository:
             item.calls += 1
             item.usage_calls += int(call.tokens_in is not None)
             item.priced_calls += int(call.cost_usd is not None)
+            # Прерванный до запроса вызов (ошибка без токенов) не делает итог неполным.
+            item.neutral_calls += int(call.tokens_in is None and "error" in call.response)
             item.tokens_in += call.tokens_in or 0
             item.tokens_out += call.tokens_out or 0
             item.cache_read_tokens += call.cache_read_tokens or 0

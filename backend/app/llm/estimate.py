@@ -289,24 +289,64 @@ def _chars_per_token(inputs: EstimateInput) -> float:
 
 
 def _output_range(
-    tokens_in: IntRange,
+    per_call_in: IntRange,
+    calls: IntRange,
     *,
     cap: int,
     effort_factor: float,
     short: bool = False,
 ) -> IntRange:
-    """Диапазон ответа этапа: доля входа, ограниченная лимитом `max_tokens`."""
+    """Суммарный ответ этапа: на каждый запрос действует свой лимит `max_tokens`.
 
-    def bound(tokens: int, ratio: float, floor: int) -> int:
-        return min(max(round(tokens * ratio * effort_factor), floor), cap)
-
+    Лимит одного ответа — `cap`; запросов могло быть до `calls.max`, и каждый мог упереться
+    в свой предел. Поэтому верхняя граница этапа — `cap × calls.max`, а не `cap` на весь этап.
+    """
+    cap = max(cap, 1)
     if short:
-        lower = min(REVIEW_OUTPUT_TOKENS, cap)
-        upper = min(REVIEW_OUTPUT_TOKENS * 2, cap)
-        return IntRange(min=lower, max=max(lower, upper))
-    lower = min(max(bound(tokens_in.min, OUTPUT_MIN_RATIO, OUTPUT_FLOOR_TOKENS), 1), cap)
-    upper = min(max(bound(tokens_in.max, OUTPUT_MAX_RATIO, OUTPUT_FLOOR_TOKENS * 2), 1), cap)
+        per_min = min(REVIEW_OUTPUT_TOKENS, cap)
+        per_max = min(REVIEW_OUTPUT_TOKENS * 2, cap)
+    else:
+        per_min = min(
+            max(round(per_call_in.min * OUTPUT_MIN_RATIO * effort_factor), OUTPUT_FLOOR_TOKENS),
+            cap,
+        )
+        per_max = cap
+    lower = per_min * calls.min
+    upper = max(per_max, per_min) * calls.max
     return IntRange(min=lower, max=max(lower, upper))
+
+
+def _stage_tokens(per_call_in: IntRange, calls: IntRange) -> IntRange:
+    """Суммарные входные токены этапа: число запросов учитывается и в минимуме, и в максимуме."""
+    return IntRange(
+        min=per_call_in.min * calls.min,
+        max=per_call_in.max * calls.max,
+    )
+
+
+def _stage(
+    *,
+    stage: str,
+    per_call_in: IntRange,
+    calls: IntRange,
+    cap: int,
+    effort_factor: float,
+    prices: ModelPrices | None,
+    short: bool = False,
+) -> StageEstimate:
+    """Собирает этап: вход, ответ и стоимость с учётом числа запросов."""
+    tokens_in = _stage_tokens(per_call_in, calls)
+    tokens_out = _output_range(
+        per_call_in, calls, cap=cap, effort_factor=effort_factor, short=short
+    )
+    return StageEstimate(
+        stage=stage,
+        label=STAGE_LABELS[stage],
+        calls=calls,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        cost=_stage_cost(prices, tokens_in=tokens_in, tokens_out=tokens_out),
+    )
 
 
 def _stage_cost(
@@ -326,13 +366,18 @@ def _stage_cost(
 
 
 def _duration(calls: int, tokens_in: int, tokens_out: int) -> float:
-    """Секунды этапа: накладные на запрос, чтение входа и генерация ответа."""
+    """Секунды этапа: накладные на запрос, чтение входа и генерация ответа.
+
+    `tokens_in`/`tokens_out` — суммы по всем запросам этапа, поэтому делить их на `calls`
+    повторно не нужно: время чтения и генерации уже распределено по запросам.
+    """
     if calls <= 0:
         return 0.0
-    per_call = (
-        CALL_BASE_SEC + tokens_out / OUTPUT_TOKENS_PER_SEC + tokens_in / PREFILL_TOKENS_PER_SEC
+    return (
+        calls * CALL_BASE_SEC
+        + tokens_in / PREFILL_TOKENS_PER_SEC
+        + tokens_out / OUTPUT_TOKENS_PER_SEC
     )
-    return calls * per_call
 
 
 def _analysis_stage(
@@ -349,27 +394,23 @@ def _analysis_stage(
     """Сверка вопросов: один запрос по всему проекту или порции с исправлениями."""
     chunk_tokens = math.ceil(inputs.chunk_chars / chars_per_token)
     if fits:
-        tokens_in = IntRange(min=total_tokens + overhead, max=total_tokens + overhead)
+        per_call = IntRange(min=total_tokens + overhead, max=total_tokens + overhead)
         calls = IntRange(min=1, max=1 + REPAIR_ATTEMPTS)
+        cap = inputs.json_max_tokens
     else:
-        per_chunk = chunk_tokens + CHUNK_OVERHEAD_TOKENS
-        tokens_in = IntRange(
-            min=per_chunk * chunk_count,
-            max=(per_chunk + overhead) * (chunk_count + REPAIR_ATTEMPTS),
+        per_call = IntRange(
+            min=chunk_tokens + CHUNK_OVERHEAD_TOKENS,
+            max=chunk_tokens + CHUNK_OVERHEAD_TOKENS + overhead,
         )
         calls = IntRange(min=chunk_count, max=chunk_count + REPAIR_ATTEMPTS)
-    tokens_out = _output_range(
-        tokens_in,
-        cap=inputs.json_max_tokens if fits else inputs.chunk_max_tokens,
-        effort_factor=effort_factor,
-    )
-    return StageEstimate(
+        cap = inputs.chunk_max_tokens
+    return _stage(
         stage=_ANALYSIS_STAGE,
-        label=STAGE_LABELS[_ANALYSIS_STAGE],
+        per_call_in=per_call,
         calls=calls,
-        tokens_in=tokens_in,
-        tokens_out=tokens_out,
-        cost=_stage_cost(prices, tokens_in=tokens_in, tokens_out=tokens_out),
+        cap=cap,
+        effort_factor=effort_factor,
+        prices=prices,
     )
 
 
@@ -382,18 +423,15 @@ def _evidence_stage(
     prices: ModelPrices | None,
 ) -> StageEstimate:
     """Извлечение оснований порциями (только когда проект не помещается в бюджет)."""
-    per_chunk = math.ceil(inputs.chunk_chars / chars_per_token) + CHUNK_OVERHEAD_TOKENS
-    tokens_in = IntRange(min=per_chunk * chunk_count, max=per_chunk * chunk_count)
-    tokens_out = _output_range(
-        tokens_in, cap=inputs.chunk_max_tokens, effort_factor=effort_factor, short=True
-    )
-    return StageEstimate(
+    per_call = math.ceil(inputs.chunk_chars / chars_per_token) + CHUNK_OVERHEAD_TOKENS
+    return _stage(
         stage=_EVIDENCE_STAGE,
-        label=STAGE_LABELS[_EVIDENCE_STAGE],
+        per_call_in=IntRange(min=per_call, max=per_call),
         calls=IntRange(min=chunk_count, max=chunk_count),
-        tokens_in=tokens_in,
-        tokens_out=tokens_out,
-        cost=_stage_cost(prices, tokens_in=tokens_in, tokens_out=tokens_out),
+        cap=inputs.chunk_max_tokens,
+        effort_factor=effort_factor,
+        prices=prices,
+        short=True,
     )
 
 
@@ -410,19 +448,14 @@ def _structure_stage(
     """Сборка графа: основания сжимаются до бюджета, затем repair-цикл."""
     budget_tokens = max(math.ceil(inputs.budget_chars / chars_per_token), 1)
     evidence_tokens = total_tokens if fits else min(total_tokens, budget_tokens)
-    tokens_in = IntRange(
-        min=evidence_tokens + overhead,
-        max=(evidence_tokens + overhead) * (1 + REPAIR_ATTEMPTS),
-    )
-    calls = IntRange(min=1, max=1 + REPAIR_ATTEMPTS)
-    tokens_out = _output_range(tokens_in, cap=inputs.json_max_tokens, effort_factor=effort_factor)
-    return StageEstimate(
+    per_call = evidence_tokens + overhead
+    return _stage(
         stage=_STRUCTURE_STAGE,
-        label=STAGE_LABELS[_STRUCTURE_STAGE],
-        calls=calls,
-        tokens_in=tokens_in,
-        tokens_out=tokens_out,
-        cost=_stage_cost(prices, tokens_in=tokens_in, tokens_out=tokens_out),
+        per_call_in=IntRange(min=per_call, max=per_call),
+        calls=IntRange(min=1, max=1 + REPAIR_ATTEMPTS),
+        cap=inputs.json_max_tokens,
+        effort_factor=effort_factor,
+        prices=prices,
     )
 
 
@@ -434,17 +467,13 @@ def _review_stage(
     prices: ModelPrices | None,
 ) -> StageEstimate:
     """Независимая смысловая сверка читает полный снимок порциями."""
-    per_chunk = math.ceil(inputs.chunk_chars / chars_per_token) + CHUNK_OVERHEAD_TOKENS
-    calls = IntRange(min=chunk_count, max=chunk_count + REPAIR_ATTEMPTS)
-    tokens_in = IntRange(min=per_chunk * calls.min, max=per_chunk * calls.max)
-    tokens_out = _output_range(
-        tokens_in, cap=inputs.chunk_max_tokens, effort_factor=1.0, short=True
-    )
-    return StageEstimate(
+    per_call = math.ceil(inputs.chunk_chars / chars_per_token) + CHUNK_OVERHEAD_TOKENS
+    return _stage(
         stage=_REVIEW_STAGE,
-        label=STAGE_LABELS[_REVIEW_STAGE],
-        calls=calls,
-        tokens_in=tokens_in,
-        tokens_out=tokens_out,
-        cost=_stage_cost(prices, tokens_in=tokens_in, tokens_out=tokens_out),
+        per_call_in=IntRange(min=per_call, max=per_call),
+        calls=IntRange(min=chunk_count, max=chunk_count + REPAIR_ATTEMPTS),
+        cap=inputs.chunk_max_tokens,
+        effort_factor=1.0,
+        prices=prices,
+        short=True,
     )

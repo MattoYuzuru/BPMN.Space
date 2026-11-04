@@ -110,9 +110,10 @@ async def test_quota_failure_becomes_unblocking_technical_question() -> None:
     assert question.kind is TechnicalQuestionKind.QUOTA_EXHAUSTED
     assert question.blocking is False
     assert question.code.startswith("Q-")
+    # Фоновая обработка медиа не связана с прогоном: «Повторить» не предлагается,
+    # иначе действие всегда отвечало бы 409 (ревью волны 2).
     assert {item.kind for item in question.actions} == {
         QuestionActionKind.OPEN_SETTINGS,
-        QuestionActionKind.RETRY,
         QuestionActionKind.CONTINUE_WITHOUT,
     }
     text = question.text
@@ -252,7 +253,11 @@ def test_media_routing_failure_creates_technical_question_over_http() -> None:
         question = technical[0]
         assert question["kind"] == "quota_exhausted"
         assert question["blocking"] is False
-        assert len(question["actions"]) == 3
+        # Без связанного прогона «Повторить» не предлагается.
+        assert [action["kind"] for action in question["actions"]] == [
+            "open_settings",
+            "continue_without",
+        ]
         assert "meeting.mp3" in question["text"]
 
         record = next(item for item in detail["sources"] if item["kind"] == "file")

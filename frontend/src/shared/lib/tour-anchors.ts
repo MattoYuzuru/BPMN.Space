@@ -42,6 +42,7 @@ export const TOUR_ANCHORS = {
   shareCreate: 'share.create',
   shareCopy: 'share.copy',
   shareReviewer: 'share.reviewer',
+  shareCopyPrompt: 'share.copy-prompt',
   settingsModels: 'settings.models',
   settingsTools: 'settings.tools',
   toolsAddKey: 'tools.addKey',

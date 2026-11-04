@@ -44,6 +44,53 @@ describe('сигнал share.created', () => {
     expect(signals).toEqual([{ type: 'share.created' }])
   })
 
+  it('ссылка проверки сообщает и о создании ссылки, и о проверке; lane_ids уходят', async () => {
+    const calls = stubApi({
+      'POST /api/v1/projects/p-1/share-links': {
+        status: 201,
+        body: {
+          id: 'l-2',
+          role: 'reviewer',
+          url_path: '/share/rev',
+          expires_at: null,
+          lane_ids: ['Lane_1'],
+        },
+      },
+    })
+    const hook = setup()
+    await act(async () => {
+      await hook.result.current.mutateAsync({
+        role: 'reviewer',
+        days: 30,
+        laneIds: ['Продажи'],
+      })
+    })
+    expect(signals).toEqual([{ type: 'share.created' }, { type: 'share.reviewer.created' }])
+    expect(calls.find((call) => call.method === 'POST')?.body).toEqual({
+      role: 'reviewer',
+      expires_in_days: 30,
+      lane_ids: ['Продажи'],
+    })
+  })
+
+  it('просмотру lane_ids не отправляются и сигнала проверки нет', async () => {
+    const calls = stubApi({
+      'POST /api/v1/projects/p-1/share-links': {
+        status: 201,
+        body: { id: 'l-3', role: 'viewer', url_path: '/share/v', expires_at: null },
+      },
+    })
+    const hook = setup()
+    await act(async () => {
+      await hook.result.current.mutateAsync({ role: 'viewer', days: 30, laneIds: ['Продажи'] })
+    })
+    expect(signals).toEqual([{ type: 'share.created' }])
+    expect(calls.find((call) => call.method === 'POST')?.body).toEqual({
+      role: 'viewer',
+      expires_in_days: 30,
+    })
+  })
+
   it('отказ сервера — сигнала нет', async () => {
     stubApi({
       'POST /api/v1/projects/p-1/share-links': { status: 403, body: { detail: 'нельзя' } },

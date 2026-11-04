@@ -2,6 +2,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { mcpCommand } from '@/entities/api-token'
+import { useOnboardingUi } from '@/entities/onboarding'
+import { useTourStore } from '@/features/onboarding/tour'
 import { subscribeOnboardingSignals } from '@/shared/lib/onboarding-signals'
 import { TooltipProvider } from '@/shared/ui'
 import { stubApi } from '@/test/api-stub'
@@ -78,6 +80,18 @@ describe('Доступ для агентов', () => {
     })
     mount()
     expect(await screen.findByText('Токенов нет')).toBeInTheDocument()
+  })
+
+  it('«Как подключить» просит клиентский тур, но не запускает его само', async () => {
+    stubApi({
+      'GET /api/v1/me/api-tokens': { body: { items: [] } },
+      'GET /api/v1/projects': { body: page([]) },
+    })
+    const before = useOnboardingUi.getState().agentTourRequest
+    const { user } = mount()
+    await user.click(await screen.findByRole('button', { name: 'Как подключить' }))
+    expect(useOnboardingUi.getState().agentTourRequest).toBe(before + 1)
+    expect(useTourStore.getState().status).toBe('idle')
   })
 
   it('создаёт токен с правами по умолчанию и показывает секрет один раз', async () => {

@@ -27,8 +27,15 @@ vi.mock('@/shared/ui', async (original) => ({
 }))
 // Рабочее место тяжёлое (панели, bpmn-js): проверяем, что страница передаёт ему, а не его самого.
 vi.mock('./shared-workspace', () => ({
-  SharedWorkspace: (props: { shared: { detail: { title: string } }; openProject: boolean }) => (
-    <div data-testid="workspace" data-open-project={String(props.openProject)}>
+  SharedWorkspace: (props: {
+    shared: { role: string; detail: { title: string } }
+    openProject: boolean
+  }) => (
+    <div
+      data-testid="workspace"
+      data-open-project={String(props.openProject)}
+      data-role={props.shared.role}
+    >
       {props.shared.detail.title}
     </div>
   ),
@@ -40,9 +47,15 @@ const user = (email: string) => ({ id: 'u1', email })
 const guestSession = { auth_enabled: true, user: null }
 const signedSession = { auth_enabled: true, user: user('anna@company.ru') }
 const detail = { id: 'p1', title: 'Закупка оборудования', access: 'viewer', sources: [] }
-const shared = (role: 'viewer' | 'editor') => ({
+const reviewScope = {
+  lane_ids: ['Lane_1'],
+  lanes: ['Продажи'],
+  whole_project: false,
+}
+const shared = (role: 'viewer' | 'editor' | 'reviewer') => ({
   role,
   editor_requires_account: role === 'editor',
+  scope: role === 'reviewer' ? reviewScope : { lane_ids: [], lanes: [], whole_project: true },
   detail,
 })
 
@@ -120,6 +133,32 @@ describe('страница по ссылке: просмотр', () => {
     mount()
     const workspace = await screen.findByTestId('workspace')
     expect(workspace).toHaveAttribute('data-open-project', 'false')
+  })
+})
+
+describe('страница по ссылке: проверка коллегой', () => {
+  it('гость открывает проверку без входа и не принимает приглашение', async () => {
+    const calls = stubApi({
+      'GET /api/v1/auth/session': { body: guestSession },
+      [`GET ${SHARE}`]: { body: shared('reviewer') },
+    })
+    mount()
+    const workspace = await screen.findByTestId('workspace')
+    expect(workspace).toHaveAttribute('data-role', 'reviewer')
+    expect(workspace).toHaveAttribute('data-open-project', 'false')
+    expect(calls.some((call) => call.method === 'POST')).toBe(false)
+  })
+
+  it('вошедший получает проверку и не сохраняет проект в профиль', async () => {
+    const calls = stubApi({
+      'GET /api/v1/auth/session': { body: signedSession },
+      [`GET ${SHARE}`]: { body: shared('reviewer') },
+      'GET /api/v1/projects/p1': { status: 404, body: { detail: 'Проект не найден' } },
+    })
+    mount()
+    const workspace = await screen.findByTestId('workspace')
+    expect(workspace).toHaveAttribute('data-role', 'reviewer')
+    expect(calls.some((call) => call.method === 'POST')).toBe(false)
   })
 })
 

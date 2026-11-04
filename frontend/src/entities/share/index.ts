@@ -1,4 +1,7 @@
 export {
+  type AgentPrompt,
+  type AgentTokenIssued,
+  agentPromptQueryOptions,
   projectMembersQueryOptions,
   sharedProjectQueryOptions,
   shareKeys,
@@ -6,6 +9,7 @@ export {
   shareVersionSource,
   useAcceptInvite,
   useCreateShareLink,
+  useIssueAgentToken,
   useProjectAccess,
   useRemoveMember,
   useRevokeShareLink,
@@ -17,6 +21,7 @@ export {
   expiryForRole,
   expiryOptions,
   type LinkState,
+  linkScopeText,
   linkState,
   type ProjectMember,
   SHARE_ROLE,
@@ -27,5 +32,6 @@ export {
   type SharePageState,
   type ShareRole,
   sharePageState,
+  shareTokenFromPath,
   shareUrl,
 } from './model'

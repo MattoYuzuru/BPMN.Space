@@ -32,6 +32,9 @@ const link = (role: ShareRole, patch: Partial<ShareLink> = {}): ShareLink => ({
   ...patch,
 })
 
+/** Дорожки последней схемы: у проверки из них выбирается область. */
+const LANES = ['Продажи', 'Склад', 'Логистика']
+
 const member = {
   user_id: 'u-1',
   email: 'anna.petrova@company.ru',
@@ -48,16 +51,21 @@ export function SharingSection() {
       id="sharing"
       eyebrow="19 Общий доступ"
       title="Диалог доступа, приглашение, просмотр по ссылке"
-      lead="Владелец делится проектом ссылкой: на просмотр без входа или приглашением редактора. Адрес показывается один раз — сразу после создания; дальше ссылку можно только отозвать."
+      lead="Владелец делится проектом ссылкой: на просмотр без входа, приглашением редактора или проверкой коллегой с областью-дорожками. Адрес показывается один раз — сразу после создания; дальше ссылку можно только отозвать."
     >
       <SpecimenGrid>
-        <Specimen title="Новая ссылка" note="сроки зависят от роли">
+        <Specimen title="Новая ссылка" note="роль, область и срок">
           <div className="mx-auto w-full max-w-md">
             <ShareCreateForm
               role={form.role}
               days={form.days}
+              scope={form.scope}
+              lanes={LANES}
+              selectedLanes={form.lanes}
               onRoleChange={form.setRole}
               onDaysChange={form.setDays}
+              onScopeChange={form.setScope}
+              onLanesChange={form.setLanes}
               onCreate={() => setResult(true)}
             />
           </div>
@@ -67,7 +75,8 @@ export function SharingSection() {
             {result ? (
               <ShareLinkResult
                 url="https://architect.example/share/Q7x2-Lk9vR3mPz0aWc"
-                access="viewer"
+                access="reviewer"
+                laneIds={['Lane_Sales', 'Lane_Warehouse']}
                 expiresAt="2026-11-03T09:00:00Z"
                 onAnother={() => setResult(false)}
               />
@@ -79,10 +88,10 @@ export function SharingSection() {
       </SpecimenGrid>
 
       <SpecimenGrid>
-        <Specimen title="Действующие ссылки и участники" note="вкладки со счётчиками">
+        <Specimen title="Действующие ссылки и участники" note="роль и область">
           <Tabs defaultValue="links" className="mx-auto w-full max-w-md">
             <TabsList>
-              <TabsTrigger value="links" count={2}>
+              <TabsTrigger value="links" count={3}>
                 Ссылки
               </TabsTrigger>
               <TabsTrigger value="members" count={1}>
@@ -93,6 +102,10 @@ export function SharingSection() {
               <ul className="flex flex-col divide-y divide-border">
                 <ShareLinkRow link={link('viewer')} onRevoke={() => {}} />
                 <ShareLinkRow link={link('editor')} onRevoke={() => {}} />
+                <ShareLinkRow
+                  link={link('reviewer', { lane_ids: ['Lane_Sales', 'Lane_Warehouse'] })}
+                  onRevoke={() => {}}
+                />
               </ul>
             </TabsContent>
             <TabsContent value="members" className="pt-2">

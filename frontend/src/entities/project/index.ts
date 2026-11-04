@@ -1,4 +1,7 @@
 export {
+  type AgentActivity,
+  type AgentActivityEvent,
+  agentActivityQueryOptions,
   createProject,
   hasProcessingSources,
   PROJECTS_PAGE_SIZE,

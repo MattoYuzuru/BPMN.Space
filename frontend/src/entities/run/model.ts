@@ -6,6 +6,10 @@ export type Run = Schemas['Run']
 export type RunMode = Schemas['RunMode']
 export type RunStage = Schemas['RunStage']
 export type RunSummary = Schemas['RunSummary']
+export type RunCost = Schemas['RunCost']
+export type RunBudget = Schemas['RunBudget']
+export type RunEstimate = Schemas['RunEstimate']
+export type StageCost = Schemas['StageCost']
 
 /** Этапы прогона по режимам (RFC §5.1, docs/backend/mock.md). */
 export const STAGES: Record<RunMode, readonly RunStage[]> = {
@@ -32,6 +36,7 @@ export const RUN_MODE_LABEL: Record<RunMode, { title: string; done: string }> = 
 export type RunEvent =
   | { type: 'stage'; id: number; data: Schemas['StageEventData'] }
   | { type: 'question'; id: number; data: Schemas['QuestionEventData'] }
+  | { type: 'usage'; id: number; data: RunCost }
   | { type: 'summary'; id: number; data: RunSummary }
   | { type: 'version'; id: number; data: Schemas['VersionEventData'] }
   | { type: 'error'; id: number; data: Schemas['ErrorEventData'] }
@@ -50,7 +55,8 @@ export interface RunView {
   runId: string
   projectId: string
   mode: RunMode
-  status: 'running' | 'succeeded' | 'failed' | 'cancelled'
+  /** `waiting` — прогон ждёт действия по блокирующему техническому вопросу (RFC-0006). */
+  status: 'running' | 'waiting' | 'succeeded' | 'failed' | 'cancelled'
   stage: RunStage | null
   progress: number
   label: string
@@ -63,6 +69,10 @@ export interface RunView {
   versionId: string | null
   /** Предупреждения прогона: например, часть источников не поместилась в контекст модели. */
   warnings: string[]
+  /** Потрачено по журналу вызовов модели; null — вызовов ещё не было. */
+  cost: RunCost | null
+  /** Бюджет прогона из профиля запуска. */
+  budget: RunBudget | null
   error: string | null
   /** Последний обработанный номер события: при переподключении история приходит заново. */
   lastEventId: number
@@ -70,13 +80,16 @@ export interface RunView {
   finishedAt: number | null
 }
 
+export function runStatusView(status: Schemas['RunStatus']): RunView['status'] {
+  if (status === 'succeeded' || status === 'failed' || status === 'cancelled') return status
+  if (status === 'waiting') return 'waiting'
+  return 'running'
+}
+
 export function initialRunView(run: Run, now: number): RunView {
   const finished =
     run.status === 'succeeded' || run.status === 'failed' || run.status === 'cancelled'
-  const status: RunView['status'] =
-    run.status === 'succeeded' || run.status === 'failed' || run.status === 'cancelled'
-      ? run.status
-      : 'running'
+  const status = runStatusView(run.status)
   return {
     runId: run.id,
     projectId: run.project_id,
@@ -91,6 +104,8 @@ export function initialRunView(run: Run, now: number): RunView {
     questions: [],
     versionId: run.version_id ?? null,
     warnings: run.warnings ?? [],
+    cost: run.cost ?? null,
+    budget: run.profile?.budget ?? null,
     error: run.error ?? null,
     lastEventId: 0,
     startedAt: Date.parse(run.started_at) || now,
@@ -113,9 +128,11 @@ export function reduceRun(view: RunView, event: RunEvent, now: number): RunView 
   switch (event.type) {
     case 'stage': {
       const { stage, progress, label } = event.data
-      if (stage === view.stage) return { ...next, progress, label }
+      const status = view.status === 'waiting' ? 'running' : view.status
+      if (stage === view.stage) return { ...next, progress, label, status }
       return {
         ...next,
+        status,
         stage,
         progress,
         label,
@@ -124,12 +141,19 @@ export function reduceRun(view: RunView, event: RunEvent, now: number): RunView 
       }
     }
     case 'question': {
-      const { id, code, status } = event.data.question
+      const question = event.data.question
+      const { id, code, status } = question
+      // Блокирующий технический вопрос переводит прогон в `waiting`; SSE остаётся открытым.
+      const waiting =
+        question.category === 'technical' && question.blocking && question.status === 'open'
       return {
         ...next,
+        status: waiting ? 'waiting' : view.status === 'waiting' ? 'running' : view.status,
         questions: [...view.questions.filter((item) => item.id !== id), { id, code, status }],
       }
     }
+    case 'usage':
+      return { ...next, cost: event.data }
     case 'summary':
       return { ...next, summary: event.data }
     case 'version':
@@ -140,16 +164,20 @@ export function reduceRun(view: RunView, event: RunEvent, now: number): RunView 
       const { run } = event.data
       const failed = run.status === 'failed' || view.status === 'failed'
       const cancelled = run.status === 'cancelled' || view.status === 'cancelled'
+      // `waiting` — не финал: прогон ждёт действия по техническому вопросу.
+      const waiting = run.status === 'waiting'
       return {
         ...next,
-        status: cancelled ? 'cancelled' : failed ? 'failed' : 'succeeded',
-        progress: failed || cancelled ? view.progress : 1,
+        status: waiting ? 'waiting' : cancelled ? 'cancelled' : failed ? 'failed' : 'succeeded',
+        progress: waiting ? view.progress : failed || cancelled ? view.progress : 1,
         summary: run.summary ?? view.summary,
         versionId: run.version_id ?? view.versionId,
         warnings: run.warnings?.length ? run.warnings : view.warnings,
+        cost: run.cost ?? view.cost,
+        budget: run.profile?.budget ?? view.budget,
         error: failed ? (run.error ?? view.error ?? 'Прогон не завершён') : null,
         stageFinishedAt: failed ? view.stageFinishedAt : finishStage(view, now),
-        finishedAt: Date.parse(run.finished_at ?? '') || now,
+        finishedAt: waiting ? null : Date.parse(run.finished_at ?? '') || now,
       }
     }
   }

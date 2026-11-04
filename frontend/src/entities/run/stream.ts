@@ -6,6 +6,7 @@ const EVENT_TYPES: readonly RunEventType[] = [
   'question',
   'summary',
   'version',
+  'usage',
   'error',
   'done',
 ]

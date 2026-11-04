@@ -13,6 +13,7 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as StyleguideRouteImport } from './routes/styleguide'
 import { Route as AppIndexRouteImport } from './routes/_app.index'
+import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as DevDiagramRouteImport } from './routes/dev.diagram'
 import { Route as ShareTokenRouteImport } from './routes/share.$token'
 import { Route as AppProjectsIndexRouteImport } from './routes/_app.projects.index'
@@ -36,6 +37,11 @@ const StyleguideRoute = StyleguideRouteImport.update({
 const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => AppRoute,
 } as any)
 const DevDiagramRoute = DevDiagramRouteImport.update({
@@ -68,6 +74,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
   '/styleguide': typeof StyleguideRoute
+  '/settings': typeof AppSettingsRoute
   '/dev/diagram': typeof DevDiagramRoute
   '/share/$token': typeof ShareTokenRoute
   '/projects/$projectId': typeof AppProjectsProjectIdRoute
@@ -77,6 +84,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/styleguide': typeof StyleguideRoute
+  '/settings': typeof AppSettingsRoute
   '/dev/diagram': typeof DevDiagramRoute
   '/share/$token': typeof ShareTokenRoute
   '/': typeof AppIndexRoute
@@ -89,6 +97,7 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/styleguide': typeof StyleguideRoute
+  '/_app/settings': typeof AppSettingsRoute
   '/dev/diagram': typeof DevDiagramRoute
   '/share/$token': typeof ShareTokenRoute
   '/_app/': typeof AppIndexRoute
@@ -102,6 +111,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/styleguide'
+    | '/settings'
     | '/dev/diagram'
     | '/share/$token'
     | '/projects/$projectId'
@@ -111,6 +121,7 @@ export interface FileRouteTypes {
   to:
     | '/login'
     | '/styleguide'
+    | '/settings'
     | '/dev/diagram'
     | '/share/$token'
     | '/'
@@ -122,6 +133,7 @@ export interface FileRouteTypes {
     | '/_app'
     | '/login'
     | '/styleguide'
+    | '/_app/settings'
     | '/dev/diagram'
     | '/share/$token'
     | '/_app/'
@@ -168,6 +180,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/settings': {
+      id: '/_app/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/dev/diagram': {
       id: '/dev/diagram'
       path: '/dev/diagram'
@@ -207,6 +226,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
+  AppSettingsRoute: typeof AppSettingsRoute
   AppIndexRoute: typeof AppIndexRoute
   AppProjectsProjectIdRoute: typeof AppProjectsProjectIdRoute
   AppStudioProjectIdRoute: typeof AppStudioProjectIdRoute
@@ -214,6 +234,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppSettingsRoute: AppSettingsRoute,
   AppIndexRoute: AppIndexRoute,
   AppProjectsProjectIdRoute: AppProjectsProjectIdRoute,
   AppStudioProjectIdRoute: AppStudioProjectIdRoute,

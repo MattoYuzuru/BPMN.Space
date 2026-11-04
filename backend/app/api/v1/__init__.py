@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.api.v1 import (
     assistant,
     collaboration,
+    llm_credentials,
     onboarding,
     presence,
     projects,
@@ -26,6 +27,7 @@ for module in (
     collaboration,
     sharing,
     onboarding,
+    llm_credentials,
     presence,
 ):
     api_router.include_router(module.router)

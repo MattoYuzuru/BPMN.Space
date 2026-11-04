@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.api.access import ensure_project_access, require_account
 from app.api.auth import OptionalUserDep
@@ -32,17 +32,15 @@ async def ask_assistant(
     message = body.message.strip()
     if not message:
         raise HTTPException(status_code=422, detail="Введите вопрос помощнику")
-    if container.assistant is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Помощник не подключён. Настройте LLM_PROVIDER и ключ провайдера в .env.",
-        )
     try:
         answer = await container.assistant.reply(
             project_id,
             message=message,
             diagram_xml=body.diagram_xml,
             history=[turn.model_dump() for turn in body.history],
+            user_id=user.id if user else None,
+            credential_id=body.credential_id,
+            model=body.model,
         )
     except PipelineError as error:
         raise HTTPException(status_code=502, detail=error.args[0]) from error
@@ -65,11 +63,6 @@ async def ask_about_local_draft(
     message = body.message.strip()
     if not message:
         raise HTTPException(status_code=422, detail="Введите вопрос помощнику")
-    if container.assistant is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Помощник не подключён. Настройте LLM_PROVIDER и ключ провайдера в .env.",
-        )
     try:
         answer = await container.assistant.reply_local(
             project_title=body.project_title,
@@ -77,6 +70,9 @@ async def ask_about_local_draft(
             diagram_xml=body.diagram_xml,
             history=[turn.model_dump() for turn in body.history],
             message=message,
+            user_id=user.id if user else None,
+            credential_id=body.credential_id,
+            model=body.model,
         )
     except PipelineError as error:
         raise HTTPException(status_code=502, detail=error.args[0]) from error

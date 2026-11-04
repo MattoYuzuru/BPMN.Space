@@ -65,8 +65,15 @@ from app.llm.base import (
     run_deadline,
     track_usage,
 )
+from app.llm.client import PROVIDER_MOCK, redact_secrets
 from app.services.common import Runtime, get_project, get_run
-from app.services.errors import ConflictError, NotFoundError, StaleVersionError
+from app.services.errors import ConflictError, NotFoundError, ServiceError, StaleVersionError
+from app.services.model_resolver import (
+    ModelResolver,
+    ResolvedModel,
+    pipeline_model,
+    pipeline_provider,
+)
 from app.services.versions import add_version
 
 logger = logging.getLogger(__name__)
@@ -105,6 +112,11 @@ def _json_data(value: Any) -> Any:
     return value
 
 
+def _credential_id(run: Run) -> UUID | None:
+    raw = (run.ir or {}).get("execution", {}).get("credential_id")
+    return UUID(raw) if raw else None
+
+
 _INTERNAL_ERROR = "Внутренняя ошибка прогона, попробуйте ещё раз"
 
 
@@ -114,6 +126,12 @@ class _RunState:
     analysis: AnalysisResult = field(default_factory=AnalysisResult)
     draft: DiagramDraft | None = None
     xml: str | None = None
+    pipeline: ProcessPipeline | None = None
+
+    def model(self) -> ProcessPipeline:
+        if self.pipeline is None:
+            raise PipelineError("Модель прогона не выбрана")
+        return self.pipeline
 
 
 def _source_snapshot(
@@ -153,7 +171,8 @@ class RunService:
         self,
         repos: Repositories,
         *,
-        pipeline: ProcessPipeline,
+        pipeline: ProcessPipeline | None = None,
+        resolver: ModelResolver | None = None,
         bpmn_tools: BpmnTools,
         events: RunEventBus,
         spawner: TaskSpawner,
@@ -167,7 +186,12 @@ class RunService:
         broadcast: RealtimePublisher | None = None,
     ) -> None:
         self._repos = repos
-        self._pipeline = pipeline
+        if resolver is None:
+            # Без пользовательских ключей (тесты, простые стенды): всегда одна модель сервера.
+            resolver = ModelResolver(repos, server_pipeline=pipeline)
+        self._resolver = resolver
+        # Пайплайн прогона создаётся при запуске (ключ пользователя) и живёт до его конца.
+        self._pipelines: dict[UUID, ResolvedModel] = {}
         self._tools = bpmn_tools
         self._events = events
         self._spawner = spawner
@@ -184,6 +208,15 @@ class RunService:
         # Замок на проект: старты разных проектов не ждут друг друга.
         self._start_locks: dict[UUID, tuple[asyncio.Lock, int]] = {}
 
+    @property
+    def _pipeline(self) -> Any:
+        """Модель сервера (запасной путь); подмена нужна тестам, которые ставят свой пайплайн."""
+        return self._resolver.server_pipeline
+
+    @_pipeline.setter
+    def _pipeline(self, value: Any) -> None:
+        self._resolver.server_pipeline = value
+
     async def start(
         self,
         project_id: UUID,
@@ -193,49 +226,67 @@ class RunService:
         actor_email: str | None = None,
         base_version_id: UUID | None = None,
         replace_manual: bool = False,
+        credential_id: UUID | None = None,
+        model: str | None = None,
     ) -> Run:
-        async with self._start_slot(project_id), self._repos.atomic() as repos:
-            # Блокировка проекта общая с ручным сохранением схемы и удалением проекта.
-            if await repos.projects.lock(project_id) is None:
-                raise NotFoundError("Проект не найден")
-            if await repos.runs.active_for_project(project_id):
-                raise ConflictError("По проекту уже идёт прогон — дождитесь его завершения")
-            sources = await repos.sources.list_by_project(project_id)
-            usable = [
-                s
-                for s in sources
-                if s.active and s.status is SourceStatus.READY and s.kind is not SourceKind.ANSWER
-            ]
-            if not usable:
-                raise ConflictError("Добавьте хотя бы один источник с текстом")
-            head = await repos.versions.latest(project_id)
-            if base_version_id is not None and (head.id if head else None) != base_version_id:
-                raise StaleVersionError(head.id if head else None, head.number if head else None)
-            now = self._rt.clock()
-            run = Run(
-                id=self._rt.new_id(),
-                project_id=project_id,
-                mode=mode,
-                status=RunStatus.QUEUED,
-                started_at=now,
-                created_by=created_by,
-                model=getattr(self._pipeline, "model_name", type(self._pipeline).__name__),
-                actor_email=actor_email,
-                ir={
-                    "execution": {
-                        "base_version_id": str(head.id) if head else None,
-                        "replace_manual": replace_manual,
-                        "source_snapshot_hash": source_snapshot_hash(sources),
-                    }
-                },
-            )
-            try:
-                await repos.runs.add(run)
-            except ActiveRunConflictError as error:
-                raise ConflictError(
-                    "По проекту уже идёт прогон — дождитесь его завершения"
-                ) from error
-            await repos.projects.touch(project_id, now)
+        resolved = await self._resolver.resolve(
+            created_by, credential_id=credential_id, model=model
+        )
+        try:
+            async with self._start_slot(project_id), self._repos.atomic() as repos:
+                # Блокировка проекта общая с ручным сохранением схемы и удалением проекта.
+                if await repos.projects.lock(project_id) is None:
+                    raise NotFoundError("Проект не найден")
+                if await repos.runs.active_for_project(project_id):
+                    raise ConflictError("По проекту уже идёт прогон — дождитесь его завершения")
+                sources = await repos.sources.list_by_project(project_id)
+                usable = [
+                    s
+                    for s in sources
+                    if s.active
+                    and s.status is SourceStatus.READY
+                    and s.kind is not SourceKind.ANSWER
+                ]
+                if not usable:
+                    raise ConflictError("Добавьте хотя бы один источник с текстом")
+                head = await repos.versions.latest(project_id)
+                if base_version_id is not None and (head.id if head else None) != base_version_id:
+                    raise StaleVersionError(
+                        head.id if head else None, head.number if head else None
+                    )
+                now = self._rt.clock()
+                run = Run(
+                    id=self._rt.new_id(),
+                    project_id=project_id,
+                    mode=mode,
+                    status=RunStatus.QUEUED,
+                    started_at=now,
+                    created_by=created_by,
+                    model=resolved.model,
+                    actor_email=actor_email,
+                    ir={
+                        "execution": {
+                            "base_version_id": str(head.id) if head else None,
+                            "replace_manual": replace_manual,
+                            "source_snapshot_hash": source_snapshot_hash(sources),
+                            "provider": resolved.provider,
+                            "credential_id": str(resolved.credential_id)
+                            if resolved.credential_id
+                            else None,
+                        }
+                    },
+                )
+                try:
+                    await repos.runs.add(run)
+                except ActiveRunConflictError as error:
+                    raise ConflictError(
+                        "По проекту уже идёт прогон — дождитесь его завершения"
+                    ) from error
+                await repos.projects.touch(project_id, now)
+        except BaseException:
+            await resolved.release()
+            raise
+        self._pipelines[run.id] = resolved
         await self._publish_live(run)
         self._spawner.spawn(self._execute(run.id), name=f"run-{run.id}")
         return run
@@ -275,6 +326,9 @@ class RunService:
             cancelled_task = await self._spawner.cancel(name=f"run-{run_id}")
         finally:
             self._cancel_requested.discard(run_id)
+        queued = self._pipelines.pop(run_id, None)
+        if queued is not None:
+            await queued.release()
         current = await get_run(self._repos, run_id)
         if current.status in ACTIVE_STATUSES:
             current.status = RunStatus.CANCELLED
@@ -386,13 +440,44 @@ class RunService:
             logger.exception("Прогон %s упал", run.id)
             await self._fail(run, _INTERNAL_ERROR, execution_started=execution_started)
 
+    async def _run_pipeline(self, run: Run) -> ResolvedModel:
+        """Пайплайн, созданный при запуске; после рестарта — заново из записанных provider/model.
+
+        Ключ в прогоне не хранится: он берётся по `credential_id` владельца запуска. Удалённый
+        или нерасшифровываемый ключ — понятная ошибка прогона, а не тихая замена модели.
+        """
+        recorded = self._pipelines.pop(run.id, None)
+        if recorded is not None:
+            return recorded
+        execution = (run.ir or {}).get("execution", {})
+        raw_id = execution.get("credential_id")
+        try:
+            resolved = await self._resolver.restore(
+                run.created_by, UUID(raw_id) if raw_id else None, run.model
+            )
+        except ServiceError as error:
+            raise PipelineError(
+                "Не удалось восстановить модель прогона: " + error.message
+            ) from error
+        return resolved
+
     async def _run_stages(self, run: Run, execution_started: float) -> None:
+        resolved = await self._run_pipeline(run)
+        try:
+            await self._run_stages_with(run, execution_started, resolved.pipeline)
+        finally:
+            await resolved.release()
+
+    async def _run_stages_with(
+        self, run: Run, execution_started: float, pipeline: ProcessPipeline
+    ) -> None:
         run.status = RunStatus.RUNNING
         await self._repos.runs.update(run)
-        state = _RunState()
+        state = _RunState(pipeline=pipeline)
         for stage in stages_for(run.mode):
             await self._enter(run, stage)
-            await self._pace(stage)
+            if pipeline_provider(pipeline) == PROVIDER_MOCK:
+                await self._pace(stage)
             await self._perform(run, stage, state)
         # Пункты отмечаются до статуса `succeeded`: кто увидит успех (SSE или опрос), уже видит их.
         await self._record_progress(run)
@@ -441,14 +526,20 @@ class RunService:
         )
         await self._publish(run, RunEventKind.STAGE, progress)
 
-    def _check_recovered_input(self, run: Run, context: RunContext, execution: dict) -> None:
+    def _check_recovered_input(
+        self, run: Run, context: RunContext, execution: dict, state: _RunState
+    ) -> None:
         snapshot = execution.get("source_snapshot_hash")
         if snapshot and snapshot != context.source_snapshot_hash:
             raise PipelineError(
                 "Источники изменились после запуска; повторите прогон по актуальным данным"
             )
-        if run.model != getattr(self._pipeline, "model_name", type(self._pipeline).__name__):
+        pipeline = state.model()
+        if run.model != pipeline_model(pipeline):
             raise PipelineError("Модель изменилась после запуска; создайте новый прогон")
+        provider = execution.get("provider")
+        if provider and provider != pipeline_provider(pipeline):
+            raise PipelineError("Провайдер модели изменился после запуска; создайте новый прогон")
 
     async def _perform(self, run: Run, stage: RunStage, state: _RunState) -> None:
         match stage:
@@ -456,7 +547,7 @@ class RunService:
                 state.context = await self._context(run.project_id)
                 execution = (run.ir or {}).get("execution", {})
                 expected = execution.get("base_version_id")
-                self._check_recovered_input(run, state.context, execution)
+                self._check_recovered_input(run, state.context, execution, state)
                 if (
                     run.mode is RunMode.BUILD
                     and str(state.context.base_version_id) != str(expected)
@@ -476,7 +567,7 @@ class RunService:
                     run,
                     stage="analyze",
                     request={"context": describe_context(context)},
-                    call=lambda: self._pipeline.analyze(context),
+                    call=lambda: state.model().analyze(context),
                 )
                 run.analysis = _json_data(state.analysis)
                 await self._repos.runs.update(run)
@@ -495,7 +586,7 @@ class RunService:
                         "context": describe_context(context),
                         "analysis": _json_data(state.analysis),
                     },
-                    call=lambda: self._pipeline.structure(context, state.analysis),
+                    call=lambda: state.model().structure(context, state.analysis),
                 )
                 if state.draft is None:
                     raise PipelineError("Пайплайн не вернул BPMN-черновик")
@@ -506,7 +597,7 @@ class RunService:
                     "manual_overrides": state.draft.manual_overrides,
                     "conflicts": state.draft.conflicts,
                 }
-                if getattr(self._pipeline, "uses_complete_evidence", False):
+                if getattr(state.model(), "uses_complete_evidence", False):
                     run.warnings = [
                         w
                         for w in run.warnings
@@ -840,6 +931,9 @@ class RunService:
                 response = await call()
             except Exception as error:
                 failure = error
+        await self._resolver.mark(
+            _credential_id(run), redact_secrets(str(failure)) if failure else None
+        )
         # Токены известны только у провайдеров, которые их сообщают (mock — `null`).
         await self._repos.llm_calls.add(
             LlmCall(
@@ -847,7 +941,9 @@ class RunService:
                 run_id=run.id,
                 stage=stage,
                 request=_json_data(request),
-                response={"error": str(failure)} if failure else _json_data(response),
+                response={"error": redact_secrets(str(failure))}
+                if failure
+                else _json_data(response),
                 tokens_in=usage.tokens_in if usage.requests else None,
                 tokens_out=usage.tokens_out if usage.requests else None,
                 latency_ms=max(0, round((time.perf_counter() - started) * 1000)),

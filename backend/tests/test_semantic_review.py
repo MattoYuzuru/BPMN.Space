@@ -11,8 +11,8 @@ from app.domain.analysis import AnalysisResult
 from app.domain.bpmn.ir import GraphIR
 from app.domain.models import Question, QuestionKind, QuestionStatus, Severity
 from app.llm.base import PipelineError
-from app.llm.openai_compatible import OpenAICompatiblePipeline
 from app.llm.semantic_review import _review_part, review_semantics
+from tests.llm_helpers import ScriptedPipeline
 from tests.test_graph_ir import SOURCE_ID, TEXT, graph_case
 from tests.test_graph_repair_feedback import _context
 
@@ -62,7 +62,7 @@ async def test_semantic_issue_enters_repair_and_only_checked_graph_is_returned()
         generations.append(data)
         return json.dumps(graph_case("xor"))
 
-    draft = await OpenAICompatiblePipeline(
+    draft = await ScriptedPipeline(
         api_key="recorded-only", complete=complete, semantic_review=True
     ).structure(_context(TEXT), AnalysisResult())
     assert draft.ir is not None

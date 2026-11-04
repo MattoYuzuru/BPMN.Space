@@ -1,12 +1,15 @@
 """Единственный источник конфигурации backend. Все значения — из окружения / `.env`."""
 
+import logging
 from functools import lru_cache
+from typing import Annotated
 
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from app.domain.concurrency import adaptive_deadline
 
+logger = logging.getLogger(__name__)
 _MB = 1024 * 1024
 # Квитанции удаления доступны 30 дней; содержимое проектов удаляется сразу.
 DELETED_PROJECT_NOTICE_DAYS = 30
@@ -106,12 +109,13 @@ class Settings(BaseSettings):
     }
     mock_transcription_delay_sec: float = 1.0
     mock_parse_delay_sec: float = 1.5
-    # Засевать ли демо-проекты при старте (в тестах можно выключить).
-    seed_demo_data: bool = True
+    # Засевать ли демо-проекты при старте. None — по окружению: в production выключено,
+    # иначе включено (в тестах можно выключить явно).
+    seed_demo_data: bool | None = None
 
     # Внешние провайдеры выключены по умолчанию. Секреты задаются только в корневом .env.
     llm_provider: str = "mock"
-    llm_api_key: str | None = None
+    llm_api_key: SecretStr | None = None
     llm_base_url: str | None = None
     llm_model: str | None = None
     llm_timeout_sec: float = 120.0
@@ -125,8 +129,19 @@ class Settings(BaseSettings):
     llm_max_retries: int = 3
     llm_retry_base_sec: float = 1.0
     llm_retry_max_sec: float = 30.0
+    # Глубина рассуждения Anthropic (`output_config.effort`): low | medium | high.
+    llm_anthropic_effort: str = "medium"
+    # Ключи моделей пользователей (ADR-0011): Fernet-ключи через запятую; первый шифрует,
+    # все расшифровывают (ротация). Сгенерировать: `make credentials-key`. В production без
+    # него пользовательские ключи не принимаются; в dev берётся временный ключ процесса.
+    credentials_encryption_key: SecretStr | None = None
+    # Хосты закрытых сетей, к которым разрешено ходить совместимым провайдерам пользователей
+    # (локальный vLLM/Ollama в dev). Пусто — только публичные адреса по HTTPS.
+    llm_allowed_private_hosts: Annotated[list[str], NoDecode] = []
+    # Сколько секунд хранить список моделей аккаунта пользователя.
+    llm_models_cache_sec: float = 300.0
     # Старые имена оставлены для плавного перехода production .env с DeepSeek.
-    deepseek_api_key: str | None = None
+    deepseek_api_key: SecretStr | None = None
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-flash"
     deepseek_timeout_sec: float = 120.0
@@ -138,7 +153,7 @@ class Settings(BaseSettings):
     deepseek_retry_base_sec: float = 1.0
     deepseek_retry_max_sec: float = 30.0
     stt_provider: str = "mock"
-    deepgram_api_key: str | None = None
+    deepgram_api_key: SecretStr | None = None
     deepgram_timeout_sec: float = 120.0
 
     @field_validator(
@@ -148,6 +163,8 @@ class Settings(BaseSettings):
         "llm_api_key",
         "deepseek_api_key",
         "deepgram_api_key",
+        "credentials_encryption_key",
+        "seed_demo_data",
         mode="before",
     )
     @classmethod
@@ -157,23 +174,87 @@ class Settings(BaseSettings):
             return None
         return value
 
-    def llm_connection(self) -> tuple[str, str, str]:
-        """Эффективные URL, модель и ключ; generic-настройки имеют приоритет над legacy."""
+    @field_validator("llm_allowed_private_hosts", mode="before")
+    @classmethod
+    def _split_hosts(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [part.strip().lower() for part in value.split(",") if part.strip()]
+        return value
+
+    @model_validator(mode="after")
+    def _resolve_defaults(self) -> "Settings":
+        if self.seed_demo_data is None:
+            self.seed_demo_data = not self.is_production
+        return self
+
+    @property
+    def is_production(self) -> bool:
+        return self.app_env.lower() in {"prod", "production"}
+
+    def llm_connection(self) -> tuple[SecretStr, str, str]:
+        """Эффективные ключ, URL и модель; generic-настройки имеют приоритет над legacy."""
         provider = self.llm_provider.lower()
-        api_key = self.llm_api_key or (self.deepseek_api_key if provider == "deepseek" else None)
-        base_url = self.llm_base_url or (self.deepseek_base_url if provider == "deepseek" else None)
-        model = self.llm_model or (self.deepseek_model if provider == "deepseek" else None)
+        legacy = provider == "deepseek"
+        api_key = self.llm_api_key or (self.deepseek_api_key if legacy else None)
+        base_url = self.llm_base_url or (self.deepseek_base_url if legacy else None)
+        model = self.llm_model or (self.deepseek_model if legacy else None)
+        if provider == "anthropic":
+            base_url = base_url or "https://api.anthropic.com"
+        if provider == "openai":
+            base_url = base_url or "https://api.openai.com/v1"
         if not api_key or not base_url or not model:
             raise ValueError(
                 f"LLM_PROVIDER={self.llm_provider} требует LLM_API_KEY, LLM_BASE_URL и LLM_MODEL"
             )
         return api_key, base_url, model
 
+    def llm_runtime(self, *, warn: bool = False) -> dict[str, float | int | bool | None]:
+        """Таймаут, повторы и thinking: generic `LLM_*` главнее legacy `DEEPSEEK_*`.
+
+        Legacy-имена действуют только для `LLM_PROVIDER=deepseek` и только если соответствующее
+        generic-имя не задано; об их использовании пишется предупреждение.
+        """
+        legacy = self.llm_provider.lower() == "deepseek"
+        explicit = self.model_fields_set
+        pairs = {
+            "timeout_sec": ("llm_timeout_sec", "deepseek_timeout_sec"),
+            "max_retries": ("llm_max_retries", "deepseek_max_retries"),
+            "retry_base_sec": ("llm_retry_base_sec", "deepseek_retry_base_sec"),
+            "retry_max_sec": ("llm_retry_max_sec", "deepseek_retry_max_sec"),
+        }
+        values: dict[str, float | int | bool | None] = {}
+        for key, (generic, old) in pairs.items():
+            if generic not in explicit and legacy and old in explicit:
+                if warn:
+                    logger.warning(
+                        "Переменная %s устарела: задайте %s", old.upper(), generic.upper()
+                    )
+                values[key] = getattr(self, old)
+            else:
+                values[key] = getattr(self, generic)
+        values["thinking"] = self.deepseek_thinking_enabled if legacy else None
+        return values
+
+    def validate_for_runtime(self) -> None:
+        """Отказ при старте, если production молча работал бы на заглушках."""
+        if not self.is_production:
+            return
+        if self.stt_provider.lower() == "mock":
+            raise ValueError(
+                "Production не принимает STT_PROVIDER=mock: задайте STT_PROVIDER=deepgram "
+                "и DEEPGRAM_API_KEY, иначе записи превратились бы в заготовленный текст"
+            )
+        if self.llm_provider.lower() == "mock" and not self.credentials_encryption_key:
+            raise ValueError(
+                "Production не принимает LLM_PROVIDER=mock без CREDENTIALS_ENCRYPTION_KEY: "
+                "задайте провайдера сервера или включите ключи пользователей"
+            )
+
     @property
     def cookie_secure(self) -> bool:
         if self.session_cookie_secure is not None:
             return self.session_cookie_secure
-        return self.app_env.lower() in {"prod", "production"}
+        return self.is_production
 
     def context_budget_chars(self, provider_max: int | None = None) -> int:
         """Бюджет контекста: провайдер с большим окном может задать своё значение явно."""

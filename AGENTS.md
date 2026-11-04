@@ -33,6 +33,7 @@
 | `frontend/src/entities/{session,share}`, маршруты `/login`, `/share/$token` | аккаунты и общий доступ: правила — `docs/backend/auth-and-sharing.md`, UI-паттерны — стайлгайд §16 |
 | `frontend/src/features/onboarding`, `widgets/onboarding-root`, `shared/lib/{tour-anchors,onboarding-signals}.ts` | обучение: движок тура, сценарий из 11 шагов, приветствие, подсказки-указатели, якоря `data-tour`, сигналы приложения — `docs/frontend/onboarding.md`, паттерн — стайлгайд §10 |
 | `backend/app/{domain,services,api/v1}/onboarding.py`, `fixtures/samples*` | онбординг: тур, чек-лист «Начало работы», учебные материалы «Примеры»; правила — `docs/backend/onboarding.md` |
+| `backend/app/llm/{client,factory,pipeline,anthropic,openai,openai_compatible,net_guard}.py`, `services/{model_resolver,llm_credentials}.py`, `infra/crypto.py`, `api/v1/llm_credentials.py`, `frontend/src/{entities/llm-credential,features/llm-credentials,features/model-picker}`, маршрут `/settings` | модельно-независимый запуск: свои ключи пользователя (шифруются), провайдеры Anthropic/OpenAI/совместимые, выбор модели на прогон, защита от SSRF — [ADR-0011](docs/adr/0011-user-llm-credentials.md), `docs/backend/подключение-провайдеров.md` |
 | `backend/migrations/` | Alembic-миграции PostgreSQL; правила и сохраняемые сущности — `docs/backend/persistence.md` |
 | `backend/app/fixtures/` | демо-данные mock-а: тексты, BPMN-схемы, записанные ответы модели (`make fixtures` пересобирает схемы) |
 | `examples/` | примеры входа и выхода для жюри (копии фикстур) |

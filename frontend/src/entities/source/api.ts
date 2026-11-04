@@ -3,7 +3,7 @@ import { type ProjectDetail, projectKeys } from '@/entities/project'
 import { api, errorMessage, postForm, type Schemas, unwrap } from '@/shared/api/client'
 import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
 import { toast } from '@/shared/ui'
-import type { Sample, Source } from './model'
+import { descendantIds, type Sample, type Source } from './model'
 
 function useProjectCache(projectId: string) {
   const client = useQueryClient()
@@ -140,19 +140,25 @@ export function useUpdateSource(projectId: string) {
     onMutate: async ({ id, ...body }) => {
       await cache.client.cancelQueries({ queryKey: cache.key })
       const previous = cache.client.getQueryData<ProjectDetail>(cache.key)
-      cache.patch((project) => ({
-        ...project,
-        sources: project.sources.map((source) =>
-          source.id === id
-            ? {
-                ...source,
-                title: body.title ?? source.title,
-                content: body.content ?? source.content,
-                active: body.active ?? source.active,
-              }
-            : source,
-        ),
-      }))
+      cache.patch((project) => {
+        // Выключение записи выключает и производные узлы — так же делает сервер.
+        const family = body.active == null ? new Set<string>() : descendantIds(project.sources, id)
+        return {
+          ...project,
+          sources: project.sources.map((source) =>
+            source.id === id
+              ? {
+                  ...source,
+                  title: body.title ?? source.title,
+                  content: body.content ?? source.content,
+                  active: body.active ?? source.active,
+                }
+              : family.has(source.id)
+                ? { ...source, active: body.active ?? source.active }
+                : source,
+          ),
+        }
+      })
       return { previous }
     },
     onError: (error, _vars, context) => {
@@ -174,10 +180,14 @@ export function useDeleteSource(projectId: string) {
     onMutate: async (id) => {
       await cache.client.cancelQueries({ queryKey: cache.key })
       const previous = cache.client.getQueryData<ProjectDetail>(cache.key)
-      cache.patch((project) => ({
-        ...project,
-        sources: project.sources.filter((source) => source.id !== id),
-      }))
+      cache.patch((project) => {
+        // Удаление родителя удаляет производные (каскад на сервере).
+        const family = descendantIds(project.sources, id)
+        return {
+          ...project,
+          sources: project.sources.filter((source) => source.id !== id && !family.has(source.id)),
+        }
+      })
       return { previous }
     },
     onError: (error, _id, context) => {

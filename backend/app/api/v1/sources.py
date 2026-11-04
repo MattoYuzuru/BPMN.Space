@@ -92,6 +92,8 @@ async def create_file_source(  # noqa: PLR0917 - multipart form fields are separ
     """Документ или запись. `.txt`/`.md`/`.csv` готовы сразу; `.docx`/`.xlsx`/`.pptx`/`.pdf` и
     аудио/видео приходят в `processing` и становятся `ready` или `failed` в фоне — обновляйте
     проект, пока есть `processing`. Страницы PDF без текста дают `ready` с `warning`.
+    Запись возвращается как исходный файл без текста; её расшифровка — отдельный источник
+    `origin=derived` с `parent_id` записи (RFC-0006).
     Записи пишутся на диск потоком (лимит `MAX_MEDIA_BYTES`), документы — `MAX_UPLOAD_BYTES`."""
     await ensure_project_access(request, container, project_id, user, write=True)
     file_name = file.filename or "document.txt"
@@ -148,7 +150,10 @@ async def update_source(
     container: ContainerDep,
     user: OptionalUserDep,
 ) -> Source:
-    """Поправить название или текст, включить или выключить источник."""
+    """Поправить название или текст, включить или выключить источник.
+
+    Правка текста производного источника ставит `edited_by_human=true`; у записи с
+    расшифровкой своего текста нет (422). Выключение записи выключает и её производные."""
     await ensure_resource_access(
         request, container, source_id, user, resource=ResourceKind.SOURCE, write=True
     )
@@ -173,7 +178,8 @@ async def delete_source(
     container: ContainerDep,
     user: OptionalUserDep,
 ) -> Response:
-    """Удалить источник. Удаление ответа возвращает отвеченный вопрос в `open`."""
+    """Удалить источник вместе с производными (`parent_id`). Удаление ответа возвращает
+    отвеченный вопрос в `open`."""
     await ensure_resource_access(
         request, container, source_id, user, resource=ResourceKind.SOURCE, write=True
     )

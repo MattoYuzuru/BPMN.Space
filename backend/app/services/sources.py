@@ -2,15 +2,33 @@
 
 import asyncio
 import logging
+from collections.abc import Sequence
+from dataclasses import replace
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from app.domain import questions as question_rules
-from app.domain.models import Source, SourceKind, SourceStatus
+from app.domain.models import (
+    MediaInfo,
+    Source,
+    SourceDerivation,
+    SourceKind,
+    SourceOrigin,
+    SourceStatus,
+    SourceTrust,
+)
 from app.domain.projects import default_source_title
+from app.domain.sources import SPEECH_TO_TEXT, TRANSCRIPT_TITLE, descendants
 from app.infra.repositories.base import Repositories
 from app.infra.storage import ChunkReader, FileStorage, UploadTooLargeError
-from app.ingest.media import MEDIA_EXTENSIONS, MediaError, MediaTranscriber, is_media
+from app.ingest.media import (
+    MEDIA_EXTENSIONS,
+    MediaError,
+    MediaProbe,
+    MediaTranscriber,
+    is_media,
+)
 from app.ingest.parsers import (
     SUPPORTED_EXTENSIONS,
     DocumentParseError,
@@ -36,6 +54,22 @@ MAX_SOURCE_TITLE = 200
 def _format_duration(seconds: float) -> str:
     total = round(seconds)
     return f"{total // 60}:{total % 60:02d}"
+
+
+async def _ensure_parent(repos: Repositories, source: Source, batch: Sequence[Source]) -> None:
+    """Родитель производного источника — существующий источник того же проекта.
+
+    В PostgreSQL это же гарантирует составной FK `(parent_id, project_id)`; проверка здесь
+    даёт понятную ошибку и защищает in-memory режим.
+    """
+    if source.parent_id is None:
+        return
+    if source.parent_id == source.id:
+        raise InvalidInputError("Источник не может быть родителем самого себя")
+    parent = next((item for item in batch if item.id == source.parent_id), None)
+    parent = parent or await repos.sources.get(source.parent_id)
+    if parent is None or parent.project_id != source.project_id:
+        raise InvalidInputError("Родительский источник не найден в этом проекте")
 
 
 class SourceService:
@@ -164,12 +198,23 @@ class SourceService:
         await self._add_source(source, project_id=project_id, key=key, now=now)
         return source, background
 
-    async def _add_source(self, source: Source, *, project_id: UUID, key: str, now) -> None:
+    async def _add_source(
+        self,
+        source: Source,
+        *,
+        project_id: UUID,
+        key: str,
+        now: datetime,
+        derived: Sequence[Source] = (),
+    ) -> None:
         try:
             async with self._repos.atomic() as repos:
                 await repos.projects.lock(project_id)
                 await get_project(repos, project_id)
-                await repos.sources.add(source)
+                batch = [source, *derived]
+                for item in batch:
+                    await _ensure_parent(repos, item, batch)
+                    await repos.sources.add(item)
                 await touch_project(repos, project_id, now)
         except NotFoundError:
             # Владелец мог удалить проект, пока файл сохранялся или разбирался.
@@ -199,8 +244,11 @@ class SourceService:
     ) -> Source:
         """Аудио или видео: файл пишется на диск потоком, расшифровка идёт в фоне (`process_file`).
 
-        Источник сразу `processing`; после ffmpeg и STT он станет `ready` (текст с `[мм:сс]`)
-        или `failed` с причиной.
+        Создаются два узла дерева (RFC-0006): исходный файл (`origin=user`, без текста для
+        модели) и производная «Расшифровка» (`origin=derived`, `trust=extracted`). Оба сразу
+        `processing`; после ffmpeg и STT расшифровка станет `ready` (текст с `[мм:сс]`), а
+        запись — `ready` с длительностью и дорожками, либо оба `failed` с одной причиной.
+        Возвращается исходный файл.
         """
         await get_project(self._repos, project_id)
         if self._media is None:
@@ -229,33 +277,115 @@ class SourceService:
             size_bytes=size,
             file_key=key,
         )
-        await self._add_source(source, project_id=project_id, key=key, now=now)
+        transcript = Source(
+            id=self._rt.new_id(),
+            project_id=project_id,
+            kind=SourceKind.TEXT,
+            title=f"{TRANSCRIPT_TITLE}: {source.title}"[:MAX_SOURCE_TITLE],
+            content="",
+            status=SourceStatus.PROCESSING,
+            active=True,
+            created_at=now,
+            origin=SourceOrigin.DERIVED,
+            parent_id=source.id,
+            trust=SourceTrust.EXTRACTED,
+            derivation=SourceDerivation(
+                capability=SPEECH_TO_TEXT,
+                provider=self._media.provider,
+                model=self._media.model,
+                params=self._media.params(),
+                created_at=now,
+            ),
+        )
+        await self._add_source(
+            source, project_id=project_id, key=key, now=now, derived=[transcript]
+        )
         return source
 
-    async def _media_changes(self, source: Source) -> dict[str, Any]:
+    async def _media_changes(
+        self, source: Source, transcript: Source | None
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Изменения записи и её расшифровки по итогу ffprobe/ffmpeg/STT.
+
+        Сбой виден на обоих узлах с одной причиной; дорожки записи сохраняются, если ffprobe
+        успел их прочитать.
+        """
+        probe: MediaProbe | None = None
+
+        def failed(error: str) -> tuple[dict[str, Any], dict[str, Any]]:
+            parent: dict[str, Any] = {"status": SourceStatus.FAILED, "error": error}
+            if probe is not None:
+                parent["media"] = MediaInfo(has_audio=probe.has_audio, has_video=probe.has_video)
+                parent["duration_sec"] = probe.duration_sec
+            return parent, {"status": SourceStatus.FAILED, "error": error}
+
         if self._media is None or not source.file_key:
-            return {"status": SourceStatus.FAILED, "error": "Обработка аудио и видео не включена"}
+            return failed("Обработка аудио и видео не включена")
         try:
             async with self._storage.local_file(source.file_key) as path:
-                transcript = await self._media.transcribe(path)
+                probe = await self._media.probe(path)
+                result = await self._media.transcribe(path, probe=probe)
         except MediaError as error:
-            return {"status": SourceStatus.FAILED, "error": str(error)}
+            return failed(str(error))
         except NoSpeechError:
-            return {"status": SourceStatus.FAILED, "error": "В записи не найдено речи"}
-        if len(transcript.text) > self._max_text:
-            return {
-                "status": SourceStatus.FAILED,
-                "error": (
-                    f"Расшифровка превышает лимит {self._max_text} символов. "
-                    "Разделите запись на части и загрузите их отдельно"
-                ),
-            }
-        return {
+            return failed("В записи не найдено речи")
+        if len(result.text) > self._max_text:
+            return failed(
+                f"Расшифровка превышает лимит {self._max_text} символов. "
+                "Разделите запись на части и загрузите их отдельно"
+            )
+        media = MediaInfo(
+            has_audio=probe.has_audio if probe else None,
+            has_video=probe.has_video if probe else None,
+        )
+        parent = {
             "status": SourceStatus.READY,
-            "content": transcript.text,
             "error": None,
-            "duration_sec": transcript.duration_sec,
+            "duration_sec": result.duration_sec,
+            "media": media,
         }
+        child: dict[str, Any] = {
+            "status": SourceStatus.READY,
+            "content": result.text,
+            "error": None,
+            "duration_sec": result.duration_sec,
+        }
+        if transcript is not None and transcript.derivation is not None:
+            child["derivation"] = replace(
+                transcript.derivation,
+                params={
+                    **transcript.derivation.params,
+                    "duration_sec": result.duration_sec,
+                    "language": result.language,
+                },
+            )
+        return parent, child
+
+    async def _process_media(self, source: Source) -> None:
+        siblings = await self._repos.sources.list_by_project(source.project_id)
+        transcript = next(
+            (
+                s
+                for s in siblings
+                if s.parent_id == source.id
+                and s.derivation is not None
+                and s.derivation.capability == SPEECH_TO_TEXT
+            ),
+            None,
+        )
+        try:
+            parent, child = await self._media_changes(source, transcript)
+        except Exception:
+            logger.exception("Не удалось расшифровать запись %s", source.id)
+            error = "Не удалось расшифровать запись"
+            parent = {"status": SourceStatus.FAILED, "error": error}
+            child = {"status": SourceStatus.FAILED, "error": error}
+        async with self._repos.atomic() as repos:
+            await repos.projects.lock(source.project_id)
+            await repos.sources.patch(source.id, parent, only_status=SourceStatus.PROCESSING)
+            if transcript is not None:
+                # Расшифровку могли удалить за время обработки: тогда patch просто не найдёт её.
+                await repos.sources.patch(transcript.id, child, only_status=SourceStatus.PROCESSING)
 
     async def _parse_changes(self, *, file_name: str, data: bytes) -> dict[str, Any]:
         """Результат разбора как набор полей источника: `status`, `content`, `error`, `warning`."""
@@ -292,12 +422,12 @@ class SourceService:
         source = await self._repos.sources.get(source_id)
         if source is None or source.status is not SourceStatus.PROCESSING or not source.file_key:
             return
+        if is_media(source.file_name or ""):
+            await self._process_media(source)
+            return
         try:
-            if is_media(source.file_name or ""):
-                changes = await self._media_changes(source)
-            else:
-                data = await self._storage.load(source.file_key)
-                changes = await self._parse_changes(file_name=source.file_name or "", data=data)
+            data = await self._storage.load(source.file_key)
+            changes = await self._parse_changes(file_name=source.file_name or "", data=data)
         except Exception:
             logger.exception("Не удалось разобрать источник %s", source_id)
             changes = {"status": SourceStatus.FAILED, "error": "Не удалось разобрать файл"}
@@ -305,6 +435,22 @@ class SourceService:
         async with self._repos.atomic() as repos:
             await repos.projects.lock(source.project_id)
             await repos.sources.patch(source_id, changes, only_status=SourceStatus.PROCESSING)
+
+    def _content_changes(
+        self, source: Source, content: str, *, has_children: bool
+    ) -> dict[str, Any]:
+        if source.status is SourceStatus.PROCESSING:
+            raise InvalidInputError("Файл ещё обрабатывается — текст можно поправить позже")
+        if has_children and not source.content:
+            raise InvalidInputError("У записи нет своего текста — поправьте производный источник")
+        changes: dict[str, Any] = {"content": self._clean_content(content)}
+        if source.status is SourceStatus.FAILED:
+            changes["status"] = SourceStatus.READY  # аналитик вписал текст вручную
+            changes["error"] = None
+        if source.origin is SourceOrigin.DERIVED and changes["content"] != source.content:
+            # Ревизий пока нет (#34): правка человека перезаписывает текст ИИ с отметкой.
+            changes["edited_by_human"] = True
+        return changes
 
     async def update(
         self,
@@ -322,16 +468,12 @@ class SourceService:
             source = await get_source(repos, source_id)
             if "content" in fields and source.status is not expected_status:
                 raise ConflictError("Источник только что изменился — обновите страницу и повторите")
+            family = descendants(await repos.sources.list_by_project(source.project_id), source_id)
             changes: dict[str, Any] = {}
             if "title" in fields and title is not None:
                 changes["title"] = self._clean_title(title) or source.title
             if "content" in fields and content is not None:
-                if source.status is SourceStatus.PROCESSING:
-                    raise InvalidInputError("Файл ещё обрабатывается — текст можно поправить позже")
-                changes["content"] = self._clean_content(content)
-                if source.status is SourceStatus.FAILED:
-                    changes["status"] = SourceStatus.READY  # аналитик вписал текст вручную
-                    changes["error"] = None
+                changes.update(self._content_changes(source, content, has_children=bool(family)))
             if "active" in fields and active is not None:
                 changes["active"] = active
             if changes:
@@ -342,6 +484,17 @@ class SourceService:
                     raise ConflictError(
                         "Источник только что изменился — обновите страницу и повторите"
                     )
+            if "active" in changes:
+                # Выключенная запись выключает и свои производные, включённая — включает.
+                for child in family:
+                    await repos.sources.patch(child.id, {"active": changes["active"]})
+            if changes.get("status") is SourceStatus.READY and source.parent_id is not None:
+                # Аналитик вписал текст вместо неудавшейся расшифровки: запись больше не в сбое.
+                await repos.sources.patch(
+                    source.parent_id,
+                    {"status": SourceStatus.READY, "error": None},
+                    only_status=SourceStatus.FAILED,
+                )
             source = await get_source(repos, source_id)
             now = self._rt.clock()
             if source.question_id and "content" in fields:
@@ -362,16 +515,24 @@ class SourceService:
             await repos.projects.lock(source.project_id)
             source = await get_source(repos, source_id)
             now = self._rt.clock()
-            if source.question_id:
-                question = await repos.questions.get(source.question_id)
+            # Удаление родителя удаляет производные (FK ON DELETE CASCADE и in-memory так же).
+            family = [
+                source,
+                *descendants(await repos.sources.list_by_project(source.project_id), source_id),
+            ]
+            for item in family:
+                if not item.question_id:
+                    continue
+                question = await repos.questions.get(item.question_id)
                 if (
                     question is not None
                     and question.answer
-                    and question.answer.source_id == source.id
+                    and question.answer.source_id == item.id
                 ):
                     question_rules.drop_answer(question, now=now)
                     await repos.questions.update(question)
             await repos.sources.delete(source_id)
             await touch_project(repos, source.project_id, now)
-        if source.file_key:
-            await self._storage.delete(source.file_key)
+        for item in family:
+            if item.file_key:
+                await self._storage.delete(item.file_key)

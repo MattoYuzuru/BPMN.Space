@@ -1,7 +1,7 @@
 # RFC-0006. Инструменты, ключи по типам задач и производные источники
 
 - Дата: 2026-11-04
-- Статус: предложено, не реализовано
+- Статус: шаг 3 частично реализован (модель `origin`/`parent_id`/`derivation`/`trust`/`edited_by_human`, запись → расшифровка, дерево в интерфейсе — [media-and-derived-sources.md](../backend/media-and-derived-sources.md)); кеш производных и ревизии — позже; остальные шаги предложены, не реализованы
 - Связано: [RFC-0004](0004-agent-mode.md), [RFC-0005](0005-full-model-capacity-and-cost.md),
   [RFC-0007](0007-external-agents-mcp.md), [ADR-0011](../adr/0011-user-llm-credentials.md),
   [ADR-0012](../adr/0012-long-documents-and-media.md),

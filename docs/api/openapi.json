@@ -1066,6 +1066,35 @@
         "title": "LocalAssistantRequest",
         "type": "object"
       },
+      "MediaInfo": {
+        "description": "Дорожки записи по `ffprobe`; `null` — неизвестно (сервер без ffmpeg).",
+        "properties": {
+          "has_audio": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has Audio"
+          },
+          "has_video": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has Video"
+          }
+        },
+        "title": "MediaInfo",
+        "type": "object"
+      },
       "OnboardingEvent": {
         "properties": {
           "item": {
@@ -2501,6 +2530,17 @@
             "title": "Created At",
             "type": "string"
           },
+          "derivation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceDerivation"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Для `origin=derived`: возможность, провайдер, модель"
+          },
           "duration_sec": {
             "anyOf": [
               {
@@ -2512,6 +2552,12 @@
             ],
             "description": "Длительность голосовой заметки",
             "title": "Duration Sec"
+          },
+          "edited_by_human": {
+            "default": false,
+            "description": "Текст производного источника поправил человек",
+            "title": "Edited By Human",
+            "type": "boolean"
           },
           "error": {
             "anyOf": [
@@ -2544,6 +2590,17 @@
           "kind": {
             "$ref": "#/components/schemas/SourceKind"
           },
+          "media": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MediaInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Для записи: есть ли звук и видео. Текст записи — в потомке"
+          },
           "mime": {
             "anyOf": [
               {
@@ -2554,6 +2611,24 @@
               }
             ],
             "title": "Mime"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/SourceOrigin",
+            "default": "user",
+            "description": "`user` — загрузил человек, `derived` — получен из `parent_id`, `agent` — внешний агент, `answer` — ответ на вопрос"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Исходный источник того же проекта; дерево строится по этому полю. Удаление родителя удаляет производные",
+            "title": "Parent Id"
           },
           "project_id": {
             "format": "uuid",
@@ -2591,6 +2666,11 @@
             "title": "Title",
             "type": "string"
           },
+          "trust": {
+            "$ref": "#/components/schemas/SourceTrust",
+            "default": "primary",
+            "description": "Уровень доверия: `summary` не идёт в контекст модели и в основания"
+          },
           "unreadable_pages": {
             "description": "Номера страниц PDF без текстового слоя (сканы): их текст не извлечён",
             "items": {
@@ -2625,6 +2705,63 @@
         "title": "Source",
         "type": "object"
       },
+      "SourceDerivation": {
+        "description": "Как получен производный источник (RFC-0006).",
+        "properties": {
+          "capability": {
+            "description": "Возможность: `speech_to_text`, `ocr`, `vision`…",
+            "title": "Capability",
+            "type": "string"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Стоимость, если провайдер её сообщил",
+            "title": "Cost Usd"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Модель провайдера, если известна",
+            "title": "Model"
+          },
+          "params": {
+            "additionalProperties": true,
+            "description": "Параметры обработки (сегменты, язык…)",
+            "title": "Params",
+            "type": "object"
+          },
+          "provider": {
+            "description": "Реализация, которая ответила: `deepgram`, `mock`…",
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability",
+          "provider",
+          "created_at"
+        ],
+        "title": "SourceDerivation",
+        "type": "object"
+      },
       "SourceKind": {
         "enum": [
           "text",
@@ -2633,6 +2770,17 @@
           "answer"
         ],
         "title": "SourceKind",
+        "type": "string"
+      },
+      "SourceOrigin": {
+        "description": "Откуда источник (RFC-0006): загрузил человек, получен из другого, принёс агент, ответ.",
+        "enum": [
+          "user",
+          "derived",
+          "agent",
+          "answer"
+        ],
+        "title": "SourceOrigin",
         "type": "string"
       },
       "SourceStatus": {
@@ -2645,7 +2793,8 @@
         "type": "string"
       },
       "SourceTextCreate": {
-        "description": "Текст или проверенная аналитиком расшифровка голоса (после `POST /transcriptions`).",
+        "additionalProperties": false,
+        "description": "Текст или проверенная аналитиком расшифровка голоса (после `POST /transcriptions`).\n\nЛишние поля отклоняются: `parent_id`, `origin`, `trust` вручную не задаются — производные\nисточники создаёт только сервер.",
         "properties": {
           "content": {
             "minLength": 1,
@@ -2691,6 +2840,19 @@
         ],
         "title": "SourceTextCreate",
         "type": "object"
+      },
+      "SourceTrust": {
+        "description": "Уровень доверия (RFC-0006): что из источника можно цитировать в основаниях IR.\n\n`summary` — только навигация: в контекст модели и в основания не идёт.",
+        "enum": [
+          "primary",
+          "extracted",
+          "observed",
+          "external",
+          "agent",
+          "summary"
+        ],
+        "title": "SourceTrust",
+        "type": "string"
       },
       "SourceUpdate": {
         "properties": {
@@ -6370,7 +6532,7 @@
     },
     "/api/v1/projects/{project_id}/sources/file": {
       "post": {
-        "description": "Документ или запись. `.txt`/`.md`/`.csv` готовы сразу; `.docx`/`.xlsx`/`.pptx`/`.pdf` и\nаудио/видео приходят в `processing` и становятся `ready` или `failed` в фоне — обновляйте\nпроект, пока есть `processing`. Страницы PDF без текста дают `ready` с `warning`.\nЗаписи пишутся на диск потоком (лимит `MAX_MEDIA_BYTES`), документы — `MAX_UPLOAD_BYTES`.",
+        "description": "Документ или запись. `.txt`/`.md`/`.csv` готовы сразу; `.docx`/`.xlsx`/`.pptx`/`.pdf` и\nаудио/видео приходят в `processing` и становятся `ready` или `failed` в фоне — обновляйте\nпроект, пока есть `processing`. Страницы PDF без текста дают `ready` с `warning`.\nЗапись возвращается как исходный файл без текста; её расшифровка — отдельный источник\n`origin=derived` с `parent_id` записи (RFC-0006).\nЗаписи пишутся на диск потоком (лимит `MAX_MEDIA_BYTES`), документы — `MAX_UPLOAD_BYTES`.",
         "operationId": "create_file_source",
         "parameters": [
           {
@@ -7854,7 +8016,7 @@
     },
     "/api/v1/sources/{source_id}": {
       "delete": {
-        "description": "Удалить источник. Удаление ответа возвращает отвеченный вопрос в `open`.",
+        "description": "Удалить источник вместе с производными (`parent_id`). Удаление ответа возвращает\nотвеченный вопрос в `open`.",
         "operationId": "delete_source",
         "parameters": [
           {
@@ -7934,7 +8096,7 @@
         ]
       },
       "patch": {
-        "description": "Поправить название или текст, включить или выключить источник.",
+        "description": "Поправить название или текст, включить или выключить источник.\n\nПравка текста производного источника ставит `edited_by_human=true`; у записи с\nрасшифровкой своего текста нет (422). Выключение записи выключает и её производные.",
         "operationId": "update_source",
         "parameters": [
           {

@@ -22,7 +22,7 @@ from app.infra.seed import build_seed
 from app.infra.storage import InMemoryFileStorage, LocalFileStorage
 from app.infra.tasks import AsyncioTaskSpawner
 from app.ingest.context import configure_llm_limits
-from app.ingest.deepgram import DeepgramSpeechToText
+from app.ingest.deepgram import DEEPGRAM_MODEL, DeepgramSpeechToText
 from app.ingest.media import FfmpegRunner, MediaTranscriber
 from app.ingest.parsers import LocalDocumentParser
 from app.ingest.stt import MockSpeechToText, SpeechToText
@@ -122,6 +122,8 @@ def build_media_transcriber(settings: Settings, stt: SpeechToText) -> MediaTrans
         timeout_per_audio_sec=settings.stt_segment_timeout_per_audio_sec,
         max_concurrent_jobs=settings.media_max_concurrent_jobs,
         raw_fallback=settings.stt_provider.lower() == "mock",
+        provider=settings.stt_provider.lower(),
+        model=DEEPGRAM_MODEL if settings.stt_provider.lower() == "deepgram" else None,
     )
 
 

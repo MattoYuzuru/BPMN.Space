@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   DISPLAY_CHUNK_CHARS,
+  derivationLabel,
   findQuoteRanges,
+  isDerived,
   limitParts,
   type QuoteMark,
   type QuoteRange,
   quoteReferences,
-  SOURCE_KIND,
   type Source,
+  sourceKindOf,
   sourceMeta,
   splitByRanges,
+  splitTimecodes,
   useUpdateSource,
 } from '@/entities/source'
 import { cn } from '@/shared/lib/cn'
@@ -65,7 +68,7 @@ function SourceDetail({
   mark?: string
   onClose: () => void
 }) {
-  const { project, canEdit, selectQuestion, focusElements } = useWorkspace()
+  const { project, canEdit, selectQuestion, focusElements, openSource } = useWorkspace()
   const openQuestion = useWorkspaceUi((state) => state.openQuestionSheet)
   const update = useUpdateSource(project.id)
   const [editing, setEditing] = useState(false)
@@ -73,7 +76,18 @@ function SourceDetail({
   const [content, setContent] = useState(source.content)
   const [referenceStart, setReferenceStart] = useState<number | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
-  const kind = SOURCE_KIND[source.kind]
+  const kind = sourceKindOf(source)
+  const derived = isDerived(source)
+  const producer = derivationLabel(source)
+  // Запись без своего текста: её содержимое — в производных узлах (расшифровка), RFC-0006.
+  const derivedNodes = project.sources.filter((item) => item.parent_id === source.id)
+  const container = derivedNodes.length > 0 && !source.content
+  const timed = source.derivation?.capability === 'speech_to_text'
+  const editable =
+    canEdit &&
+    source.kind !== 'answer' &&
+    !container &&
+    (source.status === 'ready' || (derived && source.status === 'failed'))
 
   const marks = useMemo<QuoteMark[]>(() => {
     const list: QuoteMark[] = []
@@ -172,6 +186,17 @@ function SourceDetail({
             <Icon name={kind.icon} size={14} />
             {kind.label}
           </span>
+          {derived && (
+            <Badge tone="accent" icon="sparkles">
+              ИИ
+            </Badge>
+          )}
+          {producer && <span>{producer}</span>}
+          {source.edited_by_human && (
+            <Badge tone="neutral" icon="human-edit">
+              Изменено человеком
+            </Badge>
+          )}
           <span data-numeric>{sourceMeta(source)}</span>
           <span>{formatDate(new Date(source.created_at))}</span>
         </span>
@@ -202,7 +227,7 @@ function SourceDetail({
               onCheckedChange={(active) => update.mutate({ id: source.id, active })}
             />
             <span className="flex-1" />
-            {canEdit && source.kind !== 'answer' && source.status === 'ready' && (
+            {editable && (
               <Button
                 leadingIcon="pencil"
                 onClick={() => {
@@ -223,7 +248,14 @@ function SourceDetail({
           <Field label="Название">
             <Input value={title} onChange={(event) => setTitle(event.target.value)} />
           </Field>
-          <Field label="Текст">
+          <Field
+            label="Текст"
+            hint={
+              derived
+                ? 'Правка заменит текст, полученный ИИ, и узел будет отмечен «Изменено человеком»'
+                : undefined
+            }
+          >
             <Textarea
               autoFocus
               value={content}
@@ -277,6 +309,9 @@ function SourceDetail({
               <Icon name="alert-circle" size={16} className="mt-0.5" />
               {source.error ?? 'Документ не удалось разобрать'}
             </div>
+          )}
+          {container && (
+            <MediaContainer source={source} derived={derivedNodes} onOpen={openSource} />
           )}
           <div
             ref={bodyRef}
@@ -348,6 +383,8 @@ function SourceDetail({
                     )}
                   </PopoverContent>
                 </Popover>
+              ) : timed ? (
+                <TimedText key={part.start} text={part.text} />
               ) : (
                 <span key={part.start}>{part.text}</span>
               ),
@@ -367,5 +404,81 @@ function SourceDetail({
         </div>
       )}
     </SheetContent>
+  )
+}
+
+/** Текст расшифровки: таймкоды `[мм:сс]` выделены моноширинным приглушённым шрифтом. */
+function TimedText({ text }: { text: string }) {
+  return (
+    <span>
+      {splitTimecodes(text).map((piece, index) =>
+        index % 2 === 1 ? (
+          // Позиция стабильна: текст делится один раз на рендер, порядок кусков не меняется.
+          // biome-ignore lint/suspicious/noArrayIndexKey: куски строки без собственных id
+          <span key={index} data-timecode className="font-mono text-fg-subtle">
+            {piece}
+          </span>
+        ) : (
+          // biome-ignore lint/suspicious/noArrayIndexKey: куски строки без собственных id
+          <span key={index}>{piece}</span>
+        ),
+      )}
+    </span>
+  )
+}
+
+/**
+ * Исходная запись: своего текста нет, содержимое — в производных узлах. Здесь же позже
+ * появится плеер с перемоткой на таймкод цитаты (RFC-0006, шаг 5).
+ */
+function MediaContainer({
+  source,
+  derived,
+  onOpen,
+}: {
+  source: Source
+  derived: Source[]
+  onOpen: (sourceId: string) => void
+}) {
+  return (
+    <div className="flex flex-col gap-3" data-testid="media-container">
+      {source.media && (
+        <div className="flex flex-wrap gap-1.5">
+          {source.media.has_audio !== null && source.media.has_audio !== undefined && (
+            <Badge
+              tone={source.media.has_audio ? 'success' : 'amber'}
+              variant="outline"
+              icon="wave-sine"
+            >
+              {source.media.has_audio ? 'Есть звук' : 'Нет звука'}
+            </Badge>
+          )}
+          {source.media.has_video && (
+            <Badge tone="neutral" variant="outline" icon="video">
+              Есть видео
+            </Badge>
+          )}
+        </div>
+      )}
+      <p className="type-ui text-fg-muted">
+        Модель читает не сам файл, а полученные из него материалы:
+      </p>
+      <div className="flex flex-col gap-1">
+        {derived.map((item) => {
+          const kind = sourceKindOf(item)
+          return (
+            <Button
+              key={item.id}
+              variant="ghost"
+              leadingIcon={kind.icon}
+              className="justify-start"
+              onClick={() => onOpen(item.id)}
+            >
+              {item.title}
+            </Button>
+          )
+        })}
+      </div>
+    </div>
   )
 }

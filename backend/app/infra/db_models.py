@@ -12,6 +12,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     LargeBinary,
@@ -116,6 +117,25 @@ class ProjectShareLinkRow(Base):
 
 class SourceRow(Base):
     __tablename__ = "sources"
+    __table_args__ = (
+        # Родитель — источник того же проекта; удаление родителя удаляет производные (RFC-0006).
+        UniqueConstraint("id", "project_id", name="uq_sources_id_project"),
+        ForeignKeyConstraint(
+            ["parent_id", "project_id"],
+            ["sources.id", "sources.project_id"],
+            name="fk_sources_parent_same_project",
+            ondelete="CASCADE",
+        ),
+        Index("ix_sources_parent_id", "parent_id"),
+        CheckConstraint(
+            "origin IN ('user', 'derived', 'agent', 'answer')", name="ck_sources_origin"
+        ),
+        CheckConstraint(
+            "trust IN ('primary', 'extracted', 'observed', 'external', 'agent', 'summary')",
+            name="ck_sources_trust",
+        ),
+        CheckConstraint("parent_id <> id", name="ck_sources_not_own_parent"),
+    )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
     project_id: Mapped[UUID] = mapped_column(
@@ -140,6 +160,12 @@ class SourceRow(Base):
     digest: Mapped[str | None] = mapped_column(Text)
     warning: Mapped[str | None] = mapped_column(Text)
     unreadable_pages: Mapped[list[int] | None] = mapped_column(JSONB)
+    origin: Mapped[str] = mapped_column(String(16), nullable=False, default="user")
+    parent_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    derivation: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    trust: Mapped[str] = mapped_column(String(16), nullable=False, default="primary")
+    edited_by_human: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    media: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
 
 class RunRow(Base):

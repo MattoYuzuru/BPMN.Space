@@ -35,7 +35,9 @@ from app.domain.models import (
     Severity,
     Source,
     SourceKind,
+    SourceOrigin,
     SourceStatus,
+    SourceTrust,
     Version,
     VersionDiff,
     VersionOrigin,
@@ -43,6 +45,12 @@ from app.domain.models import (
 )
 from app.domain.questions import normalize
 from app.domain.runs import ACTIVE_STATUSES
+from app.domain.sources import (
+    derivation_from_json,
+    derivation_to_json,
+    media_from_json,
+    media_to_json,
+)
 from app.infra.db_models import (
     DeletedProjectAccessRow,
     DiagramVersionRow,
@@ -111,6 +119,12 @@ def _source(row: SourceRow) -> Source:
         unreadable_pages=list(row.unreadable_pages or []),
         file_key=row.file_key,
         digest=row.digest,
+        origin=SourceOrigin(row.origin),
+        parent_id=row.parent_id,
+        derivation=derivation_from_json(row.derivation),
+        trust=SourceTrust(row.trust),
+        edited_by_human=row.edited_by_human,
+        media=media_from_json(row.media),
     )
 
 
@@ -273,7 +287,8 @@ class SqlProjectRepository:
                 for row in await session.execute(
                     select(
                         SourceRow.project_id,
-                        func.count().label("total"),
+                        # Счётчик — исходные материалы; производные узлы дерева не считаются.
+                        func.count(case((SourceRow.parent_id.is_(None), 1))).label("total"),
                         func.count(
                             case(
                                 (
@@ -509,8 +524,19 @@ _PATCHABLE_SOURCE_FIELDS = frozenset(
         "warning",
         "unreadable_pages",
         "duration_sec",
+        "derivation",
+        "edited_by_human",
+        "media",
     }
 )
+
+
+def _source_column(name: str, value: Any) -> Any:
+    if name == "derivation":
+        return derivation_to_json(value)
+    if name == "media":
+        return media_to_json(value)
+    return value.value if isinstance(value, Enum) else value
 
 
 class SqlSourceRepository:
@@ -538,6 +564,12 @@ class SqlSourceRepository:
             unreadable_pages=item.unreadable_pages or None,
             file_key=item.file_key,
             digest=item.digest,
+            origin=item.origin.value,
+            parent_id=item.parent_id,
+            derivation=derivation_to_json(item.derivation),
+            trust=item.trust.value,
+            edited_by_human=item.edited_by_human,
+            media=media_to_json(item.media),
         )
 
     async def add(self, source: Source) -> None:
@@ -559,10 +591,7 @@ class SqlSourceRepository:
         unknown = set(changes) - _PATCHABLE_SOURCE_FIELDS
         if unknown:
             raise ValueError(f"Поля источника нельзя менять точечно: {sorted(unknown)}")
-        values = {
-            name: value.value if isinstance(value, Enum) else value
-            for name, value in changes.items()
-        }
+        values = {name: _source_column(name, value) for name, value in changes.items()}
         statement = update(SourceRow).where(SourceRow.id == source_id)
         if only_status is not None:
             statement = statement.where(SourceRow.status == only_status.value)

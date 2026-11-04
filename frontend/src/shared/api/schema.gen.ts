@@ -614,6 +614,8 @@ export interface paths {
          * @description Документ или запись. `.txt`/`.md`/`.csv` готовы сразу; `.docx`/`.xlsx`/`.pptx`/`.pdf` и
          *     аудио/видео приходят в `processing` и становятся `ready` или `failed` в фоне — обновляйте
          *     проект, пока есть `processing`. Страницы PDF без текста дают `ready` с `warning`.
+         *     Запись возвращается как исходный файл без текста; её расшифровка — отдельный источник
+         *     `origin=derived` с `parent_id` записи (RFC-0006).
          *     Записи пишутся на диск потоком (лимит `MAX_MEDIA_BYTES`), документы — `MAX_UPLOAD_BYTES`.
          */
         post: operations["create_file_source"];
@@ -926,7 +928,8 @@ export interface paths {
         post?: never;
         /**
          * Delete Source
-         * @description Удалить источник. Удаление ответа возвращает отвеченный вопрос в `open`.
+         * @description Удалить источник вместе с производными (`parent_id`). Удаление ответа возвращает
+         *     отвеченный вопрос в `open`.
          */
         delete: operations["delete_source"];
         options?: never;
@@ -934,6 +937,9 @@ export interface paths {
         /**
          * Update Source
          * @description Поправить название или текст, включить или выключить источник.
+         *
+         *     Правка текста производного источника ставит `edited_by_human=true`; у записи с
+         *     расшифровкой своего текста нет (422). Выключение записи выключает и её производные.
          */
         patch: operations["update_source"];
         trace?: never;
@@ -1462,6 +1468,16 @@ export interface components {
              * @default
              */
             source: string;
+        };
+        /**
+         * MediaInfo
+         * @description Дорожки записи по `ffprobe`; `null` — неизвестно (сервер без ffmpeg).
+         */
+        MediaInfo: {
+            /** Has Audio */
+            has_audio?: boolean | null;
+            /** Has Video */
+            has_video?: boolean | null;
         };
         /** OnboardingEvent */
         OnboardingEvent: {
@@ -2103,11 +2119,19 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** @description Для `origin=derived`: возможность, провайдер, модель */
+            derivation?: components["schemas"]["SourceDerivation"] | null;
             /**
              * Duration Sec
              * @description Длительность голосовой заметки
              */
             duration_sec?: number | null;
+            /**
+             * Edited By Human
+             * @description Текст производного источника поправил человек
+             * @default false
+             */
+            edited_by_human: boolean;
             /**
              * Error
              * @description Причина для `status=failed`
@@ -2121,8 +2145,20 @@ export interface components {
              */
             id: string;
             kind: components["schemas"]["SourceKind"];
+            /** @description Для записи: есть ли звук и видео. Текст записи — в потомке */
+            media?: components["schemas"]["MediaInfo"] | null;
             /** Mime */
             mime?: string | null;
+            /**
+             * @description `user` — загрузил человек, `derived` — получен из `parent_id`, `agent` — внешний агент, `answer` — ответ на вопрос
+             * @default user
+             */
+            origin: components["schemas"]["SourceOrigin"];
+            /**
+             * Parent Id
+             * @description Исходный источник того же проекта; дерево строится по этому полю. Удаление родителя удаляет производные
+             */
+            parent_id?: string | null;
             /**
              * Project Id
              * Format: uuid
@@ -2139,6 +2175,11 @@ export interface components {
             /** Title */
             title: string;
             /**
+             * @description Уровень доверия: `summary` не идёт в контекст модели и в основания
+             * @default primary
+             */
+            trust: components["schemas"]["SourceTrust"];
+            /**
              * Unreadable Pages
              * @description Номера страниц PDF без текстового слоя (сканы): их текст не извлечён
              */
@@ -2150,10 +2191,54 @@ export interface components {
             warning?: string | null;
         };
         /**
+         * SourceDerivation
+         * @description Как получен производный источник (RFC-0006).
+         */
+        SourceDerivation: {
+            /**
+             * Capability
+             * @description Возможность: `speech_to_text`, `ocr`, `vision`…
+             */
+            capability: string;
+            /**
+             * Cost Usd
+             * @description Стоимость, если провайдер её сообщил
+             */
+            cost_usd?: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Model
+             * @description Модель провайдера, если известна
+             */
+            model?: string | null;
+            /**
+             * Params
+             * @description Параметры обработки (сегменты, язык…)
+             */
+            params?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Provider
+             * @description Реализация, которая ответила: `deepgram`, `mock`…
+             */
+            provider: string;
+        };
+        /**
          * SourceKind
          * @enum {string}
          */
         SourceKind: "text" | "voice" | "file" | "answer";
+        /**
+         * SourceOrigin
+         * @description Откуда источник (RFC-0006): загрузил человек, получен из другого, принёс агент, ответ.
+         * @enum {string}
+         */
+        SourceOrigin: "user" | "derived" | "agent" | "answer";
         /**
          * SourceStatus
          * @enum {string}
@@ -2162,6 +2247,9 @@ export interface components {
         /**
          * SourceTextCreate
          * @description Текст или проверенная аналитиком расшифровка голоса (после `POST /transcriptions`).
+         *
+         *     Лишние поля отклоняются: `parent_id`, `origin`, `trust` вручную не задаются — производные
+         *     источники создаёт только сервер.
          */
         SourceTextCreate: {
             /** Content */
@@ -2177,6 +2265,14 @@ export interface components {
             /** Title */
             title?: string | null;
         };
+        /**
+         * SourceTrust
+         * @description Уровень доверия (RFC-0006): что из источника можно цитировать в основаниях IR.
+         *
+         *     `summary` — только навигация: в контекст модели и в основания не идёт.
+         * @enum {string}
+         */
+        SourceTrust: "primary" | "extracted" | "observed" | "external" | "agent" | "summary";
         /** SourceUpdate */
         SourceUpdate: {
             /** Active */

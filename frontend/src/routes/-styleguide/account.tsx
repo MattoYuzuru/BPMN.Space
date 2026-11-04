@@ -1,6 +1,9 @@
 import { useState } from 'react'
+import type { LlmCredential } from '@/entities/llm-credential'
 import type { AuthMode } from '@/entities/session'
 import { AccountMenuFor } from '@/features/account-menu/account-menu'
+import { CredentialRow } from '@/features/llm-credentials/credentials-section'
+import { PickerBody } from '@/features/model-picker/model-picker'
 import { SignInForm } from '@/features/sign-in/sign-in-form'
 import { generatePassword } from '@/shared/lib/password'
 import { Badge, BrandMark, Card, Field, IconButton, Input, Tag } from '@/shared/ui'
@@ -47,6 +50,33 @@ function PasswordGeneratorDemo() {
   )
 }
 
+const DEMO_CREDENTIALS: LlmCredential[] = [
+  {
+    id: 'k1',
+    provider: 'anthropic',
+    label: 'Рабочий',
+    base_url: null,
+    key_hint: 'a1b2',
+    default_model: 'claude-opus-5-5',
+    is_default: true,
+    created_at: '2026-11-01T09:00:00Z',
+    last_used_at: '2026-11-03T12:00:00Z',
+    last_error: null,
+  },
+  {
+    id: 'k2',
+    provider: 'openai_compatible',
+    label: 'OpenRouter',
+    base_url: 'https://openrouter.ai/api/v1',
+    key_hint: 'z9y8',
+    default_model: 'deepseek/deepseek-chat',
+    is_default: false,
+    created_at: '2026-11-02T09:00:00Z',
+    last_used_at: null,
+    last_error: 'Провайдер отклонил ключ (HTTP 401). Проверьте ключ и доступ к модели в настройках',
+  },
+]
+
 /** Аккаунт и доступ: карточка входа, меню аккаунта, маркеры режима «только просмотр». */
 export function AccountSection() {
   const [mode, setMode] = useState<AuthMode>('login')
@@ -78,6 +108,24 @@ export function AccountSection() {
           user={{ id: 'demo', email: 'anna.petrova@company.ru' }}
           onLogout={() => {}}
         />
+      </Specimen>
+      <Specimen title="Модели и ключи" note="CredentialRow, Card, Badge, IconButton">
+        <ul className="flex flex-col gap-2">
+          {DEMO_CREDENTIALS.map((item) => (
+            <li key={item.id}>
+              <CredentialRow credential={item} onEdit={() => {}} onDelete={() => {}} />
+            </li>
+          ))}
+        </ul>
+        <p className="type-caption mt-3 text-fg-muted">
+          Показывается только маска ключа. Ошибка последнего использования видна в строке, чтобы
+          отозванный ключ находился сразу.
+        </p>
+      </Specimen>
+      <Specimen title="Выбор модели при запуске" note="Popover, два Select">
+        <div className="w-80 rounded-lg border border-border bg-surface p-4 shadow-sm">
+          <PickerBody items={DEMO_CREDENTIALS} loading={false} choice={null} onChange={() => {}} />
+        </div>
       </Specimen>
       <Specimen title="Только просмотр">
         <div className="flex flex-wrap items-center gap-3">

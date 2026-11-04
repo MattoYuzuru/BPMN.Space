@@ -51,13 +51,14 @@ async function openMenu() {
 afterEach(() => act(() => useOnboardingUi.getState().closeChecklist()))
 
 describe('меню аккаунта: «Начало работы»', () => {
-  it('между почтой и «Выйти», со счётчиком; клик открывает панель', async () => {
+  it('между почтой и «Настройки», со счётчиком; клик открывает панель', async () => {
     mount(onboarding(2))
     await openMenu()
     const items = (await screen.findAllByRole('menuitem')).map((item) => item.textContent)
     expect(items[0]).toContain('Начало работы')
     expect(items[0]).toContain('2/12')
-    expect(items[1]).toBe('Выйти')
+    expect(items[1]).toBe('Настройки')
+    expect(items[2]).toBe('Выйти')
     await userEvent.click(screen.getByRole('menuitem', { name: /Начало работы/ }))
     expect(useOnboardingUi.getState().checklistOpen).toBe(true)
   })

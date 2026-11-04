@@ -118,6 +118,9 @@ export function AccountMenuFor({
         <DropdownMenuLabel className="truncate">{user.email}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {checklist}
+        <DropdownMenuItem icon="settings" onSelect={() => void navigate({ to: '/settings' })}>
+          Настройки
+        </DropdownMenuItem>
         <DropdownMenuItem icon="logout" onSelect={signOut}>
           Выйти
         </DropdownMenuItem>

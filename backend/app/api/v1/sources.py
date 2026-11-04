@@ -170,7 +170,7 @@ async def update_source(
 @router.delete(
     "/sources/{source_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    responses=errors(401, 403, 404, 410, 422),
+    responses=errors(401, 403, 404, 409, 410, 422),
 )
 async def delete_source(
     source_id: UUID,
@@ -179,7 +179,8 @@ async def delete_source(
     user: OptionalUserDep,
 ) -> Response:
     """Удалить источник вместе с производными (`parent_id`). Удаление ответа возвращает
-    отвеченный вопрос в `open`."""
+    отвеченный вопрос в `open`. Производный источник, который ещё `processing`, удалить
+    нельзя (409): запись удаляется целиком или после окончания обработки."""
     await ensure_resource_access(
         request, container, source_id, user, resource=ResourceKind.SOURCE, write=True
     )

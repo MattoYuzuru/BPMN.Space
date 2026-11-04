@@ -817,8 +817,7 @@ class RunService:
                 source = sources.get(citation.source_id)
                 if (
                     source is None
-                    or not source.active
-                    or source.status is not SourceStatus.READY
+                    or not source.feeds_model
                     or not quote_in_source(citation.quote, source.content)
                 ):
                     raise PipelineError(

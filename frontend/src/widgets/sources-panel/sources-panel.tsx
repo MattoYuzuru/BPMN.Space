@@ -331,7 +331,7 @@ function SourceRow({ source, derivedCount }: { source: Source; derivedCount: num
             <DropdownMenuItem icon="eye" onSelect={() => openSource(source.id)}>
               Открыть
             </DropdownMenuItem>
-            {canEdit && (
+            {canEdit && !(derived && processing) && (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem icon="trash" tone="danger" onSelect={() => setConfirm(true)}>

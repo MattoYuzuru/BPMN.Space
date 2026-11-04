@@ -929,7 +929,8 @@ export interface paths {
         /**
          * Delete Source
          * @description Удалить источник вместе с производными (`parent_id`). Удаление ответа возвращает
-         *     отвеченный вопрос в `open`.
+         *     отвеченный вопрос в `open`. Производный источник, который ещё `processing`, удалить
+         *     нельзя (409): запись удаляется целиком или после окончания обработки.
          */
         delete: operations["delete_source"];
         options?: never;
@@ -5807,6 +5808,15 @@ export interface operations {
             };
             /** @description Не найдено */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Конфликт состояния */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

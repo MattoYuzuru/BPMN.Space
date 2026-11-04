@@ -25,6 +25,7 @@ from starlette.requests import HTTPConnection
 from app.domain.api_tokens import ApiToken
 from app.infra.database import Database
 from app.infra.db_models import AccessTokenRow, UserRow
+from app.services.access import AccessService
 from app.services.api_tokens import (
     INVALID_ACCESS_MESSAGE,
     ApiTokenService,
@@ -32,7 +33,7 @@ from app.services.api_tokens import (
     check_route_policy,
     remember_api_token,
 )
-from app.services.errors import UnauthorizedError, UnavailableError
+from app.services.errors import ServiceError, UnauthorizedError, UnavailableError
 
 __all__ = [
     "SESSION_COOKIE",
@@ -122,16 +123,31 @@ _cookie_user = _users.current_user(active=True, optional=True)
 
 
 async def token_owner(
-    api_tokens: ApiTokenService, database: Database | None, secret: str
+    api_tokens: ApiTokenService,
+    database: Database | None,
+    secret: str,
+    *,
+    access: AccessService | None = None,
 ) -> tuple[ApiToken, UserRow] | None:
     """Действующий токен доступа и его владелец; `None` — токен недействителен.
 
     Не различает «неизвестный», «отозванный», «истёкший» токены и заблокированный аккаунт:
     для клиента это одно и то же. Общая точка для REST (`token_user`) и MCP (`app.mcp.auth`).
+    У токена проверки (RFC-0007, шаг 3) дополнительно проверяется живая ссылка: отзыв или
+    истечение ссылки мгновенно закрывает доступ, не дожидаясь срока токена.
     """
     token = await api_tokens.authenticate(secret)
     if token is None:
         return None
+    if token.share_link_id is not None:
+        if access is None:
+            return None
+        try:
+            link = await access.active_link_by_id(token.share_link_id)
+        except ServiceError:
+            return None
+        if token.project_ids is None or link.project_id not in token.project_ids:
+            return None
     if database is None:
         raise UnavailableError("Для учётных записей требуется PostgreSQL")
     async with database.sessions() as session:
@@ -151,7 +167,9 @@ async def token_user(connection: HTTPConnection, secret: str) -> UserRow:
     сессии, как у потоков.
     """
     container = connection.app.state.container
-    owner = await token_owner(container.api_tokens, container.database, secret)
+    owner = await token_owner(
+        container.api_tokens, container.database, secret, access=container.access
+    )
     if owner is None:
         raise UnauthorizedError(INVALID_ACCESS_MESSAGE)
     token, user = owner

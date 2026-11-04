@@ -171,6 +171,8 @@ class Answer:
     # Сервер не может проверить, читал ли человек ответ перед отправкой, и не делает вид, что может.
     via: str | None = None
     via_name: str | None = None
+    # Ответ дан по ссылке проверки (RFC-0007, шаг 3): id ссылки, если токен агента выдан ею.
+    share_link_id: UUID | None = None
 
 
 @dataclass(slots=True, kw_only=True)

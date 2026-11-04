@@ -473,6 +473,9 @@ export interface paths {
         /**
          * List Projects
          * @description Проекты: сначала недавно изменённые. Курсорная пагинация. Гостям — 401.
+         *
+         *     Токен проверки не даёт членства: его проект виден отдельной карточкой с ролью reviewer,
+         *     без общего списка чужих проектов владельца.
          */
         get: operations["list_projects"];
         put?: never;
@@ -514,6 +517,8 @@ export interface paths {
         /**
          * Get Project
          * @description Проект целиком: источники, вопросы, последняя версия (без XML), активный прогон.
+         *
+         *     По токену проверки вопросы и счётчики сужены до области-дорожек ссылки (RFC-0007).
          */
         get: operations["get_project"];
         put?: never;
@@ -527,6 +532,29 @@ export interface paths {
         head?: never;
         /** Update Project */
         patch: operations["update_project"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/agent-activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Project Agent Activity
+         * @description Журнал активности агента в проекте (v1): добавленные материалы и ответы.
+         *
+         *     Собирается из существующих данных (`sources.origin=agent`, `questions.answer.via=agent`),
+         *     без отдельной таблицы событий. Доступен участникам проекта, но не по ссылке проверки.
+         */
+        get: operations["project_agent_activity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/projects/{project_id}/assistant": {
@@ -1086,7 +1114,10 @@ export interface paths {
         };
         /**
          * Read Shared Project
-         * @description Открыть проект по ссылке. Ссылка на чтение работает без входа (гостям тоже).
+         * @description Открыть проект по ссылке. Ссылка на чтение и проверку работает без входа (гостям тоже).
+         *
+         *     У ссылки проверки (reviewer) вопросы и счётчики сужены до области-дорожек: остальное —
+         *     чтение схемы и оснований; менять проект такая ссылка не даёт.
          */
         get: operations["read_shared_project"];
         put?: never;
@@ -1114,6 +1145,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/shares/{token}/agent-prompt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Agent Prompt
+         * @description Готовый текст «проверь дорожку» для агента коллеги.
+         *
+         *     Без секрета ссылки: промпт можно вставить в своего агента без аккаунта и без токена.
+         */
+        get: operations["read_agent_prompt"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/shares/{token}/agent-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Issue Agent Token
+         * @description Выпустить токен агента для вошедшего получателя ссылки проверки.
+         *
+         *     Токен: права `projects:read` и `questions:answer`, только проект ссылки, срок — срок
+         *     ссылки. Секрет показывается один раз. Отзыв или истечение ссылки закрывают токен
+         *     мгновенно: ссылка проверяется при каждом запросе токена.
+         */
+        post: operations["issue_agent_token"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/shares/{token}/collaboration-ticket": {
         parameters: {
             query?: never;
@@ -1125,6 +1202,28 @@ export interface paths {
         put?: never;
         /** Issue Share Ticket */
         post: operations["issue_share_ticket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/shares/{token}/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Shared Questions
+         * @description Вопросы по ссылке: у проверки — только область-дорожки, у просмотра — все.
+         *
+         *     Технические вопросы запуска проверяющему не показываются: они решаются действием.
+         */
+        get: operations["read_shared_questions"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1327,8 +1426,117 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AgentActivity */
+        AgentActivity: {
+            /** Items */
+            items: components["schemas"]["AgentActivityEvent"][];
+            /** Total */
+            total: number;
+        };
+        /**
+         * AgentActivityEvent
+         * @description Событие журнала активности агента в проекте (v1 — из существующих данных).
+         */
+        AgentActivityEvent: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Detail */
+            detail?: string | null;
+            /**
+             * Kind
+             * @description `source_added` — агент добавил материал, `answer_added` — ответ
+             */
+            kind: string;
+            /** Question Code */
+            question_code?: string | null;
+            /** Question Id */
+            question_id?: string | null;
+            /**
+             * Share Link Id
+             * @description Ответ дан по ссылке проверки, если задано
+             */
+            share_link_id?: string | null;
+            /** Source Id */
+            source_id?: string | null;
+            /** Title */
+            title?: string | null;
+            /**
+             * Token Name
+             * @description Название токена доступа
+             */
+            token_name?: string | null;
+        };
+        /**
+         * AgentPrompt
+         * @description Готовый текст для агента проверяющего: без секрета ссылки и ключей.
+         */
+        AgentPrompt: {
+            /** Lane Ids */
+            lane_ids?: string[];
+            /** Lanes */
+            lanes?: string[];
+            /** Questions Recap */
+            questions_recap?: components["schemas"]["ReviewQuestionRecap"][];
+            /**
+             * Text
+             * @description Готовый промпт «проверь дорожку» для вставки в агента
+             */
+            text: string;
+            /** Whole Project */
+            whole_project: boolean;
+        };
+        /**
+         * AgentTokenIssued
+         * @description Токен агента по ссылке проверки: секрет показывается один раз.
+         */
+        AgentTokenIssued: {
+            /**
+             * Command
+             * @description Команда `claude mcp add …` с уже подставленным токеном
+             */
+            command: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Lane Ids */
+            lane_ids?: string[];
+            /**
+             * Mcp Url
+             * @description Адрес MCP-сервера для подключения
+             */
+            mcp_url: string;
+            /** Name */
+            name: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Scopes */
+            scopes?: string[];
+            /**
+             * Secret
+             * @description Секрет вида `bps_…`; в списке токенов его нет
+             */
+            secret: string;
+            /**
+             * Token Id
+             * Format: uuid
+             */
+            token_id: string;
+        };
         /** Answer */
         Answer: {
+            /**
+             * Share Link Id
+             * @description Ответ дан по ссылке проверки (RFC-0007, шаг 3): id ссылки
+             */
+            share_link_id?: string | null;
             /**
              * Source Id
              * Format: uuid
@@ -2458,7 +2666,7 @@ export interface components {
          * ProjectRole
          * @enum {string}
          */
-        ProjectRole: "owner" | "editor" | "viewer";
+        ProjectRole: "owner" | "editor" | "viewer" | "reviewer";
         /**
          * ProjectScope
          * @description Какие проекты показывать: все доступные, свои, принятые общие, демо-примеры.
@@ -2642,6 +2850,45 @@ export interface components {
              * Format: uuid
              */
             source_id: string;
+        };
+        /**
+         * ReviewQuestionRecap
+         * @description Вопрос области в готовом промпте: без ответов и внутренних полей.
+         */
+        ReviewQuestionRecap: {
+            /** Code */
+            code: string;
+            /** Element Ids */
+            element_ids?: string[];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Severity */
+            severity: string;
+            /** Status */
+            status: string;
+            /** Text */
+            text: string;
+        };
+        /**
+         * ReviewScope
+         * @description Область проверки: дорожки схемы, которые видит коллега.
+         */
+        ReviewScope: {
+            /** Lane Ids */
+            lane_ids?: string[];
+            /**
+             * Lanes
+             * @description Названия дорожек для интерфейса
+             */
+            lanes?: string[];
+            /**
+             * Whole Project
+             * @description Пустая область — весь проект
+             */
+            whole_project: boolean;
         };
         /** Run */
         Run: {
@@ -3035,9 +3282,14 @@ export interface components {
         ShareLinkCreate: {
             /**
              * Expires In Days
-             * @description Срок ссылки в днях: 7, 30, 365 (год) или 0 (без срока). Для совместимости null/пропуск выбирает 30 дней. Одинаковые варианты доступны для viewer и editor.
+             * @description Срок ссылки в днях: 7, 30, 365 (год) или 0 (без срока). Для совместимости null/пропуск выбирает 30 дней. Одинаковые варианты для viewer, editor и reviewer.
              */
             expires_in_days?: number | null;
+            /**
+             * Lane Ids
+             * @description Область проверки для role=reviewer: id дорожек схемы (допустимы и названия), пусто — весь проект. Для viewer/editor не задаётся
+             */
+            lane_ids?: string[];
             role: components["schemas"]["ShareRole"];
         };
         /** ShareLinkCreated */
@@ -3054,6 +3306,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Lane Ids */
+            lane_ids?: string[];
             role: components["schemas"]["ShareRole"];
             /**
              * Url Path
@@ -3075,6 +3329,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Lane Ids */
+            lane_ids?: string[];
             /** Revoked At */
             revoked_at: string | null;
             role: components["schemas"]["ShareRole"];
@@ -3083,13 +3339,14 @@ export interface components {
          * ShareRole
          * @enum {string}
          */
-        ShareRole: "viewer" | "editor";
+        ShareRole: "viewer" | "editor" | "reviewer";
         /** SharedProject */
         SharedProject: {
             detail: components["schemas"]["ProjectDetail"];
             /** Editor Requires Account */
             editor_requires_account: boolean;
             role: components["schemas"]["ShareRole"];
+            scope: components["schemas"]["ReviewScope"];
         };
         /** Source */
         Source: {
@@ -5577,6 +5834,73 @@ export interface operations {
             };
         };
     };
+    project_agent_activity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentActivity"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     ask_assistant: {
         parameters: {
             query?: never;
@@ -7710,6 +8034,140 @@ export interface operations {
             };
         };
     };
+    read_agent_prompt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentPrompt"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    issue_agent_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTokenIssued"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Конфликт состояния */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     issue_share_ticket: {
         parameters: {
             query?: never;
@@ -7777,6 +8235,73 @@ export interface operations {
             };
             /** @description Слишком много запросов; повторите через `Retry-After` секунд */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    read_shared_questions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Question"][];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

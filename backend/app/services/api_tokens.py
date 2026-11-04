@@ -119,6 +119,48 @@ class ApiTokenService:
             )
         return token, secret
 
+    async def create_review_token(
+        self,
+        user_id: UUID,
+        *,
+        name: str,
+        project_id: UUID,
+        lane_ids: Iterable[str],
+        share_link_id: UUID,
+        expires_at: datetime,
+    ) -> tuple[ApiToken, str]:
+        """Токен проверки по ссылке reviewer (RFC-0007, шаг 3): чтение и ответы области.
+
+        Срок — срок ссылки; ссылка проверяется при каждом запросе (`token_owner`), поэтому
+        её отзыв или истечение сразу закрывают доступ. Создаётся только на проект ссылки.
+        """
+        title = " ".join(name.split())[:MAX_NAME_CHARS]
+        if not title:
+            raise InvalidInputError("Укажите название токена")
+        now = self._rt.clock()
+        if expires_at <= now:
+            raise InvalidInputError("Срок действия ссылки проверки уже истёк")
+        secret = generate_secret()
+        token = ApiToken(
+            id=self._rt.new_id(),
+            user_id=user_id,
+            name=title,
+            token_prefix=display_prefix(secret),
+            token_hash=hash_secret(secret),
+            scopes=(ApiScope.PROJECTS_READ, ApiScope.QUESTIONS_ANSWER),
+            project_ids=(project_id,),
+            expires_at=expires_at,
+            created_at=now,
+            share_link_id=share_link_id,
+            lane_ids=tuple(dict.fromkeys(lane_ids)),
+        )
+        if not await self._repo.add_within_limit(token, max_active=MAX_ACTIVE_TOKENS_PER_USER):
+            raise ConflictError(
+                f"Достигнут лимит действующих токенов ({MAX_ACTIVE_TOKENS_PER_USER}): "
+                "отзовите ненужные"
+            )
+        return token, secret
+
     @staticmethod
     async def _checked_projects(
         project_ids: Iterable[UUID] | None, can_access: Callable[[UUID], Awaitable[bool]]

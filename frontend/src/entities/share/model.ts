@@ -11,6 +11,8 @@ export type SharedProject = Schemas['SharedProject']
 export const SHARE_ROLE: Record<ShareRole, { label: string; icon: IconName }> = {
   viewer: { label: 'Просмотр', icon: 'eye' },
   editor: { label: 'Редактирование', icon: 'pencil' },
+  // Роль проверки коллеги (RFC-0007, шаг 3): выбор дорожек и агент — в отдельной UI-задаче.
+  reviewer: { label: 'Проверка', icon: 'users' },
 }
 
 export const SHARE_ROLES: ShareRole[] = ['viewer', 'editor']

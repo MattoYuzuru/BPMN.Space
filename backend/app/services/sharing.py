@@ -34,9 +34,18 @@ class SharingService:
         self._rt = runtime
 
     async def create_link(
-        self, project_id: UUID, *, role: str, expires_in_days: int | None, created_by: UUID
+        self,
+        project_id: UUID,
+        *,
+        role: str,
+        expires_in_days: int | None,
+        created_by: UUID,
+        lane_ids: tuple[str, ...] = (),
     ) -> CreatedLink:
-        """Новая ссылка; сырой токен возвращается один раз, в БД остаётся его хеш."""
+        """Новая ссылка; сырой токен возвращается один раз, в БД остаётся его хеш.
+
+        `lane_ids` — область проверки для role=reviewer (пусто — весь проект).
+        """
         days = DEFAULT_EXPIRY_DAYS if expires_in_days is None else expires_in_days
         if not 0 <= days <= MAX_EXPIRY_DAYS:
             raise InvalidInputError("Срок ссылки — 0 (без срока) или от 1 до 365 дней")
@@ -50,6 +59,7 @@ class SharingService:
             created_by=created_by,
             created_at=now,
             expires_at=now + timedelta(days=days) if days else None,
+            lane_ids=lane_ids,
         )
         try:
             await self._access.repo.add_share_link(link)

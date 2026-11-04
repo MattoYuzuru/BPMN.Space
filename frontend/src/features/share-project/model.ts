@@ -13,6 +13,7 @@ import { useCopy as useSharedCopy } from '@/shared/hooks/use-copy'
 export const ROLE_HINT: Record<ShareRole, string> = {
   viewer: 'Откроется без входа, только чтение.',
   editor: 'Нужен аккаунт. Можно править, но не удалять.',
+  reviewer: 'Проверка коллеги: чтение выбранной дорожки и ответы на её вопросы.',
 }
 
 /**

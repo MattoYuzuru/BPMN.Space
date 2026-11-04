@@ -298,6 +298,7 @@ EXPECTED_POLICIES: dict[tuple[str, str], str] = {
     ("DELETE", "/api/v1/sources/{source_id}"): "sources:delete",
     ("POST", "/api/v1/transcriptions"): "runs:start",
     ("GET", "/api/v1/projects/{project_id}/questions"): "projects:read",
+    ("GET", "/api/v1/projects/{project_id}/agent-activity"): "projects:read",
     ("POST", "/api/v1/questions/{question_id}/answer"): "questions:answer",
     ("POST", "/api/v1/questions/{question_id}/actions"): "questions:answer",
     ("POST", "/api/v1/questions/{question_id}/ignore"): "questions:answer",

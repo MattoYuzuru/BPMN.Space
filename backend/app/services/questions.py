@@ -32,6 +32,9 @@ class QuestionService:
             await repos.projects.lock(question.project_id)
             yield repos, await get_question(repos, question.id)
 
+    async def get(self, question_id: UUID) -> Question:
+        return await get_question(self._repos, question_id)
+
     async def list(
         self,
         project_id: UUID,
@@ -63,6 +66,7 @@ class QuestionService:
         text: str,
         via: str | None = None,
         via_name: str | None = None,
+        share_link_id: UUID | None = None,
     ) -> Question:
         """Ответ создаёт источник `kind=answer`. `via=agent` — ответ записан внешним агентом
         владельца токена (MCP, RFC-0007); провенанс сохраняется у вопроса (`Answer.via`).
@@ -88,7 +92,13 @@ class QuestionService:
             )
             try:
                 rules.answer(
-                    current, source_id=source.id, text=text, now=now, via=via, via_name=via_name
+                    current,
+                    source_id=source.id,
+                    text=text,
+                    now=now,
+                    via=via,
+                    via_name=via_name,
+                    share_link_id=share_link_id,
                 )
             except rules.QuestionTransitionError as error:
                 raise ConflictError(str(error)) from error

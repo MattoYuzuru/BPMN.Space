@@ -130,12 +130,19 @@ def answer(
     now: datetime,
     via: str | None = None,
     via_name: str | None = None,
+    share_link_id: UUID | None = None,
 ) -> None:
-    """Ответ человека или внешнего агента (`via=agent`) с провенансом."""
+    """Ответ человека, внешнего агента (`via=agent`) или проверяющего по ссылке (RFC-0007)."""
     if question.status not in _ANSWERABLE:
         raise _reject(question, "ответить на него")
     question.status = QuestionStatus.ANSWERED
-    question.answer = Answer(source_id=source_id, text=text, via=via, via_name=via_name)
+    question.answer = Answer(
+        source_id=source_id,
+        text=text,
+        via=via,
+        via_name=via_name,
+        share_link_id=share_link_id,
+    )
     question.updated_at = now
 
 
@@ -173,6 +180,7 @@ def update_answer_text(question: Question, *, text: str, now: datetime) -> None:
             text=text,
             via=question.answer.via,
             via_name=question.answer.via_name,
+            share_link_id=question.answer.share_link_id,
         )
         question.updated_at = now
 

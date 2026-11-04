@@ -6,6 +6,9 @@
 
 export type RunSignalStatus = 'queued' | 'running'
 
+/** Действие, которым человек снял технический вопрос прогона (RFC-0006). */
+export type TechnicalQuestionAction = 'retry' | 'settings' | 'skip' | 'budget'
+
 export type OnboardingSignal =
   | { type: 'project.created'; id: string }
   | { type: 'source.added'; kind: string }
@@ -25,8 +28,28 @@ export type OnboardingSignal =
     }
   | { type: 'question.answered'; id: string }
   | { type: 'question.ignored'; id: string }
+  /** Технический вопрос к материалам и запуску снят действием пользователя (RFC-0006). */
+  | { type: 'question.technical.resolved'; id: string; action: TechnicalQuestionAction }
   | { type: 'share.created' }
+  /** Ссылка проверки для коллеги (роль reviewer, RFC-0007, волна 4). */
+  | { type: 'share.reviewer.created' }
   | { type: 'dialog.opened'; name: string }
+  // Ниже — сигналы волн 2–4. Публикуются после успеха на сервере (копирование команды —
+  // клиентский факт после ответа буфера); шаги будущего агентского тура будут их ждать.
+  /** Оценка стоимости прогона получена до запуска (RFC-0005). */
+  | { type: 'run.estimated'; costMin: number; costMax: number; currency: string; complete: boolean }
+  /** Бюджет прогона изменён пользователем (RFC-0005, шаг 5). */
+  | { type: 'run.budget.updated'; costUsd: number | null }
+  /** Журнал решений прогона открыт: кто, чем и сколько разбирал материалы (RFC-0006). */
+  | { type: 'run.decisions.opened'; runId: string }
+  /** Ключ под тип задачи добавлен и проверен: распознавание, OCR, vision (RFC-0006, волна 2). */
+  | { type: 'tool.credential.added'; kind: string }
+  /** Персональный токен для агента создан (RFC-0007). */
+  | { type: 'agent.token.created'; id: string; name: string }
+  /** Команда подключения агента скопирована (клиентский факт после успешного копирования). */
+  | { type: 'agent.command.copied' }
+  /** Запись перемотана на таймкод цитаты в плеере (RFC-0006, волна 3). */
+  | { type: 'source.player.seek'; sourceId: string; seconds: number }
 
 export type OnboardingSignalType = OnboardingSignal['type']
 

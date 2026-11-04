@@ -1,13 +1,16 @@
-"""Оценка стоимости прогона для MCP и подписанный допуск на запуск (RFC-0005, RFC-0007).
+"""Оценка прогона для MCP и подписанный допуск на запуск (RFC-0005, RFC-0007).
 
-Сервис оценки делает волна 2A: `services/estimate.py` и `POST /projects/{id}/runs/estimate`.
-В этой ветке его ещё нет, поэтому MCP честно отказывает: `estimate_run` не выдумывает числа, а
-`start_run` без свежей оценки отклоняется. Точка подключения — функция `build_estimator` внизу
-файла: интегратор возвращает адаптер над сервисом оценки, не меняя инструменты MCP.
+Оценку считает сервис волны 2A (`services/estimate.py`: план вызовов, токены, цены модели и
+время). MCP не дублирует расчёт: `ServiceEstimator` переводит ответ сервиса в компактную модель
+для агента, сохраняя честность диапазона — `complete=false` и `cost=null`, если цены модели
+неизвестны (mock, совместимый провайдер без прайса). Ошибки профиля (неизвестный `effort`,
+несовместимая модель, нет ключа) приходят из сервиса русскими `ServiceError` и превращаются в
+ошибку инструмента с понятным текстом.
 
 Допуск на запуск — подписанный HMAC-тикет без таблицы в БД: он привязан к пользователю, проекту,
 режиму и профилю, живёт `MCP_ESTIMATE_TTL_SEC` и проверяется в `start_run`. Протухший или
-чужой тикет отклоняется: «запустить без свежей оценки» нельзя.
+чужой тикет отклоняется: «запустить без свежей оценки» нельзя. Оценка, полученная до появления
+сервиса (или на стенде без него), честно недоступна: `UnavailableEstimator`.
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ from uuid import UUID, uuid4
 
 from app.domain.models import RunMode
 from app.services.errors import InvalidInputError, UnavailableError
+from app.services.runs import RunProfile
 
 if TYPE_CHECKING:
     from app.container import Container
@@ -31,15 +35,17 @@ if TYPE_CHECKING:
 __all__ = [
     "ESTIMATE_UNAVAILABLE_MESSAGE",
     "EstimateTicket",
+    "Range",
     "RunEstimate",
     "RunEstimator",
+    "ServiceEstimator",
     "TicketSigner",
     "UnavailableEstimator",
     "build_estimator",
 ]
 
 ESTIMATE_UNAVAILABLE_MESSAGE = (
-    "Оценка стоимости прогона пока недоступна: сервер ещё не подключил модель с ценами. "
+    "Оценка стоимости прогона пока недоступна: сервер не подключил сервис оценки. "
     "Запуск без оценки не выполняется — запросите оценку позже"
 )
 ESTIMATE_EXPIRED_MESSAGE = (
@@ -64,27 +70,45 @@ class Range:
 
 @dataclass(frozen=True, slots=True)
 class RunEstimate:
-    """Оценка прогона для внешнего агента. `complete=false` — часть цен неизвестна."""
+    """Оценка прогона для внешнего агента.
+
+    `tokens`/`calls`/`duration_sec` — всегда диапазон; `cost` — только если цены модели известны.
+    `complete=false` — часть цен неизвестна: агент обязан сказать человеку, что оценка неполная.
+    """
 
     tokens: Range
-    cost: Range
+    calls: Range
     duration_sec: Range
+    cost: Range | None = None
     complete: bool = False
     currency: str = "USD"
     breakdown: tuple[dict[str, Any], ...] = field(default_factory=tuple[dict[str, Any], ...])
+    model: str | None = None
+    provider: str | None = None
+    priced_on: str | None = None
+    notes: tuple[str, ...] = field(default_factory=tuple[str, ...])
 
     def to_json(self) -> dict[str, Any]:
         return {
             "tokens": self.tokens.to_json(),
-            "cost": {**self.cost.to_json(), "currency": self.currency},
+            "calls": self.calls.to_json(),
+            "cost": (
+                {**self.cost.to_json(), "currency": self.currency}
+                if self.cost is not None
+                else None
+            ),
             "duration_sec": self.duration_sec.to_json(),
             "complete": self.complete,
             "breakdown": list(self.breakdown),
+            "model": self.model,
+            "provider": self.provider,
+            "priced_on": self.priced_on,
+            "notes": list(self.notes),
         }
 
 
 class RunEstimator(Protocol):
-    """Порт оценки стоимости прогона (реализует волна 2A поверх `services/estimate.py`)."""
+    """Порт оценки стоимости прогона (реализует `ServiceEstimator` над `services/estimate.py`)."""
 
     async def estimate(
         self,
@@ -98,8 +122,95 @@ class RunEstimator(Protocol):
         ...
 
 
+def _domain_profile(profile: dict[str, Any] | None) -> RunProfile | None:
+    """JSON-профиль MCP → профиль прогона сервисного слоя (только разрешённые поля)."""
+    if profile is None:
+        return None
+    return RunProfile(effort=profile.get("effort"), semantic_review=profile.get("semantic_review"))
+
+
+def _from_domain(estimate: Any) -> RunEstimate:
+    """Ответ `services/estimate.py` (RFC-0005) → компактная оценка MCP.
+
+    Цену отдаём, только если известны обе границы: иначе `cost=null` и `complete=false`, чтобы
+    агент не показывал «ноль» вместо неизвестной стоимости.
+    """
+    domain_cost = estimate.cost
+    cost: Range | None = None
+    if (
+        domain_cost is not None
+        and domain_cost.min_usd is not None
+        and domain_cost.max_usd is not None
+    ):
+        cost = Range(min=domain_cost.min_usd, max=domain_cost.max_usd)
+    complete = bool(estimate.complete) and cost is not None
+    breakdown: list[dict[str, Any]] = []
+    for stage in estimate.breakdown:
+        stage_cost = None
+        if (
+            stage.cost is not None
+            and stage.cost.min_usd is not None
+            and stage.cost.max_usd is not None
+        ):
+            stage_cost = {
+                "min": stage.cost.min_usd,
+                "max": stage.cost.max_usd,
+                "currency": stage.cost.currency,
+            }
+        breakdown.append(
+            {
+                "stage": stage.stage,
+                "label": stage.label,
+                "calls": {"min": stage.calls.min, "max": stage.calls.max},
+                "tokens_in": {"min": stage.tokens_in.min, "max": stage.tokens_in.max},
+                "tokens_out": {"min": stage.tokens_out.min, "max": stage.tokens_out.max},
+                "cost": stage_cost,
+            }
+        )
+    return RunEstimate(
+        tokens=Range(min=estimate.tokens.min, max=estimate.tokens.max),
+        calls=Range(min=estimate.calls.min, max=estimate.calls.max),
+        duration_sec=Range(min=estimate.duration_sec.min, max=estimate.duration_sec.max),
+        cost=cost,
+        complete=complete,
+        currency=domain_cost.currency if domain_cost is not None else "USD",
+        breakdown=tuple(breakdown),
+        model=estimate.model,
+        provider=estimate.provider,
+        priced_on=estimate.priced_on.isoformat() if estimate.priced_on is not None else None,
+        notes=tuple(estimate.notes),
+    )
+
+
+class ServiceEstimator:
+    """Адаптер над `container.estimate` (сервис оценки волны 2A, RFC-0005 шаг 4).
+
+    Ошибки сервиса (`InvalidInputError`: неизвестный `effort`, нет ключа модели, пустой проект)
+    не переупаковываются: инструмент покажет агенту русский текст причины.
+    """
+
+    def __init__(self, service: Any) -> None:
+        self._service = service
+
+    async def estimate(
+        self,
+        *,
+        project_id: UUID,
+        mode: RunMode,
+        profile: dict[str, Any] | None,
+        user_id: UUID,
+    ) -> RunEstimate:
+        estimate = await self._service.estimate(
+            project_id,
+            mode=mode,
+            created_by=user_id,
+            profile=_domain_profile(profile),
+        )
+        return _from_domain(estimate)
+
+
 class UnavailableEstimator:
-    """До интеграции 2A: честный отказ вместо выдуманных чисел."""
+    """Запасной путь, если сервис оценки не подключён (не притворяется, что умеет считать)."""
 
     async def estimate(
         self,
@@ -228,19 +339,16 @@ class TicketSigner:
         return digest[:_HMAC_CHARS]
 
 
-def build_estimator(container: Container) -> RunEstimator:  # noqa: ARG001
-    """Подключение настоящей оценки (волна 2A) — единственная правка интегратора.
+def build_estimator(container: Container) -> RunEstimator:
+    """Оценка прогона: адаптер над `container.estimate` (волна 2A), иначе честный отказ.
 
-    Когда в контейнере появится сервис оценки, верните адаптер над ним, например::
-
-        return ServiceEstimator(container.estimate)
-
-    Адаптер должен реализовать `RunEstimator.estimate`: получить оценку сервиса (RFC-0005:
-    `tokens{min,max}`, `cost{min,max,currency}`, `duration`, `breakdown[]`, `complete`) и
-    перевести её в `RunEstimate`. Пока сервиса нет — `UnavailableEstimator`:
-    `estimate_run` отвечает понятным отказом, `start_run` без оценки невозможен.
+    `services/estimate.py` есть в контейнере вместе с оценкой стоимости RFC-0005; если сервиса
+    нет (урезанный стенд), MCP не выдумывает числа и `start_run` без оценки невозможен.
     """
-    return UnavailableEstimator()
+    service = getattr(container, "estimate", None)
+    if service is None:
+        return UnavailableEstimator()
+    return ServiceEstimator(service)
 
 
 def make_ticket_signer(secret: str | None, *, ttl_sec: int) -> TicketSigner:

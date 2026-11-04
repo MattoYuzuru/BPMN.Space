@@ -12,7 +12,7 @@ from typing import Any
 from uuid import UUID
 
 from app.domain.models import Question, Run, RunStage, RunStatus, Source, Version, VersionSummary
-from app.domain.runs import stage_label
+from app.domain.runs import RunCost, stage_label
 from app.services.errors import InvalidInputError
 from app.services.projects import ProjectDetail, ProjectView
 
@@ -20,6 +20,7 @@ __all__ = [
     "project_card",
     "project_detail",
     "question_view",
+    "run_cost_view",
     "run_view",
     "source_view",
     "version_summary",
@@ -139,6 +140,35 @@ def run_view(run: Run) -> dict[str, Any]:
         "version_id": str(run.version_id) if run.version_id else None,
         "failed": run.status is RunStatus.FAILED,
         "warnings": list(run.warnings),
+    }
+
+
+def run_cost_view(cost: RunCost) -> dict[str, Any]:
+    """Потрачено на прогон: токены, кеш, деньги и этапы (RFC-0005 шаг 4).
+
+    `complete=false` — часть вызовов без токенов (mock) или цен; `cost_usd=null` — цены
+    неизвестны. Ключей и внутренних адресов здесь нет.
+    """
+    return {
+        "tokens_in": cost.tokens_in,
+        "tokens_out": cost.tokens_out,
+        "cache_read_tokens": cost.cache_read_tokens,
+        "cache_write_tokens": cost.cache_write_tokens,
+        "calls": cost.calls,
+        "cost_usd": cost.cost_usd,
+        "currency": "USD",
+        "complete": cost.complete,
+        "by_stage": [
+            {
+                "stage": stage.stage,
+                "label": stage.label,
+                "calls": stage.calls,
+                "tokens_in": stage.tokens_in,
+                "tokens_out": stage.tokens_out,
+                "cost_usd": stage.cost_usd,
+            }
+            for stage in cost.by_stage
+        ],
     }
 
 

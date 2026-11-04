@@ -51,6 +51,7 @@ from app.mcp.serializers import (
     project_card,
     project_detail,
     question_view,
+    run_cost_view,
     run_view,
     source_view,
     uuid_or_404,
@@ -96,6 +97,9 @@ def _profile_json(profile: dict[str, Any] | None) -> dict[str, Any] | None:
     if profile is None:
         return None
     keys = set(profile)
+    # TODO(2B): когда в RunProfile появится бюджет в деньгах/токенах (RFC-0005 шаг 5),
+    # сравнивать его здесь с сохранённым бюджетом владельца и отклонять превышение, а не
+    # запрещать поле целиком. Сейчас агент не задаёт бюджет вообще — его задаёт владелец.
     budget = keys & _BUDGET_KEYS
     if budget:
         raise InvalidInputError(
@@ -479,8 +483,10 @@ def register_tools(  # noqa: PLR0915 — регистрация всех инс�
         name="estimate_run",
         title="Оценить прогон",
         description=(
-            "Оценка стоимости и длительности прогона (диапазон) и `estimate_token` — допуск "
-            "для start_run. Без оценки запуск невозможен; оценка живёт ограниченное время."
+            "Реальная оценка прогона (RFC-0005): диапазон токенов, запросов, денег и времени, "
+            "разбивка по этапам, модель и провайдер. `complete=false` — цены модели неизвестны, "
+            "стоимость не выдаётся. Возвращает `estimate_token` — допуск для start_run; "
+            "без свежей оценки запуск невозможен."
         ),
         annotations=_READ,
     )
@@ -500,13 +506,17 @@ def register_tools(  # noqa: PLR0915 — регистрация всех инс�
             mode = _run_mode(kind)
             profile_json = _profile_json(profile)
             pid = uuid_or_404(project_id, "project_id")
-            await ensure_project(identity, pid, write=True)
+            # Как REST `POST /projects/{id}/runs/estimate`: наблюдатель тоже может оценить,
+            # запуск же остаётся за редактором (start_run).
+            await ensure_project(identity, pid, write=False)
             estimate: RunEstimate = await estimator.estimate(
                 project_id=pid,
                 mode=mode,
                 profile=profile_json,
                 user_id=identity.user.id,
             )
+            # TODO(2B): перед выдачей тикета сравнить бюджет из профиля с пользовательским
+            # (когда появится в RunProfile) — агент не должен поднимать бюджет владельца.
             ticket, parsed = signer.issue(
                 project_id=pid,
                 user_id=identity.user.id,
@@ -518,6 +528,8 @@ def register_tools(  # noqa: PLR0915 — регистрация всех инс�
                 "kind": mode.value,
                 "profile": profile_json,
                 "estimate": estimate.to_json(),
+                "complete": estimate.complete,
+                "cost_known": estimate.cost is not None,
                 "estimate_token": ticket,
                 "estimate_id": str(parsed.estimate_id),
                 "expires_at": parsed.expires_at.isoformat(),
@@ -556,6 +568,9 @@ def register_tools(  # noqa: PLR0915 — регистрация всех инс�
                     "project_id не совпадает с оценкой: запросите оценку заново"
                 )
             await ensure_project(identity, pid, write=True)
+            # TODO(2B): после появления бюджета в RunProfile (RFC-0005 шаг 5) проверить здесь
+            # бюджет из тикета против сохранённого бюджета владельца и отклонить превышение.
+            # Тикет подписан нами, поэтому профиль в нём — уже проверенный профиль оценки.
             run = await container.runs.start(
                 pid,
                 mode=claims.mode,
@@ -574,8 +589,9 @@ def register_tools(  # noqa: PLR0915 — регистрация всех инс�
         name="get_run",
         title="Состояние прогона",
         description=(
-            "Статус, этап и прогресс прогона, итог по вопросам и собранная версия. "
-            "Текст ошибки провайдера наружу не отдаётся: только `failed`."
+            "Статус, этап и прогресс прогона, итог по вопросам, собранная версия и потрачено "
+            "по журналу вызовов (токены, кеш, деньги, этапы; `complete=false` — часть цен "
+            "неизвестна). Текст ошибки провайдера наружу не отдаётся: только `failed`."
         ),
         annotations=_READ,
     )
@@ -587,7 +603,12 @@ def register_tools(  # noqa: PLR0915 — регистрация всех инс�
         with service_errors():
             rid = uuid_or_404(run_id, "run_id")
             await ensure_resource(identity, ResourceKind.RUN, rid, write=False)
-            return {"run": run_view(await container.runs.get(rid))}
+            run = await container.runs.get(rid)
+            cost = await container.runs.cost(rid)
+            return {
+                "run": run_view(run),
+                "cost": run_cost_view(cost) if cost is not None else None,
+            }
 
     # --- Схема ---------------------------------------------------------------------------
     @server.tool(

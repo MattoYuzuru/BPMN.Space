@@ -59,9 +59,9 @@ RFC-0007 (шаг 4), как и кнопка «Подключить своего 
 | `add_source(project_id, text, title, kind, url)` | `sources:write` | Материал от агента: `origin=agent`, `trust=agent`, пометка «через агента», провенанс токена и ссылки в `derivation` |
 | `update_source`, `delete_source(confirm=true)` | `sources:write`, `sources:delete` | Правка; удаление — разрушающее, требует явного `confirm: true` |
 | `list_questions(project_id, lane?)`, `answer_question` | `projects:read`, `questions:answer` | Вопросы (можно сузить до дорожки); ответ с провенансом «через агента» |
-| `estimate_run(project_id, kind, profile)` | `runs:start` | Оценка стоимости/длительности и `estimate_token` — допуск на запуск |
+| `estimate_run(project_id, kind, profile)` | `runs:start` | Реальная оценка RFC-0005 (токены, запросы, деньги, время, разбивка; `complete=false` без цен модели) и `estimate_token` — допуск на запуск |
 | `start_run(estimate_token, project_id?, base_version_id?)` | `runs:start` | Запуск только по свежему `estimate_token`; прогон в фоне |
-| `get_run` | `projects:read` | Статус, этап, прогресс, итог; текст ошибки провайдера наружу не отдаётся |
+| `get_run` | `projects:read` | Статус, этап, прогресс, итог и потрачено по журналу вызовов (токены, кеш, деньги, этапы; `complete=false` — часть цен неизвестна); текст ошибки провайдера наружу не отдаётся |
 | `get_diagram(project_id, lane?)` | `projects:read` | XML BPMN 2.0, сводка IR, дорожки, основания и вопросы дорожки |
 | `check_diagram(xml)` | `projects:read` | XSD и bpmnlint без сохранения |
 | `save_diagram(project_id, xml, base_version_id)` | `projects:write` | Новая ручная версия; конфликт с `base_version_id` — ошибка со ссылкой «перечитайте» |
@@ -137,9 +137,13 @@ RFC-0007 (шаг 4), как и кнопка «Подключить своего 
 - **URL не скачивается сервером.** Параметр `url` в `add_source` — провенанс: извлеките текст
   у себя (агент умеет ходить в закрытые системы) и пришлите его в `text`. Так нет SSRF-поверхности
   и лишнего парсера в MCP.
-- **Оценка стоимости ждёт волну 2A.** В этой ветке сервиса оценки ещё нет, поэтому
-  `estimate_run` отвечает понятным отказом, а `start_run` без свежего `estimate_token`
-  отклоняется — запустить прогон «вслепую» нельзя. Точки подключения — ниже.
+- **Оценка неполная у моделей без цен.** У mock и совместимых провайдеров без прайса
+  `estimate_run` честно отдаёт `complete=false` и `cost=null`: агент обязан сказать человеку,
+  что стоимость неизвестна, а не показывать ноль. Это не ошибка, а состояние модели.
+- **Бюджет задаёт владелец.** Профиль MCP не принимает поля бюджета — агент не может поднять
+  лимит пользователя. Проверка «бюджет из профиля не выше сохранённого» появится вместе с
+  бюджетом в `RunProfile` (волна 2B); точки помечены `TODO(2B)` в `tools.py`, поведение
+  «агент не задаёт бюджет вообще» не изменится.
 - Нет OAuth, SSE/WebSocket через MCP (прогресс прогона — опросом `get_run`), нет истории версий
   как отдельного инструмента (XML последней версии — в `get_diagram`).
 - MCP работает только при PostgreSQL и включённых аккаунтах: токены и роли требуют базы.
@@ -154,7 +158,7 @@ RFC-0007 (шаг 4), как и кнопка «Подключить своего 
 | `backend/app/mcp/resources.py`, `prompts.py` | Ресурсы и подсказки |
 | `backend/app/mcp/diagram.py` | Разбор XML, дорожки, сводка IR (через `domain.bpmn`) |
 | `backend/app/mcp/serializers.py` | Компактные ответы без внутренних полей |
-| `backend/app/mcp/estimate.py` | Модель оценки, HMAC-тикеты допуска, порт `RunEstimator` |
+| `backend/app/mcp/estimate.py` | Адаптер `ServiceEstimator` над `services/estimate.py`, компактная модель оценки, HMAC-тикеты допуска, порт `RunEstimator` |
 | `backend/app/main.py` | Монтирование `/mcp` вне `/api/v1` и вне OpenAPI; MCP-lifespan |
 
 Слои: `app.mcp` — представление рядом с `app.api` (`(api | mcp) → services → (llm, ingest, infra)
@@ -165,23 +169,30 @@ RFC-0007 (шаг 4), как и кнопка «Подключить своего 
 `MCP_ESTIMATE_TTL_SEC` (срок оценки, по умолчанию 900 с), `MCP_EXPENSIVE_PER_MIN` (дорогие
 вызовы на токен). Остальные значения — общие (`MAX_TEXT_CHARS`, `MAX_DIAGRAM_BYTES`).
 
-## Стыковка с волной 2A (оценка и запуск)
+## Оценка и запуск
 
-Сервис оценки делает волна 2A (`services/estimate.py`, `POST /projects/{id}/runs/estimate`,
-модель RFC-0005: `tokens{min,max}`, `cost{min,max,currency}`, `duration`, `breakdown[]`,
-`complete`). MCP не дублирует расчёт, а ждёт его через порт:
+Оценку считает сервис волны 2A (`services/estimate.py`, `llm/estimate.py`, RFC-0005 шаг 4,
+`POST /projects/{id}/runs/estimate`). MCP не дублирует расчёт:
 
-1. `app/mcp/estimate.py::build_estimator(container)` — единственная правка интегратора.
-   Верните адаптер над сервисом оценки, реализующий `RunEstimator.estimate(...) -> RunEstimate`
-   (переведите ответ RFC-0005 в `RunEstimate`). Пока функция возвращает `UnavailableEstimator`:
-   `estimate_run` отвечает отказом, `start_run` невозможен.
-2. `estimate_run` выдаёт HMAC-подписанный `estimate_token` (`TicketSigner`): проект, пользователь,
-   режим, профиль и срок. `start_run` проверяет подпись, срок и совпадение и только затем
-   вызывает `services.runs.start` с профилем из тикета. Бюджет из профиля агента отклоняется
-   (`_profile_json`), бюджет задаёт владелец в настройках; когда в профиле появятся поля бюджета
-   (RFC-0005), проверку «не выше пользовательского» ставить туда же, до выдачи тикета.
-3. Свежесть оценки: `MCP_ESTIMATE_TTL_SEC`. Просроченная оценка — `422`-подобная ошибка
-   инструмента с просьбой вызвать `estimate_run` снова.
+1. `app/mcp/estimate.py::build_estimator(container)` возвращает `ServiceEstimator` над
+   `container.estimate`: `estimate_run` отдаёт диапазоны токенов/запросов/денег/времени,
+   разбивку по этапам, модель и провайдера, `complete` и `priced_on`. `complete=false` и
+   `cost=null` — цены модели неизвестны; оценка не притворяется нулевой. Если сервиса в
+   контейнере нет (урезанный стенд) — `UnavailableEstimator`: отказ без выдуманных чисел.
+2. Ошибки профиля и модели приходят из сервиса русскими сообщениями (`InvalidInputError`):
+   неизвестный `effort`, нет ключа модели, в проекте нет источников — агент видит понятную
+   причину и может её исправить. Профиль MCP — `effort` и `semantic_review`; поля бюджета
+   отклоняются до выдачи тикета.
+3. `estimate_run` выдаёт HMAC-подписанный `estimate_token` (`TicketSigner`): пользователь,
+   проект, режим, профиль и срок (`MCP_ESTIMATE_TTL_SEC`, по умолчанию 900 с). `start_run`
+   проверяет подпись, срок и совпадение и только затем вызывает `services.runs.start` с
+   профилем из тикета. Без свежей оценки запустить прогон нельзя — «вслепую» нет.
+4. После запуска `get_run` отдаёт и потраченное: токены/кеш/деньги и разбивку по этапам из
+   `llm_calls` (`complete=false` у mock и моделей без цен). Наблюдатель может оценить прогон
+   (как REST), запуск остаётся правом редактора.
+5. Бюджет: когда в `RunProfile` появится бюджет в деньгах/токенах (волна 2B), в
+   `estimate_run`/`start_run` добавляется сравнение с сохранённым бюджетом владельца и отказ
+   при превышении; места помечены `TODO(2B)` в `backend/app/mcp/tools.py`.
 
 ## Проверки
 
@@ -192,7 +203,7 @@ uv sync
 uv run pytest tests/test_mcp.py -q
 # HTTP-сценарии через MCP-клиент SDK и PostgreSQL (временная схема)
 TEST_DATABASE_URL=postgresql+asyncpg://arkhitektor:local-dev-only@localhost:5433/arkhitektor \
-  uv run pytest tests/test_mcp.py tests/test_api_tokens_http.py -q
+  uv run pytest tests/test_mcp.py tests/test_api_tokens_http.py tests/test_run_estimate.py -q
 uv run lint-imports
 ```
 

@@ -36,7 +36,7 @@ export function AgentModeHint({ enabled }: { enabled: boolean }) {
       <Icon name="bolt" size={16} className="mt-0.5 shrink-0 text-accent-fg" />
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
         <p className="type-ui text-fg">
-          Новое: агентный режим — модель сама читает источники инструментами
+          Агентный режим — модель сама читает источники инструментами
         </p>
         <p className="type-caption text-fg-muted">
           Подходит для сложных наборов материалов. Дороже конвейера, но гибче; шаги и бюджет

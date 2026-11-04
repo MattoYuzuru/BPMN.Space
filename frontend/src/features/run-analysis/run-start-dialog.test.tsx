@@ -235,6 +235,109 @@ describe('диалог запуска с оценкой', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/LLM_AGENT_MODE/)
   })
 
+  it('без своего ключа агентный режим не блокируется: сервер решит сам', async () => {
+    window.localStorage.clear()
+    stubApi({
+      'POST /api/v1/projects/p1/runs/estimate': { body: estimate },
+      'POST /api/v1/projects/p1/runs': { status: 202, body: run },
+    })
+    renderUi(
+      <QueryClientProvider client={new QueryClient()}>
+        <RunStartDialog projectId="p1" mode="analyze" open onOpenChange={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    const agent = screen.getByRole('radio', { name: /Агентный/ })
+    expect(agent).toBeEnabled()
+    expect(screen.getByText(/модель оператора/)).toBeInTheDocument()
+    expect(screen.getByRole('radiogroup', { name: 'Режим работы' })).toHaveAccessibleDescription(
+      /модель оператора/,
+    )
+    expect(screen.getByText(/Агентный режим — модель сама читает/)).toBeInTheDocument()
+    expect(screen.queryByText(/Новое:/)).toBeNull()
+  })
+
+  it('старый 422 не виден при повторном открытии диалога', async () => {
+    const client = new QueryClient()
+    const onOpenChange = vi.fn()
+    stubApi({
+      'GET /api/v1/auth/session': {
+        body: { auth_enabled: true, user: { id: 'u1', email: 'u@example.com' } },
+      },
+      'GET /api/v1/me/llm-credentials': { body: { items: [credential] } },
+      'GET /api/v1/me/llm-credentials/c1/models': {
+        body: {
+          items: [
+            {
+              id: 'claude-opus-5-5',
+              label: 'Claude Opus 5.5',
+              capabilities: capabilities(true),
+            },
+          ],
+        },
+      },
+      'POST /api/v1/projects/p1/runs/estimate': { body: estimate },
+      'POST /api/v1/projects/p1/runs': {
+        status: 422,
+        body: { detail: 'Агентный режим выключен: LLM_AGENT_MODE' },
+      },
+    })
+    const view = renderUi(
+      <QueryClientProvider client={client}>
+        <RunStartDialog projectId="p1" mode="analyze" open onOpenChange={onOpenChange} />
+      </QueryClientProvider>,
+    )
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Агентный/ })).toBeEnabled())
+    await view.user.click(screen.getByRole('radio', { name: /Агентный/ }))
+    await view.user.click(screen.getByRole('button', { name: 'Запустить анализ' }))
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <RunStartDialog projectId="p1" mode="analyze" open={false} onOpenChange={onOpenChange} />
+      </QueryClientProvider>,
+    )
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <RunStartDialog projectId="p1" mode="analyze" open onOpenChange={onOpenChange} />
+      </QueryClientProvider>,
+    )
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+  })
+
+  it('422 не про агента не выдают за отказ агентного режима', async () => {
+    const { user } = mount({
+      'POST /api/v1/projects/p1/runs': {
+        status: 422,
+        body: { detail: 'Уровень глубины не поддерживается этой моделью' },
+      },
+    })
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Агентный/ })).toBeEnabled())
+    await user.click(screen.getByRole('radio', { name: /Агентный/ }))
+    await user.click(screen.getByRole('button', { name: 'Запустить анализ' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/Прогон не запущен/)
+    expect(alert).not.toHaveTextContent(/не разрешил агентный режим/)
+  })
+
+  it('неверный лимит шагов не отправляет оценку без max_steps', async () => {
+    const { user, calls } = mount()
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Агентный/ })).toBeEnabled())
+    await user.click(screen.getByRole('radio', { name: /Агентный/ }))
+    const steps = screen.getByLabelText(/Лимит шагов/)
+    await user.clear(steps)
+    await user.type(steps, '0')
+    const attempts = estimateCalls(calls).length
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    const agentWithoutSteps = estimateCalls(calls)
+      .slice(attempts)
+      .filter((call) => {
+        const profile = (call.body as { profile?: { mode?: string; max_steps?: number } }).profile
+        return profile?.mode === 'agent' && !profile.max_steps
+      })
+    expect(agentWithoutSteps).toEqual([])
+    expect(screen.getByRole('button', { name: 'Запустить анализ' })).toBeDisabled()
+  })
+
   it('ошибку оценки объясняет и предлагает повторить', async () => {
     stubApi({
       'POST /api/v1/projects/p1/runs/estimate': {

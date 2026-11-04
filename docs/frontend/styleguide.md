@@ -553,7 +553,13 @@ OKLCH-значения — в `tokens.css` (`--palette-<цвет>-<ступен�
 - Ожидание (`waiting`, блокирующий технический вопрос): карточка меняет заголовок на «Ждёт вашего
   действия», показывает янтарную подсказку и кнопку «Продолжить» (`POST /runs/{id}/resume`,
   работа начинается с первого этапа, потраченное остаётся); поток SSE при этом не закрывается.
+  Пока прогон не завершён, трекер раз в 5 с уточняет статус через `GET /runs/{id}`: SSE не присылает
+  события об ожидании, поэтому без опроса карточка могла бы остаться в «идёт» навсегда. Найденное
+  ожидание обновляет карточку, не закрывая поток и не трогая номер последнего события.
 - Шапка проекта в ожидании показывает `Badge tone="amber" icon="clock"` «Ждёт вашего действия».
+- `RunCost.complete=false` — не ошибка: у части шагов может не быть цены (например, после остановки
+  по бюджету). `CostMeter` показывает это янтарным пояснением «Стоимость известна не полностью: у
+  части шагов нет цен. Это не ошибка прогона», без Сурика и без второго бейджа.
 
 ### Технические вопросы
 
@@ -716,7 +722,7 @@ OKLCH-значения — в `tokens.css` (`--palette-<цвет>-<ступен�
 - `npm run --workspace frontend test` — поведение компонентов (Checkbox, Select, Dialog/ConfirmDialog, Tabs, SegmentedControl, Toast, Button), тема, форматирование и **контраст токенов** (`src/shared/styles/tokens.test.ts`: каждая пара текста ≥ 4.5:1, графика ≥ 3:1 в обеих темах, полнота тёмной темы, контракт имён, гамут sRGB).
 - Новые компоненты проверяются рядом с кодом: `shared/ui/{cost-meter,slider,tree-view,secret-input,copy-field}/*.test.tsx` — стоимость и бюджет, клавиатура дерева и ARIA-роли, перемотка стрелками, показ секрета и копирование. Словарь возможностей, уровни доверия, стоимость, страницы без текста и счётчик дерева — `entities/source/model.test.ts`; поведение дерева материалов — `widgets/sources-panel/*.test.tsx`.
 - `/styleguide` — визуальная проверка в обеих темах; контраст пересчитывается из токенов прямо на странице. Разделы «Материалы» (`#materials`), «Прогон и стоимость» (`#run`) и «Волна 2: оценка и инструменты» (`#wave2`) показывают дерево, метки, плеер, `CostMeter`, `Slider`, оценку до запуска, ожидание прогона, технический вопрос и карточки ключей.
-- Волна 2 проверяется рядом с кодом: `entities/run/{model,estimate}.test.ts` (usage, `waiting`, стоимость, бюджет, подписи оценки), `entities/question/model.test.ts` (технические вопросы и действия), `entities/tool-credential/model.test.ts` (возможности, ошибки, лимиты), `features/run-analysis/run-start-dialog.test.tsx` (оценка, бюджет и запуск), `features/question-technical/*.test.tsx` (действия), `features/tools-credentials/*.test.tsx` (ключи и проверка), `widgets/run-progress/*.test.tsx` (стоимость и «Продолжить»).
+- Волна 2 проверяется рядом с кодом: `entities/run/{model,estimate}.test.ts` (usage, `waiting`, стоимость, бюджет, подписи оценки), `entities/question/model.test.ts` (технические вопросы и действия), `entities/tool-credential/model.test.ts` (возможности, ошибки, лимиты), `features/run-analysis/run-start-dialog.test.tsx` (оценка, бюджет и запуск), `features/question-technical/*.test.tsx` (действия), `features/tools-credentials/*.test.tsx` (ключи и проверка), `widgets/run-progress/*.test.tsx` (стоимость, неполная стоимость и «Продолжить»), `features/run-analysis/use-run-tracker.test.tsx` (опрос статуса и `waiting` без SSE-события), `features/model-picker/model-picker.test.tsx` (демо-модели витрины без запросов к API).
 
 ![Семантические токены, тёмная тема, окно 1024px](screenshots/semantic-tokens-dark-1024.png)
 

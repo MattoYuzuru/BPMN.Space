@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { registerAccountReset } from '@/shared/lib/account-reset'
 import type { ModelChoice } from './model'
 
 const STORAGE_PREFIX = 'arkhitektor:model-choice:'
@@ -51,6 +52,9 @@ export const useModelChoiceStore = create<ChoiceStore>((set, get) => ({
     }
   },
 }))
+
+// Память очищаем при смене аккаунта; сам выбор остаётся в localStorage под id его владельца.
+registerAccountReset(() => useModelChoiceStore.setState({ choices: {} }))
 
 /** Запомненный выбор пользователя (из памяти, иначе из localStorage). */
 export function getModelChoice(userId: string | undefined): ModelChoice | null {

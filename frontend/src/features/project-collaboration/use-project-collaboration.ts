@@ -31,8 +31,10 @@ export interface CollaborationState {
   connected: boolean
   localSessionId?: string
   participantCount: number
-  event: RealtimeEvent | null
 }
+
+/** Подписчик событий комнаты: получает каждое событие по очереди, без потери в пакете. */
+export type RealtimeListener = (event: RealtimeEvent) => void
 
 export interface PresenceStore {
   getSnapshot: () => Collaborator[]
@@ -81,8 +83,14 @@ export function useProjectCollaboration(projectId: string, shareToken?: string, 
   const [state, setState] = useState<CollaborationState>({
     connected: false,
     participantCount: 0,
-    event: null,
   })
+  const listeners = useRef(new Set<RealtimeListener>())
+  const subscribe = useCallback((listener: RealtimeListener) => {
+    listeners.current.add(listener)
+    return () => {
+      listeners.current.delete(listener)
+    }
+  }, [])
 
   useEffect(() => {
     if (!enabled || !projectId) return
@@ -90,6 +98,9 @@ export function useProjectCollaboration(projectId: string, shareToken?: string, 
     let closed = false
     let reconnectTimer = 0
     let retry = 0
+    const emit = (event: RealtimeEvent) => {
+      for (const listener of [...listeners.current]) listener(event)
+    }
 
     const connect = async () => {
       try {
@@ -142,9 +153,9 @@ export function useProjectCollaboration(projectId: string, shareToken?: string, 
             setState((current) => ({
               ...current,
               localSessionId: typeof event.session_id === 'string' ? event.session_id : undefined,
-              event,
               participantCount: participants.length,
             }))
+            emit(event)
           } else if (event.type === 'presence.snapshot') {
             const participants = Array.isArray(event.participants)
               ? (event.participants as Collaborator[])
@@ -170,12 +181,16 @@ export function useProjectCollaboration(projectId: string, shareToken?: string, 
               }
             }
           } else if (event.type === 'diagram.version') {
-            setState((current) => ({ ...current, event }))
+            emit(event)
             if (shareToken) {
               void queryClient.invalidateQueries({ queryKey: shareKeys.shared(shareToken) })
             }
+          } else if (event.type === 'version.checkpoint') {
+            // Схема не менялась: соавтор закрепил точку, история у всех должна это показать.
+            void queryClient.invalidateQueries({ queryKey: versionKeys.all(projectId) })
+            emit(event)
           } else if (event.type === 'run.changed') {
-            setState((current) => ({ ...current, event }))
+            emit(event)
             if (event.status === 'queued' || event.status === 'running') {
               void queryClient.invalidateQueries({
                 queryKey: shareToken ? shareKeys.shared(shareToken) : projectKeys.detail(projectId),
@@ -188,7 +203,7 @@ export function useProjectCollaboration(projectId: string, shareToken?: string, 
               }
             }
           } else if (event.type === 'resync.required') {
-            setState((current) => ({ ...current, event }))
+            emit(event)
             void queryClient.invalidateQueries({ queryKey: projectKeys.detail(projectId) })
             void queryClient.invalidateQueries({ queryKey: versionKeys.list(projectId) })
           }
@@ -222,7 +237,7 @@ export function useProjectCollaboration(projectId: string, shareToken?: string, 
       socketRef.current = null
       presence.set([])
       localSessionIdRef.current = undefined
-      setState({ connected: false, participantCount: 0, event: null })
+      setState({ connected: false, participantCount: 0 })
     }
   }, [enabled, presence, projectId, queryClient, shareToken])
 
@@ -256,5 +271,5 @@ export function useProjectCollaboration(projectId: string, shareToken?: string, 
     }
   }, [])
 
-  return { ...state, presence, sendPresence }
+  return { ...state, presence, sendPresence, subscribe }
 }

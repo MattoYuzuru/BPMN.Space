@@ -225,9 +225,10 @@ class CapabilityUnavailableError(Exception):
 class CapabilityIncident:
     """Событие «возможность не выполнена» для технических вопросов (RFC-0006 шаг 2).
 
-    Волна 2B определяет `TechnicalQuestionService`; пока стыковка мягкая: источник сохраняет
-    структурный результат и понятный текст, а необязательный приёмник (`CapabilityIncidentSink`)
-    сможет превратить событие в технический вопрос, когда появится.
+    Источник сохраняет структурный результат и понятный текст, а приёмник
+    (`CapabilityIncidentSink`) превращает событие в технический вопрос проекта. В приложении это
+    `services/capability_incidents.py` поверх `TechnicalQuestionService`; подпись остаётся
+    точкой расширения для других инструментов.
     """
 
     project_id: UUID | None
@@ -243,6 +244,6 @@ class CapabilityIncident:
 
 
 class CapabilityIncidentSink(Protocol):
-    """Приёмник событий для технических вопросов: реализует волна 2B."""
+    """Приёмник событий для технических вопросов; в приложении — мост к волне 2B."""
 
     async def report(self, incident: CapabilityIncident) -> None: ...

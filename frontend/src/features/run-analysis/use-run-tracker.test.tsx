@@ -192,7 +192,13 @@ describe('useRunTracker: сигналы обучения', () => {
   })
 
   it('окончание: run.finished с числом открытых вопросов и признаком схемы', async () => {
-    setup(run())
+    // Технический вопрос не бизнес: в число открытых для тура не входит.
+    const detail = project()
+    detail.questions = [
+      ...detail.questions,
+      { id: 'tq-1', status: 'open', category: 'technical' } as never,
+    ]
+    setup(run(), detail)
     signals.length = 0
     await act(async () => {
       stream.handlers?.onEvent(done({}))

@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { type ProjectDetail, projectKeys } from '@/entities/project'
-import { upsertQuestion } from '@/entities/question'
+import { isTechnical, upsertQuestion } from '@/entities/question'
 import {
   fetchRun,
   formatSummary,
@@ -116,7 +116,9 @@ export function useRunTracker(projectId: string, activeRun: Run | null | undefin
           type: 'run.finished',
           status: run.status,
           openQuestions:
-            project?.questions.filter((question) => question.status === 'open').length ?? 0,
+            project?.questions.filter(
+              (question) => question.status === 'open' && !isTechnical(question),
+            ).length ?? 0,
           hasDiagram: Boolean(project?.latest_version),
           projectId,
         })

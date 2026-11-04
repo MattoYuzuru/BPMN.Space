@@ -6,7 +6,6 @@ from dataclasses import dataclass, replace
 import httpx
 
 from app.config import Settings
-from app.domain.credentials import LlmCredential
 from app.domain.models import RunStage
 from app.fixtures import read_bpmn
 from app.fixtures.examples import EXAMPLES
@@ -21,22 +20,27 @@ from app.infra.repositories.memory import InMemoryStore
 from app.infra.seed import build_seed
 from app.infra.storage import InMemoryFileStorage, LocalFileStorage
 from app.infra.tasks import AsyncioTaskSpawner
+from app.ingest.adapters import build_default_registry
+from app.ingest.adapters.http import AdapterClientFactory
+from app.ingest.adapters.stt_deepgram import DEEPGRAM_MODEL, DeepgramSttAdapter
 from app.ingest.context import configure_llm_limits
-from app.ingest.deepgram import DEEPGRAM_MODEL, DeepgramSpeechToText
 from app.ingest.media import FfmpegRunner, MediaTranscriber
 from app.ingest.parsers import LocalDocumentParser
 from app.ingest.stt import MockSpeechToText, SpeechToText
 from app.llm.client import LlmClient, LlmConfig
 from app.llm.factory import build_client, build_pipeline, call_knobs
 from app.llm.mock import MockPipeline
+from app.llm.net_guard import normalize_base_url
+from app.llm.pinned_transport import pinned_transport
 from app.llm.pipeline import LlmPipeline
 from app.services.access import AccessService
 from app.services.api_tokens import ApiTokenService
 from app.services.assistant import AssistantService
+from app.services.capability_router import CapabilityRouter, RoutedSpeechToText, RoutingPolicy
 from app.services.catalog import ExampleService, TranscriptionService
 from app.services.collaboration import RealtimeHub
 from app.services.common import Runtime
-from app.services.llm_credentials import LlmCredentialService
+from app.services.credentials import CredentialService
 from app.services.model_resolver import ModelResolver
 from app.services.onboarding import OnboardingService
 from app.services.projects import ProjectService
@@ -91,7 +95,10 @@ def build_bpmn_tools(settings: Settings):
     return MockBpmnTools()
 
 
-def build_stt(settings: Settings) -> SpeechToText:
+def build_stt(
+    settings: Settings, transport: httpx.AsyncBaseTransport | None = None
+) -> SpeechToText:
+    """Серверный провайдер распознавания — запасной путь для пользователей без своего ключа."""
     match settings.stt_provider.lower():
         case "mock":
             return MockSpeechToText(
@@ -100,9 +107,10 @@ def build_stt(settings: Settings) -> SpeechToText:
         case "deepgram":
             if not settings.deepgram_api_key:
                 raise ValueError("STT_PROVIDER=deepgram требует DEEPGRAM_API_KEY в .env")
-            return DeepgramSpeechToText(
+            return DeepgramSttAdapter(
                 settings.deepgram_api_key.get_secret_value(),
                 timeout_sec=settings.deepgram_timeout_sec,
+                transport=transport,
             )
         case provider:
             raise ValueError(f"Неизвестный STT_PROVIDER: {provider}")
@@ -143,13 +151,18 @@ class Container:
     examples: ExampleService
     transcriptions: TranscriptionService
     assistant: AssistantService
-    llm_credentials: LlmCredentialService
+    credentials: CredentialService
     api_tokens: ApiTokenService
     access: AccessService
     sharing: SharingService
     onboarding: OnboardingService
     samples: SampleService
     realtime: RealtimeHub
+
+    @property
+    def llm_credentials(self) -> CredentialService:
+        """Прежнее имя (ADR-0011): ключи моделей — частный случай общих ключей (RFC-0006)."""
+        return self.credentials
 
 
 def build_container(
@@ -158,9 +171,11 @@ def build_container(
     runtime: Runtime | None = None,
     database: Database | None = None,
     llm_transport: httpx.AsyncBaseTransport | None = None,
+    adapter_transport: httpx.AsyncBaseTransport | None = None,
 ) -> Container:
     """`database` — готовое подключение (тесты со своей схемой PostgreSQL), `llm_transport` —
-    подмена HTTP к провайдерам моделей (тесты без сети)."""
+    подмена HTTP к провайдерам моделей, `adapter_transport` — к провайдерам инструментов
+    (распознавание речи и будущие адаптеры), тесты без сети."""
     runtime = runtime or Runtime()
     settings.validate_for_runtime()
 
@@ -196,7 +211,7 @@ def build_container(
         settings.credentials_encryption_key, allow_ephemeral=not settings.is_production
     )
 
-    def user_pipeline(config: LlmConfig, _credential: LlmCredential) -> LlmPipeline:
+    def user_pipeline(config: LlmConfig, _credential: object) -> LlmPipeline:
         return build_pipeline(
             replace(config, **call_knobs(settings)),  # type: ignore[arg-type]
             settings,
@@ -222,7 +237,46 @@ def build_container(
         server_max_effort=settings.llm_server_max_effort,
     )
 
-    stt = build_stt(settings)
+    def adapter_client(base_url: str, user_supplied: bool, timeout_sec: float) -> httpx.AsyncClient:
+        """Клиент адаптера: адрес пользователя проходит SSRF-проверку и закрепление IP."""
+        transport = adapter_transport
+        if user_supplied:
+            base_url = normalize_base_url(
+                base_url, allowed_private_hosts=settings.llm_allowed_private_hosts
+            )
+            if transport is None:
+                transport = pinned_transport(
+                    allowed_private_hosts=settings.llm_allowed_private_hosts
+                )
+        return httpx.AsyncClient(
+            base_url=base_url,
+            timeout=timeout_sec,
+            transport=transport,
+            follow_redirects=False,
+            trust_env=not user_supplied,
+        )
+
+    adapter_client_factory: AdapterClientFactory = adapter_client
+    stt = build_stt(settings, adapter_transport)
+    registry = build_default_registry()
+    router = CapabilityRouter(
+        repos,
+        cipher=cipher,
+        registry=registry,
+        runtime=runtime,
+        policy=RoutingPolicy(
+            max_attempts=settings.capability_max_attempts,
+            retry_base_sec=settings.capability_retry_base_sec,
+            retry_max_sec=settings.capability_retry_max_sec,
+            breaker_threshold=settings.capability_breaker_threshold,
+            breaker_cooldown_sec=settings.capability_breaker_cooldown_sec,
+            quota_cooldown_sec=settings.capability_quota_cooldown_sec,
+        ),
+        allowed_private_hosts=tuple(settings.llm_allowed_private_hosts),
+        transport=adapter_transport,
+        adapter_client_factory=adapter_client_factory,
+    )
+    routed_stt = RoutedSpeechToText(router, server=stt)
 
     onboarding = OnboardingService(
         repos,
@@ -243,6 +297,7 @@ def build_container(
             timeout_sec=settings.parse_timeout_sec,
         ),
         media=media,
+        stt_for_user=routed_stt.for_user,
         max_media_bytes=settings.max_media_bytes,
         storage=storage,
         runtime=runtime,
@@ -288,15 +343,20 @@ def build_container(
             session_max_sec=settings.version_session_max_sec,
         ),
         examples=ExampleService(EXAMPLES),
-        transcriptions=TranscriptionService(stt, max_audio_bytes=settings.max_audio_bytes),
+        transcriptions=TranscriptionService(
+            stt, max_audio_bytes=settings.max_audio_bytes, stt_for_user=routed_stt.for_user
+        ),
         assistant=AssistantService(repos, resolver=resolver),
-        llm_credentials=LlmCredentialService(
+        credentials=CredentialService(
             repos,
             cipher=cipher,
             client_factory=validation_client,
+            registry=registry,
             runtime=runtime,
             allowed_private_hosts=tuple(settings.llm_allowed_private_hosts),
             models_cache_sec=settings.llm_models_cache_sec,
+            adapter_transport=adapter_transport,
+            adapter_client_factory=adapter_client_factory,
             anthropic_effort=settings.anthropic_effort_default(),
         ),
         api_tokens=ApiTokenService(repos, runtime=runtime),

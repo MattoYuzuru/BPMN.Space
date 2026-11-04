@@ -427,6 +427,94 @@
         "title": "Body_transcribe",
         "type": "object"
       },
+      "CapabilityCardSchema": {
+        "description": "Карточка возможности для «Настроек → Инструменты».",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "capability": {
+            "enum": [
+              "llm",
+              "speech_to_text",
+              "ocr",
+              "vision",
+              "video_understanding",
+              "web_search",
+              "web_fetch",
+              "tts"
+            ],
+            "title": "Capability",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "keys": {
+            "description": "Рабочих ключей: включённых и не исчерпанных",
+            "title": "Keys",
+            "type": "integer"
+          },
+          "kinds": {
+            "items": {
+              "enum": [
+                "llm",
+                "speech_to_text",
+                "ocr",
+                "vision",
+                "video",
+                "web_search",
+                "web_fetch",
+                "tts"
+              ],
+              "type": "string"
+            },
+            "title": "Kinds",
+            "type": "array"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Code"
+          },
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/CredentialProvider"
+            },
+            "title": "Providers",
+            "type": "array"
+          },
+          "tool": {
+            "description": "Имя инструмента, которое увидит модель",
+            "title": "Tool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability",
+          "label",
+          "description",
+          "tool",
+          "kinds",
+          "providers",
+          "keys",
+          "available"
+        ],
+        "title": "CapabilityCardSchema",
+        "type": "object"
+      },
       "ChecklistEntry": {
         "properties": {
           "completed_at": {
@@ -540,6 +628,471 @@
           "expires_at"
         ],
         "title": "CollaborationTicket",
+        "type": "object"
+      },
+      "Credential": {
+        "properties": {
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Только у совместимого провайдера",
+            "title": "Base Url"
+          },
+          "capabilities": {
+            "description": "Возможности, которые закрывает ключ",
+            "items": {
+              "enum": [
+                "llm",
+                "speech_to_text",
+                "ocr",
+                "vision",
+                "video_understanding",
+                "web_search",
+                "web_fetch",
+                "tts"
+              ],
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "default_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "exhausted_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ключ отдыхает: провайдер сообщил об исчерпанной квоте",
+            "title": "Exhausted Until"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_default": {
+            "description": "Ключ модели по умолчанию (только для `llm`)",
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "key_hint": {
+            "description": "Последние 4 символа ключа; пусто у коротких ключей",
+            "title": "Key Hint",
+            "type": "string"
+          },
+          "kinds": {
+            "items": {
+              "enum": [
+                "llm",
+                "speech_to_text",
+                "ocr",
+                "vision",
+                "video",
+                "web_search",
+                "web_fetch",
+                "tts"
+              ],
+              "type": "string"
+            },
+            "title": "Kinds",
+            "type": "array"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Понятный текст последней ошибки",
+            "title": "Last Error"
+          },
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Класс последней ошибки (RFC-0006)",
+            "title": "Last Error Code"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "monthly_limit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonthlyLimit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "priority": {
+            "description": "Меньше — раньше в переборе",
+            "title": "Priority",
+            "type": "integer"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kinds",
+          "provider",
+          "label",
+          "base_url",
+          "key_hint",
+          "default_model",
+          "priority",
+          "enabled",
+          "monthly_limit",
+          "exhausted_until",
+          "last_error_code",
+          "last_error",
+          "is_default",
+          "capabilities",
+          "created_at",
+          "last_used_at"
+        ],
+        "title": "Credential",
+        "type": "object"
+      },
+      "CredentialCheckResult": {
+        "description": "Итог проверки ключа: отказ провайдера — `ok=false`, а не ошибка запроса.",
+        "properties": {
+          "capability": {
+            "anyOf": [
+              {
+                "enum": [
+                  "llm",
+                  "speech_to_text",
+                  "ocr",
+                  "vision",
+                  "video_understanding",
+                  "web_search",
+                  "web_fetch",
+                  "tts"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capability"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Code"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "detail"
+        ],
+        "title": "CredentialCheckResult",
+        "type": "object"
+      },
+      "CredentialCreate": {
+        "properties": {
+          "api_key": {
+            "description": "Принимается один раз; сохраняется зашифрованным",
+            "format": "password",
+            "title": "Api Key",
+            "type": "string",
+            "writeOnly": true
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "default_model": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "is_default": {
+            "default": false,
+            "description": "Только для ключа модели",
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "kinds": {
+            "description": "Типы задач, которые закрывает ключ: llm, speech_to_text, …",
+            "items": {
+              "enum": [
+                "llm",
+                "speech_to_text",
+                "ocr",
+                "vision",
+                "video",
+                "web_search",
+                "web_fetch",
+                "tts"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Kinds",
+            "type": "array"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "monthly_limit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonthlyLimit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "priority": {
+            "default": 100,
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Priority",
+            "type": "integer"
+          },
+          "provider": {
+            "maxLength": 32,
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kinds",
+          "provider",
+          "api_key"
+        ],
+        "title": "CredentialCreate",
+        "type": "object"
+      },
+      "CredentialList": {
+        "properties": {
+          "capabilities": {
+            "description": "Карточки всех возможностей: какие ключи есть и какие нужны",
+            "items": {
+              "$ref": "#/components/schemas/CapabilityCardSchema"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Credential"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "storage_available": {
+            "description": "false — на сервере не задан CREDENTIALS_ENCRYPTION_KEY, ключи не принимаются",
+            "title": "Storage Available",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "items",
+          "storage_available",
+          "capabilities"
+        ],
+        "title": "CredentialList",
+        "type": "object"
+      },
+      "CredentialProvider": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "CredentialProvider",
+        "type": "object"
+      },
+      "CredentialUpdate": {
+        "properties": {
+          "clear_monthly_limit": {
+            "default": false,
+            "title": "Clear Monthly Limit",
+            "type": "boolean"
+          },
+          "default_model": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "is_default": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Default"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "monthly_limit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonthlyLimit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "maximum": 1000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          }
+        },
+        "title": "CredentialUpdate",
         "type": "object"
       },
       "DiagramConflictResponse": {
@@ -1341,6 +1894,49 @@
           }
         },
         "title": "MediaInfo",
+        "type": "object"
+      },
+      "MonthlyLimit": {
+        "description": "Необязательный месячный лимит ключа: минуты, запросы или деньги.",
+        "properties": {
+          "cost_usd": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "minutes": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minutes"
+          },
+          "requests": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requests"
+          }
+        },
+        "title": "MonthlyLimit",
         "type": "object"
       },
       "OnboardingEvent": {
@@ -3184,6 +3780,65 @@
         "title": "TargetRoute",
         "type": "string"
       },
+      "ToolUnavailableErrorResponse": {
+        "description": "Возможность не выполнена (RFC-0006): причина, прогресс и альтернативы.\n\nТекст провайдера в сообщение не входит — только класс причины и структурный прогресс.",
+        "properties": {
+          "alternatives": {
+            "description": "Чем заменить: например, `vision:frames`",
+            "items": {
+              "type": "string"
+            },
+            "title": "Alternatives",
+            "type": "array"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Класс причины: quota_exhausted, auth, transient, unsupported, fatal или capability_missing",
+            "title": "Code"
+          },
+          "detail": {
+            "description": "Сообщение об ошибке для пользователя, на русском",
+            "title": "Detail",
+            "type": "string"
+          },
+          "done": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Что уже обработано, например «00:00–34:10»",
+            "title": "Done"
+          },
+          "remaining": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Что осталось, например «34:10–80:00»",
+            "title": "Remaining"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "ToolUnavailableErrorResponse",
+        "type": "object"
+      },
       "TourState": {
         "properties": {
           "project_id": {
@@ -4579,6 +5234,355 @@
         "summary": "Revoke Api Token",
         "tags": [
           "api-tokens"
+        ]
+      }
+    },
+    "/api/v1/me/credentials": {
+      "get": {
+        "description": "Все ключи пользователя, карточки возможностей и признак доступности хранилища.",
+        "operationId": "list_credentials",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "List Credentials",
+        "tags": [
+          "credentials"
+        ]
+      },
+      "post": {
+        "description": "Проверяет ключ дешёвым запросом провайдера и сохраняет его зашифрованным.\n\nОдин ключ может закрывать несколько возможностей: OpenAI — модели и распознавание речи.",
+        "operationId": "create_credential",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Credential"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Конфликт состояния"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Слишком много запросов; повторите через `Retry-After` секунд"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Сервис или помощник не настроен"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Create Credential",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/api/v1/me/credentials/{credential_id}": {
+      "delete": {
+        "operationId": "delete_credential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credential Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Delete Credential",
+        "tags": [
+          "credentials"
+        ]
+      },
+      "patch": {
+        "description": "Название, модель, приоритет, включённость и лимит; ключ и адрес не меняются.",
+        "operationId": "update_credential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credential Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Credential"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Update Credential",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/api/v1/me/credentials/{credential_id}/check": {
+      "post": {
+        "description": "Проверка ключа для каждого типа: отказ провайдера — `ok=false` с понятной причиной.\n\nУспешная проверка снимает отметку ошибки и снова включает ключ, отключённый после отказа\nпровайдера. Для возможностей волны 3 проверка честно отвечает, что пока недоступна.",
+        "operationId": "check_credential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credential Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialCheckResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Слишком много запросов; повторите через `Retry-After` секунд"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Сервис или помощник не настроен"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Check Credential",
+        "tags": [
+          "credentials"
         ]
       }
     },
@@ -8677,7 +9681,7 @@
     },
     "/api/v1/transcriptions": {
       "post": {
-        "description": "Расшифровка голоса для правки перед сохранением (источник или ответ на вопрос).",
+        "description": "Расшифровка голоса для правки перед сохранением (источник или ответ на вопрос).\n\nУ вошедшего пользователя — на его ключах распознавания (RFC-0006), иначе — серверный\nпровайдер. Если рабочих ключей нет, `503` с причиной и структурным прогрессом.",
         "operationId": "transcribe",
         "requestBody": {
           "content": {
@@ -8749,6 +9753,16 @@
               }
             },
             "description": "Слишком много запросов; повторите через `Retry-After` секунд"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolUnavailableErrorResponse"
+                }
+              }
+            },
+            "description": "Нет рабочего ключа распознавания или провайдер не принял запись"
           }
         },
         "security": [

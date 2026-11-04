@@ -13,9 +13,10 @@ import logging
 import shutil
 import tempfile
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
+from app.domain.capabilities import CapabilityOutcome, CapabilityUnavailableError
 from app.domain.concurrency import bounded_gather
 from app.ingest.stt import NoSpeechError, SpeechToText, Transcript
 
@@ -47,6 +48,18 @@ class MediaError(Exception):
     """Не удалось обработать запись. Сообщение — для пользователя."""
 
 
+class MediaRoutingError(MediaError):
+    """Запись не расшифрована, потому что кончились рабочие ключи пользователя (RFC-0006).
+
+    Несёт структурный результат маршрутизатора: причина, что уже покрыто записью, что осталось и
+    какие есть альтернативы. Текст провайдера в сообщение не входит.
+    """
+
+    def __init__(self, message: str, *, outcome: CapabilityOutcome) -> None:
+        super().__init__(message)
+        self.outcome = outcome
+
+
 def format_timecode(seconds: float) -> str:
     total = max(int(seconds), 0)
     return f"[{total // 60:02d}:{total % 60:02d}]"
@@ -61,9 +74,15 @@ class MediaProbe:
 
 @dataclass(slots=True)
 class MediaJob:
-    """Что обработка записи узнала по пути: дорожки из ffprobe (None — без ffmpeg)."""
+    """Что обработка записи узнала по пути: дорожки, провайдер и отказ маршрутизации."""
 
     probe: MediaProbe | None = None
+    # Кто и чем расшифровал — для `derivation` производного источника (RFC-0006).
+    provider: str | None = None
+    model: str | None = None
+    cost_usd: float | None = None
+    # Структурный результат отказа маршрутизации: причина, покрытый и оставшийся диапазон.
+    routing: CapabilityOutcome | None = None
 
 
 class FfmpegRunner:
@@ -244,24 +263,35 @@ class MediaTranscriber:
             "ffmpeg": self._runner.available,
         }
 
-    async def transcribe(self, source: Path, *, job: MediaJob | None = None) -> Transcript:
+    async def transcribe(
+        self,
+        source: Path,
+        *,
+        job: MediaJob | None = None,
+        stt: SpeechToText | None = None,
+    ) -> Transcript:
         """Расшифровка файла записи; `MediaError` / `NoSpeechError` при неудаче.
 
+        `stt` — адаптер возможного ключа пользователя-инициатора записи (RFC-0006); без него
+        работает серверный провайдер (`STT_PROVIDER`/`DEEPGRAM_API_KEY`) — прежнее поведение.
         ffprobe, ffmpeg и STT идут одной задачей под общим семафором (`max_concurrent_jobs`).
         `job.probe` получает дорожки записи, как только ffprobe их прочитал, — и при сбое
-        расшифровки тоже.
+        расшифровки тоже; `job.routing` — структурный результат отказа маршрутизации.
         """
+        engine = stt or self._stt
         if self._semaphore is None:
             self._semaphore = asyncio.Semaphore(self._jobs)
         async with self._semaphore:
             if not self._runner.available:
-                return await self._without_ffmpeg(source)
+                return await self._without_ffmpeg(source, engine, job)
             probe = await self._runner.probe(source)
             if job is not None:
                 job.probe = probe
-            return await self._with_ffmpeg(source, probe)
+            return await self._with_ffmpeg(source, probe, engine, job)
 
-    async def _without_ffmpeg(self, source: Path) -> Transcript:
+    async def _without_ffmpeg(
+        self, source: Path, engine: SpeechToText, job: MediaJob | None
+    ) -> Transcript:
         """Без ffmpeg работает только mock-STT на небольшом файле, чтобы демо не ломалось."""
         if not self._raw_fallback:
             raise MediaError("На сервере не установлен ffmpeg: записи пока не обрабатываются")
@@ -269,35 +299,106 @@ class MediaTranscriber:
         if size > _RAW_FALLBACK_LIMIT:
             raise MediaError("Файл слишком большой для обработки без ffmpeg")
         data = await asyncio.to_thread(source.read_bytes)
-        return await self._stt.transcribe(data, mime=None)
+        transcript = await engine.transcribe(data, mime=None)
+        if job is not None:
+            job.provider = transcript.provider or self.provider
+            job.model = transcript.model or self.model
+            job.cost_usd = transcript.cost_usd
+        return transcript
 
-    async def _with_ffmpeg(self, source: Path, probe: MediaProbe) -> Transcript:
+    async def _with_ffmpeg(
+        self,
+        source: Path,
+        probe: MediaProbe,
+        engine: SpeechToText,
+        job: MediaJob | None,
+    ) -> Transcript:
         if not probe.has_audio:
             raise MediaError("В файле нет звуковой дорожки")
         if probe.duration_sec > self._max_duration:
             hours = self._max_duration / 3600
             raise MediaError(f"Запись длиннее {hours:g} ч. Разделите её на части")
         workdir = Path(await asyncio.to_thread(tempfile.mkdtemp, prefix="media-"))
+        completed: set[float] = set()
+        segments: list[Path] = []
         try:
             segments = await self._runner.segment(source, workdir, segment_sec=self._segment_sec)
             if not segments:
                 raise MediaError("В записи не найдено звука для расшифровки")
             parts = await bounded_gather(
                 [
-                    self._segment_factory(index, path, probe.duration_sec)
+                    self._segment_factory(index, path, probe.duration_sec, engine, completed)
                     for index, path in enumerate(segments)
                 ],
                 limit=self._parallel,
             )
+        except CapabilityUnavailableError as error:
+            # Маршрутизатор уже перебрал ключи и запасной путь: показываем, что покрыто.
+            outcome = replace(
+                error.outcome,
+                **self._covered_range(completed, probe.duration_sec),
+            )
+            if job is not None:
+                job.routing = outcome
+            raise MediaRoutingError(self._routing_message(outcome), outcome=outcome) from None
         finally:
             await asyncio.to_thread(shutil.rmtree, workdir, True)
         text = stitch(parts)
         if not text.strip():
             raise NoSpeechError
-        return Transcript(text=text, duration_sec=probe.duration_sec)
+        transcripts = [item for _, item in parts if item is not None]
+        provider = next((item.provider for item in transcripts if item.provider), None)
+        model = next((item.model for item in transcripts if item.model), None)
+        costs = [item.cost_usd for item in transcripts if item.cost_usd is not None]
+        cost_usd = sum(costs) if costs else None
+        if job is not None:
+            job.provider = provider or self.provider
+            job.model = model or self.model
+            job.cost_usd = cost_usd
+        return Transcript(
+            text=text,
+            duration_sec=probe.duration_sec,
+            provider=provider or self.provider,
+            model=model or self.model,
+            cost_usd=cost_usd,
+        )
+
+    def _covered_range(self, completed: set[float], duration_sec: float) -> dict[str, str | None]:
+        """Непрерывно покрытый отрезок записи: `done` и `remaining` в формате `мм:сс`."""
+        segment = float(self._segment_sec)
+        covered = 0.0
+        while round(covered, 3) in completed:
+            covered += segment
+        covered = min(covered, duration_sec)
+        done = f"00:00–{self._clock(covered)}" if covered > 0 else None
+        remaining = (
+            f"{self._clock(covered)}–{self._clock(duration_sec)}"
+            if covered < duration_sec
+            else None
+        )
+        return {"done": done, "remaining": remaining}
+
+    @staticmethod
+    def _clock(seconds: float) -> str:
+        total = max(int(seconds), 0)
+        return f"{total // 60:02d}:{total % 60:02d}"
+
+    def _routing_message(self, outcome: CapabilityOutcome) -> str:
+        """Понятный текст для источника: причина и что именно не расшифровано."""
+        parts = [outcome.message or "Запись не расшифрована: нет рабочего ключа распознавания"]
+        if outcome.done:
+            parts.append(f"обработано {outcome.done}")
+        if outcome.remaining:
+            parts.append(f"не расшифровано {outcome.remaining}")
+        return ". ".join(parts)
 
     def _segment_factory(
-        self, index: int, path: Path, total_sec: float
+        self,
+        index: int,
+        path: Path,
+        total_sec: float,
+        engine: SpeechToText,
+        completed: set[float],
     ) -> Callable[[], Awaitable[tuple[float, Transcript | None]]]:
         offset = float(index * self._segment_sec)
         duration = max(min(float(self._segment_sec), total_sec - offset), 1.0)
@@ -307,11 +408,15 @@ class MediaTranscriber:
             for attempt in range(1, self._attempts + 1):
                 try:
                     transcript = await asyncio.wait_for(
-                        self._stt.transcribe(data, mime=_SEGMENT_MIME),
+                        engine.transcribe(data, mime=_SEGMENT_MIME),
                         timeout=self.segment_timeout(duration),
                     )
                 except NoSpeechError:
+                    completed.add(offset)
                     return offset, None
+                except CapabilityUnavailableError:
+                    # Маршрутизатор уже повторил временные сбои и перебрал ключи: не умножаем.
+                    raise
                 except (RuntimeError, TimeoutError):
                     if attempt == self._attempts:
                         raise MediaError(
@@ -319,6 +424,7 @@ class MediaTranscriber:
                             "Повторите загрузку позже"
                         ) from None
                 else:
+                    completed.add(offset)
                     return offset, transcript
             raise AssertionError  # pragma: no cover
 

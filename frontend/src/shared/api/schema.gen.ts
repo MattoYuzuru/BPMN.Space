@@ -192,6 +192,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Credentials
+         * @description Все ключи пользователя, карточки возможностей и признак доступности хранилища.
+         */
+        get: operations["list_credentials"];
+        put?: never;
+        /**
+         * Create Credential
+         * @description Проверяет ключ дешёвым запросом провайдера и сохраняет его зашифрованным.
+         *
+         *     Один ключ может закрывать несколько возможностей: OpenAI — модели и распознавание речи.
+         */
+        post: operations["create_credential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/credentials/{credential_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Credential */
+        delete: operations["delete_credential"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Credential
+         * @description Название, модель, приоритет, включённость и лимит; ключ и адрес не меняются.
+         */
+        patch: operations["update_credential"];
+        trace?: never;
+    };
+    "/api/v1/me/credentials/{credential_id}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check Credential
+         * @description Проверка ключа для каждого типа: отказ провайдера — `ok=false` с понятной причиной.
+         *
+         *     Успешная проверка снимает отметку ошибки и снова включает ключ, отключённый после отказа
+         *     провайдера. Для возможностей волны 3 проверка честно отвечает, что пока недоступна.
+         */
+        post: operations["check_credential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/llm-credentials": {
         parameters: {
             query?: never;
@@ -1003,6 +1073,9 @@ export interface paths {
         /**
          * Transcribe
          * @description Расшифровка голоса для правки перед сохранением (источник или ответ на вопрос).
+         *
+         *     У вошедшего пользователя — на его ключах распознавания (RFC-0006), иначе — серверный
+         *     провайдер. Если рабочих ключей нет, `503` с причиной и структурным прогрессом.
          */
         post: operations["transcribe"];
         delete?: never;
@@ -1268,6 +1341,39 @@ export interface components {
              */
             file: string;
         };
+        /**
+         * CapabilityCardSchema
+         * @description Карточка возможности для «Настроек → Инструменты».
+         */
+        CapabilityCardSchema: {
+            /** Available */
+            available: boolean;
+            /**
+             * Capability
+             * @enum {string}
+             */
+            capability: "llm" | "speech_to_text" | "ocr" | "vision" | "video_understanding" | "web_search" | "web_fetch" | "tts";
+            /** Description */
+            description: string;
+            /**
+             * Keys
+             * @description Рабочих ключей: включённых и не исчерпанных
+             */
+            keys: number;
+            /** Kinds */
+            kinds: ("llm" | "speech_to_text" | "ocr" | "vision" | "video" | "web_search" | "web_fetch" | "tts")[];
+            /** Label */
+            label: string;
+            /** Last Error Code */
+            last_error_code?: string | null;
+            /** Providers */
+            providers: components["schemas"]["CredentialProvider"][];
+            /**
+             * Tool
+             * @description Имя инструмента, которое увидит модель
+             */
+            tool: string;
+        };
         /** ChecklistEntry */
         ChecklistEntry: {
             /**
@@ -1319,6 +1425,166 @@ export interface components {
             expires_at: string;
             /** Ticket */
             ticket: string;
+        };
+        /** Credential */
+        Credential: {
+            /**
+             * Base Url
+             * @description Только у совместимого провайдера
+             */
+            base_url: string | null;
+            /**
+             * Capabilities
+             * @description Возможности, которые закрывает ключ
+             */
+            capabilities: ("llm" | "speech_to_text" | "ocr" | "vision" | "video_understanding" | "web_search" | "web_fetch" | "tts")[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Default Model */
+            default_model: string | null;
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Exhausted Until
+             * @description Ключ отдыхает: провайдер сообщил об исчерпанной квоте
+             */
+            exhausted_until: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Default
+             * @description Ключ модели по умолчанию (только для `llm`)
+             */
+            is_default: boolean;
+            /**
+             * Key Hint
+             * @description Последние 4 символа ключа; пусто у коротких ключей
+             */
+            key_hint: string;
+            /** Kinds */
+            kinds: ("llm" | "speech_to_text" | "ocr" | "vision" | "video" | "web_search" | "web_fetch" | "tts")[];
+            /** Label */
+            label: string;
+            /**
+             * Last Error
+             * @description Понятный текст последней ошибки
+             */
+            last_error: string | null;
+            /**
+             * Last Error Code
+             * @description Класс последней ошибки (RFC-0006)
+             */
+            last_error_code: string | null;
+            /** Last Used At */
+            last_used_at: string | null;
+            monthly_limit: components["schemas"]["MonthlyLimit"] | null;
+            /**
+             * Priority
+             * @description Меньше — раньше в переборе
+             */
+            priority: number;
+            /** Provider */
+            provider: string;
+        };
+        /**
+         * CredentialCheckResult
+         * @description Итог проверки ключа: отказ провайдера — `ok=false`, а не ошибка запроса.
+         */
+        CredentialCheckResult: {
+            /** Capability */
+            capability?: ("llm" | "speech_to_text" | "ocr" | "vision" | "video_understanding" | "web_search" | "web_fetch" | "tts") | null;
+            /** Detail */
+            detail: string;
+            /** Last Error Code */
+            last_error_code?: string | null;
+            /** Ok */
+            ok: boolean;
+        };
+        /** CredentialCreate */
+        CredentialCreate: {
+            /**
+             * Api Key
+             * Format: password
+             * @description Принимается один раз; сохраняется зашифрованным
+             */
+            api_key: string;
+            /** Base Url */
+            base_url?: string | null;
+            /** Default Model */
+            default_model?: string | null;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Is Default
+             * @description Только для ключа модели
+             * @default false
+             */
+            is_default: boolean;
+            /**
+             * Kinds
+             * @description Типы задач, которые закрывает ключ: llm, speech_to_text, …
+             */
+            kinds: ("llm" | "speech_to_text" | "ocr" | "vision" | "video" | "web_search" | "web_fetch" | "tts")[];
+            /** Label */
+            label?: string | null;
+            monthly_limit?: components["schemas"]["MonthlyLimit"] | null;
+            /**
+             * Priority
+             * @default 100
+             */
+            priority: number;
+            /** Provider */
+            provider: string;
+        };
+        /** CredentialList */
+        CredentialList: {
+            /**
+             * Capabilities
+             * @description Карточки всех возможностей: какие ключи есть и какие нужны
+             */
+            capabilities: components["schemas"]["CapabilityCardSchema"][];
+            /** Items */
+            items: components["schemas"]["Credential"][];
+            /**
+             * Storage Available
+             * @description false — на сервере не задан CREDENTIALS_ENCRYPTION_KEY, ключи не принимаются
+             */
+            storage_available: boolean;
+        };
+        /** CredentialProvider */
+        CredentialProvider: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+        };
+        /** CredentialUpdate */
+        CredentialUpdate: {
+            /**
+             * Clear Monthly Limit
+             * @default false
+             */
+            clear_monthly_limit: boolean;
+            /** Default Model */
+            default_model?: string | null;
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Is Default */
+            is_default?: boolean | null;
+            /** Label */
+            label?: string | null;
+            monthly_limit?: components["schemas"]["MonthlyLimit"] | null;
+            /** Priority */
+            priority?: number | null;
         };
         /** DiagramConflictResponse */
         DiagramConflictResponse: {
@@ -1646,6 +1912,18 @@ export interface components {
             has_audio?: boolean | null;
             /** Has Video */
             has_video?: boolean | null;
+        };
+        /**
+         * MonthlyLimit
+         * @description Необязательный месячный лимит ключа: минуты, запросы или деньги.
+         */
+        MonthlyLimit: {
+            /** Cost Usd */
+            cost_usd?: number | null;
+            /** Minutes */
+            minutes?: number | null;
+            /** Requests */
+            requests?: number | null;
         };
         /** OnboardingEvent */
         OnboardingEvent: {
@@ -2469,6 +2747,39 @@ export interface components {
          * @enum {string}
          */
         TargetRoute: "projects" | "workspace";
+        /**
+         * ToolUnavailableErrorResponse
+         * @description Возможность не выполнена (RFC-0006): причина, прогресс и альтернативы.
+         *
+         *     Текст провайдера в сообщение не входит — только класс причины и структурный прогресс.
+         */
+        ToolUnavailableErrorResponse: {
+            /**
+             * Alternatives
+             * @description Чем заменить: например, `vision:frames`
+             */
+            alternatives?: string[];
+            /**
+             * Code
+             * @description Класс причины: quota_exhausted, auth, transient, unsupported, fatal или capability_missing
+             */
+            code?: string | null;
+            /**
+             * Detail
+             * @description Сообщение об ошибке для пользователя, на русском
+             */
+            detail: string;
+            /**
+             * Done
+             * @description Что уже обработано, например «00:00–34:10»
+             */
+            done?: string | null;
+            /**
+             * Remaining
+             * @description Что осталось, например «34:10–80:00»
+             */
+            remaining?: string | null;
+        };
         /** TourState */
         TourState: {
             /**
@@ -3337,6 +3648,271 @@ export interface operations {
             };
             /** @description Некорректные данные */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_credentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CredentialList"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_credential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CredentialCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Credential"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Конфликт состояния */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Слишком много запросов; повторите через `Retry-After` секунд */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Сервис или помощник не настроен */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_credential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    update_credential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CredentialUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Credential"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    check_credential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CredentialCheckResult"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Слишком много запросов; повторите через `Retry-After` секунд */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Сервис или помощник не настроен */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6426,6 +7002,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Нет рабочего ключа распознавания или провайдер не принял запись */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolUnavailableErrorResponse"];
                 };
             };
         };

@@ -27,6 +27,26 @@ class TranscriptionErrorResponse(ErrorResponse):
     )
 
 
+class ToolUnavailableErrorResponse(ErrorResponse):
+    """Возможность не выполнена (RFC-0006): причина, прогресс и альтернативы.
+
+    Текст провайдера в сообщение не входит — только класс причины и структурный прогресс.
+    """
+
+    code: str | None = Field(
+        default=None,
+        description=(
+            "Класс причины: quota_exhausted, auth, transient, unsupported, fatal или "
+            "capability_missing"
+        ),
+    )
+    done: str | None = Field(default=None, description="Что уже обработано, например «00:00–34:10»")
+    remaining: str | None = Field(default=None, description="Что осталось, например «34:10–80:00»")
+    alternatives: list[str] = Field(
+        default_factory=list, description="Чем заменить: например, `vision:frames`"
+    )
+
+
 class Quote(ApiModel):
     """Цитата из источника: доказательство, трассировка или повод для вопроса."""
 

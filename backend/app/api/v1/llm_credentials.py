@@ -17,6 +17,7 @@ from app.api.schemas.llm_credentials import (
     LlmModelCapabilities,
     LlmModelList,
 )
+from app.domain.capabilities import CredentialKind
 from app.llm.capabilities import ModelCapabilities
 from app.services.auth import UserRow
 from app.services.errors import UnauthorizedError
@@ -32,10 +33,10 @@ def _account(user: UserRow | None) -> UUID:
 
 @router.get("/me/llm-credentials", responses=errors(401))
 async def list_llm_credentials(container: ContainerDep, user: OptionalUserDep) -> LlmCredentialList:
-    items = await container.llm_credentials.list_for(_account(user))
+    items = await container.credentials.list_by_kind(_account(user), CredentialKind.LLM)
     return LlmCredentialList(
         items=[LlmCredential.of(item) for item in items],
-        storage_available=container.llm_credentials.storage_available,
+        storage_available=container.credentials.storage_available,
     )
 
 
@@ -49,7 +50,7 @@ async def create_llm_credential(
     body: LlmCredentialCreate, container: ContainerDep, user: OptionalUserDep
 ) -> LlmCredential:
     """Проверяет ключ запросом списка моделей у провайдера и сохраняет его зашифрованным."""
-    created = await container.llm_credentials.create(
+    created = await container.credentials.create_llm(
         _account(user),
         provider=body.provider,
         label=body.label,
@@ -68,7 +69,7 @@ async def update_llm_credential(
     container: ContainerDep,
     user: OptionalUserDep,
 ) -> LlmCredential:
-    updated = await container.llm_credentials.update(
+    updated = await container.credentials.update(
         _account(user),
         credential_id,
         label=body.label,
@@ -86,7 +87,7 @@ async def update_llm_credential(
 async def delete_llm_credential(
     credential_id: UUID, container: ContainerDep, user: OptionalUserDep
 ) -> Response:
-    await container.llm_credentials.delete(_account(user), credential_id)
+    await container.credentials.delete(_account(user), credential_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -98,7 +99,7 @@ async def delete_llm_credential(
 async def list_llm_models(
     credential_id: UUID, container: ContainerDep, user: OptionalUserDep
 ) -> LlmModelList:
-    models = await container.llm_credentials.models(_account(user), credential_id)
+    models = await container.credentials.models(_account(user), credential_id)
     return LlmModelList(
         items=[
             LlmModel(

@@ -184,6 +184,17 @@ class Settings(BaseSettings):
     deepgram_api_key: SecretStr | None = None
     deepgram_timeout_sec: float = 120.0
 
+    # --- Маршрутизация инструментов по ключам пользователя (RFC-0006) ---
+    # Повторы временных сбоев одного ключа: число попыток и паузы (как у LLM, с джиттером).
+    capability_max_attempts: int = Field(default=2, ge=1, le=5)
+    capability_retry_base_sec: float = Field(default=1.0, ge=0)
+    capability_retry_max_sec: float = Field(default=30.0, ge=0)
+    # Предохранитель ключа: после стольких подряд отказов ключ отдыхает это число секунд.
+    capability_breaker_threshold: int = Field(default=3, ge=1, le=100)
+    capability_breaker_cooldown_sec: float = Field(default=60.0, ge=0)
+    # Пауза ключа при исчерпанной квоте, если провайдер не прислал `Retry-After`.
+    capability_quota_cooldown_sec: float = Field(default=3600.0, ge=0)
+
     @field_validator(
         "database_url",
         "bpmn_tools_url",

@@ -358,14 +358,22 @@ class DiagramVersionRow(Base):
     )
 
 
-class UserLlmCredentialRow(Base):
-    """Ключ модели пользователя; открытого ключа нет — только шифртекст и подсказка."""
+class UserCredentialRow(Base):
+    """Ключ пользователя по типам задач (RFC-0006); только шифртекст и подсказка."""
 
-    __tablename__ = "user_llm_credentials"
+    __tablename__ = "user_credentials"
     __table_args__ = (
+        CheckConstraint("cardinality(kinds) > 0", name="ck_user_credentials_kinds_not_empty"),
         CheckConstraint(
-            "provider IN ('anthropic', 'openai', 'openai_compatible')",
-            name="ck_user_llm_credentials_provider",
+            "kinds <@ ARRAY['llm', 'speech_to_text', 'ocr', 'vision', 'video', "
+            "'web_search', 'web_fetch', 'tts']::varchar[]",
+            name="ck_user_credentials_kinds_known",
+        ),
+        CheckConstraint("priority >= 0", name="ck_user_credentials_priority"),
+        CheckConstraint(
+            "last_error_code IS NULL OR last_error_code IN "
+            "('transient', 'quota_exhausted', 'auth', 'unsupported', 'fatal')",
+            name="ck_user_credentials_last_error_code",
         ),
     )
 
@@ -376,12 +384,22 @@ class UserLlmCredentialRow(Base):
         nullable=False,
         index=True,
     )
+    kinds: Mapped[list[str]] = mapped_column(ARRAY(String(32)), nullable=False)
     provider: Mapped[str] = mapped_column(String(32), nullable=False)
     label: Mapped[str] = mapped_column(String(60), nullable=False)
     base_url: Mapped[str | None] = mapped_column(String(500))
     encrypted_key: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     key_hint: Mapped[str] = mapped_column(String(8), nullable=False)
     default_model: Mapped[str | None] = mapped_column(String(128))
+    priority: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=100, server_default=text("100")
+    )
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    monthly_limit: Mapped[dict[str, float] | None] = mapped_column(JSONB)
+    exhausted_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error_code: Mapped[str | None] = mapped_column(String(32))
     is_default: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
@@ -448,8 +466,8 @@ Index(
 
 
 Index(
-    "uq_user_llm_credentials_default",
-    UserLlmCredentialRow.user_id,
+    "uq_user_credentials_default",
+    UserCredentialRow.user_id,
     unique=True,
     postgresql_where=text("is_default"),
 )

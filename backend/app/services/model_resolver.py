@@ -4,18 +4,29 @@
 mock (только вне production). Ключ расшифровывается здесь, на время одного вызова, и сразу уходит
 в клиент провайдера; наружу, в БД прогонов и журналы он не попадает. Прогон хранит только
 `provider`, `model` и `credential_id`.
+
+Здесь же к модели применяется профиль прогона (RFC-0005): effort проверяется по возможностям
+модели, у модели без рассуждения отбрасывается. Пределы прогона (бюджет источников,
+`max_tokens`) пайплайн получил из справочника при сборке в `llm/factory.py`.
 """
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from uuid import UUID
 
 from app.domain.credentials import LlmCredential
 from app.infra.crypto import CredentialCipher, CredentialCipherError
 from app.infra.repositories.base import Repositories
 from app.llm.base import ProcessPipeline
+from app.llm.capabilities import (
+    ModelCapabilities,
+    RunProfile,
+    UnsupportedEffortError,
+    checked_profile,
+)
 from app.llm.client import PROVIDER_MOCK, LlmConfig, redact_secrets
+from app.llm.pipeline import LlmPipeline
 from app.services.common import Runtime
 from app.services.errors import InvalidInputError, NotFoundError, UnavailableError
 
@@ -36,6 +47,12 @@ class ResolvedModel:
     model: str
     credential_id: UUID | None
     source: str
+    # Профиль после проверки: effort, которого модель не умеет, здесь уже отброшен.
+    profile: RunProfile = field(default_factory=RunProfile)
+
+    @property
+    def capabilities(self) -> ModelCapabilities:
+        return pipeline_capabilities(self.pipeline)
 
     async def release(self) -> None:
         """Закрывает соединения клиента пользователя; общий пайплайн сервера остаётся жить."""
@@ -49,6 +66,17 @@ def pipeline_provider(pipeline: object) -> str:
 
 def pipeline_model(pipeline: object) -> str:
     return str(getattr(pipeline, "model_name", type(pipeline).__name__))
+
+
+def pipeline_capabilities(pipeline: object) -> ModelCapabilities:
+    caps = getattr(pipeline, "capabilities", None)
+    return caps if isinstance(caps, ModelCapabilities) else ModelCapabilities()
+
+
+def pipeline_budget(pipeline: object) -> int | None:
+    """Бюджет источников, рассчитанный из окна модели; `None` — у mock и тестовых пайплайнов."""
+    budget = getattr(pipeline, "context_budget_chars", None)
+    return budget if isinstance(budget, int) and not isinstance(budget, bool) else None
 
 
 class ModelResolver:
@@ -102,6 +130,24 @@ class ModelResolver:
         credential_id: UUID | None = None,
         model: str | None = None,
         allow_mock: bool = True,
+        profile: RunProfile | None = None,
+    ) -> ResolvedModel:
+        """Модель прогона; `profile` проверяется по её возможностям (422 при неверном effort)."""
+        return await self._with_profile(
+            await self._resolve(
+                user_id, credential_id=credential_id, model=model, allow_mock=allow_mock
+            ),
+            profile,
+            validate=True,
+        )
+
+    async def _resolve(
+        self,
+        user_id: UUID | None,
+        *,
+        credential_id: UUID | None,
+        model: str | None,
+        allow_mock: bool,
     ) -> ResolvedModel:
         repo = self._repos.llm_credentials if self._repos else None
         credential: LlmCredential | None = None
@@ -124,16 +170,48 @@ class ModelResolver:
         return self._for_credential(credential, model or credential.default_model)
 
     async def restore(
-        self, user_id: UUID | None, credential_id: UUID | None, model: str | None
+        self,
+        user_id: UUID | None,
+        credential_id: UUID | None,
+        model: str | None,
+        profile: RunProfile | None = None,
     ) -> ResolvedModel:
-        """Выбор, записанный в прогоне (после рестарта), без подмены ключом по умолчанию."""
+        """Выбор и профиль, записанные в прогоне (после рестарта), без подмены умолчаниями."""
         if credential_id is None:
-            return self._server_choice(allow_mock=True)
-        repo = self._repos.llm_credentials if self._repos else None
-        credential = await repo.get(credential_id) if repo else None
-        if credential is None or credential.user_id != user_id:
-            raise NotFoundError("Ключ модели удалён. Запустите прогон заново")
-        return self._for_credential(credential, model)
+            resolved = self._server_choice(allow_mock=True)
+        else:
+            repo = self._repos.llm_credentials if self._repos else None
+            credential = await repo.get(credential_id) if repo else None
+            if credential is None or credential.user_id != user_id:
+                raise NotFoundError("Ключ модели удалён. Запустите прогон заново")
+            resolved = self._for_credential(credential, model)
+        # Записанный профиль уже проверен при запуске. После рестарта уточнения Models API
+        # могут ещё не загрузиться, поэтому он не перепроверяется: адаптер сам берёт ближайший
+        # поддерживаемый уровень, и восстановленный прогон идёт с тем же профилем.
+        return await self._with_profile(resolved, profile, validate=False)
+
+    async def _with_profile(
+        self, resolved: ResolvedModel, profile: RunProfile | None, *, validate: bool
+    ) -> ResolvedModel:
+        """Проверяет профиль по модели и даёт пайплайн прогона с этим профилем."""
+        checked = profile or RunProfile()
+        if validate:
+            try:
+                checked = checked_profile(checked, resolved.capabilities, resolved.model)
+            except UnsupportedEffortError as error:
+                await resolved.release()
+                raise InvalidInputError(str(error)) from None
+        pipeline = resolved.pipeline
+        if isinstance(pipeline, LlmPipeline):
+            pipeline = pipeline.with_profile(checked)
+        return ResolvedModel(
+            pipeline,
+            resolved.provider,
+            resolved.model,
+            resolved.credential_id,
+            resolved.source,
+            checked,
+        )
 
     def _for_credential(self, credential: LlmCredential, model: str | None) -> ResolvedModel:
         if self._cipher is None or self._factory is None:

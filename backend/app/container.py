@@ -292,6 +292,7 @@ def build_container(
             runtime=runtime,
             allowed_private_hosts=tuple(settings.llm_allowed_private_hosts),
             models_cache_sec=settings.llm_models_cache_sec,
+            anthropic_effort=settings.anthropic_effort_default(),
         ),
         access=access,
         sharing=SharingService(access, runtime=runtime),

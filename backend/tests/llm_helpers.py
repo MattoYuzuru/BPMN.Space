@@ -16,8 +16,19 @@ class ScriptedClient:
 
     def __init__(self, complete: Callable[[str, str], Any] | None = None) -> None:
         self._complete = complete
+        # Параметры каждого вызова: тесты профиля проверяют effort и `max_tokens`.
+        self.calls: list[dict[str, Any]] = []
 
-    async def complete(self, system: str, user: str, *, json_mode: bool, max_tokens: int) -> str:
+    async def complete(
+        self,
+        system: str,
+        user: str,
+        *,
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> str:
+        self.calls.append({"json_mode": json_mode, "max_tokens": max_tokens, "effort": effort})
         if self._complete is None:
             raise RuntimeError("Ответ модели не задан")
         result = self._complete(system, user)

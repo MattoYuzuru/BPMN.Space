@@ -1349,15 +1349,93 @@ export interface components {
         };
         /** LlmModel */
         LlmModel: {
+            capabilities: components["schemas"]["LlmModelCapabilities"];
             /** Id */
             id: string;
             /** Label */
             label: string;
         };
+        /**
+         * LlmModelCapabilities
+         * @description Возможности модели: справочник сервера, уточнённый списком моделей провайдера.
+         */
+        LlmModelCapabilities: {
+            /** Accepts Temperature */
+            accepts_temperature: boolean;
+            /**
+             * Context Tokens
+             * @description Окно контекста; null — неизвестно
+             */
+            context_tokens: number | null;
+            /**
+             * Effort Default
+             * @description Уровень, который сервер отправит, если в профиле прогона его нет
+             */
+            effort_default: ("low" | "medium" | "high" | "xhigh" | "max") | null;
+            /**
+             * Effort Levels
+             * @description Уровни глубины, которые модель принимает; пусто — модель без рассуждения
+             */
+            effort_levels: ("low" | "medium" | "high" | "xhigh" | "max")[];
+            /**
+             * Known
+             * @description false — модель неизвестна, показаны осторожные умолчания
+             */
+            known: boolean;
+            /**
+             * Max Output Tokens
+             * @description Максимум ответа; null — неизвестно
+             */
+            max_output_tokens: number | null;
+            /** Pdf Input */
+            pdf_input: boolean;
+            prices?: components["schemas"]["LlmModelPrices"] | null;
+            /** Tools */
+            tools: boolean;
+            /** Vision */
+            vision: boolean;
+        };
         /** LlmModelList */
         LlmModelList: {
             /** Items */
             items: components["schemas"]["LlmModel"][];
+        };
+        /**
+         * LlmModelPrices
+         * @description Цены провайдера в долларах за 1 млн токенов на дату проверки (ориентир, не счёт).
+         */
+        LlmModelPrices: {
+            /**
+             * Cache Read
+             * @description Чтение кеша промпта
+             */
+            cache_read: number | null;
+            /**
+             * Cache Write
+             * @description Запись кеша промпта (TTL 5 минут)
+             */
+            cache_write: number | null;
+            /**
+             * Checked On
+             * Format: date
+             * @description Когда цены сверены с прайсом провайдера
+             */
+            checked_on: string;
+            /**
+             * Currency
+             * @default USD
+             * @constant
+             */
+            currency: "USD";
+            /** Input */
+            input: number;
+            /**
+             * Note
+             * @description Оговорка: например, порог длины промпта
+             */
+            note?: string | null;
+            /** Output */
+            output: number;
         };
         /** LocalAssistantRequest */
         LocalAssistantRequest: {
@@ -1704,6 +1782,8 @@ export interface components {
              * @description Модель, на которой выполнен прогон
              */
             model?: string | null;
+            /** @description Проверенный профиль прогона; null — прогон до RFC-0005 */
+            profile?: components["schemas"]["RunProfile"] | null;
             /** Progress */
             progress: number;
             /**
@@ -1761,6 +1841,8 @@ export interface components {
              * @description Модель; требует `credential_id`
              */
             model?: string | null;
+            /** @description Профиль прогона: effort и смысловая сверка */
+            profile?: components["schemas"]["RunProfile"] | null;
             /**
              * Replace Manual
              * @description Осознанно пересобрать из источников вместо manual; требует актуальный base_version_id
@@ -1800,6 +1882,22 @@ export interface components {
          * @enum {string}
          */
         RunMode: "analyze" | "build";
+        /**
+         * RunProfile
+         * @description Профиль прогона (RFC-0005). Пусто — умолчания сервера и модели.
+         */
+        RunProfile: {
+            /**
+             * Effort
+             * @description Глубина работы модели: low, medium, high, xhigh, max. Уровень, которого модель не поддерживает, — 422; у модели без рассуждения поле игнорируется
+             */
+            effort?: ("low" | "medium" | "high" | "xhigh" | "max") | null;
+            /**
+             * Semantic Review
+             * @description Смысловая сверка схемы; null — настройка сервера
+             */
+            semantic_review?: boolean | null;
+        };
         /** RunQuestionEvent */
         RunQuestionEvent: {
             data: components["schemas"]["QuestionEventData"];

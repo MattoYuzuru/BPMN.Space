@@ -7,6 +7,7 @@
 
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from uuid import UUID
 
 from pydantic import SecretStr
@@ -19,6 +20,7 @@ from app.domain.credentials import (
 )
 from app.infra.crypto import CredentialCipher, CredentialCipherError
 from app.infra.repositories.base import Repositories
+from app.llm.capabilities import capabilities_for, nearest_effort
 from app.llm.client import (
     PROVIDER_ANTHROPIC,
     PROVIDER_COMPATIBLE,
@@ -56,7 +58,9 @@ class LlmCredentialService:
         allowed_private_hosts: tuple[str, ...] = (),
         models_cache_sec: float = 300.0,
         monotonic: Callable[[], float] = time.monotonic,
+        anthropic_effort: str | None = None,
     ) -> None:
+        self._anthropic_effort = anthropic_effort
         self._repos = repos
         self._cipher = cipher
         self._client_factory = client_factory
@@ -156,7 +160,7 @@ class LlmCredentialService:
     async def _fetch_models(self, config: LlmConfig) -> list[ModelInfo]:
         client = self._client_factory(config)
         try:
-            return await client.list_models()
+            return self._describe(config, await client.list_models())
         except LlmAuthError as error:
             raise InvalidInputError(str(error)) from None
         except RuntimeError as error:
@@ -165,6 +169,23 @@ class LlmCredentialService:
             ) from None
         finally:
             await client.aclose()
+
+    def _describe(self, config: LlmConfig, models: list[ModelInfo]) -> list[ModelInfo]:
+        """Каждой модели — возможности: от провайдера, иначе из справочника или умолчания.
+
+        `effort_default` — тот уровень, который сервер реально отправит без профиля: у Anthropic
+        явный `LLM_ANTHROPIC_EFFORT` главнее умолчания модели.
+        """
+        described: list[ModelInfo] = []
+        for item in models:
+            caps = item.capabilities or capabilities_for(
+                config.provider, item.id, base_url=config.base_url
+            )
+            if config.provider == PROVIDER_ANTHROPIC and self._anthropic_effort:
+                level = nearest_effort(self._anthropic_effort, caps.effort_levels)
+                caps = replace(caps, effort_default=level)  # type: ignore[arg-type]
+            described.append(replace(item, capabilities=caps))
+        return described
 
     async def update(
         self,

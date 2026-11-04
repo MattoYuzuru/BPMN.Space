@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 
 from app.llm.base import OutputTruncatedError, record_usage
+from app.llm.capabilities import ModelCapabilities, capabilities_for, is_deepseek
 from app.llm.client import (
     NETWORK_MESSAGE,
     RETRYABLE_HTTP,
@@ -48,6 +49,7 @@ class OpenAICompatibleClient:
     # Имя параметра лимита ответа: у новых моделей OpenAI оно другое.
     token_param = "max_tokens"  # noqa: S105 — имя поля API, не секрет
     default_base_url: str | None = None
+    provider = "openai_compatible"
 
     def __init__(
         self,
@@ -91,7 +93,13 @@ class OpenAICompatibleClient:
         await self._http.aclose()
 
     def build_body(
-        self, system: str, user: str, *, json_mode: bool, max_tokens: int
+        self,
+        system: str,
+        user: str,
+        *,
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None = None,
     ) -> dict[str, Any]:
         config = self._config
         body: dict[str, Any] = {
@@ -107,9 +115,27 @@ class OpenAICompatibleClient:
             body["response_format"] = {"type": "json_object"}
         if json_mode and config.json_temperature is not None and self.accepts_temperature():
             body["temperature"] = config.json_temperature
-        if config.thinking is not None:
-            body["thinking"] = {"type": "enabled" if config.thinking else "disabled"}
+        thinking = self.thinking_for(effort)
+        if thinking is not None:
+            body["thinking"] = {"type": "enabled" if thinking else "disabled"}
+        self.apply_effort(body, effort)
         return body
+
+    def capabilities(self) -> ModelCapabilities:
+        return capabilities_for(self.provider, self._config.model, base_url=self._base_url)
+
+    def thinking_for(self, effort: str | None) -> bool | None:
+        """DeepSeek: профиль high и выше включает рассуждение, ниже — выключает.
+
+        Без уровня в профиле — настройка сервера (`DEEPSEEK_THINKING_ENABLED` у legacy) или
+        ничего: рассуждение съедает лимит ответа, поэтому по умолчанию оно не включается.
+        """
+        if effort is not None and is_deepseek(self._config.model, self._base_url):
+            return effort in {"high", "xhigh", "max"}
+        return self._config.thinking
+
+    def apply_effort(self, body: dict[str, Any], effort: str | None) -> None:
+        """Совместимые серверы, кроме DeepSeek, уровень не принимают: поле не отправляется."""
 
     def accepts_temperature(self) -> bool:
         return True
@@ -120,9 +146,17 @@ class OpenAICompatibleClient:
             "Content-Type": "application/json",
         }
 
-    async def complete(self, system: str, user: str, *, json_mode: bool, max_tokens: int) -> str:
+    async def complete(
+        self,
+        system: str,
+        user: str,
+        *,
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> str:
         limit = max_tokens if json_mode else min(max_tokens, _CHAT_MAX_TOKENS)
-        body = self.build_body(system, user, json_mode=json_mode, max_tokens=limit)
+        body = self.build_body(system, user, json_mode=json_mode, max_tokens=limit, effort=effort)
         raw = await self._post("/chat/completions", body)
         try:
             payload = json.loads(raw)

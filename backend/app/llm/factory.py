@@ -7,6 +7,12 @@ import httpx2
 
 from app.config import Settings
 from app.llm.anthropic import AnthropicClient
+from app.llm.capabilities import (
+    ModelCapabilities,
+    capabilities_for,
+    context_budget_chars,
+    json_output_tokens,
+)
 from app.llm.client import PROVIDER_COMPATIBLE, LlmClient, LlmConfig
 from app.llm.openai import OpenAIClient
 from app.llm.openai_compatible import OpenAICompatibleClient
@@ -48,23 +54,47 @@ def build_pipeline(
     user_supplied: bool = False,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> LlmPipeline:
-    """Параметры JSON-ответа берутся из настроек сервера: они общие для всех провайдеров."""
+    """Пределы прогона — из возможностей модели (RFC-0005), остальное — из настроек сервера.
+
+    Бюджет источников и `max_tokens` определяются здесь, в момент выбора модели, и едут в
+    пайплайн: сервис прогонов передаёт бюджет в сборщик контекста.
+    """
     client = build_client(
         config,
         user_supplied_url=user_supplied and config.provider == PROVIDER_COMPATIBLE,
         allowed_private_hosts=settings.llm_allowed_private_hosts,
         transport=transport,
     )
+    capabilities, json_max_tokens, budget = model_limits(config, settings)
     return LlmPipeline(
         client,
         provider=PROVIDER_COMPATIBLE if config.provider == "deepseek" else config.provider,
         model=config.model,
         json_mode=config.json_mode,
         semantic_review=settings.llm_semantic_review,
-        json_max_tokens=settings.llm_json_max_tokens,
+        json_max_tokens=json_max_tokens,
         thinking=config.thinking,
         json_temperature=config.json_temperature,
+        capabilities=capabilities,
+        context_budget_chars=budget,
     )
+
+
+def model_limits(config: LlmConfig, settings: Settings) -> tuple[ModelCapabilities, int, int]:
+    """Возможности модели, `max_tokens` JSON-ответа и бюджет источников в знаках."""
+    capabilities = capabilities_for(config.provider, config.model, base_url=config.base_url)
+    json_max_tokens = json_output_tokens(
+        capabilities,
+        configured=settings.llm_json_max_tokens,
+        explicit=settings.json_max_tokens_explicit,
+    )
+    budget = context_budget_chars(
+        capabilities,
+        fallback_chars=settings.context_budget_chars(),
+        output_reserve_tokens=json_max_tokens,
+        ceiling_chars=settings.llm_context_budget_max_chars,
+    )
+    return capabilities, json_max_tokens, budget
 
 
 def call_knobs(settings: Settings) -> dict[str, float | int | bool | str | None]:
@@ -77,6 +107,6 @@ def call_knobs(settings: Settings) -> dict[str, float | int | bool | str | None]
         "retry_max_sec": runtime["retry_max_sec"],
         "json_mode": settings.llm_json_mode,
         "json_temperature": settings.llm_json_temperature,
-        "effort": settings.llm_anthropic_effort,
+        "effort": settings.anthropic_effort_default(),
         "max_response_bytes": settings.llm_max_response_bytes,
     }

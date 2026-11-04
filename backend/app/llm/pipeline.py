@@ -3,6 +3,7 @@
 Провайдера не знает: запросы к модели идут через клиент, XML по-прежнему строит код проекта.
 """
 
+import copy
 import json
 import re
 from uuid import UUID
@@ -19,6 +20,7 @@ from app.llm.base import (
     PipelineError,
     remaining_sec,
 )
+from app.llm.capabilities import ModelCapabilities, RunProfile
 from app.llm.client import LlmClient
 from app.llm.evidence_context import prepare_evidence_context
 from app.llm.graph_generation import generate_graph
@@ -43,10 +45,18 @@ class LlmPipeline:
         json_max_tokens: int = 8192,
         thinking: bool | None = None,
         json_temperature: float | None = 0.0,
+        capabilities: ModelCapabilities | None = None,
+        context_budget_chars: int | None = None,
+        effort: str | None = None,
     ) -> None:
         if isinstance(json_max_tokens, bool) or json_max_tokens < 1:
             raise ValueError("Лимит JSON-ответа должен быть положительным числом токенов")
         self._client = client
+        self._capabilities = capabilities or ModelCapabilities()
+        # Бюджет источников прогона, рассчитанный из окна модели (`None` — решает сервис).
+        self._context_budget = context_budget_chars
+        # Уровень профиля прогона; `None` — умолчание сервера или модели в адаптере.
+        self._effort = effort
         self._provider = provider
         self._model = model
         self._json_mode = json_mode
@@ -65,6 +75,41 @@ class LlmPipeline:
     @property
     def model_name(self) -> str:
         return self._model
+
+    @property
+    def capabilities(self) -> ModelCapabilities:
+        return self._capabilities
+
+    @property
+    def context_budget_chars(self) -> int | None:
+        return self._context_budget
+
+    @property
+    def json_max_tokens(self) -> int:
+        return self._json_max_tokens
+
+    @property
+    def profile(self) -> RunProfile:
+        """Действующий профиль: effort запроса и смысловая сверка."""
+        return RunProfile(effort=self._effort, semantic_review=self._semantic_review)  # type: ignore[arg-type]
+
+    def with_profile(self, profile: RunProfile) -> "LlmPipeline":
+        """Пайплайн прогона с профилем поверх того же клиента (effort уже проверен).
+
+        Общий пайплайн сервера не меняется: у каждого прогона своя копия с теми же
+        соединениями, а закрывает их владелец исходного клиента.
+        """
+        # Копия, а не новый объект: подклассы (тестовые и будущие) сохраняют свои методы.
+        derived = copy.copy(self)
+        derived._effort = profile.effort
+        if profile.semantic_review is not None:
+            derived._semantic_review = profile.semantic_review
+        # Анализатор привязан к методам копии; кэш общий, его ключ включает effort.
+        derived._question_analyzer = QuestionAnalyzer(
+            derived._analyze_complete, _verified_quote, derived._analysis_model
+        )
+        derived._question_analyzer.cache = self._question_analyzer.cache
+        return derived
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -87,6 +132,7 @@ class LlmPipeline:
             "output_budget": self._json_max_tokens,
             "thinking": self._thinking,
             "temperature": self._json_temperature,
+            "effort": self._effort,
         }
 
     async def structure(self, context: RunContext, analysis: AnalysisResult) -> DiagramDraft:
@@ -161,6 +207,7 @@ class LlmPipeline:
             prompt,
             json_mode=json_mode,
             max_tokens=self._json_max_tokens if json_mode else _CHAT_MAX_TOKENS,
+            effort=self._effort,
         )
 
 

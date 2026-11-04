@@ -14,8 +14,10 @@ from app.api.schemas.llm_credentials import (
     LlmCredentialList,
     LlmCredentialUpdate,
     LlmModel,
+    LlmModelCapabilities,
     LlmModelList,
 )
+from app.llm.capabilities import ModelCapabilities
 from app.services.auth import UserRow
 from app.services.errors import UnauthorizedError
 
@@ -97,4 +99,13 @@ async def list_llm_models(
     credential_id: UUID, container: ContainerDep, user: OptionalUserDep
 ) -> LlmModelList:
     models = await container.llm_credentials.models(_account(user), credential_id)
-    return LlmModelList(items=[LlmModel(id=item.id, label=item.label) for item in models])
+    return LlmModelList(
+        items=[
+            LlmModel(
+                id=item.id,
+                label=item.label,
+                capabilities=LlmModelCapabilities.of(item.capabilities or ModelCapabilities()),
+            )
+            for item in models
+        ]
+    )

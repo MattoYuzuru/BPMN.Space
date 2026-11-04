@@ -122,7 +122,7 @@ export function AccountSection() {
           отозванный ключ находился сразу.
         </p>
       </Specimen>
-      <Specimen title="Выбор модели при запуске" note="Popover, два Select">
+      <Specimen title="Выбор модели при запуске" note="Popover, два Select, RadioGroup уровня">
         <div className="w-80 rounded-lg border border-border bg-surface p-4 shadow-sm">
           <PickerBody items={DEMO_CREDENTIALS} loading={false} choice={null} onChange={() => {}} />
         </div>

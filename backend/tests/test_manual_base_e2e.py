@@ -94,6 +94,7 @@ async def test_rebuild_protects_only_manual_edit_and_remembers_removal(node_url)
     await spawner.wait_idle()
     done = await runs.get(second.id)
     assert done.status is RunStatus.SUCCEEDED, done.error
+    assert done.ir is not None
     overrides = done.ir["manual_overrides"]
     assert overrides["protected"]["nodes"] == ["Check"]
     assert overrides["removed"]["nodes"] == ["Accept"]

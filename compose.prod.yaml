@@ -2,9 +2,11 @@
 # Resource limits, log rotation and PostgreSQL tuning come from compose.yaml.
 services:
   web:
+    # За внешним reverse proxy (порты 80/443 заняты) опубликуйте на loopback, например
+    # WEB_HTTP_PUBLISH=127.0.0.1:18100 и WEB_HTTPS_PUBLISH=127.0.0.1:18143.
     ports:
-      - "80:80"
-      - "443:443"
+      - "${WEB_HTTP_PUBLISH:-80}:80"
+      - "${WEB_HTTPS_PUBLISH:-443}:443"
   db:
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Укажите POSTGRES_PASSWORD в production .env}

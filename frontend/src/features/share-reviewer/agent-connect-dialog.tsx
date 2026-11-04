@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { type ApiScope, scopeLabel } from '@/entities/api-token'
 import { useSession } from '@/entities/session'
 import { type AgentTokenIssued, type ShareRole, useIssueAgentToken } from '@/entities/share'
+import { AgentSetup } from '@/features/api-tokens/agent-setup'
 import { ApiError, errorMessage } from '@/shared/api/client'
 import { formatDate } from '@/shared/lib/format'
 import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
@@ -91,7 +92,7 @@ export function AgentConnectDialog({
         title={issued ? 'Агент подключён' : 'Подключить агента'}
         description={
           issued
-            ? 'Скопируйте токен и команду сейчас: секрет показывается один раз.'
+            ? 'Скопируйте токен и настройку сейчас: секрет показывается один раз.'
             : 'Агент получит доступ к проекту проверки на срок ссылки и только в её области.'
         }
         footer={footer}
@@ -163,21 +164,11 @@ function IssuedAgent({ token, scopeText }: { token: AgentTokenIssued; scopeText:
         leadingIcon="key"
         hint="Показывается один раз. Храните его как пароль и не пересылайте ссылку целиком."
       />
-      <CopyField
-        label="Команда для Claude Code"
-        value={token.command}
-        multiline
-        copyMessage="Команда скопирована"
-        copyLabel="Копировать команду"
-        hint="Вставьте в терминал: команда добавит MCP-сервер в Claude Code."
+      <AgentSetup
+        origin={new URL(token.mcp_url).origin}
+        mcpUrl={token.mcp_url}
+        secret={token.secret}
         onCopied={() => emitOnboardingSignal({ type: 'agent.command.copied' })}
-      />
-      <CopyField
-        label="Адрес MCP-сервера"
-        value={token.mcp_url}
-        copyMessage="Адрес скопирован"
-        copyLabel="Копировать адрес"
-        hint="Тот же адрес можно указать в другом MCP-клиенте."
       />
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone="accent" variant="outline" icon="users">

@@ -125,14 +125,24 @@ describe('Доступ для агентов', () => {
     })
     expect(await screen.findByText('Токен создан')).toBeInTheDocument()
     expect(screen.getByLabelText('Токен')).toHaveValue(SECRET)
-    const command = screen.getByLabelText('Команда для Claude Code') as HTMLTextAreaElement
+    const command = screen.getByLabelText('Настройка для Claude Code') as HTMLTextAreaElement
     expect(command.value).toBe(mcpCommand(window.location.origin, SECRET))
     expect(command.value).toContain('/mcp --header "Authorization: Bearer bps_')
+    // Любой агент: сообщение со ссылкой на инструкцию и токеном.
+    const message = screen.getByLabelText('Сообщение для агента') as HTMLTextAreaElement
+    expect(message.value).toContain(`${window.location.origin}/agents.md`)
+    expect(message.value).toContain(SECRET)
+    // Другие клиенты: настройка меняется по выбору.
+    await user.click(screen.getByRole('radio', { name: 'Codex' }))
+    const codex = screen.getByLabelText('Настройка для Codex') as HTMLTextAreaElement
+    expect(codex.value).toContain('[mcp_servers.bpmn-space]')
+    expect(codex.value).toContain(`"Authorization" = "Bearer ${SECRET}"`)
+    await user.click(screen.getByRole('radio', { name: 'Claude Code' }))
     // MCP-сервер волны 2 работает: команда подключает его к Claude Code.
     expect(screen.getByText(/MCP-сервер работает/)).toBeInTheDocument()
     // Тур волн 2–4 ждёт факты создания токена и копирования команды.
     expect(signals).toContain('agent.token.created')
-    await user.click(screen.getByRole('button', { name: 'Копировать команду' }))
+    await user.click(screen.getByRole('button', { name: 'Копировать настройку' }))
     await waitFor(() => expect(signals).toContain('agent.command.copied'))
     unsubscribe()
 

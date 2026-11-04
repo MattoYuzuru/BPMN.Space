@@ -67,3 +67,62 @@ export function mcpUrl(origin: string): string {
 export function mcpCommand(origin: string, secret: string): string {
   return `claude mcp add --transport http bpmn-space ${mcpUrl(origin)} --header "Authorization: Bearer ${secret}"`
 }
+
+/** Публичная инструкция для ИИ-агентов: статический файл фронтенда (`public/agents.md`). */
+export function agentGuideUrl(origin: string): string {
+  return `${origin.replace(/\/+$/, '')}/agents.md`
+}
+
+export type AgentClient = 'claude-code' | 'codex' | 'cursor' | 'other'
+
+export interface AgentClientSetup {
+  client: AgentClient
+  label: string
+  /** Что скопировать: команда терминала или фрагмент файла настроек. */
+  value: string
+  hint: string
+}
+
+/**
+ * Подключение MCP-сервера в популярных клиентах. Все варианты — Streamable HTTP и
+ * заголовок `Authorization: Bearer`; OAuth сервер пока не поддерживает (RFC-0007, шаг 4).
+ */
+export function agentClientSetups(url: string, secret: string): AgentClientSetup[] {
+  const bearer = `Bearer ${secret}`
+  const cursor = { mcpServers: { 'bpmn-space': { url, headers: { Authorization: bearer } } } }
+  return [
+    {
+      client: 'claude-code',
+      label: 'Claude Code',
+      value: `claude mcp add --transport http bpmn-space ${url} --header "Authorization: ${bearer}"`,
+      hint: 'Вставьте в терминал: команда добавит MCP-сервер в Claude Code.',
+    },
+    {
+      client: 'codex',
+      label: 'Codex',
+      value: `[mcp_servers.bpmn-space]\nurl = "${url}"\nhttp_headers = { "Authorization" = "${bearer}" }`,
+      hint: 'Добавьте в ~/.codex/config.toml и перезапустите Codex.',
+    },
+    {
+      client: 'cursor',
+      label: 'Cursor',
+      value: JSON.stringify(cursor, null, 2),
+      hint: 'Добавьте в ~/.cursor/mcp.json (или .cursor/mcp.json проекта).',
+    },
+    {
+      client: 'other',
+      label: 'Другой',
+      value: `URL: ${url}\nТранспорт: Streamable HTTP\nЗаголовок: Authorization: ${bearer}`,
+      hint: 'Подойдёт любой клиент MCP с HTTP-транспортом и своим заголовком.',
+    },
+  ]
+}
+
+/** Сообщение для любого агента: прочитать инструкцию и подключиться самому. */
+export function agentSetupMessage(origin: string, secret: string): string {
+  return [
+    `Подключи MCP-сервер BPMN Space по инструкции ${agentGuideUrl(origin)}.`,
+    `Адрес сервера: ${mcpUrl(origin)}. Токен: ${secret}`,
+    'Не сохраняй токен в репозиторий и логи. После подключения проверь доступ через list_projects и расскажи, что видишь.',
+  ].join('\n')
+}

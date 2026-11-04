@@ -106,9 +106,14 @@ def build_bpmn_tools(settings: Settings):
 
 def build_stt(
     settings: Settings, transport: httpx.AsyncBaseTransport | None = None
-) -> SpeechToText:
-    """Серверный провайдер распознавания — запасной путь для пользователей без своего ключа."""
+) -> SpeechToText | None:
+    """Серверный провайдер распознавания — запасной путь для пользователей без своего ключа.
+
+    `none` — запасного пути нет: распознавание только по ключам пользователей.
+    """
     match settings.stt_provider.lower():
+        case "none":
+            return None
         case "mock":
             return MockSpeechToText(
                 delay_sec=settings.mock_delay(settings.mock_transcription_delay_sec)
@@ -308,6 +313,9 @@ def build_container(
         adapter_client_factory=adapter_client_factory,
     )
     routed_stt = RoutedSpeechToText(router, server=stt)
+    # Без серверного провайдера вызовы вне пользователя идут через маршрутизатор и честно
+    # отвечают «нет ключа», а не заготовленным текстом.
+    default_stt = stt if stt is not None else routed_stt.for_user(None)
 
     onboarding = OnboardingService(
         repos,
@@ -317,7 +325,7 @@ def build_container(
     configure_llm_limits(
         parallel_requests=settings.llm_parallel_requests, chunk_chars=settings.llm_chunk_chars
     )
-    media = build_media_transcriber(settings, stt)
+    media = build_media_transcriber(settings, default_stt)
     technical_questions = TechnicalQuestionService(repos, runtime=runtime)
     incident_sink = TechnicalQuestionIncidentSink(technical_questions, repos)
     # Производные узлы записи и сканов (RFC-0006, шаги 4–5): OCR, кадры, экран, лента, сводка.
@@ -414,7 +422,9 @@ def build_container(
         ),
         examples=ExampleService(EXAMPLES),
         transcriptions=TranscriptionService(
-            stt, max_audio_bytes=settings.max_audio_bytes, stt_for_user=routed_stt.for_user
+            default_stt,
+            max_audio_bytes=settings.max_audio_bytes,
+            stt_for_user=routed_stt.for_user,
         ),
         assistant=AssistantService(repos, resolver=resolver),
         estimate=EstimateService(repos, resolver=resolver, settings=settings, runtime=runtime),

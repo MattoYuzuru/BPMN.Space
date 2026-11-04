@@ -6,7 +6,7 @@ import {
   DEFAULT_EXPIRY_DAYS,
   DEFAULT_SCOPES,
   EXPIRY_OPTIONS,
-  mcpCommand,
+  mcpUrl,
   orderedScopes,
   useCreateApiToken,
   useTokenProjectChoices,
@@ -30,6 +30,7 @@ import {
   Select,
   Skeleton,
 } from '@/shared/ui'
+import { AgentSetup } from './agent-setup'
 
 const FORM_ID = 'create-api-token-form'
 
@@ -278,9 +279,9 @@ function ProjectsField({
   )
 }
 
-/** Секрет и команда подключения — единственный показ. */
+/** Секрет и настройка подключения — единственный показ. */
 function CreatedToken({ token }: { token: ApiTokenCreated }) {
-  const commandText = mcpCommand(window.location.origin, token.secret)
+  const origin = window.location.origin
   return (
     <div className="flex flex-col gap-4">
       <CopyField
@@ -292,23 +293,20 @@ function CreatedToken({ token }: { token: ApiTokenCreated }) {
         leadingIcon="key"
       />
       <div {...tourAnchor(TOUR_ANCHORS.agentCopyCommand)}>
-        <CopyField
-          label="Команда для Claude Code"
-          value={commandText}
-          copyMessage="Команда скопирована"
-          copyLabel="Копировать команду"
-          hint="Команда подключит MCP-сервер к Claude Code."
-          multiline
+        <AgentSetup
+          origin={origin}
+          mcpUrl={mcpUrl(origin)}
+          secret={token.secret}
           onCopied={() => emitOnboardingSignal({ type: 'agent.command.copied' })}
         />
       </div>
       <Card variant="sunken" padding="sm" className="flex items-start gap-2">
         <Icon name="info" size={16} className="mt-0.5 shrink-0 text-fg-subtle" />
         <p className="type-caption text-fg-muted">
-          MCP-сервер работает по адресу <span className="font-mono">/mcp</span>: команда добавит его
-          в Claude Code. Токен действует только в пределах выбранных прав, проектов и срока; REST
-          API <span className="font-mono">/api/v1</span> тоже доступен в заголовке{' '}
-          <span className="font-mono">Authorization: Bearer</span>.
+          MCP-сервер работает по адресу <span className="font-mono">/mcp</span>, инструкция для
+          агентов — <span className="font-mono">/agents.md</span>. Токен действует только в пределах
+          выбранных прав, проектов и срока; REST API <span className="font-mono">/api/v1</span> тоже
+          доступен в заголовке <span className="font-mono">Authorization: Bearer</span>.
         </p>
       </Card>
     </div>

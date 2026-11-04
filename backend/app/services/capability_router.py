@@ -457,9 +457,13 @@ class CapabilityRouter:
 
 
 class RoutedSpeechToText:
-    """Распознавание речи на ключах пользователя; запасной путь — серверный провайдер."""
+    """Распознавание речи на ключах пользователя; запасной путь — серверный провайдер.
 
-    def __init__(self, router: CapabilityRouter, *, server: SpeechToText) -> None:
+    `server=None` (`STT_PROVIDER=none`): запасного пути нет — без ключа пользователя запись
+    не распознаётся, а источник объясняет, что нужно добавить ключ.
+    """
+
+    def __init__(self, router: CapabilityRouter, *, server: SpeechToText | None) -> None:
         self._router = router
         self._server = server
 
@@ -478,7 +482,7 @@ class _BoundSpeechToText:
     def __init__(
         self,
         router: CapabilityRouter,
-        server: SpeechToText,
+        server: SpeechToText | None,
         user_id: UUID | None,
     ) -> None:
         self._router = router
@@ -486,14 +490,17 @@ class _BoundSpeechToText:
         self._user_id = user_id
 
     async def transcribe(self, data: bytes, *, mime: str | None) -> Transcript:
+        server = self._server
+
         async def server_fallback() -> Transcript:
-            return await self._server.transcribe(data, mime=mime)
+            assert server is not None  # noqa: S101 — запасной путь передаётся только с сервером
+            return await server.transcribe(data, mime=mime)
 
         return await self._router.run(
             user_id=self._user_id,
             capability=Capability.SPEECH_TO_TEXT,
             invoke=lambda adapter: _transcribe_with(adapter, data, mime),
-            fallback=server_fallback,
+            fallback=server_fallback if server is not None else None,
         )
 
 

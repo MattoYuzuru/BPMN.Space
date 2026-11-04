@@ -1,5 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { choiceRequest, getModelChoice } from '@/entities/llm-credential'
 import { type ProjectDetail, patchProjectInLists, projectKeys } from '@/entities/project'
+import { useCurrentUser } from '@/entities/session'
 import { ApiError, api, errorMessage, unwrap } from '@/shared/api/client'
 import type { components } from '@/shared/api/schema.gen'
 import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
@@ -9,7 +11,10 @@ import { useRunStore } from './store'
 
 /** Явное перестроение сохраняет историю и требует голову, подтверждённую пользователем. */
 type RunOptions = Partial<
-  Pick<components['schemas']['RunCreate'], 'base_version_id' | 'replace_manual'>
+  Pick<
+    components['schemas']['RunCreate'],
+    'base_version_id' | 'replace_manual' | 'credential_id' | 'model'
+  >
 >
 
 export type StartRunInput = RunMode | ({ mode: RunMode } & RunOptions)
@@ -43,11 +48,15 @@ export async function cancelRun(runId: string) {
 export function useStartRun(projectId: string) {
   const client = useQueryClient()
   const track = useRunStore((state) => state.track)
+  const user = useCurrentUser()
   return useMutation({
-    mutationFn: (input: StartRunInput) =>
-      typeof input === 'string'
-        ? startRun(projectId, input)
-        : startRun(projectId, input.mode, input),
+    // Выбранные пользователем ключ и модель идут в каждый запуск; не выбраны — решает сервер.
+    mutationFn: (input: StartRunInput) => {
+      const choice = choiceRequest(getModelChoice(user?.id))
+      return typeof input === 'string'
+        ? startRun(projectId, input, choice)
+        : startRun(projectId, input.mode, { ...choice, ...input })
+    },
     onSuccess: (run) => {
       const status = run.mode === 'build' ? 'building' : 'analyzing'
       client.setQueryData<ProjectDetail>(

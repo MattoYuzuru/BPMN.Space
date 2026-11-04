@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { isRunning, projectStatusView, useRenameProject } from '@/entities/project'
 import { useRunView, useStartRun } from '@/entities/run'
 import { VERSION_ORIGIN, versionLabel } from '@/entities/version'
+import { ModelPicker } from '@/features/model-picker/model-picker'
 import { RebuildFromSources } from '@/features/run-analysis/rebuild-from-sources'
 import { ShareProjectButton } from '@/features/share-project/share-project-button'
 import { formatRelative } from '@/shared/lib/format'
@@ -145,6 +146,7 @@ function HeaderActions({ running }: { running: boolean }) {
     <>
       {canEdit && (
         <>
+          <ModelPicker />
           <Tooltip
             content={noSources ? 'Сначала добавьте источник' : 'Найти неясности и задать вопросы'}
             side="bottom"

@@ -8,7 +8,7 @@ import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import cast
 from uuid import uuid4
@@ -1655,3 +1655,143 @@ async def test_llm_credentials_persist_encrypted_with_single_default_and_cascade
     async with sessions.begin() as session:
         await session.execute(text("DELETE FROM users WHERE id = :id"), {"id": user_id})
     assert await repo.count(user_id) == 0
+
+
+# ---------- PostgreSQL: кеш и стоимость вызовов модели (миграция 0018, RFC-0005) ----------
+
+
+@pytest.mark.asyncio
+async def test_llm_call_totals_are_aggregated_from_postgres(sql_store) -> None:
+    store, _ = sql_store
+    repos = store.repositories()
+    project = await _make_project(repos)
+    run = Run(
+        id=uuid4(),
+        project_id=project.id,
+        mode=RunMode.ANALYZE,
+        status=RunStatus.SUCCEEDED,
+        started_at=datetime.now(UTC),
+    )
+    await repos.runs.add(run)
+    for stage, tokens_in, tokens_out, cache_read, cost in (
+        ("analyze", 1_000, 100, 600, 0.25),
+        ("analyze", 500, 50, 0, 0.05),
+        ("structure", 100, 10, 0, None),
+    ):
+        await repos.llm_calls.add(
+            LlmCall(
+                id=uuid4(),
+                run_id=run.id,
+                stage=stage,
+                request={},
+                response={},
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                cache_read_tokens=cache_read,
+                cache_write_tokens=0,
+                cost_usd=cost,
+                price_checked_on=date(2026, 10, 6) if cost is not None else None,
+                model="claude-opus-5-5",
+            )
+        )
+    totals = await repos.llm_calls.totals(run.id)
+    assert totals.calls == 3
+    assert (totals.tokens_in, totals.tokens_out) == (1_600, 160)
+    assert totals.cache_read_tokens == 600
+    assert totals.cost_usd == 0.3
+    assert totals.priced_calls == 2
+    assert set(totals.stages) == {"analyze", "structure"}
+    assert totals.stages["analyze"].calls == 2
+
+    listed = await repos.llm_calls.list_by_run(run.id)
+    assert [call.stage for call in listed] == ["analyze", "analyze", "structure"]
+    assert listed[0].cost_usd == 0.25
+
+
+@pytest.mark.asyncio
+async def test_migration_0018_adds_and_removes_llm_call_cost() -> None:
+    url = os.getenv("TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("TEST_DATABASE_URL не задан; PostgreSQL-интеграционный тест пропущен")
+    schema = f"test_{uuid4().hex}"
+    admin = create_async_engine(url)
+    async with admin.begin() as connection:
+        await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    engine = create_async_engine(url, connect_args={"server_settings": {"search_path": schema}})
+    config = Config()
+    config.set_main_option("script_location", str(MIGRATIONS_DIR))
+
+    def migrate(direction: str, target: str):
+        def run(sync_connection) -> None:
+            config.attributes["connection"] = sync_connection
+            if direction == "up":
+                command.upgrade(config, target)
+            else:
+                command.downgrade(config, target)
+
+        return run
+
+    run_id = uuid4()
+    project_id = uuid4()
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(migrate("up", "0017_api_tokens"))
+            await connection.execute(
+                text(
+                    "INSERT INTO projects (id, title, created_at, updated_at, public_read_only) "
+                    "VALUES (:id, 'Стоимость', :now, :now, false)"
+                ),
+                {"id": project_id, "now": datetime.now(UTC)},
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO runs (id, project_id, mode, status, started_at, progress, "
+                    "warnings) VALUES (:id, :project, 'analyze', 'succeeded', :now, 1, '[]')"
+                ),
+                {"id": run_id, "project": project_id, "now": datetime.now(UTC)},
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO llm_calls (id, run_id, stage, request, response, tokens_in, "
+                    "tokens_out) VALUES (:id, :run, 'analyze', '{}', '{}', 10, 2)"
+                ),
+                {"id": uuid4(), "run": run_id},
+            )
+        async with engine.begin() as connection:
+            await connection.run_sync(migrate("up", "head"))
+
+            def columns(sync_connection) -> set[str]:
+                inspector = inspect(sync_connection)
+                return {item["name"] for item in inspector.get_columns("llm_calls")}
+
+            names = await connection.run_sync(columns)
+        assert {
+            "cache_read_tokens",
+            "cache_write_tokens",
+            "cost_usd",
+            "price_checked_on",
+            "model",
+        } <= names
+        async with engine.begin() as connection:
+            saved = (
+                await connection.execute(
+                    text("SELECT tokens_in, tokens_out FROM llm_calls WHERE run_id = :run"),
+                    {"run": run_id},
+                )
+            ).one()
+        assert tuple(saved) == (10, 2)
+        async with engine.begin() as connection:
+            await connection.run_sync(migrate("down", "0017_api_tokens"))
+
+            def downgraded(sync_connection) -> set[str]:
+                inspector = inspect(sync_connection)
+                return {item["name"] for item in inspector.get_columns("llm_calls")}
+
+            names_after = await connection.run_sync(downgraded)
+        assert "cost_usd" not in names_after
+        assert "cache_read_tokens" not in names_after
+    finally:
+        await engine.dispose()
+        async with admin.begin() as connection:
+            await connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+        await admin.dispose()

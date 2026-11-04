@@ -45,6 +45,7 @@ from app.domain.onboarding import ChecklistItem
 from app.domain.questions import quote_in_source, reconcile, run_summary
 from app.domain.runs import (
     ACTIVE_STATUSES,
+    RunCost,
     RunError,
     RunEvent,
     RunEventKind,
@@ -63,16 +64,19 @@ from app.llm.base import (
     PipelineError,
     ProcessPipeline,
     run_deadline,
+    track_run_usage,
     track_usage,
 )
-from app.llm.capabilities import RunProfile
+from app.llm.capabilities import ModelCapabilities, RunProfile
 from app.llm.client import PROVIDER_MOCK, redact_secrets
+from app.llm.estimate import cost_of_usage
 from app.services.common import Runtime, get_project, get_run
 from app.services.errors import ConflictError, NotFoundError, ServiceError, StaleVersionError
 from app.services.model_resolver import (
     ModelResolver,
     ResolvedModel,
     pipeline_budget,
+    pipeline_capabilities,
     pipeline_limits,
     pipeline_model,
     pipeline_provider,
@@ -315,6 +319,10 @@ class RunService:
     async def get(self, run_id: UUID) -> Run:
         return await get_run(self._repos, run_id)
 
+    async def cost(self, run_id: UUID) -> RunCost | None:
+        """Стоимость прогона по журналу вызовов модели: токены, кеш, деньги, этапы."""
+        return RunCost.of(await self._repos.llm_calls.totals(run_id))
+
     async def cancel(self, run_id: UUID) -> Run:
         """Отменить общий прогон проекта; безопасно повторяется после его завершения."""
         run = await get_run(self._repos, run_id)
@@ -488,11 +496,13 @@ class RunService:
         run.status = RunStatus.RUNNING
         await self._repos.runs.update(run)
         state = _RunState(pipeline=pipeline)
-        for stage in stages_for(run.mode):
-            await self._enter(run, stage)
-            if pipeline_provider(pipeline) == PROVIDER_MOCK:
-                await self._pace(stage)
-            await self._perform(run, stage, state)
+        # Накопитель токенов за весь прогон: по нему считается бюджет (RFC-0005, шаг 5).
+        with track_run_usage():
+            for stage in stages_for(run.mode):
+                await self._enter(run, stage)
+                if pipeline_provider(pipeline) == PROVIDER_MOCK:
+                    await self._pace(stage)
+                await self._perform(run, stage, state)
         # Пункты отмечаются до статуса `succeeded`: кто увидит успех (SSE или опрос), уже видит их.
         await self._record_progress(run)
         run.status = RunStatus.SUCCEEDED
@@ -596,6 +606,7 @@ class RunService:
                     stage="analyze",
                     request={"context": describe_context(context)},
                     call=lambda: state.model().analyze(context),
+                    capabilities=pipeline_capabilities(state.model()),
                 )
                 run.analysis = _json_data(state.analysis)
                 await self._repos.runs.update(run)
@@ -615,6 +626,7 @@ class RunService:
                         "analysis": _json_data(state.analysis),
                     },
                     call=lambda: state.model().structure(context, state.analysis),
+                    capabilities=pipeline_capabilities(state.model()),
                 )
                 if state.draft is None:
                     raise PipelineError("Пайплайн не вернул BPMN-черновик")
@@ -965,8 +977,14 @@ class RunService:
         stage: str,
         request: dict[str, Any],
         call: Callable[[], Awaitable[Any]],
+        capabilities: ModelCapabilities | None = None,
     ) -> Any:
-        """Вызов шага пайплайна с записью аудита: запрос, ответ или ошибка, задержка, токены."""
+        """Вызов шага пайплайна с записью аудита: запрос, ответ или ошибка, задержка, токены.
+
+        Токены и кеш берутся из накопителя шага; стоимость считается по ценам справочника,
+        действовавшим на момент вызова (`capabilities.prices`, дата в `price_checked_on`).
+        После записи публикуется событие `usage`: интерфейс показывает потраченное сразу.
+        """
         started = time.perf_counter()
         response: Any = None
         failure: Exception | None = None
@@ -978,6 +996,8 @@ class RunService:
         await self._resolver.mark(
             _credential_id(run), redact_secrets(str(failure)) if failure else None
         )
+        prices = capabilities.prices if capabilities is not None else None
+        cost = cost_of_usage(usage if usage.requests else None, prices)
         # Токены известны только у провайдеров, которые их сообщают (mock — `null`).
         await self._repos.llm_calls.add(
             LlmCall(
@@ -990,12 +1010,30 @@ class RunService:
                 else _json_data(response),
                 tokens_in=usage.tokens_in if usage.requests else None,
                 tokens_out=usage.tokens_out if usage.requests else None,
+                cache_read_tokens=usage.cache_read_tokens if usage.requests else None,
+                cache_write_tokens=usage.cache_write_tokens if usage.requests else None,
+                cost_usd=cost.cost_usd,
+                price_checked_on=cost.checked_on,
+                model=run.model,
                 latency_ms=max(0, round((time.perf_counter() - started) * 1000)),
             )
         )
+        if failure is None:
+            await self._publish_cost(run)
         if failure is not None:
             raise failure
         return response
+
+    async def _publish_cost(self, run: Run) -> RunCost | None:
+        """Событие `usage`: сколько уже потрачено. Ошибка публикации не ломает прогон."""
+        try:
+            cost = await self.cost(run.id)
+            if cost is not None:
+                await self._publish(run, RunEventKind.USAGE, cost)
+            return cost
+        except Exception:
+            logger.exception("Прогон %s: не удалось опубликовать стоимость", run.id)
+            return None
 
     async def _fail(self, run: Run, message: str, *, execution_started: float) -> None:
         run.status = RunStatus.FAILED

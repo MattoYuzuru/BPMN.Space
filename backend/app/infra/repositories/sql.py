@@ -21,6 +21,7 @@ from app.domain.models import (
     LintIssue,
     LintSeverity,
     LlmCall,
+    LlmCallTotals,
     Project,
     Question,
     QuestionKind,
@@ -1234,9 +1235,87 @@ class SqlLlmCallRepository:
                     response=call.response,
                     tokens_in=call.tokens_in,
                     tokens_out=call.tokens_out,
+                    cache_read_tokens=call.cache_read_tokens,
+                    cache_write_tokens=call.cache_write_tokens,
+                    cost_usd=call.cost_usd,
+                    price_checked_on=call.price_checked_on,
+                    model=call.model,
                     latency_ms=call.latency_ms,
                 )
             )
+
+    async def list_by_run(self, run_id: UUID) -> list[LlmCall]:
+        async with self.sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(LlmCallRow)
+                    .where(LlmCallRow.run_id == run_id)
+                    .order_by(LlmCallRow.stage, LlmCallRow.id)
+                )
+            ).all()
+            return [_llm_call(row) for row in rows]
+
+    async def totals(self, run_id: UUID) -> LlmCallTotals:
+        """Один агрегирующий запрос по этапам: стоимость и токены без чтения JSONB."""
+        async with self.sessions() as session:
+            rows = (
+                await session.execute(
+                    select(
+                        LlmCallRow.stage,
+                        func.count().label("calls"),
+                        func.count(LlmCallRow.tokens_in).label("usage_calls"),
+                        func.count(LlmCallRow.cost_usd).label("priced_calls"),
+                        func.coalesce(func.sum(LlmCallRow.tokens_in), 0),
+                        func.coalesce(func.sum(LlmCallRow.tokens_out), 0),
+                        func.coalesce(func.sum(LlmCallRow.cache_read_tokens), 0),
+                        func.coalesce(func.sum(LlmCallRow.cache_write_tokens), 0),
+                        func.coalesce(func.sum(LlmCallRow.cost_usd), 0),
+                    )
+                    .where(LlmCallRow.run_id == run_id)
+                    .group_by(LlmCallRow.stage)
+                )
+            ).all()
+        stages: dict[str, LlmCallTotals] = {}
+        for (
+            stage,
+            calls,
+            usage_calls,
+            priced_calls,
+            tokens_in,
+            tokens_out,
+            cache_read,
+            cache_write,
+            cost,
+        ) in rows:
+            stages[str(stage)] = LlmCallTotals(
+                calls=int(calls),
+                usage_calls=int(usage_calls),
+                priced_calls=int(priced_calls),
+                tokens_in=int(tokens_in),
+                tokens_out=int(tokens_out),
+                cache_read_tokens=int(cache_read),
+                cache_write_tokens=int(cache_write),
+                cost_usd=round(float(cost), 6),
+            )
+        return LlmCallTotals.of_stages(stages)
+
+
+def _llm_call(row: LlmCallRow) -> LlmCall:
+    return LlmCall(
+        id=row.id,
+        run_id=row.run_id,
+        stage=row.stage,
+        request=row.request,
+        response=row.response,
+        tokens_in=row.tokens_in,
+        tokens_out=row.tokens_out,
+        cache_read_tokens=row.cache_read_tokens,
+        cache_write_tokens=row.cache_write_tokens,
+        cost_usd=float(row.cost_usd) if row.cost_usd is not None else None,
+        price_checked_on=row.price_checked_on,
+        model=row.model,
+        latency_ms=row.latency_ms,
+    )
 
 
 class SqlStore:

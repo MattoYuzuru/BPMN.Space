@@ -7,15 +7,26 @@ from typing import Any
 
 import httpx
 
+from app.llm.base import record_usage
 from app.llm.client import ModelInfo
 from app.llm.pipeline import LlmPipeline
 
 
 class ScriptedClient:
-    """`LlmClient`, отвечающий функцией `(system, user) -> текст` (синхронной или нет)."""
+    """`LlmClient`, отвечающий функцией `(system, user) -> текст` (синхронной или нет).
 
-    def __init__(self, complete: Callable[[str, str], Any] | None = None) -> None:
+    `usage=(tokens_in, tokens_out, cache_read, cache_write)` имитирует подсчёт токенов
+    провайдером: так проверяются стоимость прогона и бюджет.
+    """
+
+    def __init__(
+        self,
+        complete: Callable[[str, str], Any] | None = None,
+        *,
+        usage: tuple[int, int, int, int] | None = None,
+    ) -> None:
         self._complete = complete
+        self._usage = usage
         # Параметры каждого вызова: тесты профиля проверяют effort и `max_tokens`.
         self.calls: list[dict[str, Any]] = []
 
@@ -34,7 +45,18 @@ class ScriptedClient:
         result = self._complete(system, user)
         if asyncio.iscoroutine(result):
             result = await result
+        if self._usage is not None:
+            tokens_in, tokens_out, cache_read, cache_write = self._usage
+            record_usage(
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                cache_read=cache_read,
+                cache_write=cache_write,
+            )
         return result
+
+    async def count_tokens(self, system: str, user: str) -> int:
+        return max((len(system) + len(user)) // 2, 1)
 
     async def list_models(self) -> list[ModelInfo]:
         return [ModelInfo(id="scripted", label="scripted")]
@@ -51,9 +73,12 @@ class ScriptedPipeline(LlmPipeline):
         complete: Callable[[str, str], Any] | None = None,
         provider: str = "mock",  # mock: тесты подставляют свой `pace`
         model: str = "deepseek-chat",
+        usage: tuple[int, int, int, int] | None = None,
         **options: Any,
     ) -> None:
-        super().__init__(ScriptedClient(complete), provider=provider, model=model, **options)
+        super().__init__(
+            ScriptedClient(complete, usage=usage), provider=provider, model=model, **options
+        )
 
 
 def json_transport(

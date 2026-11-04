@@ -36,6 +36,7 @@ from app.services.assistant import AssistantService
 from app.services.catalog import ExampleService, TranscriptionService
 from app.services.collaboration import RealtimeHub
 from app.services.common import Runtime
+from app.services.estimate import EstimateService
 from app.services.llm_credentials import LlmCredentialService
 from app.services.model_resolver import ModelResolver
 from app.services.onboarding import OnboardingService
@@ -143,6 +144,7 @@ class Container:
     examples: ExampleService
     transcriptions: TranscriptionService
     assistant: AssistantService
+    estimate: EstimateService
     llm_credentials: LlmCredentialService
     api_tokens: ApiTokenService
     access: AccessService
@@ -290,6 +292,7 @@ def build_container(
         examples=ExampleService(EXAMPLES),
         transcriptions=TranscriptionService(stt, max_audio_bytes=settings.max_audio_bytes),
         assistant=AssistantService(repos, resolver=resolver),
+        estimate=EstimateService(repos, resolver=resolver, settings=settings, runtime=runtime),
         llm_credentials=LlmCredentialService(
             repos,
             cipher=cipher,

@@ -1,9 +1,18 @@
 """Этапы прогона (RFC §5.1): порядок, подписи для интерфейса, прогресс; события для SSE."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
-from app.domain.models import Question, Run, RunMode, RunStage, RunStatus, RunSummary, Version
+from app.domain.models import (
+    LlmCallTotals,
+    Question,
+    Run,
+    RunMode,
+    RunStage,
+    RunStatus,
+    RunSummary,
+    Version,
+)
 
 
 class RunEventKind(StrEnum):
@@ -13,6 +22,7 @@ class RunEventKind(StrEnum):
     QUESTION = "question"
     SUMMARY = "summary"
     VERSION = "version"
+    USAGE = "usage"
     DONE = "done"
     ERROR = "error"
 
@@ -29,7 +39,76 @@ class RunError:
     message: str
 
 
-type RunEventPayload = StageProgress | Question | RunSummary | Version | Run | RunError
+# Подписи этапов вызовов модели: `stage` в `llm_calls` — не этап прогона, а шаг пайплайна.
+CALL_STAGE_LABELS: dict[str, str] = {
+    "analyze": "Сверка вопросов",
+    "structure": "Сборка схемы",
+    "chat": "Помощник",
+}
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class StageCost:
+    """Стоимость одного этапа вызовов модели."""
+
+    stage: str
+    label: str
+    calls: int
+    tokens_in: int
+    tokens_out: int
+    cache_read_tokens: int
+    cache_write_tokens: int
+    cost_usd: float | None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RunCost:
+    """Потрачено на прогон: токены, кеш, деньги и разбивка по этапам.
+
+    `complete=False` — у части вызовов не было токенов (mock) или цен (неизвестная модель),
+    поэтому сумма неполная. `cost_usd=None` — ни у одного вызова не было цены.
+    """
+
+    tokens_in: int = 0
+    tokens_out: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    calls: int = 0
+    cost_usd: float | None = None
+    complete: bool = False
+    by_stage: list[StageCost] = field(default_factory=list[StageCost])
+
+    @classmethod
+    def of(cls, totals: LlmCallTotals) -> "RunCost | None":
+        """Итог вызовов модели: `None`, если прогон ещё ничего не вызывал."""
+        if totals.calls == 0:
+            return None
+        by_stage = [
+            StageCost(
+                stage=stage,
+                label=CALL_STAGE_LABELS.get(stage, stage),
+                calls=item.calls,
+                tokens_in=item.tokens_in,
+                tokens_out=item.tokens_out,
+                cache_read_tokens=item.cache_read_tokens,
+                cache_write_tokens=item.cache_write_tokens,
+                cost_usd=item.cost_usd if item.priced_calls else None,
+            )
+            for stage, item in sorted(totals.stages.items())
+        ]
+        return cls(
+            tokens_in=totals.tokens_in,
+            tokens_out=totals.tokens_out,
+            cache_read_tokens=totals.cache_read_tokens,
+            cache_write_tokens=totals.cache_write_tokens,
+            calls=totals.calls,
+            cost_usd=totals.cost_usd if totals.priced_calls else None,
+            complete=totals.complete,
+            by_stage=by_stage,
+        )
+
+
+type RunEventPayload = StageProgress | Question | RunSummary | Version | RunCost | Run | RunError
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

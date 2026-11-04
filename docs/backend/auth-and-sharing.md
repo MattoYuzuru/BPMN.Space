@@ -119,7 +119,7 @@ SSE прогона принимает токен и закрывается по�
 
 | Право | Маршруты |
 |---|---|
-| `projects:read` | `GET /projects` (с ограничением проектами список и `total` сужаются), `GET /projects/{id}`, вопросы, версии и XML, `GET /runs/{id}`, `GET /runs/{id}/events` |
+| `projects:read` | `GET /projects` (с ограничением проектами список и `total` сужаются), `GET /projects/{id}`, вопросы, версии и XML, `GET /runs/{id}`, `GET /runs/{id}/events`, оценка прогона `POST /projects/{id}/runs/estimate` (бесплатная, только `count_tokens`) |
 | `projects:write` | `POST /projects`, `POST /projects/from-example` (только токен без ограничения проектами), `PATCH /projects/{id}`, `PUT /projects/{id}/diagram`, контрольная точка версии |
 | `sources:write` | `POST /projects/{id}/sources/{text,file,sample}`, `PATCH /sources/{id}`; загрузка аудио или видео в `sources/file` — ещё и `runs:start` (запись расшифровывает платный провайдер) |
 | `sources:delete` | `DELETE /sources/{id}` |

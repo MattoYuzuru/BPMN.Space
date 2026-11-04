@@ -566,6 +566,40 @@
         "title": "CollaborationTicket",
         "type": "object"
       },
+      "CostRange": {
+        "description": "Диапазон стоимости; `null` — цены выбранной модели неизвестны.",
+        "properties": {
+          "currency": {
+            "default": "USD",
+            "title": "Currency",
+            "type": "string"
+          },
+          "max_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Usd"
+          },
+          "min_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Usd"
+          }
+        },
+        "title": "CostRange",
+        "type": "object"
+      },
       "DiagramConflictResponse": {
         "properties": {
           "code": {
@@ -657,6 +691,27 @@
           "run"
         ],
         "title": "DoneEventData",
+        "type": "object"
+      },
+      "DurationRange": {
+        "description": "Диапазон длительности прогона в секундах.",
+        "properties": {
+          "max_sec": {
+            "minimum": 0.0,
+            "title": "Max Sec",
+            "type": "integer"
+          },
+          "min_sec": {
+            "minimum": 0.0,
+            "title": "Min Sec",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "min_sec",
+          "max_sec"
+        ],
+        "title": "DurationRange",
         "type": "object"
       },
       "ErrorEventData": {
@@ -776,6 +831,27 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "IntRange": {
+        "description": "Диапазон целых чисел: нижняя и верхняя оценка.",
+        "properties": {
+          "max": {
+            "minimum": 0.0,
+            "title": "Max",
+            "type": "integer"
+          },
+          "min": {
+            "minimum": 0.0,
+            "title": "Min",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "min",
+          "max"
+        ],
+        "title": "IntRange",
         "type": "object"
       },
       "ItemSource": {
@@ -2043,6 +2119,17 @@
       },
       "Run": {
         "properties": {
+          "cost": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunCost"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Потрачено на прогон: токены, кеш и деньги с разбивкой по этапам; null — вызовов ещё не было"
+          },
           "credential_id": {
             "anyOf": [
               {
@@ -2204,6 +2291,69 @@
         "title": "Run",
         "type": "object"
       },
+      "RunCost": {
+        "description": "Потрачено на прогон по журналу вызовов модели (`llm_calls`).\n\n`complete=false` — у части вызовов не сообщены токены (mock) или неизвестны цены модели,\nпоэтому суммы неполные; `cost_usd=null` — цены неизвестны ни у одного вызова.",
+        "properties": {
+          "by_stage": {
+            "items": {
+              "$ref": "#/components/schemas/StageCost"
+            },
+            "title": "By Stage",
+            "type": "array"
+          },
+          "cache_read_tokens": {
+            "title": "Cache Read Tokens",
+            "type": "integer"
+          },
+          "cache_write_tokens": {
+            "title": "Cache Write Tokens",
+            "type": "integer"
+          },
+          "calls": {
+            "title": "Calls",
+            "type": "integer"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "currency": {
+            "const": "USD",
+            "default": "USD",
+            "title": "Currency",
+            "type": "string"
+          },
+          "tokens_in": {
+            "title": "Tokens In",
+            "type": "integer"
+          },
+          "tokens_out": {
+            "title": "Tokens Out",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tokens_in",
+          "tokens_out",
+          "cache_read_tokens",
+          "cache_write_tokens",
+          "calls",
+          "complete"
+        ],
+        "title": "RunCost",
+        "type": "object"
+      },
       "RunCreate": {
         "properties": {
           "base_version_id": {
@@ -2309,8 +2459,147 @@
         "title": "RunErrorEvent",
         "type": "object"
       },
+      "RunEstimate": {
+        "description": "Оценка прогона: диапазоны, а не одно число.\n\n`complete=false` — на пути есть модель без цен (совместимый провайдер, mock), поэтому\nстоимость неполная. Оценка приблизительная: число запросов и длина ответов зависят от\nматериалов и решений модели.",
+        "properties": {
+          "breakdown": {
+            "items": {
+              "$ref": "#/components/schemas/StageEstimate"
+            },
+            "title": "Breakdown",
+            "type": "array"
+          },
+          "calls": {
+            "$ref": "#/components/schemas/IntRange",
+            "description": "Запросов к модели"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostRange"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Деньги; null — цены модели неизвестны"
+          },
+          "duration": {
+            "$ref": "#/components/schemas/DurationRange"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "priced_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Дата, на которую сверены цены",
+            "title": "Priced On"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "tokens": {
+            "$ref": "#/components/schemas/IntRange",
+            "description": "Всего токенов: вход и ответ"
+          }
+        },
+        "required": [
+          "tokens",
+          "calls",
+          "cost",
+          "duration",
+          "breakdown",
+          "complete"
+        ],
+        "title": "RunEstimate",
+        "type": "object"
+      },
+      "RunEstimateRequest": {
+        "description": "Что оценивать: режим и тот же профиль, что будет у запуска.",
+        "properties": {
+          "credential_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Свой ключ модели; не задан — ключ по умолчанию, затем модель сервера",
+            "title": "Credential Id"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/RunMode",
+            "default": "build",
+            "description": "`analyze` или `build`"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Модель; требует `credential_id`",
+            "title": "Model"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunProfile"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Профиль прогона: effort и смысловая сверка"
+          }
+        },
+        "title": "RunEstimateRequest",
+        "type": "object"
+      },
       "RunEvent": {
-        "description": "Одно SSE-сообщение: поле `event:` — тип, `data:` — JSON из `data`, `id:` — номер.\n\nПорядок: `stage` на каждый этап; на этапе сверки — `question` на каждый изменённый или\nновый вопрос, затем `summary`; при сборке — `version`; последним всегда `done`\n(при ошибке перед ним — `error`). Переподключение — заголовок `Last-Event-ID`.",
+        "description": "Одно SSE-сообщение: поле `event:` — тип, `data:` — JSON из `data`, `id:` — номер.\n\nПорядок: `stage` на каждый этап; на этапе сверки — `question` на каждый изменённый или\nновый вопрос, затем `summary`; при сборке — `version`; после каждого этапа с вызовами\nмодели — `usage` (потраченные токены и деньги); последним всегда `done` (при ошибке перед\nним — `error`). Переподключение — заголовок `Last-Event-ID`.",
         "discriminator": {
           "mapping": {
             "done": "#/components/schemas/RunDoneEvent",
@@ -2318,6 +2607,7 @@
             "question": "#/components/schemas/RunQuestionEvent",
             "stage": "#/components/schemas/RunStageEvent",
             "summary": "#/components/schemas/RunSummaryEvent",
+            "usage": "#/components/schemas/RunUsageEvent",
             "version": "#/components/schemas/RunVersionEvent"
           },
           "propertyName": "event"
@@ -2334,6 +2624,9 @@
           },
           {
             "$ref": "#/components/schemas/RunVersionEvent"
+          },
+          {
+            "$ref": "#/components/schemas/RunUsageEvent"
           },
           {
             "$ref": "#/components/schemas/RunDoneEvent"
@@ -2499,6 +2792,24 @@
           "data"
         ],
         "title": "RunSummaryEvent",
+        "type": "object"
+      },
+      "RunUsageEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RunCost"
+          },
+          "event": {
+            "const": "usage",
+            "title": "Event",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event",
+          "data"
+        ],
+        "title": "RunUsageEvent",
         "type": "object"
       },
       "RunVersionEvent": {
@@ -3164,6 +3475,104 @@
           }
         },
         "title": "SourceUpdate",
+        "type": "object"
+      },
+      "StageCost": {
+        "description": "Стоимость одного этапа вызовов модели.",
+        "properties": {
+          "cache_read_tokens": {
+            "title": "Cache Read Tokens",
+            "type": "integer"
+          },
+          "cache_write_tokens": {
+            "title": "Cache Write Tokens",
+            "type": "integer"
+          },
+          "calls": {
+            "title": "Calls",
+            "type": "integer"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "label": {
+            "description": "Подпись этапа для интерфейса",
+            "title": "Label",
+            "type": "string"
+          },
+          "stage": {
+            "description": "Шаг пайплайна: analyze, structure, …",
+            "title": "Stage",
+            "type": "string"
+          },
+          "tokens_in": {
+            "title": "Tokens In",
+            "type": "integer"
+          },
+          "tokens_out": {
+            "title": "Tokens Out",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stage",
+          "label",
+          "calls",
+          "tokens_in",
+          "tokens_out",
+          "cache_read_tokens",
+          "cache_write_tokens"
+        ],
+        "title": "StageCost",
+        "type": "object"
+      },
+      "StageEstimate": {
+        "description": "Разбивка оценки по этапам пайплайна.",
+        "properties": {
+          "calls": {
+            "$ref": "#/components/schemas/IntRange"
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "tokens_in": {
+            "$ref": "#/components/schemas/IntRange"
+          },
+          "tokens_out": {
+            "$ref": "#/components/schemas/IntRange"
+          }
+        },
+        "required": [
+          "stage",
+          "label",
+          "calls",
+          "tokens_in",
+          "tokens_out"
+        ],
+        "title": "StageEstimate",
         "type": "object"
       },
       "StageEventData": {
@@ -6741,6 +7150,125 @@
           }
         ],
         "summary": "Start Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/runs/estimate": {
+      "post": {
+        "description": "Оценить прогон до запуска: запросы, токены, деньги и длительность диапазоном.\n\nПрофиль и модель — те же, что у запуска; ключ пользователя нужен только для бесплатного\n`count_tokens` Anthropic. При неизвестных ценах модели `complete=false`, а `cost=null`.",
+        "operationId": "estimate_run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunEstimateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunEstimate"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Слишком много запросов; повторите через `Retry-After` секунд"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Сервис или помощник не настроен"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Estimate Run",
         "tags": [
           "runs"
         ]

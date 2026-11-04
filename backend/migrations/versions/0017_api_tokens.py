@@ -1,15 +1,15 @@
 """Персональные токены доступа для внешних агентов (RFC-0007, шаг 1).
 
-Revision ID: 0016_api_tokens
-Revises: 0015_version_sessions
+Revision ID: 0017_api_tokens
+Revises: 0016_source_derivation
 """
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "0016_api_tokens"
-down_revision = "0015_version_sessions"
+revision = "0017_api_tokens"
+down_revision = "0016_source_derivation"
 branch_labels = None
 depends_on = None
 

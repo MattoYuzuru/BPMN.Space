@@ -364,7 +364,7 @@ async def test_token_input_validation(stack: Stack) -> None:
     assert (await guest.get("/me/api-tokens")).status_code == 401
 
 
-async def test_migration_0016_creates_and_drops_api_tokens() -> None:
+async def test_migration_0017_creates_and_drops_api_tokens() -> None:
     url = os.getenv("TEST_DATABASE_URL")
     if not url:
         pytest.skip("TEST_DATABASE_URL не задан; PostgreSQL-интеграционный тест пропущен")
@@ -385,7 +385,7 @@ async def test_migration_0016_creates_and_drops_api_tokens() -> None:
 
     try:
         async with engine.begin() as connection:
-            await connection.run_sync(migrate, "upgrade", "0016_api_tokens")
+            await connection.run_sync(migrate, "upgrade", "0017_api_tokens")
             assert "api_tokens" in await connection.run_sync(tables)
             user_id = uuid4()
             await connection.execute(
@@ -410,7 +410,7 @@ async def test_migration_0016_creates_and_drops_api_tokens() -> None:
                         insert,
                         {"id": uuid4(), "user": user_id, "hash": "b" * 64, "scopes": ["admin"]},
                     )
-            await connection.run_sync(migrate, "downgrade", "0015_version_sessions")
+            await connection.run_sync(migrate, "downgrade", "0016_source_derivation")
             assert "api_tokens" not in await connection.run_sync(tables)
             await connection.run_sync(migrate, "upgrade", "head")
             assert "api_tokens" in await connection.run_sync(tables)

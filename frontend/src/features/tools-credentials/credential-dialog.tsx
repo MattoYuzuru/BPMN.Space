@@ -8,10 +8,12 @@ import {
   type CredentialCapability,
   type CredentialKind,
   type CredentialProvider,
+  catalogHints,
   PROVIDER_HINTS,
   PROVIDER_HINTS_DATE,
   providersForKinds,
   useCreateToolCredential,
+  useToolCatalog,
   useUpdateToolCredential,
 } from '@/entities/tool-credential'
 import { errorMessage } from '@/shared/api/client'
@@ -195,16 +197,50 @@ export function CredentialDialog({
     )
   }
 
-  const hints = [...new Set(kinds.flatMap((kind) => KIND_CAPABILITIES[kind]))].flatMap(
-    (capability) => PROVIDER_HINTS[capability],
-  )
+  // Основной источник — каталог сервера; статический список — фолбэк, если он недоступен.
+  const catalog = useToolCatalog()
+  const catalogHintList = catalogHints(catalog.data, kinds)
   const seenHints = new Set<string>()
-  const uniqueHints = hints.filter((hint) => {
-    const key = `${hint.provider}:${hint.url}`
-    if (seenHints.has(key)) return false
-    seenHints.add(key)
-    return true
-  })
+  const hints =
+    catalogHintList.length > 0
+      ? catalogHintList
+          .filter((hint) => {
+            if (seenHints.has(hint.id)) return false
+            seenHints.add(hint.id)
+            return true
+          })
+          .map((hint) => ({
+            key: hint.id,
+            label: hint.label,
+            url: hint.key_url,
+            note: [
+              hint.free_tier,
+              hint.notes,
+              hint.rf ? 'размещение в РФ' : null,
+              hint.model_covers ? 'закрывает ключ модели' : null,
+            ]
+              .filter(Boolean)
+              .join(' \u00B7 '),
+            supported: hint.supported,
+            rf: hint.rf,
+          }))
+      : [...new Set(kinds.flatMap((kind) => KIND_CAPABILITIES[kind]))]
+          .flatMap((capability) => PROVIDER_HINTS[capability] ?? [])
+          .filter((hint) => {
+            const key = `${hint.provider}:${hint.url}`
+            if (seenHints.has(key)) return false
+            seenHints.add(key)
+            return true
+          })
+          .map((hint) => ({
+            key: `${hint.provider}:${hint.url}`,
+            label: hint.provider,
+            url: hint.url,
+            note: hint.note ?? '',
+            supported: true,
+            rf: false,
+          }))
+  const hintsCheckedOn = catalog.data?.checked_on ?? null
 
   return (
     <Dialog open={open} onOpenChange={close}>
@@ -393,30 +429,39 @@ export function CredentialDialog({
             )}
           </div>
 
-          {uniqueHints.length > 0 && (
+          {hints.length > 0 && (
             <>
               <Divider />
               <div className="flex flex-col gap-1.5">
                 <span className="type-label text-fg">Где взять ключ</span>
-                <ul className="flex flex-col gap-1">
-                  {uniqueHints.slice(0, 6).map((hint) => (
-                    <li key={`${hint.provider}:${hint.url}`}>
-                      <a
-                        href={hint.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 type-caption text-accent-fg hover:underline"
-                      >
-                        {hint.provider}
-                        {hint.note ? ` \u00B7 ${hint.note}` : ''}
-                        <Icon name="external-link" size={14} />
-                      </a>
+                <ul className="flex flex-col gap-1.5">
+                  {hints.slice(0, 6).map((hint) => (
+                    <li key={hint.key} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                      {hint.url ? (
+                        <a
+                          href={hint.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 type-caption text-accent-fg hover:underline"
+                        >
+                          {hint.label}
+                          <Icon name="external-link" size={14} />
+                        </a>
+                      ) : (
+                        <span className="type-caption text-fg">{hint.label}</span>
+                      )}
+                      {hint.note && (
+                        <span className="type-caption text-fg-subtle">{hint.note}</span>
+                      )}
+                      {!hint.supported && (
+                        <span className="type-caption text-amber-fg">адаптера пока нет</span>
+                      )}
                     </li>
                   ))}
                 </ul>
                 <span className="type-caption text-fg-subtle">
-                  Сверено {PROVIDER_HINTS_DATE}. Полный каталог провайдеров появится отдельной
-                  задачей.
+                  Сверено {hintsCheckedOn ?? PROVIDER_HINTS_DATE}
+                  {catalog.data ? '.' : ' \u00B7 статический список: каталог сервера недоступен.'}
                 </span>
               </div>
             </>

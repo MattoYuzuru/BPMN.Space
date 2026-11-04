@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { screen, within } from '@testing-library/react'
 import type { Source } from '@/entities/source'
+import { stubApi } from '@/test/api-stub'
 import { renderUi } from '@/test/render'
 import { useWorkspaceUi, type WorkspaceApi, WorkspaceContext } from '@/widgets/workspace/model'
 import { SourceSheet } from './source-sheet'
@@ -90,7 +91,10 @@ function renderSheet(sources: Source[], sourceId: string, canEdit = false) {
   return { ...rendered, openSource }
 }
 
-afterEach(() => useWorkspaceUi.getState().reset())
+afterEach(() => {
+  useWorkspaceUi.getState().reset()
+  vi.unstubAllGlobals()
+})
 
 it('показывает запись деревом: расшифровка вложена, с меткой «ИИ», провайдером и правкой', async () => {
   const { user, openSource } = renderPanel([record, transcript, rules])
@@ -205,9 +209,10 @@ it('расшифровка показывает таймкоды и отметк
 
 it('запись без своего текста ведёт к производным узлам и не правится', async () => {
   const { user, openSource } = renderSheet([record, transcript], 'rec', true)
+  const player = screen.getByTestId('source-media')
+  expect(within(player).getByText('Есть звук')).toBeInTheDocument()
+  expect(within(player).getByText('Есть видео')).toBeInTheDocument()
   const container = screen.getByTestId('media-container')
-  expect(within(container).getByText('Есть звук')).toBeInTheDocument()
-  expect(within(container).getByText('Есть видео')).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'Править текст' })).not.toBeInTheDocument()
   await user.click(within(container).getByRole('button', { name: 'Расшифровка: встреча.mp4' }))
   expect(openSource).toHaveBeenCalledWith('tr')
@@ -221,4 +226,26 @@ it('неудавшуюся расшифровку можно вписать вр
   )
   await user.click(screen.getByRole('button', { name: 'Править текст' }))
   expect(screen.getByText(/узел будет отмечен «Изменено человеком»/)).toBeInTheDocument()
+})
+
+it('плеер записи: реплики и перемотка по таймкоду', async () => {
+  stubApi({
+    'GET /api/v1/sources/tr/segments': {
+      body: {
+        source_id: 'tr',
+        transcript_id: 'tr',
+        duration_sec: 125,
+        segments: [
+          { start_sec: 0, end_sec: 30, speaker: 'Иван', text: 'Диспетчер согласует заявку.' },
+          { start_sec: 30, end_sec: 90, speaker: 'Инженер', text: 'Инженер готовит акт.' },
+        ],
+      },
+    },
+  })
+  const { user } = renderSheet([record, transcript], 'tr')
+  expect(screen.getByTestId('source-media')).toBeInTheDocument()
+  expect(await screen.findByText('Диспетчер согласует заявку.')).toBeInTheDocument()
+  expect(await screen.findByText('Иван')).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Перемотать к 00:30' }))
+  expect(screen.getByRole('slider', { name: 'Позиция записи' })).toBeInTheDocument()
 })

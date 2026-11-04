@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { domAnimation, LazyMotion } from 'motion/react'
 import { type Run, type RunEvent, STAGES, useRunStore } from '@/entities/run'
 import { subscribeOnboardingSignals } from '@/shared/lib/onboarding-signals'
 import { TooltipProvider } from '@/shared/ui'
+import { stubApi } from '@/test/api-stub'
 import { RunProgress } from './run-progress'
 import { STAGE_VISIBLE_MS, SUMMARY_VISIBLE_MS } from './use-run-presentation'
 
@@ -69,7 +70,10 @@ beforeEach(() => {
   motion.reduced = false
   useRunStore.setState({ views: {}, expanded: {}, presented: {} })
 })
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
 
 it('мгновенная сборка завершает все шесть этапов, затем показывает итог полные 2,5 с', async () => {
   useRunStore.getState().track(run())
@@ -190,4 +194,64 @@ it('переключение проекта снимает таймер карт
   await tick(5000)
   expect(useRunStore.getState().expanded['p-other']).toBe(true)
   expect(useRunStore.getState().expanded['p-1']).toBe(true)
+})
+
+describe('стоимость и ожидание технического вопроса', () => {
+  const cost = {
+    calls: 8,
+    tokens_in: 120_000,
+    tokens_out: 14_000,
+    cache_read_tokens: 40_000,
+    cache_write_tokens: 9_000,
+    cost_usd: 2.71,
+    complete: true,
+    currency: 'USD' as const,
+    by_stage: [
+      {
+        stage: 'reading_sources',
+        label: 'Чтение источников',
+        calls: 8,
+        tokens_in: 120_000,
+        tokens_out: 14_000,
+        cache_read_tokens: 40_000,
+        cache_write_tokens: 9_000,
+        cost_usd: 2.71,
+      },
+    ],
+  }
+
+  it('показывает потраченное и бюджет, разбивку по этапам', async () => {
+    useRunStore.getState().track(
+      run({
+        status: 'running',
+        cost,
+        profile: { budget: { cost_usd: 10, tokens: null } },
+      }),
+    )
+    mount()
+    await tick(0)
+    const block = screen.getByTestId('run-cost')
+    expect(block).toBeInTheDocument()
+    expect(within(block).getAllByText(/\$2,71/).length).toBeGreaterThan(0)
+    expect(screen.getByText(/из \$10/)).toBeInTheDocument()
+    expect(screen.getByText(/134\s+тыс\.\s+токенов · 8 вызовов/)).toBeInTheDocument()
+    expect(screen.getByText('По этапам')).toBeInTheDocument()
+  })
+
+  it('в ожидании показывает «Продолжить» и возобновляет прогон', async () => {
+    const calls = stubApi({
+      'POST /api/v1/runs/r-1/resume': { body: run({ status: 'queued' }) },
+    })
+    useRunStore.getState().track(run({ status: 'waiting', stage_label: 'Ждёт вашего действия' }))
+    mount()
+    await tick(0)
+    expect(screen.getByText('Ждёт вашего действия')).toBeInTheDocument()
+    expect(screen.getByText(/Прогон остановился на техническом вопросе/)).toBeInTheDocument()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Продолжить' }))
+      await Promise.resolve()
+    })
+    expect(calls.some((call) => call.path.endsWith('/resume'))).toBe(true)
+    expect(useRunStore.getState().views['p-1']?.status).toBe('running')
+  })
 })

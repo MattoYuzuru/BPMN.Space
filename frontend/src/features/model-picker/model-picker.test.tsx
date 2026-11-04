@@ -10,12 +10,14 @@ import userEvent from '@testing-library/user-event'
 import {
   choiceRequest,
   getModelChoice,
+  type LlmCredential,
+  type LlmModel,
   type ModelCapabilities,
   useModelChoiceStore,
 } from '@/entities/llm-credential'
 import { TooltipProvider } from '@/shared/ui'
 import { stubApi } from '@/test/api-stub'
-import { ModelPicker } from './model-picker'
+import { ModelPicker, PickerBody } from './model-picker'
 
 const credential = (id: string, label: string, isDefault: boolean) => ({
   id,
@@ -174,5 +176,34 @@ describe('Выбор модели для запуска', () => {
     await waitFor(() =>
       expect(screen.queryByRole('radiogroup', { name: 'Глубина работы' })).not.toBeInTheDocument(),
     )
+  })
+})
+
+describe('витрина модели', () => {
+  it('демо-модели не ходят в API', async () => {
+    const calls = stubApi({})
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const root = createRootRoute({
+      component: () => (
+        <QueryClientProvider client={client}>
+          <TooltipProvider>
+            <PickerBody
+              items={[credential('demo', 'Демо', true) as unknown as LlmCredential]}
+              loading={false}
+              choice={null}
+              demoModels={MODELS as LlmModel[]}
+              onChange={() => {}}
+            />
+          </TooltipProvider>
+        </QueryClientProvider>
+      ),
+    })
+    const router = createRouter({
+      routeTree: root,
+      history: createMemoryHistory({ initialEntries: ['/'] }),
+    })
+    render(<RouterProvider router={router} />)
+    expect(await screen.findByRole('combobox', { name: 'Модель' })).toBeInTheDocument()
+    expect(calls.filter((call) => call.path.includes('/models'))).toHaveLength(0)
   })
 })

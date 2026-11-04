@@ -89,6 +89,8 @@ class LlmConfig:
     json_temperature: float | None = 0.0
     thinking: bool | None = None
     effort: str = "medium"
+    # Потолок тела ответа сервера модели: пользовательский сервер не должен съесть память.
+    max_response_bytes: int = 8 * 1024 * 1024
 
 
 class LlmClient(Protocol):

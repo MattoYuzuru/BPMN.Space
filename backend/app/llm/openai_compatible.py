@@ -26,6 +26,7 @@ from app.llm.client import (
     with_retries,
 )
 from app.llm.net_guard import UnsafeBaseUrlError, ensure_public_host, normalize_base_url
+from app.llm.pinned_transport import Resolver, pinned_transport
 
 _CHAT_MAX_TOKENS = 4096
 _HTTP_ERROR = 400
@@ -56,6 +57,7 @@ class OpenAICompatibleClient:
         allowed_private_hosts: Iterable[str] = (),
         policy: RetryPolicy | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
+        resolver: Resolver | None = None,
     ) -> None:
         # Адрес фиксированных провайдеров (OpenAI) нельзя переопределить конфигурацией.
         base_url = self.default_base_url or config.base_url
@@ -75,7 +77,15 @@ class OpenAICompatibleClient:
             base_sec=config.retry_base_sec,
             max_sec=config.retry_max_sec,
         )
-        self._http = httpx.AsyncClient(transport=transport, follow_redirects=False)
+        if guard_host and transport is None:
+            # Соединение идёт к IP, проверенному guard, а не к повторно разрешённому имени.
+            transport = pinned_transport(
+                allowed_private_hosts=self._allowed_private, resolver=resolver
+            )
+        # `trust_env=False`: прокси из окружения обошёл бы закреплённый транспорт.
+        self._http = httpx.AsyncClient(
+            transport=transport, follow_redirects=False, trust_env=not guard_host
+        )
 
     async def aclose(self) -> None:
         await self._http.aclose()
@@ -153,6 +163,22 @@ class OpenAICompatibleClient:
     def is_chat_model(self, model_id: str) -> bool:  # noqa: ARG002
         return True
 
+    async def _read_capped(self, response: httpx.Response) -> bytes:
+        """Читает тело потоком и обрывает его, как только оно превысило потолок."""
+        limit = self._config.max_response_bytes
+        message = "Сервис модели вернул слишком большой ответ"
+        declared = response.headers.get("Content-Length")
+        if declared is not None and declared.isdigit() and int(declared) > limit:
+            raise RuntimeError(message)
+        chunks: list[bytes] = []
+        size = 0
+        async for chunk in response.aiter_bytes():
+            size += len(chunk)
+            if size > limit:
+                raise RuntimeError(message)
+            chunks.append(chunk)
+        return b"".join(chunks)
+
     async def _post(self, path: str, body: dict[str, Any]) -> bytes:
         return await self._request("POST", path, body, timeout_sec=self._config.timeout_sec)
 
@@ -177,27 +203,29 @@ class OpenAICompatibleClient:
 
         async def once(attempt_timeout: float) -> bytes:
             try:
-                response = await self._http.request(
+                async with self._http.stream(
                     method, url, content=content, headers=self._headers(), timeout=attempt_timeout
-                )
+                ) as response:
+                    status = response.status_code
+                    if status in {401, 403}:
+                        raise LlmAuthError(auth_message(status))
+                    if status in RETRYABLE_HTTP:
+                        raise TransientLlmError(
+                            f"HTTP {status}",
+                            f"Сервис модели вернул HTTP {status}",
+                            retry_after=_retry_after(response),
+                        )
+                    if status >= _HTTP_ERROR:
+                        raise RuntimeError(f"Сервис модели вернул HTTP {status}")
+                    return await self._read_capped(response)
+            except UnsafeBaseUrlError as error:
+                raise RuntimeError(str(error)) from None
             except httpx.TimeoutException:
                 raise TransientLlmError(
                     "таймаут", timeout_message(timeout_sec), timeout=True
                 ) from None
             except httpx.TransportError:
                 raise TransientLlmError("сеть", NETWORK_MESSAGE) from None
-            status = response.status_code
-            if status in {401, 403}:
-                raise LlmAuthError(auth_message(status))
-            if status in RETRYABLE_HTTP:
-                raise TransientLlmError(
-                    f"HTTP {status}",
-                    f"Сервис модели вернул HTTP {status}",
-                    retry_after=_retry_after(response),
-                )
-            if status >= _HTTP_ERROR:
-                raise RuntimeError(f"Сервис модели вернул HTTP {status}")
-            return response.content
 
         if not retries:
             policy = RetryPolicy(max_retries=0)

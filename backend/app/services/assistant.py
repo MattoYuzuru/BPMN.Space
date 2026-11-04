@@ -1,26 +1,11 @@
 """Диалоговый помощник проекта на базе настроенного LLM-провайдера."""
 
-from typing import Protocol
 from uuid import UUID
 
 from app.domain.models import QuestionStatus, SourceStatus
 from app.infra.repositories.base import Repositories
 from app.services.common import get_project
 from app.services.model_resolver import ModelResolver
-
-
-class AssistantModel(Protocol):
-    async def chat(
-        self,
-        *,
-        project_title: str,
-        project_description: str | None,
-        sources: list[dict[str, str]],
-        questions: list[dict[str, str]],
-        diagram_xml: str,
-        history: list[dict[str, str]],
-        message: str,
-    ) -> str: ...
 
 
 class AssistantService:
@@ -114,9 +99,8 @@ class AssistantService:
         resolved = await self._resolver.resolve(
             user_id, credential_id=credential_id, model=model, allow_mock=False
         )
-        assistant: AssistantModel = resolved.pipeline  # type: ignore[assignment]
         try:
-            answer = await assistant.chat(
+            answer = await resolved.pipeline.chat(
                 project_title=project_title,
                 project_description=project_description,
                 sources=sources,

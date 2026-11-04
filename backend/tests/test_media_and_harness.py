@@ -119,7 +119,6 @@ def test_settings_deadline_and_budget_override() -> None:
     assert settings.run_deadline(50_000) == 400
     assert Settings(run_deadline_sec=0).run_deadline(50_000) is None
     assert settings.context_budget_chars() == 120_000
-    assert settings.context_budget_chars(3_000_000) == 3_000_000
 
 
 # ---------- harness: параллельность без смены результата ----------

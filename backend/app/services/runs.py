@@ -12,6 +12,7 @@ import logging
 import sys
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field, fields, is_dataclass, replace
 from datetime import date, datetime
@@ -178,7 +179,8 @@ class RunService:
         self._limit = asyncio.Semaphore(max(max_concurrent, 1))
         self._cancel_requested: set[UUID] = set()
         # Этот lock ускоряет конфликт внутри процесса; уникальный индекс защищает между процессами.
-        self._start_lock = asyncio.Lock()
+        # Замок на проект: старты разных проектов не ждут друг друга.
+        self._start_locks: dict[UUID, tuple[asyncio.Lock, int]] = {}
 
     async def start(
         self,
@@ -190,7 +192,7 @@ class RunService:
         base_version_id: UUID | None = None,
         replace_manual: bool = False,
     ) -> Run:
-        async with self._start_lock, self._repos.atomic() as repos:
+        async with self._start_slot(project_id), self._repos.atomic() as repos:
             # Блокировка проекта общая с ручным сохранением схемы и удалением проекта.
             if await repos.projects.lock(project_id) is None:
                 raise NotFoundError("Проект не найден")
@@ -235,6 +237,20 @@ class RunService:
         await self._publish_live(run)
         self._spawner.spawn(self._execute(run.id), name=f"run-{run.id}")
         return run
+
+    @asynccontextmanager
+    async def _start_slot(self, project_id: UUID) -> AsyncIterator[None]:
+        lock, waiting = self._start_locks.get(project_id) or (asyncio.Lock(), 0)
+        self._start_locks[project_id] = (lock, waiting + 1)
+        try:
+            async with lock:
+                yield
+        finally:
+            _, waiting = self._start_locks[project_id]
+            if waiting <= 1:
+                del self._start_locks[project_id]
+            else:
+                self._start_locks[project_id] = (lock, waiting - 1)
 
     def resume(self, run_id: UUID) -> None:
         """Запустить подтверждённую БД работу после старта единственного backend-процесса."""
@@ -516,6 +532,22 @@ class RunService:
                 latest = await repos.versions.get(versions[0].id)
                 if latest is not None:
                     versions[0] = latest
+                # Ближайшая сгенерированная версия старше головы нужна как база ручных правок:
+                # в облегчённом списке её XML пуст, и без неё защита не видит, что изменил человек.
+                base_index = next(
+                    (
+                        i
+                        for i, v in enumerate(versions)
+                        if i > 0
+                        and v.origin is VersionOrigin.GENERATED
+                        and v.number < versions[0].number
+                    ),
+                    None,
+                )
+                if base_index is not None:
+                    full_base = await repos.versions.get(versions[base_index].id)
+                    if full_base is not None:
+                        versions[base_index] = full_base
             context = build_run_context(
                 project=project,
                 sources=await repos.sources.list_by_project(project_id),
@@ -545,7 +577,7 @@ class RunService:
             project = await repos.projects.lock(run.project_id)
             sources = await repos.sources.lock_by_project(run.project_id)
             current = await repos.questions.list_by_project(run.project_id)
-            versions = await repos.versions.list_by_project(run.project_id)
+            head_version = await repos.versions.latest(run.project_id)
             usable = [
                 ContextSource(
                     id=s.id, kind=s.kind, title=s.title, content=s.content, created_at=s.created_at
@@ -564,7 +596,7 @@ class RunService:
                     same_sources and source_snapshot_hash(sources) == context.source_snapshot_hash
                 )
             same_questions = {q.id: q for q in current} == {q.id: q for q in context.questions}
-            same_diagram = (versions[0].xml if versions else None) == context.current_xml
+            same_diagram = (head_version.xml if head_version else None) == context.current_xml
             same_project = project is not None and project.title == context.project_title
             if not same_sources or not same_questions or not same_diagram or not same_project:
                 warnings.append(
@@ -757,7 +789,7 @@ class RunService:
                 project=await get_project(repos, run.project_id),
                 sources=await repos.sources.list_by_project(run.project_id),
                 questions=questions,
-                versions=await repos.versions.list_by_project(run.project_id),
+                versions=await repos.versions.list_by_project(run.project_id, include_xml=False),
                 budget_chars=self._context_budget,
             )
             outcome = reconcile(

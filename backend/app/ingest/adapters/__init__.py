@@ -3,7 +3,8 @@
 Адаптер создаётся на время одного вызова по расшифрованному ключу пользователя (или ключу
 оператора) и закрывается после. Реестр отвечает на два вопроса: какие провайдеры поддержаны
 для возможности и как создать адаптер. Волна 2 добавила `speech_to_text`, волна 3 — веб-поиск
-и чтение страниц; заготовки vision/ocr/video/tts описаны контрактами, но в реестре не
+и чтение страниц. Контракты OCR (Mistral, Yandex) зарегистрированы с `implemented=False`:
+ключ можно сохранить заранее, рабочих вызовов нет. Заготовки vision/video/tts в реестре не
 зарегистрированы.
 """
 
@@ -45,12 +46,19 @@ type AdapterFactory = Callable[[AdapterContext], CapabilityAdapter]
 
 @dataclass(frozen=True, slots=True)
 class AdapterSpec:
-    """Одна пара «возможность + провайдер» с подписью для настроек."""
+    """Одна пара «возможность + провайдер» с подписью для настроек.
+
+    `implemented=False` — контракт провайдера: ключ можно сохранить заранее и увидеть в
+    настройках, но рабочие вызовы ещё не реализованы. Каталог провайдеров показывает такие
+    возможности как неподдержанные (`supported=false`), маршрутизатор вызовет их только после
+    реализации адаптера.
+    """
 
     capability: Capability
     provider: str
     label: str
     factory: AdapterFactory
+    implemented: bool = True
 
 
 @dataclass(slots=True)
@@ -67,6 +75,11 @@ class AdapterRegistry:
 
     def supports(self, capability: Capability, provider: str) -> bool:
         return (capability, provider) in self._specs
+
+    def implements(self, capability: Capability, provider: str) -> bool:
+        """Реализованы ли рабочие вызовы провайдера; у контрактов — нет."""
+        spec = self._specs.get((capability, provider))
+        return spec is not None and spec.implemented
 
     def providers(self, capability: Capability) -> list[tuple[str, str]]:
         """Подписанные провайдеры возможности: (идентификатор, подпись для интерфейса)."""
@@ -157,7 +170,9 @@ def register_ocr_providers(registry: AdapterRegistry) -> None:
         return build
 
     for provider, label in OCR_PROVIDERS:
-        registry.register(AdapterSpec(Capability.OCR, provider, label, factory(provider)))
+        registry.register(
+            AdapterSpec(Capability.OCR, provider, label, factory(provider), implemented=False)
+        )
 
 
 def register_web_providers(registry: AdapterRegistry) -> None:

@@ -14,6 +14,7 @@ import pytest
 
 from app.domain.capabilities import Capability, CapabilityError, ErrorClass
 from app.ingest.adapters.web import (
+    WEB_REQUEST_TIMEOUT_SEC,
     WebSearchHit,
     WebSearchRequest,
     clamp_limit,
@@ -25,7 +26,10 @@ from app.ingest.adapters.web import (
 )
 from app.ingest.adapters.web_brave import BraveSearchAdapter
 from app.ingest.adapters.web_exa import ExaSearchAdapter
-from app.ingest.adapters.web_firecrawl import FirecrawlFetchAdapter
+from app.ingest.adapters.web_firecrawl import (
+    FIRECRAWL_PROVIDER_TIMEOUT_MS,
+    FirecrawlFetchAdapter,
+)
 from app.ingest.adapters.web_jina import JinaReaderAdapter
 from app.ingest.adapters.web_tavily import TavilySearchAdapter
 
@@ -108,7 +112,8 @@ async def test_tavily_search_parses_dates_and_dedupes_links() -> None:
 
     assert len(hits) == 1
     hit = hits[0]
-    assert hit.url == "https://example.com/reg"
+    # Нормализованный адрес — только ключ дедупликации; в выдаче остаётся исходный.
+    assert hit.url == "https://example.com/reg?utm_source=mail#top"
     assert hit.title == "Регламент согласования"
     assert hit.snippet == "Заявка уходит на согласование"
     assert hit.published_at == datetime(2026, 10, 30, tzinfo=UTC)
@@ -241,6 +246,8 @@ async def test_firecrawl_returns_canonical_and_published_date() -> None:
         body = json_body(request)
         assert body["url"] == PAGE_URL
         assert body["formats"] == ["markdown"]
+        assert body["timeout"] == FIRECRAWL_PROVIDER_TIMEOUT_MS
+        assert FIRECRAWL_PROVIDER_TIMEOUT_MS < WEB_REQUEST_TIMEOUT_SEC * 1000
         return httpx.Response(
             200,
             json={
@@ -443,7 +450,8 @@ def test_dedupe_hits_keeps_one_per_address() -> None:
         WebSearchHit(url="https://example.com/b", title="B", snippet="3"),
     )
     result = dedupe_hits(hits, limit=5)
-    assert [hit.url for hit in result] == ["https://example.com/a", "https://example.com/b"]
+    # Дедупликация сравнивает нормализованные адреса, но отдаёт исходные.
+    assert [hit.url for hit in result] == ["https://example.com/a#x", "https://example.com/b"]
     assert result[0].title == "A"
 
 

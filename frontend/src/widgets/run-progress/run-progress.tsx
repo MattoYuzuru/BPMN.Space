@@ -16,7 +16,6 @@ import { floatingPanel } from '@/shared/lib/motion'
 import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import {
-  Badge,
   Button,
   Card,
   CostMeter,
@@ -304,6 +303,7 @@ function RunCostBlock({ cost, budgetUsd }: { cost: RunCost | null; budgetUsd: nu
         spent={spent}
         budget={budgetUsd}
         incomplete={cost ? !cost.complete : false}
+        incompleteNote="Стоимость известна не полностью: у части шагов нет цен. Это не ошибка прогона."
       />
       {cost && (
         <span className="mt-1 block type-caption text-fg-subtle" data-numeric>
@@ -332,11 +332,6 @@ function RunCostBlock({ cost, budgetUsd }: { cost: RunCost | null; budgetUsd: nu
             ))}
           </ul>
         </details>
-      )}
-      {cost && !cost.complete && (
-        <Badge tone="amber" variant="outline" icon="alert-triangle" className="mt-2">
-          Часть шагов без цен
-        </Badge>
       )}
     </div>
   )

@@ -255,3 +255,29 @@ describe('стоимость и ожидание технического воп
     expect(useRunStore.getState().views['p-1']?.status).toBe('running')
   })
 })
+
+it('неполная стоимость объясняется как информационная, а не как ошибка', async () => {
+  useRunStore.getState().track(
+    run({
+      status: 'waiting',
+      cost: {
+        calls: 8,
+        tokens_in: 120_000,
+        tokens_out: 14_000,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        cost_usd: 2.71,
+        complete: false,
+        currency: 'USD' as const,
+        by_stage: [],
+      },
+      profile: { budget: { cost_usd: 10, tokens: null } },
+    }),
+  )
+  mount()
+  await tick(0)
+  const note = screen.getByText(/Стоимость известна не полностью/)
+  expect(note).toHaveClass('text-amber-fg')
+  expect(note).not.toHaveClass('text-danger-fg')
+  expect(note).toHaveTextContent('Это не ошибка прогона')
+})

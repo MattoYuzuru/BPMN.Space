@@ -42,7 +42,7 @@
 | `docs/` | RFC, ADR, стайлгайд и архитектура фронтенда (`docs/frontend/`), бэкенда (`docs/backend/`) |
 | `scripts/` | `contract-check.sh`, `verify.sh`, `mr-report.sh`, `agent-hooks/` |
 | `compose.yaml`, `infra/caddy/` | локальный стек: `make up` → http://localhost:8080 |
-| `docs/deployment.md`, `scripts/deploy.sh` | ручной деплой проверенного commit SHA на демо-VM; GitLab CI/CD не используется |
+| `docs/deployment.md`, `scripts/deploy.sh` | ручной деплой проверенного commit SHA на демо-VM; GitLab CI/CD не используется; проверки на GitHub Actions не деплоят |
 
 ## Команды
 
@@ -84,6 +84,7 @@ make deploy       # задеплоить commit из main после MR и make 
 
 - Git (lefthook, ставится при `npm ci`): pre-commit — biome, design-lint, ruff, secretlint по изменённым файлам; pre-push выбирает точечные проверки документации/agent hooks либо полный `make check` по публикуемому delta.
 - Claude Code (`.claude/settings.json`): после правки файла — его форматирование и линт; перед завершением ответа — `make check-fast` для новых изменений этой сессии, с кешем успешного неизменного кандидата. Чтение и ранее оставленный dirty checkout сами по себе gate не запускают.
+- GitHub Actions (`.github/workflows/ci.yml`): на push в `main` и pull request гоняет lint, тесты backend (+ PostgreSQL), frontend, bpmn-tools, контракт, секреты и сборку Docker-стека со smoke-проверкой `/health`. Playwright e2e — отдельно (`e2e.yml`, вручную и раз в сутки). Деплой остаётся ручным.
 - Другие агенты: после изменения кода запускайте `make check-fast`, перед MR с кодом — `make verify`. Для документации/agent hooks достаточно [точечных проверок](scripts/agent-hooks/README.md).
 
 ## Скиллы (`.claude/skills/`)

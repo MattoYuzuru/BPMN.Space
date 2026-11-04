@@ -17,11 +17,17 @@ import { RaiseBudgetDialog } from './budget-dialog'
 export function TechnicalQuestionCard({
   question,
   projectId,
+  budget,
+  canEdit = true,
   onOpenSettings,
   onAction,
 }: {
   question: Question
   projectId?: string
+  /** Текущий бюджет ждущего прогона: показывается и поднимается вместе с обоими лимитами. */
+  budget?: RunBudget | null
+  /** Без права правки действия не показываем: сервер всё равно откажет. */
+  canEdit?: boolean
   /** «Открыть настройки» выполняет экран: серверных изменений у действия нет. */
   onOpenSettings?: () => void
   /** В образцах стилгайда действие не уходит на сервер. */
@@ -64,7 +70,7 @@ export function TechnicalQuestionCard({
 
       <p className="type-body text-fg">{question.text}</p>
 
-      {question.status === 'open' && actions.length > 0 && (
+      {question.status === 'open' && canEdit && actions.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
           {actions.map((item) => {
             const style = QUESTION_ACTION[item.kind]
@@ -75,6 +81,7 @@ export function TechnicalQuestionCard({
                 variant={style.variant}
                 leadingIcon={style.icon}
                 loading={action.isPending && action.variables?.action === item.kind}
+                disabled={action.isPending}
                 onClick={() => {
                   if (onAction) {
                     onAction(item.kind)
@@ -95,6 +102,7 @@ export function TechnicalQuestionCard({
       <RaiseBudgetDialog
         open={budgetOpen}
         onOpenChange={setBudgetOpen}
+        current={budget ?? null}
         pending={action.isPending}
         onSubmit={(budget) => {
           setBudgetOpen(false)

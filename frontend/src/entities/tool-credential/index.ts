@@ -35,5 +35,6 @@ export {
   PROVIDER_HINTS_DATE,
   type ProviderHint,
   providerLabel,
+  providersForKinds,
   providersText,
 } from './model'

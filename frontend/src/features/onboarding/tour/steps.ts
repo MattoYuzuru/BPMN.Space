@@ -188,8 +188,11 @@ const baseSteps: TourStep<TourContext>[] = [
     title: COPY.build.title,
     kind: 'action',
     route: workspace,
-    anchor: TOUR_ANCHORS.runBuild,
+    // Подсвечиваем кнопку в окне оценки: запуск теперь подтверждается в диалоге.
+    // Пока окно закрыто, якоря нет — карточка по центру, клики по экрану разрешены.
+    anchor: TOUR_ANCHORS.runStartConfirm,
     side: 'bottom',
+    allowOutside: true,
     pages: [{ text: COPY.build.text }],
     // «Пропустить шаг» тут вёл бы в ожидание несуществующего прогона: пропускаем главу целиком.
     actions: [skipChapter],

@@ -2,7 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
 import { isRunning, projectStatusView, useRenameProject } from '@/entities/project'
-import { type RunMode, useRunView } from '@/entities/run'
+import { isTechnical } from '@/entities/question'
+import { useRunView } from '@/entities/run'
 import { RECENT_VERSIONS, VERSION_ORIGIN, versionLabel } from '@/entities/version'
 import { ModelPicker } from '@/features/model-picker/model-picker'
 import { RebuildFromSources } from '@/features/run-analysis/rebuild-from-sources'
@@ -65,7 +66,7 @@ export function ProjectHeader() {
           Только просмотр
         </Badge>
       )}
-      {project.questions.length > 0 && (
+      {project.questions.some((question) => !isTechnical(question)) && (
         <SummaryChips
           summary={project.summary}
           size="sm"
@@ -139,7 +140,9 @@ function ProjectTitle() {
 function HeaderActions({ running }: { running: boolean }) {
   const { project, canEdit, canShare, viewedVersionId, viewVersion, versions } = useWorkspace()
   const setSheet = useWorkspaceUi((state) => state.setSheet)
-  const [startDialog, setStartDialog] = useState<RunMode | null>(null)
+  const runDialog = useWorkspaceUi((state) => state.runDialog)
+  const openRunDialog = useWorkspaceUi((state) => state.openRunDialog)
+  const closeRunDialog = useWorkspaceUi((state) => state.closeRunDialog)
   const latest = project.latest_version
   const versionList = useQuery({ ...versions.list(project.id), enabled: !!latest })
   const noSources = project.sources.length === 0
@@ -167,7 +170,7 @@ function HeaderActions({ running }: { running: boolean }) {
                 leadingIcon="sparkles"
                 size="sm"
                 disabled={noSources || running}
-                onClick={() => setStartDialog('analyze')}
+                onClick={() => openRunDialog('analyze')}
               >
                 Анализ
               </Button>
@@ -178,7 +181,7 @@ function HeaderActions({ running }: { running: boolean }) {
             leadingIcon="diagram"
             size="sm"
             disabled={noSources || running}
-            onClick={() => setStartDialog('build')}
+            onClick={() => openRunDialog('build')}
             {...tourAnchor(TOUR_ANCHORS.runBuild)}
           >
             Построить схему
@@ -235,12 +238,12 @@ function HeaderActions({ running }: { running: boolean }) {
       {canShare && <ShareProjectButton projectId={project.id} />}
       <PresenceIndicator projectId={project.id} />
       <span aria-hidden="true" className="mx-1 h-5 w-px bg-border" />
-      {canEdit && startDialog && (
+      {canEdit && runDialog && (
         <RunStartDialog
           projectId={project.id}
-          mode={startDialog}
+          mode={runDialog}
           open
-          onOpenChange={(next) => !next && setStartDialog(null)}
+          onOpenChange={(next) => !next && closeRunDialog()}
         />
       )}
     </>
@@ -267,7 +270,6 @@ function RunCostLabel({ projectId, running }: { projectId: string; running: bool
       <span
         className="hidden items-center gap-1.5 rounded-sm px-1.5 type-caption text-fg-muted wide:inline-flex"
         data-numeric
-        {...tourAnchor(TOUR_ANCHORS.runCost)}
       >
         <Icon name="bolt" size={14} className="text-fg-subtle" />
         {text}

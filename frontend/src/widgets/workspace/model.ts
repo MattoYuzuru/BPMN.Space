@@ -1,6 +1,7 @@
 import { createContext, type RefObject, useContext } from 'react'
 import { create } from 'zustand'
 import type { ProjectCapabilities, ProjectDetail } from '@/entities/project'
+import type { RunMode } from '@/entities/run'
 import type { VersionSource } from '@/entities/version'
 import type { DiagramEditorHandle } from '@/widgets/diagram-editor'
 
@@ -65,6 +66,11 @@ interface WorkspaceUi {
   questionsTabRequest: QuestionsTabRequest | null
   /** Подсказка-автодополнение для поля «Текст» диалога текстового источника. */
   textSuggestion: string | null
+  /** Открытый диалог запуска с оценкой: анализ или сборка. */
+  runDialog: RunMode | null
+  /** Открыть диалог запуска из шапки, палитры или пустого состояния — один путь. */
+  openRunDialog: (mode: RunMode) => void
+  closeRunDialog: () => void
   setDialog: (dialog: WorkspaceDialog) => void
   setSheet: (sheet: WorkspaceSheet) => void
   openQuestionSheet: (id: string | null) => void
@@ -88,6 +94,7 @@ export const useWorkspaceUi = create<WorkspaceUi>((set) => ({
   focusRequest: null,
   questionsTabRequest: null,
   textSuggestion: null,
+  runDialog: null,
   setDialog: (dialog) => set({ dialog }),
   setSheet: (sheet) => set({ sheet }),
   openQuestionSheet: (questionSheet) => set({ questionSheet }),
@@ -102,6 +109,8 @@ export const useWorkspaceUi = create<WorkspaceUi>((set) => ({
       questionsTabRequest: { tab, id: (state.questionsTabRequest?.id ?? 0) + 1 },
     })),
   setTextSuggestion: (textSuggestion) => set({ textSuggestion }),
+  openRunDialog: (runDialog) => set({ runDialog }),
+  closeRunDialog: () => set({ runDialog: null }),
   reset: () =>
     set({
       dialog: null,
@@ -109,5 +118,6 @@ export const useWorkspaceUi = create<WorkspaceUi>((set) => ({
       questionSheet: null,
       expandRequest: null,
       focusRequest: null,
+      runDialog: null,
     }),
 }))

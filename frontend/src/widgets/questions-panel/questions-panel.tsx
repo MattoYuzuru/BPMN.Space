@@ -11,7 +11,7 @@ import {
   sortQuestions,
   technicalQuestions,
 } from '@/entities/question'
-import { useStartRun } from '@/entities/run'
+import { useRunView } from '@/entities/run'
 import { TechnicalQuestionCard } from '@/features/question-technical/technical-question-card'
 import { resolvedExit } from '@/shared/lib/motion'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
@@ -39,7 +39,8 @@ const TABS: { value: QuestionGroup; label: string }[] = [
 
 /** Правая панель: вопросы по вкладкам статусов с живыми переходами. */
 export function QuestionsPanel({ onCollapse }: { onCollapse: () => void }) {
-  const { project, selectedQuestionId } = useWorkspace()
+  const { project, selectedQuestionId, canEdit } = useWorkspace()
+  const run = useRunView(project.id)
   const navigate = useNavigate()
   const [tab, setTab] = useState<PanelTab>('open')
   const tabRequest = useWorkspaceUi((state) => state.questionsTabRequest)
@@ -118,6 +119,8 @@ export function QuestionsPanel({ onCollapse }: { onCollapse: () => void }) {
                     key={question.id}
                     question={question}
                     projectId={project.id}
+                    budget={run?.budget ?? null}
+                    canEdit={canEdit}
                     onOpenSettings={() => navigate({ to: '/settings' })}
                   />
                 ))}
@@ -160,10 +163,10 @@ export function QuestionsPanel({ onCollapse }: { onCollapse: () => void }) {
 
 function EmptyTab({ tab }: { tab: QuestionGroup }) {
   const { project, canEdit } = useWorkspace()
-  const start = useStartRun(project.id)
+  const openRunDialog = useWorkspaceUi((state) => state.openRunDialog)
   const noSources = project.sources.length === 0
   if (tab === 'open') {
-    if (project.questions.length === 0) {
+    if (!project.questions.some((question) => !isTechnical(question))) {
       return (
         <EmptyState
           size="sm"
@@ -182,9 +185,8 @@ function EmptyTab({ tab }: { tab: QuestionGroup }) {
               <Button
                 size="sm"
                 leadingIcon="sparkles"
-                loading={start.isPending}
                 disabled={isRunning(project.status)}
-                onClick={() => start.mutate('analyze')}
+                onClick={() => openRunDialog('analyze')}
               >
                 Запустить анализ
               </Button>

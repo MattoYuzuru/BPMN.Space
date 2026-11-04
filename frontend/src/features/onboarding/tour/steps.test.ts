@@ -233,10 +233,11 @@ describe('сценарий тура', () => {
       expect(view.anchor).toBe('sources.add')
     })
 
-    it('обычный вид — кнопка «Построить схему»', () => {
+    it('обычный вид — подтверждение в диалоге оценки', () => {
       const view = viewOf('run.start', makeCtx())
-      expect(view.anchor).toBe('run.build')
+      expect(view.anchor).toBe('run.start-confirm')
       expect(view.tone).toBe('default')
+      expect(view.text).toContain('подтвердите запуск')
     })
   })
 

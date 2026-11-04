@@ -26,13 +26,13 @@ const run = (patch: Partial<Run> = {}): Run => ({
   ...patch,
 })
 
-function mount(projectId = 'p-1') {
+function mount(projectId = 'p-1', canCancel = true) {
   const client = new QueryClient()
   return render(
     <QueryClientProvider client={client}>
       <TooltipProvider>
         <LazyMotion features={domAnimation}>
-          <RunProgress projectId={projectId} />
+          <RunProgress projectId={projectId} canCancel={canCancel} />
         </LazyMotion>
       </TooltipProvider>
     </QueryClientProvider>,
@@ -254,4 +254,77 @@ describe('стоимость и ожидание технического воп
     expect(calls.some((call) => call.path.endsWith('/resume'))).toBe(true)
     expect(useRunStore.getState().views['p-1']?.status).toBe('running')
   })
+})
+
+it('неполная стоимость объясняется как информационная, а не как ошибка', async () => {
+  useRunStore.getState().track(
+    run({
+      status: 'waiting',
+      cost: {
+        calls: 8,
+        tokens_in: 120_000,
+        tokens_out: 14_000,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        cost_usd: 2.71,
+        complete: false,
+        currency: 'USD' as const,
+        by_stage: [],
+      },
+      profile: { budget: { cost_usd: 10, tokens: null } },
+    }),
+  )
+  mount()
+  await tick(0)
+  const note = screen.getByText(/Стоимость известна не полностью/)
+  expect(note).toHaveClass('text-amber-fg')
+  expect(note).not.toHaveClass('text-danger-fg')
+  expect(note).toHaveTextContent('Это не ошибка прогона')
+})
+
+it('ждущий прогон можно отменить, а без права — ни отменить, ни продолжить', async () => {
+  const calls = stubApi({
+    'POST /api/v1/runs/r-1/cancel': { body: run({ status: 'cancelled' }) },
+  })
+  useRunStore.getState().track(run({ status: 'waiting', stage_label: 'Ждёт вашего действия' }))
+  const first = mount()
+  await tick(0)
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Отменить прогон' }))
+    await Promise.resolve()
+  })
+  expect(calls.some((call) => call.path.endsWith('/cancel'))).toBe(true)
+  first.unmount()
+
+  useRunStore.setState({ views: {}, expanded: {}, presented: {} })
+  useRunStore.getState().track(run({ status: 'waiting', stage_label: 'Ждёт вашего действия' }))
+  mount('p-1', false)
+  await tick(0)
+  expect(screen.getAllByText('Ждёт вашего действия').length).toBeGreaterThan(0)
+  expect(screen.queryByRole('button', { name: 'Продолжить' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Отменить прогон' })).toBeNull()
+})
+
+it('неизвестные цены не скрывают токены и вызовы', async () => {
+  useRunStore.getState().track(
+    run({
+      status: 'running',
+      cost: {
+        calls: 8,
+        tokens_in: 120_000,
+        tokens_out: 14_000,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        cost_usd: null,
+        complete: false,
+        currency: 'USD',
+        by_stage: [],
+      },
+    }),
+  )
+  mount()
+  await tick(0)
+  expect(screen.getByText(/Цены модели неизвестны/)).toBeInTheDocument()
+  expect(screen.getByText(/134\s+тыс\.\s+токенов/)).toBeInTheDocument()
+  expect(screen.getByText(/8 вызовов/)).toBeInTheDocument()
 })

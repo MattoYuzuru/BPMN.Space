@@ -19,6 +19,8 @@ export interface CostMeterProps {
   currency?: string
   /** В оценке есть шаги без известных цен — сумма неполная. */
   incomplete?: boolean
+  /** Пояснение к неполной сумме: для оценки до запуска и для потраченного оно разное. */
+  incompleteNote?: string
   /** Подпись слева: «Стоимость прогона», «Бюджет». Без неё — только сумма. */
   label?: ReactNode
   size?: 'sm' | 'md'
@@ -39,6 +41,7 @@ export function CostMeter({
   budget,
   currency = 'USD',
   incomplete = false,
+  incompleteNote = 'Неполная оценка: не у всех шагов известны цены',
   label,
   size = 'md',
   className,
@@ -150,7 +153,7 @@ export function CostMeter({
           {incomplete && (
             <p className="flex items-center gap-1 type-caption text-amber-fg">
               <Icon name="alert-triangle" size={14} />
-              Неполная оценка: не у всех шагов известны цены
+              {incompleteNote}
             </p>
           )}
           {remaining !== null && (

@@ -1,10 +1,26 @@
-import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  type QueryClient,
+  queryOptions,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
+import { llmCredentialKeys } from '@/entities/llm-credential'
 import type { Schemas } from '@/shared/api/client'
 import { api, errorMessage, unwrap } from '@/shared/api/client'
 import { toast } from '@/shared/ui'
 
 export const toolCredentialKeys = {
   all: ['credentials'] as const,
+}
+
+/**
+ * «Инструменты» и «Модели и ключи» показывают один и тот же набор ключей с разных сторон:
+ * после любой мутации перечитываем оба кэша, иначе списки расходятся.
+ */
+function invalidateCredentialCaches(client: QueryClient) {
+  void client.invalidateQueries({ queryKey: toolCredentialKeys.all })
+  void client.invalidateQueries({ queryKey: llmCredentialKeys.all })
 }
 
 export const toolCredentialsQueryOptions = queryOptions({
@@ -23,7 +39,7 @@ export function useCreateToolCredential() {
   return useMutation({
     mutationFn: async (body: Schemas['CredentialCreate']) =>
       unwrap(await api.POST('/api/v1/me/credentials', { body })),
-    onSuccess: () => client.invalidateQueries({ queryKey: toolCredentialKeys.all }),
+    onSuccess: () => invalidateCredentialCaches(client),
   })
 }
 
@@ -38,7 +54,7 @@ export function useUpdateToolCredential() {
           body,
         }),
       ),
-    onSuccess: () => client.invalidateQueries({ queryKey: toolCredentialKeys.all }),
+    onSuccess: () => invalidateCredentialCaches(client),
     onError: (error) =>
       toast.error('Не удалось сохранить ключ', { description: errorMessage(error) }),
   })
@@ -53,7 +69,7 @@ export function useDeleteToolCredential() {
           params: { path: { credential_id: id } },
         }),
       ),
-    onSuccess: () => client.invalidateQueries({ queryKey: toolCredentialKeys.all }),
+    onSuccess: () => invalidateCredentialCaches(client),
     onError: (error) =>
       toast.error('Не удалось удалить ключ', { description: errorMessage(error) }),
   })
@@ -72,7 +88,7 @@ export function useCheckToolCredential() {
     onSuccess: (result) => {
       if (result.ok) toast.success('Ключ работает')
       else toast.warning('Ключ не прошёл проверку', { description: result.detail })
-      return client.invalidateQueries({ queryKey: toolCredentialKeys.all })
+      return invalidateCredentialCaches(client)
     },
     onError: (error) =>
       toast.error('Не удалось проверить ключ', { description: errorMessage(error) }),

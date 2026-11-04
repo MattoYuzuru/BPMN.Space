@@ -18,6 +18,8 @@ cookie-сессии и CSRF здесь не участвуют — MCP-клие�
 from __future__ import annotations
 
 import json
+import logging
+import math
 import time
 from collections import OrderedDict, deque
 from collections.abc import Callable
@@ -50,6 +52,8 @@ from app.services.errors import (
 
 if TYPE_CHECKING:
     from app.container import Container
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "INVALID_ACCESS_MESSAGE",
@@ -99,7 +103,9 @@ TOOL_POLICIES: dict[str, ToolPolicy] = {
     "delete_source": ToolPolicy(ApiScope.SOURCES_DELETE),
     "list_questions": ToolPolicy(ApiScope.PROJECTS_READ),
     "answer_question": ToolPolicy(ApiScope.QUESTIONS_ANSWER),
-    "estimate_run": ToolPolicy(ApiScope.RUNS_START),
+    # Оценка может ходить во внешний count_tokens и запускает резолвер ключа: лимитируем её
+    # так же, как запуск (RFC-0005).
+    "estimate_run": ToolPolicy(ApiScope.RUNS_START, expensive=True),
     "start_run": ToolPolicy(ApiScope.RUNS_START, expensive=True),
     "get_run": ToolPolicy(ApiScope.PROJECTS_READ),
     "get_diagram": ToolPolicy(ApiScope.PROJECTS_READ),
@@ -127,7 +133,9 @@ class McpIdentity:
     container: Container
     token: ApiToken
     user: Any  # services.auth.UserRow; Any — чтобы не тянуть SQLAlchemy-типы в представление
+    # Лимит дорогих вызовов на токен и на аккаунт: 50 токенов не должны умножать квоту.
     expensive: TokenRateLimiter | None = None
+    expensive_account: TokenRateLimiter | None = None
 
     @property
     def token_hash(self) -> str:
@@ -233,24 +241,65 @@ def as_tool_error(error: ServiceError) -> ToolError:
     return ToolError(error.message)
 
 
+def _client_ip(scope: Scope) -> str:
+    """IP клиента как в REST: за прокси берём последний адрес `X-Forwarded-For`."""
+    headers = dict(scope.get("headers") or [])
+    forwarded = headers.get(b"x-forwarded-for")
+    if forwarded:
+        return forwarded.decode("latin-1").split(",")[-1].strip()
+    client = scope.get("client")
+    return client[0] if client else "unknown"
+
+
+def _too_many(retry_after: float) -> tuple[int, dict[str, Any]]:
+    seconds = max(math.ceil(retry_after), 1)
+    return 429, {"detail": f"Слишком много запросов. Повторите через {seconds} с."}
+
+
 class McpAuthMiddleware:
     """ASGI-middleware `/mcp`: проверяет Bearer-токен и кладёт владельца в scope.
 
     Аутентификация — как в REST: неизвестный, отозванный, истёкший токен и токен заблокированного
     аккаунта дают одинаковый `401`; база недоступна — `503`. Прочие запросы (без заголовка) —
     тоже `401`, чтобы клиент не решил, что сервер публичный.
+
+    Лимиты частоты `/mcp` не покрыты IP-лимитами REST, поэтому здесь они свои: общий на IP и на
+    токен (как «весь API» в REST), дорогие вызовы — в `begin_tool` (на токен и на аккаунт).
     """
 
-    def __init__(self, app: ASGIApp, container: Container, *, expensive_limit: int) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        container: Container,
+        *,
+        expensive_limit: int,
+        api_limit: int = 0,
+        rate_limit_enabled: bool = False,
+    ) -> None:
         self._app = app
         self._container = container
-        self._limiter = TokenRateLimiter(expensive_limit) if expensive_limit > 0 else None
+        self._enabled = rate_limit_enabled
+        self._expensive = TokenRateLimiter(expensive_limit) if expensive_limit > 0 else None
+        self._expensive_account = TokenRateLimiter(expensive_limit) if expensive_limit > 0 else None
+        self._ip = TokenRateLimiter(api_limit) if api_limit > 0 else None
+        self._token = TokenRateLimiter(api_limit) if api_limit > 0 else None
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or scope["method"] == "OPTIONS":
             await self._app(scope, receive, send)
             return
         request = Request(scope)
+        if self._enabled and self._ip is not None:
+            retry = self._ip.check(_client_ip(scope))
+            if retry is not None:
+                status, payload = _too_many(retry)
+                await _send_json(
+                    send,
+                    status,
+                    payload,
+                    headers=((b"retry-after", str(max(math.ceil(retry), 1)).encode("ascii")),),
+                )
+                return
         secret = bearer_secret(request)
         try:
             owner = (
@@ -264,16 +313,31 @@ class McpAuthMiddleware:
                 else None
             )
         except ServiceError as error:
+            logger.warning("MCP: отказ доступа: %s", error.message)
             await _send_json(send, error_status(error), {"detail": error.message})
             return
         except Exception:
+            logger.exception("MCP: ошибка аутентификации токена доступа")
             await _send_json(send, 503, {"detail": "Сервис доступа временно недоступен"})
             return
         if owner is None:
             await _send_json(send, 401, {"detail": INVALID_ACCESS_MESSAGE}, headers=(_WWW_AUTH,))
             return
         token, user = owner
-        identity = McpIdentity(self._container, token, user, self._limiter)
+        if self._enabled and self._token is not None:
+            retry = self._token.check(hash_secret(token.token_hash))
+            if retry is not None:
+                status, payload = _too_many(retry)
+                await _send_json(
+                    send,
+                    status,
+                    payload,
+                    headers=((b"retry-after", str(max(math.ceil(retry), 1)).encode("ascii")),),
+                )
+                return
+        identity = McpIdentity(
+            self._container, token, user, self._expensive, self._expensive_account
+        )
         child = dict(scope)
         child[MCP_AUTH_KEY] = identity
         await self._app(child, receive, send)
@@ -307,10 +371,14 @@ def begin_tool(ctx: Context[Any, Any], name: str) -> McpIdentity:
             "Токен ограничен выбранными проектами и не может создавать новые: "
             "создайте токен для всех проектов в Настройках → «Доступ для агентов»"
         )
-    if policy.expensive and identity.expensive is not None:
-        retry = identity.expensive.check(identity.token_hash)
+    if policy.expensive:
+        retry = None
+        if identity.expensive is not None:
+            retry = identity.expensive.check(identity.token_hash)
+        if retry is None and identity.expensive_account is not None:
+            retry = identity.expensive_account.check(f"user:{identity.user.id}")
         if retry is not None:
-            seconds = max(int(retry) + 1, 1)
+            seconds = max(math.ceil(retry), 1)
             raise ToolError(f"Слишком много дорогих вызовов. Повторите через {seconds} с.")
     return identity
 

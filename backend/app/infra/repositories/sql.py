@@ -335,6 +335,9 @@ class SqlProjectRepository:
                         QuestionRow.status.in_(
                             [QuestionStatus.OPEN.value, QuestionStatus.RESOLVED.value]
                         ),
+                        # Счётчик вопросов проекта — только бизнес-вопросы: технические
+                        # решаются действием и живут отдельной вкладкой (RFC-0006).
+                        QuestionRow.category == QuestionCategory.BUSINESS.value,
                     )
                     .group_by(QuestionRow.project_id, QuestionRow.status)
                 )

@@ -250,10 +250,23 @@ class RunService:
         credential_id: UUID | None = None,
         model: str | None = None,
         profile: RunProfile | None = None,
+        expected_model: str | None = None,
+        expected_provider: str | None = None,
     ) -> Run:
+        """`expected_model`/`expected_provider` — привязка к оценке: если прогон пойдёт
+        другой моделью (сменился ключ или умолчание), запуск отклоняется вместо тихой
+        подмены бюджета и стоимости."""
         resolved = await self._resolver.resolve(
             created_by, credential_id=credential_id, model=model, profile=profile
         )
+        if expected_model is not None and (
+            resolved.model != expected_model
+            or (expected_provider is not None and resolved.provider != expected_provider)
+        ):
+            await resolved.release()
+            raise ConflictError(
+                "Модель или ключ прогона изменились после оценки — оцените прогон заново"
+            )
         try:
             async with self._start_slot(project_id), self._repos.atomic() as repos:
                 # Блокировка проекта общая с ручным сохранением схемы и удалением проекта.

@@ -84,10 +84,33 @@ describe('ReviewInvite', () => {
   })
 })
 
-it('честно объясняет, что ответы оставит агент: формы ответа по ссылке нет', async () => {
+it('объясняет ответы без входа и показывает форму вопроса области', async () => {
+  stubApi({
+    'GET /api/v1/auth/session': { body: signed },
+    'GET /api/v1/shares/tok/questions': {
+      body: [
+        {
+          id: 'q1',
+          project_id: 'p1',
+          code: 'Q-1',
+          text: 'Кто согласует заявку?',
+          assumption: 'Согласует диспетчер',
+          severity: 'major',
+          status: 'open',
+          category: 'business',
+          kind: 'business',
+          blocking: false,
+          element_ids: [],
+          created_at: '2026-11-04T10:00:00Z',
+          updated_at: '2026-11-04T10:00:00Z',
+          actions: [],
+        },
+      ],
+    },
+  })
   mount()
   expect(await screen.findByText(/Схема открыта только для чтения/)).toBeInTheDocument()
-  expect(screen.getByText(/ответы на вопросы области оставит ваш агент/)).toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: /Ответить/ })).not.toBeInTheDocument()
-  expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  expect(screen.getByText(/можно ответить без входа/)).toBeInTheDocument()
+  expect(await screen.findByText('Кто согласует заявку?')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Отправить ответ' })).toBeVisible()
 })

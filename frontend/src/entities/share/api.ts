@@ -14,7 +14,7 @@ import type {
   VersionSource,
   VersionSummary,
 } from '@/entities/version'
-import { api, errorMessage, type Schemas, unwrap } from '@/shared/api/client'
+import { ApiError, api, errorMessage, type Schemas, unwrap } from '@/shared/api/client'
 import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
 import { toast } from '@/shared/ui'
 import type { SharedProject, ShareRole } from './model'
@@ -31,6 +31,7 @@ export const shareKeys = {
   members: (projectId: string) => [...projectKeys.detail(projectId), 'members'] as const,
   shared: (token: string) => ['shares', token] as const,
   agentPrompt: (token: string) => [...shareKeys.shared(token), 'agent-prompt'] as const,
+  questions: (token: string) => [...shareKeys.shared(token), 'questions'] as const,
 }
 
 export function shareLinksQueryOptions(projectId: string) {
@@ -277,4 +278,55 @@ export function useIssueAgentToken(token: string) {
     gcTime: 0,
     retry: false,
   })
+}
+
+/** Вопросы области проверки: открытые и уже отвеченные, без технических. */
+export function shareQuestionsQueryOptions(token: string) {
+  return queryOptions({
+    queryKey: shareKeys.questions(token),
+    queryFn: async ({ signal }): Promise<Schemas['Question'][]> =>
+      unwrap(
+        await api.GET('/api/v1/shares/{token}/questions', {
+          params: { path: { token } },
+          signal,
+        }),
+      ),
+    staleTime: 0,
+  })
+}
+
+export function useShareQuestions(token: string) {
+  return useQuery(shareQuestionsQueryOptions(token))
+}
+
+/**
+ * Ответ по ссылке проверки без входа. Ссылка — удостоверение проверяющего; после успеха
+ * перечитываем вопросы области и сам проект (итог/счётчики могли измениться).
+ */
+export function useAnswerSharedQuestion(token: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ questionId, text }: { questionId: string; text: string }) =>
+      unwrap(
+        await api.POST('/api/v1/shares/{token}/questions/{question_id}/answer', {
+          params: { path: { token, question_id: questionId } },
+          body: { text },
+        }),
+      ),
+    onSuccess: () =>
+      Promise.all([
+        client.invalidateQueries({ queryKey: shareKeys.questions(token) }),
+        client.invalidateQueries({ queryKey: shareKeys.shared(token) }),
+      ]),
+  })
+}
+
+/** Понятный текст ошибки ответа по ссылке: ответ — главное действие проверяющего. */
+export function shareAnswerError(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 410) return 'Срок действия ссылки истёк — ответить уже нельзя.'
+    if (error.status === 403) return 'По этой ссылке отвечать на вопросы нельзя.'
+    if (error.status === 404) return 'Вопрос вне области проверки или ссылка отозвана.'
+  }
+  return errorMessage(error)
 }

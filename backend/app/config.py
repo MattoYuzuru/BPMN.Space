@@ -47,6 +47,16 @@ class Settings(BaseSettings):
     rate_limit_expensive_per_min: int = 60  # прогоны, помощник, расшифровка, загрузка, на аккаунт
     rate_limit_expensive_ip_per_min: int = 120  # те же вызовы суммарно с одного IP (все аккаунты)
 
+    # --- MCP-сервер внешних агентов (RFC-0007, шаг 2) ---
+    # Секрет HMAC-подписи `estimate_token` (допуск на запуск после оценки). Пусто — случайный
+    # на процесс: после перезапуска старые оценки потребуют повторного `estimate_run`.
+    mcp_estimate_secret: SecretStr | None = None
+    # Срок жизни оценки прогона (секунды): `start_run` без свежей оценки отклоняется.
+    mcp_estimate_ttl_sec: float = Field(default=900.0, gt=0, le=86_400)
+    # Дорогие вызовы MCP (`start_run`) на токен в минуту: отдельная таблица, потому что
+    # IP-лимиты `/api/v1` путь `/mcp` не покрывают.
+    mcp_expensive_per_min: int = 30
+
     # В Compose всегда настоящий внутренний Node-сервис. None — ограниченный локальный mock.
     bpmn_tools_url: str | None = None
     bpmn_tools_timeout_sec: float = Field(default=20.0, gt=0, le=120)
@@ -183,6 +193,22 @@ class Settings(BaseSettings):
     stt_provider: str = "mock"
     deepgram_api_key: SecretStr | None = None
     deepgram_timeout_sec: float = 120.0
+
+    # --- Маршрутизация инструментов по ключам пользователя (RFC-0006) ---
+    # Повторы временных сбоев одного ключа: число попыток и паузы (как у LLM, с джиттером).
+    capability_max_attempts: int = Field(default=2, ge=1, le=5)
+    capability_retry_base_sec: float = Field(default=1.0, ge=0)
+    capability_retry_max_sec: float = Field(default=30.0, ge=0)
+    # Предохранитель ключа: после стольких подряд отказов ключ отдыхает это число секунд.
+    capability_breaker_threshold: int = Field(default=3, ge=1, le=100)
+    capability_breaker_cooldown_sec: float = Field(default=60.0, ge=0)
+    # Пауза ключа при исчерпанной квоте, если провайдер не прислал `Retry-After`.
+    capability_quota_cooldown_sec: float = Field(default=3600.0, ge=0)
+    # Один вызов адаптера (запрос к провайдеру) и бюджет на весь перебор ключей и запасной
+    # путь. Внешний дедлайн обработки записи берёт их с запасом, чтобы маршрутизатор успел
+    # перейти к следующему ключу или серверному провайдеру.
+    capability_request_timeout_sec: float = Field(default=120.0, gt=0)
+    capability_run_deadline_sec: float = Field(default=600.0, gt=0)
 
     @field_validator(
         "database_url",

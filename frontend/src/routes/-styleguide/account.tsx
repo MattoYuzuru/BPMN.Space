@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ApiToken } from '@/entities/api-token'
-import type { LlmCredential } from '@/entities/llm-credential'
+import type { LlmCredential, LlmModel, ModelCapabilities } from '@/entities/llm-credential'
 import type { AuthMode } from '@/entities/session'
 import { AccountMenuFor } from '@/features/account-menu/account-menu'
 import { TokenRow } from '@/features/api-tokens/agent-access-section'
@@ -93,6 +93,36 @@ const DEMO_CREDENTIALS: LlmCredential[] = [
   },
 ]
 
+const DEMO_CAPS: ModelCapabilities = {
+  known: true,
+  context_tokens: 1_000_000,
+  max_output_tokens: 128_000,
+  vision: true,
+  pdf_input: true,
+  tools: true,
+  effort_levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+  effort_default: 'medium',
+  accepts_temperature: false,
+  prices: {
+    input: 3,
+    output: 15,
+    cache_read: null,
+    cache_write: null,
+    currency: 'USD',
+    checked_on: '2026-10-06',
+  },
+}
+
+/** Модели для витрины: запросы к ключу в стайлгайде не нужны. */
+const DEMO_MODELS: LlmModel[] = [
+  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', capabilities: DEMO_CAPS },
+  {
+    id: 'deepseek/deepseek-chat',
+    label: 'DeepSeek Chat',
+    capabilities: { ...DEMO_CAPS, effort_levels: [], effort_default: null },
+  },
+]
+
 /** Аккаунт и доступ: карточка входа, меню аккаунта, маркеры режима «только просмотр». */
 export function AccountSection() {
   const [mode, setMode] = useState<AuthMode>('login')
@@ -140,7 +170,13 @@ export function AccountSection() {
       </Specimen>
       <Specimen title="Выбор модели при запуске" note="Popover, два Select, RadioGroup уровня">
         <div className="w-80 rounded-lg border border-border bg-surface p-4 shadow-sm">
-          <PickerBody items={DEMO_CREDENTIALS} loading={false} choice={null} onChange={() => {}} />
+          <PickerBody
+            items={DEMO_CREDENTIALS}
+            loading={false}
+            choice={null}
+            demoModels={DEMO_MODELS}
+            onChange={() => {}}
+          />
         </div>
       </Specimen>
       <Specimen title="Доступ для агентов" note="TokenRow, CopyField, одноразовый секрет">

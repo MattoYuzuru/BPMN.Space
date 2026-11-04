@@ -22,9 +22,12 @@ from fastapi_users_db_sqlalchemy.access_token import SQLAlchemyAccessTokenDataba
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import HTTPConnection
 
+from app.domain.api_tokens import ApiToken
+from app.infra.database import Database
 from app.infra.db_models import AccessTokenRow, UserRow
 from app.services.api_tokens import (
     INVALID_ACCESS_MESSAGE,
+    ApiTokenService,
     bearer_secret,
     check_route_policy,
     remember_api_token,
@@ -118,6 +121,27 @@ _users, _ = build_fastapi_users(cookie_secure=False)
 _cookie_user = _users.current_user(active=True, optional=True)
 
 
+async def token_owner(
+    api_tokens: ApiTokenService, database: Database | None, secret: str
+) -> tuple[ApiToken, UserRow] | None:
+    """Действующий токен доступа и его владелец; `None` — токен недействителен.
+
+    Не различает «неизвестный», «отозванный», «истёкший» токены и заблокированный аккаунт:
+    для клиента это одно и то же. Общая точка для REST (`token_user`) и MCP (`app.mcp.auth`).
+    """
+    token = await api_tokens.authenticate(secret)
+    if token is None:
+        return None
+    if database is None:
+        raise UnavailableError("Для учётных записей требуется PostgreSQL")
+    async with database.sessions() as session:
+        user = await session.get(UserRow, token.user_id)
+        if user is None or not user.is_active:
+            return None
+        session.expunge(user)
+    return token, user
+
+
 async def token_user(connection: HTTPConnection, secret: str) -> UserRow:
     """Владелец действующего токена доступа (RFC-0007) с проверкой права маршрута.
 
@@ -127,17 +151,10 @@ async def token_user(connection: HTTPConnection, secret: str) -> UserRow:
     сессии, как у потоков.
     """
     container = connection.app.state.container
-    token = await container.api_tokens.authenticate(secret)
-    if token is None:
+    owner = await token_owner(container.api_tokens, container.database, secret)
+    if owner is None:
         raise UnauthorizedError(INVALID_ACCESS_MESSAGE)
-    database = container.database
-    if database is None:
-        raise UnavailableError("Для учётных записей требуется PostgreSQL")
-    async with database.sessions() as session:
-        user = await session.get(UserRow, token.user_id)
-        if user is None or not user.is_active:
-            raise UnauthorizedError(INVALID_ACCESS_MESSAGE)
-        session.expunge(user)
+    token, user = owner
     check_route_policy(connection, token)
     remember_api_token(connection, token)
     return user

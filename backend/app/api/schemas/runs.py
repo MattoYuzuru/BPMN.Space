@@ -6,11 +6,13 @@ from uuid import UUID
 
 from pydantic import Field, RootModel, model_validator
 
+from app.api.schemas.budget import RunBudget
 from app.api.schemas.common import ApiModel
 from app.api.schemas.questions import Question
 from app.api.schemas.versions import Version
 from app.domain import models
 from app.domain.models import RunMode, RunStage, RunStatus
+from app.domain.runs import RunCost as DomainRunCost
 from app.domain.runs import stage_label
 from app.llm.capabilities import RunProfile as DomainRunProfile
 
@@ -30,9 +32,20 @@ class RunProfile(ApiModel):
     semantic_review: bool | None = Field(
         default=None, description="Смысловая сверка схемы; null — настройка сервера"
     )
+    budget: RunBudget | None = Field(
+        default=None,
+        description=(
+            "Бюджет прогона: токены и/или деньги. Достигнутый бюджет переводит прогон "
+            "в `waiting` с блокирующим техническим вопросом"
+        ),
+    )
 
     def to_domain(self) -> DomainRunProfile:
-        return DomainRunProfile(effort=self.effort, semantic_review=self.semantic_review)
+        return DomainRunProfile(
+            effort=self.effort,
+            semantic_review=self.semantic_review,
+            budget=self.budget.to_domain() if self.budget is not None else None,
+        )
 
     @classmethod
     def of(cls, stored: object) -> "RunProfile | None":
@@ -70,6 +83,62 @@ class QuestionsSummary(ApiModel):
     answered: int
 
 
+class StageCost(ApiModel):
+    """Стоимость одного этапа вызовов модели."""
+
+    stage: str = Field(description="Шаг пайплайна: analyze, structure, …")
+    label: str = Field(description="Подпись этапа для интерфейса")
+    calls: int
+    tokens_in: int
+    tokens_out: int
+    cache_read_tokens: int
+    cache_write_tokens: int
+    cost_usd: float | None = None
+
+
+class RunCost(ApiModel):
+    """Потрачено на прогон по журналу вызовов модели (`llm_calls`).
+
+    `complete=false` — у части вызовов не сообщены токены (mock) или неизвестны цены модели,
+    поэтому суммы неполные; `cost_usd=null` — цены неизвестны ни у одного вызова.
+    """
+
+    tokens_in: int
+    tokens_out: int
+    cache_read_tokens: int
+    cache_write_tokens: int
+    calls: int
+    cost_usd: float | None = None
+    currency: Literal["USD"] = "USD"
+    complete: bool
+    by_stage: list[StageCost] = Field(default_factory=list)
+
+    @classmethod
+    def of(cls, cost: DomainRunCost) -> "RunCost":
+        return cls(
+            tokens_in=cost.tokens_in,
+            tokens_out=cost.tokens_out,
+            cache_read_tokens=cost.cache_read_tokens,
+            cache_write_tokens=cost.cache_write_tokens,
+            calls=cost.calls,
+            cost_usd=cost.cost_usd,
+            complete=cost.complete,
+            by_stage=[
+                StageCost(
+                    stage=item.stage,
+                    label=item.label,
+                    calls=item.calls,
+                    tokens_in=item.tokens_in,
+                    tokens_out=item.tokens_out,
+                    cache_read_tokens=item.cache_read_tokens,
+                    cache_write_tokens=item.cache_write_tokens,
+                    cost_usd=item.cost_usd,
+                )
+                for item in cost.by_stage
+            ],
+        )
+
+
 class Run(ApiModel):
     id: UUID
     project_id: UUID
@@ -93,6 +162,13 @@ class Run(ApiModel):
     profile: RunProfile | None = Field(
         default=None, description="Проверенный профиль прогона; null — прогон до RFC-0005"
     )
+    cost: RunCost | None = Field(
+        default=None,
+        description=(
+            "Потрачено на прогон: токены, кеш и деньги с разбивкой по этапам; null — вызовов "
+            "ещё не было"
+        ),
+    )
     warnings: list[str] = Field(
         default_factory=list,
         description=(
@@ -102,7 +178,7 @@ class Run(ApiModel):
     )
 
     @classmethod
-    def of(cls, run: models.Run) -> "Run":
+    def of(cls, run: models.Run, *, cost: DomainRunCost | None = None) -> "Run":
         execution = (run.ir or {}).get("execution", {})
         return cls(
             id=run.id,
@@ -122,6 +198,7 @@ class Run(ApiModel):
             model=run.model,
             credential_id=execution.get("credential_id"),
             profile=RunProfile.of(execution.get("profile")),
+            cost=RunCost.of(cost) if cost is not None else None,
         )
 
 
@@ -197,6 +274,11 @@ class RunVersionEvent(ApiModel):
     data: VersionEventData
 
 
+class RunUsageEvent(ApiModel):
+    event: Literal["usage"]
+    data: RunCost
+
+
 class RunDoneEvent(ApiModel):
     event: Literal["done"]
     data: DoneEventData
@@ -214,6 +296,7 @@ class RunEvent(
             | RunQuestionEvent
             | RunSummaryEvent
             | RunVersionEvent
+            | RunUsageEvent
             | RunDoneEvent
             | RunErrorEvent,
             Field(discriminator="event"),
@@ -223,6 +306,7 @@ class RunEvent(
     """Одно SSE-сообщение: поле `event:` — тип, `data:` — JSON из `data`, `id:` — номер.
 
     Порядок: `stage` на каждый этап; на этапе сверки — `question` на каждый изменённый или
-    новый вопрос, затем `summary`; при сборке — `version`; последним всегда `done`
-    (при ошибке перед ним — `error`). Переподключение — заголовок `Last-Event-ID`.
+    новый вопрос, затем `summary`; при сборке — `version`; после каждого этапа с вызовами
+    модели — `usage` (потраченные токены и деньги); последним всегда `done` (при ошибке перед
+    ним — `error`). Переподключение — заголовок `Last-Event-ID`.
     """

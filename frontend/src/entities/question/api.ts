@@ -1,9 +1,16 @@
 import { type QueryClient, useMutation, useQueryClient } from '@tanstack/react-query'
 import { type ProjectDetail, projectKeys } from '@/entities/project'
+import type { Schemas } from '@/shared/api/client'
 import { api, errorMessage, unwrap } from '@/shared/api/client'
 import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
 import { toast } from '@/shared/ui'
-import { type Question, type QuestionStatus, shiftSummary } from './model'
+import {
+  QUESTION_ACTION,
+  type Question,
+  type QuestionActionKind,
+  type QuestionStatus,
+  shiftSummary,
+} from './model'
 
 /** Заменить вопрос в кэше проекта (и сдвинуть сводку). Используется мутациями и событиями SSE. */
 export function upsertQuestion(client: QueryClient, projectId: string, question: Question) {
@@ -17,7 +24,11 @@ export function upsertQuestion(client: QueryClient, projectId: string, question:
     return {
       ...project,
       questions,
-      summary: shiftSummary(project.summary, previous.status, question.status),
+      // Сводка проекта считает только бизнес-вопросы (технические — отдельная вкладка).
+      summary:
+        previous.category === 'technical' || question.category === 'technical'
+          ? project.summary
+          : shiftSummary(project.summary, previous.status, question.status),
     }
   })
 }
@@ -95,4 +106,53 @@ export function useQuestionAction(projectId: string) {
     onSettled: () => client.invalidateQueries({ queryKey: key }),
   })
   return mutation
+}
+
+/** Действие по техническому вопросу: настройки, повтор, продолжить без, поднять бюджет. */
+async function applyTechnicalAction(
+  question: Question,
+  action: QuestionActionKind,
+  budget?: Schemas['RunBudget'] | null,
+): Promise<Question> {
+  return unwrap(
+    await api.POST('/api/v1/questions/{question_id}/actions', {
+      params: { path: { question_id: question.id } },
+      body: { action, budget: budget ?? null },
+    }),
+  )
+}
+
+/**
+ * Действия технического вопроса (RFC-0006): после ответа сервера вопрос закрывается, прогон
+ * продолжается, а проект перечитывается — в нём меняется статус ожидающего прогона.
+ */
+export function useQuestionTechnicalAction(projectId: string) {
+  const client = useQueryClient()
+  const key = projectKeys.detail(projectId)
+  return useMutation({
+    mutationFn: ({
+      question,
+      action,
+      budget,
+    }: {
+      question: Question
+      action: QuestionActionKind
+      budget?: Schemas['RunBudget'] | null
+    }) => applyTechnicalAction(question, action, budget),
+    onSuccess: (question, { action }) => {
+      upsertQuestion(client, projectId, question)
+      emitOnboardingSignal({
+        type: 'question.technical.resolved',
+        id: question.id,
+        action: QUESTION_ACTION[action].signal,
+      })
+      return client.invalidateQueries({ queryKey: key })
+    },
+    onError: (error) => {
+      toast.error('Не удалось выполнить действие', {
+        description: errorMessage(error),
+        duration: 8000,
+      })
+    },
+  })
 }

@@ -3,10 +3,10 @@ import { act, renderHook } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { type ProjectDetail, projectKeys } from '@/entities/project'
 import type { Run, RunEvent } from '@/entities/run'
-import { useRunStore } from '@/entities/run'
+import { rememberedRunId, rememberRun, useRunStore } from '@/entities/run'
 import { type OnboardingSignal, subscribeOnboardingSignals } from '@/shared/lib/onboarding-signals'
 import { stubApi } from '@/test/api-stub'
-import { RUN_POLL_MS, useRunTracker } from './use-run-tracker'
+import { RUN_POLL_MS, RUN_STATUS_POLL_MS, useRunTracker } from './use-run-tracker'
 
 vi.mock('@/shared/ui', async (original) => ({
   ...(await original<typeof import('@/shared/ui')>()),
@@ -60,7 +60,7 @@ const project = (patch: Partial<ProjectDetail> = {}) =>
 const signals: OnboardingSignal[] = []
 let unsubscribe: () => void = () => {}
 
-function setup(active: Run, detail: ProjectDetail = project()) {
+function setup(active: Run | null, detail: ProjectDetail = project()) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   client.setQueryData(projectKeys.detail('p-1'), detail)
   const wrapper = ({ children }: { children: ReactNode }) => (
@@ -82,6 +82,7 @@ const done = (patch: Partial<Run>): RunEvent => ({
 })
 
 beforeEach(() => {
+  window.sessionStorage.clear()
   vi.useFakeTimers({ shouldAdvanceTime: true })
   signals.length = 0
   stream.handlers = undefined
@@ -141,7 +142,8 @@ describe('useRunTracker: сигналы обучения', () => {
     })
     expect(useRunStore.getState().views['p-1']?.runId).toBe('r-2')
     expect(useRunStore.getState().views['p-1']?.status).toBe('running')
-    expect(calls).toHaveLength(0)
+    // Новый прогон может уточнять статус опросом, но старый r-1 не трогаем.
+    expect(calls.filter((call) => call.path === '/api/v1/runs/r-1')).toHaveLength(0)
     expect(signals.filter((signal) => signal.type === 'run.finished')).toHaveLength(0)
     rerender({ projectId: 'p-1', active: null })
     await act(async () => {
@@ -191,7 +193,13 @@ describe('useRunTracker: сигналы обучения', () => {
   })
 
   it('окончание: run.finished с числом открытых вопросов и признаком схемы', async () => {
-    setup(run())
+    // Технический вопрос не бизнес: в число открытых для тура не входит.
+    const detail = project()
+    detail.questions = [
+      ...detail.questions,
+      { id: 'tq-1', status: 'open', category: 'technical' } as never,
+    ]
+    setup(run(), detail)
     signals.length = 0
     await act(async () => {
       stream.handlers?.onEvent(done({}))
@@ -285,5 +293,60 @@ describe('useRunTracker: сигналы обучения', () => {
     })
     expect(calls.length).toBe(before)
     expect(useRunStore.getState().views['p-1']?.status).toBe('succeeded')
+  })
+})
+
+describe('useRunTracker: ожидание технического вопроса без SSE-события', () => {
+  it('лёгкий опрос переключает карточку в waiting', async () => {
+    stubApi({
+      'GET /api/v1/runs/r-1': {
+        body: run({ status: 'waiting', stage_label: 'Ждёт вашего действия' }),
+      },
+    })
+    setup(run())
+    expect(useRunStore.getState().views['p-1']?.status).toBe('running')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RUN_STATUS_POLL_MS + 100)
+    })
+    expect(useRunStore.getState().views['p-1']?.status).toBe('waiting')
+    expect(useRunStore.getState().views['p-1']?.label).toBe('Ждёт вашего действия')
+    // Поток не закрываем: ожидание продолжается, `done` ещё не пришёл.
+    expect(stream.closed).toBe(0)
+  })
+})
+
+describe('useRunTracker: восстановление после перезагрузки', () => {
+  it('активный waiting из проекта сразу показывает карточку хода', () => {
+    setup(run({ status: 'waiting', stage_label: 'Ждёт вашего действия' }))
+    expect(useRunStore.getState().views['p-1']?.status).toBe('waiting')
+    expect(useRunStore.getState().expanded['p-1']).toBe(true)
+  })
+
+  it('без active_run подхватывает запомненный прогон и подключает SSE', async () => {
+    rememberRun('p-1', 'r-1')
+    stubApi({
+      'GET /api/v1/runs/r-1': {
+        body: run({ status: 'waiting', stage_label: 'Ждёт вашего действия' }),
+      },
+    })
+    setup(null)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20)
+    })
+    expect(useRunStore.getState().views['p-1']?.status).toBe('waiting')
+    expect(useRunStore.getState().expanded['p-1']).toBe(true)
+    expect(stream.opened).toContain('r-1')
+    expect(rememberedRunId('p-1')).toBe('r-1')
+  })
+
+  it('завершённый запомненный прогон не открывает карточку', async () => {
+    rememberRun('p-1', 'r-1')
+    stubApi({ 'GET /api/v1/runs/r-1': { body: run({ status: 'succeeded' }) } })
+    setup(null)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20)
+    })
+    expect(useRunStore.getState().views['p-1']).toBeUndefined()
+    expect(rememberedRunId('p-1')).toBeNull()
   })
 })

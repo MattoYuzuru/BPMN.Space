@@ -8,7 +8,7 @@ import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import cast
 from uuid import uuid4
@@ -18,6 +18,7 @@ from alembic import command
 from alembic.config import Config
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import Table, func, inspect, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import Settings
@@ -25,12 +26,16 @@ from app.container import build_container
 from app.domain.analysis import AnalysisResult
 from app.domain.bpmn.compiler import compile_graph
 from app.domain.bpmn.ir import GraphIR
-from app.domain.credentials import LlmCredential
+from app.domain.capabilities import CredentialKind
+from app.domain.credentials import Credential
 from app.domain.models import (
     Answer,
     LlmCall,
     Project,
     Question,
+    QuestionAction,
+    QuestionActionKind,
+    QuestionCategory,
     QuestionKind,
     QuestionStatus,
     Run,
@@ -41,6 +46,7 @@ from app.domain.models import (
     Source,
     SourceKind,
     SourceStatus,
+    TechnicalQuestionKind,
     Version,
     VersionOrigin,
 )
@@ -143,6 +149,8 @@ def test_postgres_schema_has_domain_tables_and_active_run_constraint() -> None:
     assert active_run_index.unique
     assert "queued" in str(active_run_index.dialect_options["postgresql"]["where"])
     assert "running" in str(active_run_index.dialect_options["postgresql"]["where"])
+    # Ожидание действия пользователя тоже занимает проект (RFC-0006, шаг 2).
+    assert "waiting" in str(active_run_index.dialect_options["postgresql"]["where"])
 
     question_table = cast(Table, QuestionRow.__table__)
     version_table = cast(Table, DiagramVersionRow.__table__)
@@ -1592,11 +1600,12 @@ async def test_interrupted_runs_recover_twice_then_stop(sql_store):
     assert "лимит" in saved.error
 
 
-async def test_llm_credentials_persist_encrypted_with_single_default_and_cascade(
+async def test_credentials_persist_encrypted_with_single_default_and_cascade(  # noqa: PLR0915
     sql_store,
 ) -> None:
+    """Обобщённые ключи (RFC-0006): шифртекст, типы задач, приоритет, один ключ по умолчанию."""
     store, sessions = sql_store
-    repo = store.repositories().llm_credentials
+    repo = store.repositories().credentials
     assert repo is not None
     user_id = uuid4()
     async with sessions.begin() as session:
@@ -1613,16 +1622,18 @@ async def test_llm_credentials_persist_encrypted_with_single_default_and_cascade
     secret = "sk-plaintext-secret-9999"  # noqa: S105
     now = datetime.now(UTC)
 
-    def credential(label: str, *, default: bool) -> LlmCredential:
-        return LlmCredential(
+    def credential(
+        label: str, *, default: bool, kinds: tuple[CredentialKind, ...] = (CredentialKind.LLM,)
+    ) -> Credential:
+        return Credential(
             id=uuid4(),
             user_id=user_id,
             provider="openai",
             label=label,
-            base_url=None,
+            kinds=kinds,
             encrypted_key=b"gAAAA-cipher-not-" + label.encode(),
             key_hint=secret[-4:],
-            default_model="gpt-4o",
+            default_model="gpt-4o" if CredentialKind.LLM in kinds else None,
             is_default=default,
             created_at=now,
         )
@@ -1634,24 +1645,364 @@ async def test_llm_credentials_persist_encrypted_with_single_default_and_cascade
     assert [item.label for item in items] == ["b", "a"]
     assert [item.is_default for item in items] == [True, False]
     assert await repo.count(user_id) == 2
+    # Модель сохраняет несколько типов задач одного ключа.
+    shared = credential(
+        "c", default=False, kinds=(CredentialKind.LLM, CredentialKind.SPEECH_TO_TEXT)
+    )
+    await repo.save(shared)
+    reloaded_shared = await repo.get(shared.id)
+    assert reloaded_shared is not None
+    assert reloaded_shared.kinds == (CredentialKind.LLM, CredentialKind.SPEECH_TO_TEXT)
+    await repo.delete(shared.id)
+
     await repo.mark_used(first.id, now, "x" * 600)
     reloaded = await repo.get(first.id)
     assert reloaded is not None
     assert reloaded.last_error == "x" * 500
     # Правка настроек меняет только свои колонки: отметка использования переживает её.
-    updated = await repo.update_fields(first.id, label="a2", is_default=True)
+    updated = await repo.update_fields(first.id, label="a2", is_default=True, priority=7)
     assert updated is not None
-    assert (updated.label, updated.is_default) == ("a2", True)
+    assert (updated.label, updated.is_default, updated.priority) == ("a2", True, 7)
     assert updated.last_error == "x" * 500
     assert updated.last_used_at == now
     assert [item.is_default for item in await repo.list_by_user(user_id)] == [True, False]
     cleared = await repo.update_fields(first.id, clear_default_model=True)
     assert cleared is not None
     assert cleared.default_model is None
+    # Отказ провайдера: класс, пауза квоты и выключение недействительного ключа.
+    await repo.mark_failure(
+        first.id,
+        now,
+        error="кончилась квота",
+        error_code="quota_exhausted",
+        exhausted_until=now + timedelta(hours=1),
+    )
+    failed = await repo.get(first.id)
+    assert failed is not None
+    assert failed.last_error_code == "quota_exhausted"
+    assert failed.exhausted_until is not None
+    await repo.mark_used(first.id, now, None)
+    recovered = await repo.get(first.id)
+    assert recovered is not None
+    assert recovered.last_error_code is None
+    assert recovered.exhausted_until is None
+    await repo.mark_failure(second.id, now, error="ключ отклонён", error_code="auth", disable=True)
+    disabled = await repo.get(second.id)
+    assert disabled is not None
+    assert disabled.enabled is False
     assert await repo.update_fields(uuid4(), label="x") is None
     async with sessions() as session:
-        raw = (await session.execute(text("SELECT encrypted_key FROM user_llm_credentials"))).all()
+        raw = (await session.execute(text("SELECT encrypted_key FROM user_credentials"))).all()
     assert all(secret.encode() not in bytes(row[0]) for row in raw)
     async with sessions.begin() as session:
         await session.execute(text("DELETE FROM users WHERE id = :id"), {"id": user_id})
     assert await repo.count(user_id) == 0
+
+
+# ---------- PostgreSQL: кеш и стоимость вызовов модели (миграция 0018, RFC-0005) ----------
+
+
+@pytest.mark.asyncio
+async def test_llm_call_totals_are_aggregated_from_postgres(sql_store) -> None:
+    store, _ = sql_store
+    repos = store.repositories()
+    project = await _make_project(repos)
+    run = Run(
+        id=uuid4(),
+        project_id=project.id,
+        mode=RunMode.ANALYZE,
+        status=RunStatus.SUCCEEDED,
+        started_at=datetime.now(UTC),
+    )
+    await repos.runs.add(run)
+    for stage, tokens_in, tokens_out, cache_read, cost in (
+        ("analyze", 1_000, 100, 600, 0.25),
+        ("analyze", 500, 50, 0, 0.05),
+        ("structure", 100, 10, 0, None),
+    ):
+        await repos.llm_calls.add(
+            LlmCall(
+                id=uuid4(),
+                run_id=run.id,
+                stage=stage,
+                request={},
+                response={},
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                cache_read_tokens=cache_read,
+                cache_write_tokens=0,
+                cost_usd=cost,
+                price_checked_on=date(2026, 10, 6) if cost is not None else None,
+                model="claude-opus-5-5",
+            )
+        )
+    totals = await repos.llm_calls.totals(run.id)
+    assert totals.calls == 3
+    assert (totals.tokens_in, totals.tokens_out) == (1_600, 160)
+    assert totals.cache_read_tokens == 600
+    assert totals.cost_usd == 0.3
+    assert totals.priced_calls == 2
+    assert set(totals.stages) == {"analyze", "structure"}
+    assert totals.stages["analyze"].calls == 2
+
+    listed = await repos.llm_calls.list_by_run(run.id)
+    # Этапы упорядочены, а порядок вызовов внутри этапа не гарантирован (id — случайный UUID),
+    # поэтому стоимость первого вызова проверяем множеством, а не позицией.
+    assert [call.stage for call in listed] == ["analyze", "analyze", "structure"]
+    # Внутри одного этапа порядок задаёт id: сравниваем состав, а не случайный порядок.
+    assert {call.cost_usd for call in listed if call.stage == "analyze"} == {0.25, 0.05}
+    assert listed[2].cost_usd is None
+
+
+@pytest.mark.asyncio
+async def test_migration_0018_adds_and_removes_llm_call_cost() -> None:
+    url = os.getenv("TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("TEST_DATABASE_URL не задан; PostgreSQL-интеграционный тест пропущен")
+    schema = f"test_{uuid4().hex}"
+    admin = create_async_engine(url)
+    async with admin.begin() as connection:
+        await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    engine = create_async_engine(url, connect_args={"server_settings": {"search_path": schema}})
+    config = Config()
+    config.set_main_option("script_location", str(MIGRATIONS_DIR))
+
+    def migrate(direction: str, target: str):
+        def run(sync_connection) -> None:
+            config.attributes["connection"] = sync_connection
+            if direction == "up":
+                command.upgrade(config, target)
+            else:
+                command.downgrade(config, target)
+
+        return run
+
+    run_id = uuid4()
+    project_id = uuid4()
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(migrate("up", "0017_api_tokens"))
+            await connection.execute(
+                text(
+                    "INSERT INTO projects (id, title, created_at, updated_at, public_read_only) "
+                    "VALUES (:id, 'Стоимость', :now, :now, false)"
+                ),
+                {"id": project_id, "now": datetime.now(UTC)},
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO runs (id, project_id, mode, status, started_at, progress, "
+                    "warnings) VALUES (:id, :project, 'analyze', 'succeeded', :now, 1, '[]')"
+                ),
+                {"id": run_id, "project": project_id, "now": datetime.now(UTC)},
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO llm_calls (id, run_id, stage, request, response, tokens_in, "
+                    "tokens_out) VALUES (:id, :run, 'analyze', '{}', '{}', 10, 2)"
+                ),
+                {"id": uuid4(), "run": run_id},
+            )
+        async with engine.begin() as connection:
+            await connection.run_sync(migrate("up", "head"))
+
+            def columns(sync_connection) -> set[str]:
+                inspector = inspect(sync_connection)
+                return {item["name"] for item in inspector.get_columns("llm_calls")}
+
+            names = await connection.run_sync(columns)
+        assert {
+            "cache_read_tokens",
+            "cache_write_tokens",
+            "cost_usd",
+            "price_checked_on",
+            "model",
+        } <= names
+        async with engine.begin() as connection:
+            saved = (
+                await connection.execute(
+                    text("SELECT tokens_in, tokens_out FROM llm_calls WHERE run_id = :run"),
+                    {"run": run_id},
+                )
+            ).one()
+        assert tuple(saved) == (10, 2)
+        async with engine.begin() as connection:
+            await connection.run_sync(migrate("down", "0017_api_tokens"))
+
+            def downgraded(sync_connection) -> set[str]:
+                inspector = inspect(sync_connection)
+                return {item["name"] for item in inspector.get_columns("llm_calls")}
+
+            names_after = await connection.run_sync(downgraded)
+        assert "cost_usd" not in names_after
+        assert "cache_read_tokens" not in names_after
+    finally:
+        await engine.dispose()
+        async with admin.begin() as connection:
+            await connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+        await admin.dispose()
+
+
+# ---------- PostgreSQL: технические вопросы и waiting (миграция 0019, RFC-0006) ----------
+
+
+@pytest.mark.asyncio
+async def test_technical_question_roundtrip_and_waiting_takes_the_project(sql_store) -> None:
+    store, _ = sql_store
+    repos = store.repositories()
+    project = await _make_project(repos)
+    now = datetime.now(UTC)
+    technical = Question(
+        id=uuid4(),
+        project_id=project.id,
+        code="Q-1",
+        kind=TechnicalQuestionKind.BUDGET_REACHED,
+        severity=Severity.MAJOR,
+        status=QuestionStatus.OPEN,
+        text="Бюджет прогона исчерпан",
+        assumption="",
+        created_at=now,
+        updated_at=now,
+        category=QuestionCategory.TECHNICAL,
+        actions=[
+            QuestionAction(
+                kind=QuestionActionKind.RAISE_BUDGET,
+                label="Поднять бюджет",
+                payload={"tokens": 10},
+            )
+        ],
+        blocking=True,
+    )
+    await repos.questions.add(technical)
+    loaded = await repos.questions.get(technical.id)
+    assert loaded is not None
+    assert loaded.category is QuestionCategory.TECHNICAL
+    assert loaded.kind is TechnicalQuestionKind.BUDGET_REACHED
+    assert loaded.blocking is True
+    assert [item.kind for item in loaded.actions] == [QuestionActionKind.RAISE_BUDGET]
+    assert loaded.actions[0].payload == {"tokens": 10}
+
+    waiting = Run(
+        id=uuid4(),
+        project_id=project.id,
+        mode=RunMode.ANALYZE,
+        status=RunStatus.WAITING,
+        started_at=now,
+    )
+    await repos.runs.add(waiting)
+    active = await repos.runs.active_for_project(project.id)
+    assert active is not None
+    assert active.id == waiting.id
+    with pytest.raises(ActiveRunConflictError):
+        await repos.runs.add(
+            Run(
+                id=uuid4(),
+                project_id=project.id,
+                mode=RunMode.BUILD,
+                status=RunStatus.RUNNING,
+                started_at=now,
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_migration_0019_technical_questions_and_waiting_index() -> None:  # noqa: PLR0915
+
+    url = os.getenv("TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("TEST_DATABASE_URL не задан; PostgreSQL-интеграционный тест пропущен")
+    schema = f"test_{uuid4().hex}"
+    admin = create_async_engine(url)
+    async with admin.begin() as connection:
+        await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    engine = create_async_engine(url, connect_args={"server_settings": {"search_path": schema}})
+    config = Config()
+    config.set_main_option("script_location", str(MIGRATIONS_DIR))
+
+    def migrate(direction: str, target: str):
+        def run(sync_connection) -> None:
+            config.attributes["connection"] = sync_connection
+            if direction == "up":
+                command.upgrade(config, target)
+            else:
+                command.downgrade(config, target)
+
+        return run
+
+    project_id = uuid4()
+    question_id = uuid4()
+    now = datetime.now(UTC)
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(migrate("up", "0018_llm_call_cost"))
+            await connection.execute(
+                text(
+                    "INSERT INTO projects (id, title, created_at, updated_at, public_read_only) "
+                    "VALUES (:id, 'Технические вопросы', :now, :now, false)"
+                ),
+                {"id": project_id, "now": now},
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO questions (id, project_id, code, kind, severity, status, text, "
+                    "assumption, created_at, updated_at, element_ids) VALUES (:id, :project, "
+                    "'Q-1', 'missing_actor', 'major', 'open', 'Кто?', 'Не определён', :now, "
+                    ":now, '[]')"
+                ),
+                {"id": question_id, "project": project_id, "now": now},
+            )
+        async with engine.begin() as connection:
+            await connection.run_sync(migrate("up", "head"))
+        async with engine.begin() as connection:
+            legacy = (
+                await connection.execute(
+                    text("SELECT category, actions, blocking FROM questions WHERE id = :id"),
+                    {"id": question_id},
+                )
+            ).one()
+            assert tuple(legacy) == ("business", [], False)
+            waiting_id = uuid4()
+            await connection.execute(
+                text(
+                    "INSERT INTO runs (id, project_id, mode, status, started_at, progress, "
+                    "warnings) VALUES (:id, :project, 'analyze', 'waiting', :now, 0.5, '[]')"
+                ),
+                {"id": waiting_id, "project": project_id, "now": now},
+            )
+            # Savepoint: после ожидаемого нарушения транзакция остаётся рабочей.
+            with pytest.raises(IntegrityError):
+                async with connection.begin_nested():
+                    await connection.execute(
+                        text(
+                            "INSERT INTO runs (id, project_id, mode, status, started_at, "
+                            "progress, warnings) VALUES (:id, :project, 'build', 'running', "
+                            ":now, 0, '[]')"
+                        ),
+                        {"id": uuid4(), "project": project_id, "now": now},
+                    )
+
+            def index_predicate(sync_connection) -> str:
+                inspector = inspect(sync_connection)
+                for index in inspector.get_indexes("runs"):
+                    if index["name"] == "uq_runs_active_project":
+                        return str(index.get("dialect_options", {}).get("postgresql_where"))
+                raise AssertionError("uq_runs_active_project не найден")
+
+            predicate = await connection.run_sync(index_predicate)
+            assert "waiting" in predicate
+        async with engine.begin() as connection:
+            await connection.run_sync(migrate("down", "0018_llm_call_cost"))
+
+            def columns(sync_connection) -> set[str]:
+                inspector = inspect(sync_connection)
+                return {item["name"] for item in inspector.get_columns("questions")}
+
+            names = await connection.run_sync(columns)
+        assert "category" not in names
+        assert "actions" not in names
+        assert "blocking" not in names
+    finally:
+        await engine.dispose()
+        async with admin.begin() as connection:
+            await connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+        await admin.dispose()

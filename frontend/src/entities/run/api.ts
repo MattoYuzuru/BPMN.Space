@@ -17,7 +17,12 @@ type RunOptions = Partial<
   >
 >
 
-export type StartRunInput = RunMode | ({ mode: RunMode } & RunOptions)
+export type StartRunInput =
+  | RunMode
+  | ({ mode: RunMode } & RunOptions & {
+        /** Бюджет в долларах и/или токенах: уходит в `RunCreate.profile.budget`. */
+        budget?: components['schemas']['RunBudget'] | null
+      })
 
 /** Запустить прогон (без кэша и уведомлений — для составных сценариев). */
 export async function startRun(projectId: string, mode: RunMode, options: RunOptions = {}) {
@@ -42,6 +47,52 @@ export async function cancelRun(runId: string) {
 }
 
 /**
+ * Оценка до запуска (RFC-0005, шаг 4): запросы, токены, деньги и длительность диапазоном.
+ * Не создаёт прогон: POST /projects/{id}/runs/estimate.
+ */
+export async function estimateRun(
+  projectId: string,
+  body: components['schemas']['RunEstimateRequest'],
+) {
+  return unwrap(
+    await api.POST('/api/v1/projects/{project_id}/runs/estimate', {
+      params: { path: { project_id: projectId } },
+      body,
+    }),
+  )
+}
+
+/** Оценка стоимости: мутация, потому что это POST; вызывается при открытии диалога и смене профиля. */
+export function useRunEstimate(projectId: string) {
+  return useMutation({
+    mutationFn: (body: components['schemas']['RunEstimateRequest']) => estimateRun(projectId, body),
+  })
+}
+
+/** Продолжить прогон, ждущий действия по техническому вопросу (`waiting` → `queued`). */
+export async function resumeRun(runId: string) {
+  return unwrap(
+    await api.POST('/api/v1/runs/{run_id}/resume', { params: { path: { run_id: runId } } }),
+  )
+}
+
+/** Продолжение ждущего прогона: карточка хода снова показывает этапы, проект перечитывается. */
+export function useResumeRun(projectId: string) {
+  const client = useQueryClient()
+  const resume = useRunStore((state) => state.resume)
+  return useMutation({
+    mutationFn: resumeRun,
+    onSuccess: (run) => {
+      resume(run)
+      return client.invalidateQueries({ queryKey: projectKeys.detail(projectId) })
+    },
+    onError: (error) => {
+      toast.error('Не удалось продолжить прогон', { description: errorMessage(error) })
+    },
+  })
+}
+
+/**
  * Запуск прогона. Сразу кладём прогон в проект (active_run, статус) и в стор — панель хода
  * открывается без ожидания следующего запроса, а SSE-подписка стартует по active_run.
  */
@@ -51,14 +102,24 @@ export function useStartRun(projectId: string) {
   const user = useCurrentUser()
   return useMutation({
     // Выбранные пользователем ключ, модель и уровень идут в каждый запуск (анализ и сборка);
-    // не выбраны — решает сервер.
+    // не выбраны — решает сервер. Бюджет приходит из диалога оценки и дополняет профиль.
     mutationFn: (input: StartRunInput) => {
       const picked = getModelChoice(user?.id)
       const caps = picked && cachedModelCapabilities(client, picked.credentialId, picked.model)
       const choice = choiceRequest(picked, caps || undefined)
-      return typeof input === 'string'
-        ? startRun(projectId, input, choice)
-        : startRun(projectId, input.mode, { ...choice, ...input })
+      if (typeof input === 'string') return startRun(projectId, input, choice)
+      const { budget, profile: inputProfile, ...rest } = input
+      // Объектный вход (диалог оценки, перестройка) тоже обязан нести выбранный ключ и модель.
+      const profile = {
+        ...(choice.profile ?? {}),
+        ...(inputProfile ?? {}),
+        ...(budget ? { budget } : {}),
+      }
+      return startRun(projectId, rest.mode, {
+        ...choice,
+        ...rest,
+        ...(Object.keys(profile).length > 0 ? { profile } : {}),
+      })
     },
     onSuccess: (run) => {
       const status = run.mode === 'build' ? 'building' : 'analyzing'

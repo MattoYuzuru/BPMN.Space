@@ -25,6 +25,8 @@ def test_analyze_demo_streams_stages_questions_summary_done(client: TestClient) 
     assert kinds == [
         "stage",
         "stage",
+        # Стоимость приходит сразу после этапа с вызовами модели (mock — без цены).
+        "usage",
         "stage",
         "question",
         "question",

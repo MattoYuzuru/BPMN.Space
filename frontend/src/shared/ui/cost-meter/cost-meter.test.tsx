@@ -61,6 +61,18 @@ describe('CostMeter', () => {
     expect(screen.queryByTestId('cost-meter-bar')).toBeNull()
   })
 
+  it('пояснение к неполной сумме можно задать под контекст', () => {
+    render(
+      <CostMeter
+        spent={2.71}
+        budget={10}
+        incomplete
+        incompleteNote="У части шагов нет цен — это не ошибка прогона"
+      />,
+    )
+    expect(screen.getByText(/это не ошибка прогона/)).toBeInTheDocument()
+  })
+
   it('без бюджета — только сумма, без полосы', () => {
     render(<CostMeter label="Потрачено" spent={0.42} />)
     expect(screen.getByText(/\$0,42/)).toBeInTheDocument()

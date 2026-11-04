@@ -1,6 +1,14 @@
 import { create } from 'zustand'
 import { registerAccountReset } from '@/shared/lib/account-reset'
-import { initialRunView, type Run, type RunEvent, type RunView, reduceRun } from './model'
+import { rememberRun } from './last-run'
+import {
+  initialRunView,
+  type Run,
+  type RunEvent,
+  type RunView,
+  reduceRun,
+  runStatusView,
+} from './model'
 
 interface RunStore {
   /** Последний прогон каждого проекта (идущий или только что завершённый). */
@@ -14,6 +22,13 @@ interface RunStore {
   setExpanded: (projectId: string, expanded: boolean) => void
   dismiss: (projectId: string) => void
   finishPresentation: (projectId: string, runId: string) => void
+  /** Прогон продолжен после `waiting`: карточка снова показывает ход. */
+  resume: (run: Run) => void
+  /**
+   * Наблюдение за прогоном по опросу (GET /runs/{id}): обновляет статус и стоимость, не трогая
+   * номер последнего события — SSE-поток продолжает работать и присылает свои события.
+   */
+  observe: (run: Run) => void
 }
 
 /**
@@ -26,6 +41,9 @@ export const useRunStore = create<RunStore>((set) => ({
   presented: {},
   track: (run, startedHere = false) =>
     set((state) => {
+      if (run.status !== 'succeeded' && run.status !== 'failed' && run.status !== 'cancelled') {
+        rememberRun(run.project_id, run.id)
+      }
       const current = state.views[run.project_id]
       if (current?.runId === run.id) return state
       return {
@@ -61,6 +79,56 @@ export const useRunStore = create<RunStore>((set) => ({
         ? { presented: { ...state.presented, [projectId]: runId } }
         : state,
     ),
+  observe: (run) =>
+    set((state) => {
+      const view = state.views[run.project_id]
+      if (!view || view.runId !== run.id) return state
+      const status = runStatusView(run.status)
+      const cost = run.cost ?? view.cost
+      const budget = run.profile?.budget ?? view.budget
+      const sameCost =
+        (cost?.calls ?? 0) === (view.cost?.calls ?? 0) &&
+        (cost?.cost_usd ?? null) === (view.cost?.cost_usd ?? null) &&
+        (cost?.tokens_in ?? 0) === (view.cost?.tokens_in ?? 0) &&
+        (cost?.tokens_out ?? 0) === (view.cost?.tokens_out ?? 0)
+      const sameBudget = JSON.stringify(budget) === JSON.stringify(view.budget)
+      if (status === view.status && sameCost && sameBudget) return state
+      return {
+        views: {
+          ...state.views,
+          [run.project_id]: {
+            ...view,
+            status,
+            cost,
+            budget,
+            stage: run.stage,
+            progress: run.progress,
+            label: run.stage_label,
+            error: run.error ?? view.error,
+          },
+        },
+      }
+    }),
+  resume: (run) =>
+    set((state) => {
+      const view = state.views[run.project_id]
+      if (!view || view.runId !== run.id) return state
+      return {
+        views: {
+          ...state.views,
+          [run.project_id]: {
+            ...view,
+            status: 'running',
+            stage: run.stage,
+            progress: run.progress,
+            label: run.stage_label,
+            finishedAt: null,
+            error: null,
+          },
+        },
+        expanded: { ...state.expanded, [run.project_id]: true },
+      }
+    }),
   dismiss: (projectId) =>
     set((state) => {
       const { [projectId]: _removed, ...views } = state.views

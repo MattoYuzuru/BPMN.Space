@@ -297,7 +297,7 @@ function CreatedToken({ token }: { token: ApiTokenCreated }) {
           value={commandText}
           copyMessage="Команда скопирована"
           copyLabel="Копировать команду"
-          hint="Сервер подключения появится в одном из ближайших обновлений."
+          hint="Команда подключит MCP-сервер к Claude Code."
           multiline
           onCopied={() => emitOnboardingSignal({ type: 'agent.command.copied' })}
         />
@@ -305,9 +305,10 @@ function CreatedToken({ token }: { token: ApiTokenCreated }) {
       <Card variant="sunken" padding="sm" className="flex items-start gap-2">
         <Icon name="info" size={16} className="mt-0.5 shrink-0 text-fg-subtle" />
         <p className="type-caption text-fg-muted">
-          MCP-сервер пока не запущен — команда заработает после обновления. Уже сейчас токен
-          работает с REST API <span className="font-mono">/api/v1</span>: передавайте его в
-          заголовке <span className="font-mono">Authorization: Bearer</span>.
+          MCP-сервер работает по адресу <span className="font-mono">/mcp</span>: команда добавит его
+          в Claude Code. Токен действует только в пределах выбранных прав, проектов и срока; REST
+          API <span className="font-mono">/api/v1</span> тоже доступен в заголовке{' '}
+          <span className="font-mono">Authorization: Bearer</span>.
         </p>
       </Card>
     </div>

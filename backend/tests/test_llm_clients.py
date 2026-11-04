@@ -204,6 +204,34 @@ async def test_usage_is_recorded_and_broken_usage_is_ignored() -> None:
     assert (usage2.tokens_in, usage2.tokens_out) == (0, 0)
 
 
+async def test_compatible_usage_reads_cached_tokens_and_count_tokens_estimates() -> None:
+    body = {
+        "choices": [{"message": {"content": "{}"}}],
+        "usage": {
+            "prompt_tokens": 100,
+            "completion_tokens": 25,
+            "prompt_tokens_details": {"cached_tokens": 60},
+        },
+    }
+    client = _compat(lambda _r: httpx.Response(200, json=body))
+    with track_usage() as usage:
+        await client.complete("s", "u", json_mode=True, max_tokens=1)
+    assert (usage.tokens_in, usage.tokens_out) == (100, 25)
+    assert (usage.cache_read_tokens, usage.cache_write_tokens) == (60, 0)
+    # Chat Completions не умеет считать токены: оценка по знакам и chars_per_token.
+    approx = await client.count_tokens("12345", "67890")
+    assert approx == 5
+
+
+async def test_anthropic_count_tokens_is_exact_and_survives_provider_error() -> None:
+    sdk = _Sdk(count=123)
+    client = _anthropic(sdk)
+    assert await client.count_tokens("СИСТЕМА", "запрос") == 123
+    assert sdk.count_calls[0]["model"] == "claude-opus-5-5"
+    failing = _Sdk(count=anthropic.APIConnectionError(request=httpx2.Request("POST", "https://x")))
+    assert await _anthropic(failing).count_tokens("sys", "user") > 0
+
+
 async def test_response_shape_errors_are_reported_separately() -> None:
     bad = _compat(lambda _r: httpx.Response(200, content=b"not-json"))
     with pytest.raises(RuntimeError, match="некорректном формате"):
@@ -352,14 +380,22 @@ class _Stream:
 
 
 class _Sdk:
-    def __init__(self, *messages: Any) -> None:
+    def __init__(self, *messages: Any, count: int | Exception = 42) -> None:
         self.calls: list[dict[str, Any]] = []
+        self.count_calls: list[dict[str, Any]] = []
+        self._count = count
         self._messages = list(messages)
-        self.messages = SimpleNamespace(stream=self._stream)
+        self.messages = SimpleNamespace(stream=self._stream, count_tokens=self._count_tokens)
 
     def _stream(self, **kwargs: Any) -> _Stream:
         self.calls.append(kwargs)
         return _Stream(self._messages.pop(0))
+
+    async def _count_tokens(self, **kwargs: Any) -> Any:
+        self.count_calls.append(kwargs)
+        if isinstance(self._count, Exception):
+            raise self._count
+        return SimpleNamespace(input_tokens=self._count)
 
     async def close(self) -> None:
         return None
@@ -462,6 +498,7 @@ async def test_anthropic_usage_counts_cache_and_stop_reasons() -> None:
     with track_usage() as usage:
         await client.complete("s", "u", json_mode=True, max_tokens=1)
     assert (usage.tokens_in, usage.tokens_out) == (130, 5)
+    assert (usage.cache_read_tokens, usage.cache_write_tokens) == (100, 20)
     with pytest.raises(OutputTruncatedError):
         await client.complete("s", "u", json_mode=True, max_tokens=1)
     with pytest.raises(LlmRefusalError):

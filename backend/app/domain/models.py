@@ -6,7 +6,7 @@
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Any
 from uuid import UUID
@@ -57,11 +57,50 @@ class SourceStatus(StrEnum):
 
 
 class QuestionKind(StrEnum):
+    """Бизнес-вопрос: касается процесса и влияет на граф (RFC §2.2)."""
+
     MISSING_ACTOR = "missing_actor"
     AMBIGUOUS_CONDITION = "ambiguous_condition"
     UNCLEAR_ORDER = "unclear_order"
     MISSING_OUTCOME = "missing_outcome"
     CONFLICT = "conflict"
+
+
+class QuestionCategory(StrEnum):
+    """Категория вопроса (RFC-0006, шаг 2): бизнес-вопрос или технический.
+
+    Технические вопросы касаются материалов и запуска, на граф не влияют и в IR не попадают.
+    """
+
+    BUSINESS = "business"
+    TECHNICAL = "technical"
+
+
+class TechnicalQuestionKind(StrEnum):
+    """Тип технического вопроса: что именно мешает прогону или чтению материалов."""
+
+    QUOTA_EXHAUSTED = "quota_exhausted"
+    CREDENTIAL_INVALID = "credential_invalid"
+    CAPABILITY_MISSING = "capability_missing"
+    BUDGET_REACHED = "budget_reached"
+    INPUT_INCOMPLETE = "input_incomplete"
+
+
+class QuestionActionKind(StrEnum):
+    """Действие по техническому вопросу вместо текстового ответа (RFC-0006)."""
+
+    OPEN_SETTINGS = "open_settings"
+    RETRY = "retry"
+    CONTINUE_WITHOUT = "continue_without"
+    RAISE_BUDGET = "raise_budget"
+
+
+QUESTION_ACTION_LABELS: dict[QuestionActionKind, str] = {
+    QuestionActionKind.OPEN_SETTINGS: "Открыть настройки",
+    QuestionActionKind.RETRY: "Повторить",
+    QuestionActionKind.CONTINUE_WITHOUT: "Продолжить без этого",
+    QuestionActionKind.RAISE_BUDGET: "Поднять бюджет",
+}
 
 
 class Severity(StrEnum):
@@ -86,6 +125,8 @@ class RunMode(StrEnum):
 class RunStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
+    # Ждёт действия пользователя по блокирующему техническому вопросу (RFC-0006).
+    WAITING = "waiting"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -118,10 +159,18 @@ class Quote:
     quote: str
 
 
+#: Провенанс ответа: его записал внешний агент владельца токена (RFC-0007), а не человек.
+ANSWER_VIA_AGENT = "agent"
+
+
 @dataclass(slots=True, kw_only=True)
 class Answer:
     source_id: UUID
     text: str
+    # `via=agent` — ответ пришёл через MCP внешнего агента; `via_name` — название токена.
+    # Сервер не может проверить, читал ли человек ответ перед отправкой, и не делает вид, что может.
+    via: str | None = None
+    via_name: str | None = None
 
 
 @dataclass(slots=True, kw_only=True)
@@ -143,6 +192,9 @@ class SourceDerivation:
     model: str | None = None
     params: dict[str, Any] = field(default_factory=dict[str, Any])
     cost_usd: float | None = None  # None — стоимость неизвестна
+    # Ключ пользователя, которым оплачен вызов (`None` — серверный провайдер). Нужен, чтобы
+    # учитывать минуты/запросы по плательщику, когда появится расход по ключам.
+    credential_id: UUID | None = None
 
 
 @dataclass(slots=True, kw_only=True)
@@ -203,11 +255,20 @@ class Source:
 
 
 @dataclass(slots=True, kw_only=True)
+class QuestionAction:
+    """Действие по техническому вопросу; подпись показывает интерфейс, payload — параметры."""
+
+    kind: QuestionActionKind
+    label: str
+    payload: dict[str, Any] = field(default_factory=dict[str, Any])
+
+
+@dataclass(slots=True, kw_only=True)
 class Question:
     id: UUID
     project_id: UUID
     code: str
-    kind: QuestionKind
+    kind: QuestionKind | TechnicalQuestionKind
     severity: Severity
     status: QuestionStatus
     text: str
@@ -219,6 +280,15 @@ class Question:
     element_ids: list[str] = field(default_factory=list[str])
     answer: Answer | None = None
     run_id: UUID | None = None  # внутреннее: прогон, который создал вопрос (для счётчика «новых»)
+    # RFC-0006, шаг 2: бизнес-вопрос (по умолчанию) или технический; у технического — действия
+    # вместо текстового ответа; блокирующий технический вопрос переводит прогон в `waiting`.
+    category: QuestionCategory = QuestionCategory.BUSINESS
+    actions: list[QuestionAction] = field(default_factory=list[QuestionAction])
+    blocking: bool = False
+
+    @property
+    def is_technical(self) -> bool:
+        return self.category is QuestionCategory.TECHNICAL
 
 
 @dataclass(slots=True, kw_only=True)
@@ -258,7 +328,12 @@ class Run:
 
 @dataclass(slots=True, kw_only=True)
 class LlmCall:
-    """Запись аудита одного этапа вызова модели (RFC §5.7)."""
+    """Запись аудита одного этапа вызова модели (RFC §5.7).
+
+    `tokens_in` — все входные токены этапа, включая кеш; `cache_read_tokens` и
+    `cache_write_tokens` — его части. `cost_usd` — цена по справочнику на момент вызова
+    (`price_checked_on`), `None` — цены модели неизвестны (совместимый провайдер, mock).
+    """
 
     id: UUID
     run_id: UUID
@@ -267,7 +342,58 @@ class LlmCall:
     response: dict[str, Any]
     tokens_in: int | None = None
     tokens_out: int | None = None
+    cache_read_tokens: int | None = None
+    cache_write_tokens: int | None = None
+    cost_usd: float | None = None
+    price_checked_on: date | None = None
+    model: str | None = None
     latency_ms: int | None = None
+
+
+@dataclass(slots=True, kw_only=True)
+class LlmCallTotals:
+    """Итог вызовов модели по прогону и по этапам (для стоимости в интерфейсе).
+
+    `priced_calls` — сколько вызовов имеет цену; `usage_calls` — сколько сообщило токены;
+    `neutral_calls` — вызовы, прерванные до запроса к провайдеру (ошибка без токенов).
+    `complete` означает, что у каждого состоявшегося вызова известны и токены, и цена: шаг,
+    который не дошёл до модели, не делает итог неполным навсегда. `stages` — разбивка по
+    названию этапа пайплайна (analyze, structure, …).
+    """
+
+    calls: int = 0
+    usage_calls: int = 0
+    priced_calls: int = 0
+    neutral_calls: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    cost_usd: float = 0.0
+    stages: dict[str, "LlmCallTotals"] = field(default_factory=dict[str, "LlmCallTotals"])
+
+    @property
+    def complete(self) -> bool:
+        if self.calls <= 0:
+            return False
+        measured = self.calls - self.neutral_calls
+        return self.usage_calls == measured and self.priced_calls == measured
+
+    @classmethod
+    def of_stages(cls, stages: dict[str, "LlmCallTotals"]) -> "LlmCallTotals":
+        """Складывает итоги этапов в итог прогона, сохраняя разбивку."""
+        total = cls(stages=dict(stages))
+        for item in stages.values():
+            total.calls += item.calls
+            total.usage_calls += item.usage_calls
+            total.priced_calls += item.priced_calls
+            total.neutral_calls += item.neutral_calls
+            total.tokens_in += item.tokens_in
+            total.tokens_out += item.tokens_out
+            total.cache_read_tokens += item.cache_read_tokens
+            total.cache_write_tokens += item.cache_write_tokens
+            total.cost_usd += item.cost_usd
+        return total
 
 
 @dataclass(slots=True, kw_only=True)

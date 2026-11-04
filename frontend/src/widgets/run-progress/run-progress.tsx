@@ -4,16 +4,28 @@ import { useEffect, useState } from 'react'
 import {
   cancelRun,
   RUN_MODE_LABEL,
+  type RunCost,
   type RunView,
   runSteps,
+  useResumeRun,
   useRunStore,
   useRunView,
 } from '@/entities/run'
-import { formatDuration } from '@/shared/lib/format'
+import { formatDuration, formatMoney, formatTokens } from '@/shared/lib/format'
 import { floatingPanel } from '@/shared/lib/motion'
 import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
-import { Button, Card, FlowLine, Icon, IconButton, Stepper, toast } from '@/shared/ui'
+import {
+  Button,
+  Card,
+  CostMeter,
+  Divider,
+  FlowLine,
+  Icon,
+  IconButton,
+  Stepper,
+  toast,
+} from '@/shared/ui'
 import { SummaryChips } from './summary-chips'
 import { SUMMARY_VISIBLE_MS, useRunPresentation } from './use-run-presentation'
 
@@ -121,9 +133,11 @@ function RunCard({
 }) {
   const [clock, setClock] = useState(Date.now())
   const labels = RUN_MODE_LABEL[view.mode]
-  const running = view.status === 'running'
+  const waiting = actualView.status === 'waiting'
+  const running = !waiting && view.status === 'running'
   const failed = view.status === 'failed'
   const cancelled = view.status === 'cancelled'
+  const resume = useResumeRun(actualView.projectId)
   useEffect(() => {
     if (!running) return
     const timer = window.setInterval(() => setClock(Date.now()), 1000)
@@ -144,7 +158,7 @@ function RunCard({
     >
       <FlowLine
         state={
-          cancelled || failed
+          cancelled || failed || waiting
             ? 'idle'
             : showingCompletedStages
               ? 'done'
@@ -157,41 +171,67 @@ function RunCard({
       <div className="flex items-center gap-2 px-4 pt-3.5 pb-3">
         <span
           className={
-            cancelled
-              ? 'grid size-6 place-items-center rounded-md bg-surface text-fg-muted'
-              : failed
-                ? 'grid size-6 place-items-center rounded-md bg-danger-subtle text-danger-fg'
-                : running
-                  ? 'grid size-6 place-items-center rounded-md bg-accent-subtle text-accent-fg'
-                  : 'grid size-6 place-items-center rounded-md bg-success-subtle text-success-fg'
+            waiting
+              ? 'grid size-6 place-items-center rounded-md bg-amber-subtle text-amber-fg'
+              : cancelled
+                ? 'grid size-6 place-items-center rounded-md bg-surface text-fg-muted'
+                : failed
+                  ? 'grid size-6 place-items-center rounded-md bg-danger-subtle text-danger-fg'
+                  : running
+                    ? 'grid size-6 place-items-center rounded-md bg-accent-subtle text-accent-fg'
+                    : 'grid size-6 place-items-center rounded-md bg-success-subtle text-success-fg'
           }
         >
           <Icon
-            name={cancelled ? 'x' : failed ? 'alert-circle' : running ? 'bolt' : 'circle-check'}
+            name={
+              waiting
+                ? 'clock'
+                : cancelled
+                  ? 'x'
+                  : failed
+                    ? 'alert-circle'
+                    : running
+                      ? 'bolt'
+                      : 'circle-check'
+            }
             size={14}
           />
         </span>
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="type-subheading text-fg">
-            {cancelled
-              ? 'Прогон отменён'
-              : failed
-                ? 'Прогон остановлен'
-                : running
-                  ? showingCompletedStages
-                    ? 'Результат готов'
-                    : labels.title
-                  : labels.done}
+            {waiting
+              ? 'Ждёт вашего действия'
+              : cancelled
+                ? 'Прогон отменён'
+                : failed
+                  ? 'Прогон остановлен'
+                  : running
+                    ? showingCompletedStages
+                      ? 'Результат готов'
+                      : labels.title
+                    : labels.done}
           </span>
           <span className="type-caption text-fg-subtle" data-numeric role="timer" aria-live="off">
-            {actualView.status === 'running'
-              ? `Прошло ${formatDuration(elapsed)}`
-              : elapsed < 1000
-                ? 'менее 1 с'
-                : formatDuration(elapsed)}
+            {waiting
+              ? 'Ответьте на технический вопрос'
+              : actualView.status === 'running'
+                ? `Прошло ${formatDuration(elapsed)}`
+                : elapsed < 1000
+                  ? 'менее 1 с'
+                  : formatDuration(elapsed)}
           </span>
         </div>
-        {actualView.status === 'running' && canCancel && (
+        {waiting && canCancel && (
+          <Button
+            size="sm"
+            variant="primary"
+            loading={resume.isPending}
+            onClick={() => resume.mutate(actualView.runId)}
+          >
+            Продолжить
+          </Button>
+        )}
+        {(actualView.status === 'running' || waiting) && canCancel && (
           <Button
             size="sm"
             variant="ghost"
@@ -203,12 +243,25 @@ function RunCard({
             {cancelling ? 'Отменяю…' : 'Отменить прогон'}
           </Button>
         )}
-        {actualView.status !== 'running' && (
+        {(actualView.status === 'succeeded' ||
+          actualView.status === 'failed' ||
+          actualView.status === 'cancelled') && (
           <IconButton icon="x" size="sm" label="Скрыть" onClick={onClose} />
         )}
       </div>
       <div className="px-4 pb-4">
-        {running || failed ? (
+        {waiting ? (
+          <div
+            className="flex items-start gap-2 rounded-md bg-amber-subtle px-3 py-2.5 type-caption text-amber-fg"
+            role="status"
+          >
+            <Icon name="alert-triangle" size={14} className="mt-0.5 shrink-0" />
+            <span>
+              Прогон остановился на техническом вопросе. Ответьте на него в панели вопросов или
+              продолжите без него: работа начнётся заново с первого этапа, потраченное останется.
+            </span>
+          </div>
+        ) : running || failed ? (
           <>
             <Stepper aria-label="Этапы прогона" steps={runSteps(view)} />
             {actualView.status === 'running' && <RunHint stage={view.stage} />}
@@ -228,8 +281,67 @@ function RunCard({
             )}
           </div>
         )}
+        <RunCostBlock cost={actualView.cost} budgetUsd={actualView.budget?.cost_usd ?? null} />
       </div>
     </Card>
+  )
+}
+
+/** Стоимость прогона и разбивка по этапам (RFC-0005): обновляется потоком `usage`. */
+function RunCostBlock({ cost, budgetUsd }: { cost: RunCost | null; budgetUsd: number | null }) {
+  const spent = cost?.cost_usd ?? null
+  if (!cost && budgetUsd === null) return null
+  const hasMoney = spent !== null || budgetUsd !== null
+  return (
+    <div
+      className="mt-3 border-t border-border pt-3"
+      {...tourAnchor(TOUR_ANCHORS.runCost)}
+      data-testid="run-cost"
+    >
+      {hasMoney ? (
+        <CostMeter
+          size="sm"
+          label="Стоимость"
+          spent={spent}
+          budget={budgetUsd}
+          incomplete={cost ? !cost.complete : false}
+          incompleteNote="Стоимость известна не полностью: у части шагов нет цен. Это не ошибка прогона."
+        />
+      ) : (
+        <p className="flex items-center gap-1 type-caption text-amber-fg">
+          <Icon name="alert-triangle" size={14} />
+          Цены модели неизвестны: стоимость в деньгах не рассчитана
+        </p>
+      )}
+      {cost && (
+        <span className="mt-1 block type-caption text-fg-subtle" data-numeric>
+          {formatTokens(cost.tokens_in + cost.tokens_out)} токенов{' \u00B7 '}
+          {cost.calls === 1 ? '1 вызов' : `${cost.calls} вызовов`}
+          {cost.cache_read_tokens > 0 &&
+            ` \u00B7 кеш ${formatTokens(cost.cache_read_tokens)} прочитано`}
+        </span>
+      )}
+      {cost && (cost.by_stage?.length ?? 0) > 0 && (
+        <details className="group mt-2">
+          <summary className="cursor-pointer list-none type-caption text-fg-muted outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-focus-ring">
+            По этапам
+          </summary>
+          <Divider className="my-2" />
+          <ul aria-label="Стоимость по этапам" className="flex flex-col gap-1">
+            {(cost.by_stage ?? []).map((stage) => (
+              <li key={stage.stage} className="flex items-baseline justify-between gap-3">
+                <span className="min-w-0 truncate type-caption text-fg-muted">{stage.label}</span>
+                <span className="shrink-0 type-caption text-fg-subtle" data-numeric>
+                  {stage.cost_usd !== null && stage.cost_usd !== undefined
+                    ? formatMoney(stage.cost_usd)
+                    : 'цена неизвестна'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
   )
 }
 

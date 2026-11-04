@@ -21,8 +21,10 @@ from app.domain.models import (
     LintIssue,
     LintSeverity,
     LlmCall,
+    LlmCallTotals,
     Project,
     Question,
+    QuestionCategory,
     QuestionKind,
     QuestionStatus,
     Quote,
@@ -38,12 +40,13 @@ from app.domain.models import (
     SourceOrigin,
     SourceStatus,
     SourceTrust,
+    TechnicalQuestionKind,
     Version,
     VersionDiff,
     VersionOrigin,
     VersionSummary,
 )
-from app.domain.questions import normalize
+from app.domain.questions import actions_from_json, actions_to_json, normalize
 from app.domain.runs import ACTIVE_STATUSES
 from app.domain.sources import (
     derivation_from_json,
@@ -70,7 +73,7 @@ from app.infra.repositories.base import (
     ProjectStats,
     Repositories,
 )
-from app.infra.repositories.llm_credentials_sql import SqlLlmCredentialRepository
+from app.infra.repositories.credentials_sql import SqlCredentialRepository
 from app.infra.repositories.onboarding_sql import SqlOnboardingRepository
 from app.infra.repositories.session import BoundSessions, SessionFactory
 from app.infra.version_codec import (
@@ -131,7 +134,12 @@ def _source(row: SourceRow) -> Source:
 
 def _question(row: QuestionRow) -> Question:
     answer = (
-        Answer(source_id=row.answer_source_id, text=row.answer_text or "")
+        Answer(
+            source_id=row.answer_source_id,
+            text=row.answer_text or "",
+            via=row.answer_via,
+            via_name=row.answer_via_name,
+        )
         if row.answer_source_id
         else None
     )
@@ -139,7 +147,7 @@ def _question(row: QuestionRow) -> Question:
         id=row.id,
         project_id=row.project_id,
         code=row.code,
-        kind=QuestionKind(row.kind),
+        kind=_question_kind(row.kind),
         severity=Severity(row.severity),
         status=QuestionStatus(row.status),
         text=row.text,
@@ -151,7 +159,18 @@ def _question(row: QuestionRow) -> Question:
         element_ids=list(row.element_ids),
         answer=answer,
         run_id=row.run_id,
+        category=QuestionCategory(row.category),
+        actions=actions_from_json(row.actions),
+        blocking=row.blocking,
     )
+
+
+def _question_kind(value: str) -> QuestionKind | TechnicalQuestionKind:
+    """Тип вопроса: бизнес-вопросы и технические хранятся в одной колонке."""
+    try:
+        return QuestionKind(value)
+    except ValueError:
+        return TechnicalQuestionKind(value)
 
 
 def _run(row: RunRow) -> Run:
@@ -315,6 +334,9 @@ class SqlProjectRepository:
                         QuestionRow.status.in_(
                             [QuestionStatus.OPEN.value, QuestionStatus.RESOLVED.value]
                         ),
+                        # Счётчик вопросов проекта — только бизнес-вопросы: технические
+                        # решаются действием и живут отдельной вкладкой (RFC-0006).
+                        QuestionRow.category == QuestionCategory.BUSINESS.value,
                     )
                     .group_by(QuestionRow.project_id, QuestionRow.status)
                 )
@@ -672,7 +694,12 @@ class SqlQuestionRepository:
             element_ids=item.element_ids,
             answer_source_id=item.answer.source_id if item.answer else None,
             answer_text=item.answer.text if item.answer else None,
+            answer_via=item.answer.via if item.answer else None,
+            answer_via_name=item.answer.via_name if item.answer else None,
             run_id=item.run_id,
+            category=item.category.value,
+            actions=actions_to_json(item.actions),
+            blocking=item.blocking,
         )
 
     async def add(self, question: Question) -> None:
@@ -711,6 +738,8 @@ class SqlQuestionRepository:
                 evidence=_quote_json(question.evidence),
                 answer_source_id=question.answer.source_id if question.answer else None,
                 answer_text=question.answer.text if question.answer else None,
+                answer_via=question.answer.via if question.answer else None,
+                answer_via_name=question.answer.via_name if question.answer else None,
                 updated_at=question.updated_at,
             )
         )
@@ -1225,9 +1254,100 @@ class SqlLlmCallRepository:
                     response=call.response,
                     tokens_in=call.tokens_in,
                     tokens_out=call.tokens_out,
+                    cache_read_tokens=call.cache_read_tokens,
+                    cache_write_tokens=call.cache_write_tokens,
+                    cost_usd=call.cost_usd,
+                    price_checked_on=call.price_checked_on,
+                    model=call.model,
                     latency_ms=call.latency_ms,
                 )
             )
+
+    async def list_by_run(self, run_id: UUID) -> list[LlmCall]:
+        async with self.sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(LlmCallRow)
+                    .where(LlmCallRow.run_id == run_id)
+                    .order_by(LlmCallRow.stage, LlmCallRow.id)
+                )
+            ).all()
+            return [_llm_call(row) for row in rows]
+
+    async def totals(self, run_id: UUID) -> LlmCallTotals:
+        """Один агрегирующий запрос по этапам: стоимость и токены без чтения JSONB."""
+        async with self.sessions() as session:
+            rows = (
+                await session.execute(
+                    select(
+                        LlmCallRow.stage,
+                        func.count().label("calls"),
+                        func.count(LlmCallRow.tokens_in).label("usage_calls"),
+                        func.count(LlmCallRow.cost_usd).label("priced_calls"),
+                        func.count(
+                            case(
+                                (
+                                    and_(
+                                        LlmCallRow.tokens_in.is_(None),
+                                        func.jsonb_exists(LlmCallRow.response, "error"),
+                                    ),
+                                    1,
+                                )
+                            )
+                        ).label("neutral_calls"),
+                        func.coalesce(func.sum(LlmCallRow.tokens_in), 0),
+                        func.coalesce(func.sum(LlmCallRow.tokens_out), 0),
+                        func.coalesce(func.sum(LlmCallRow.cache_read_tokens), 0),
+                        func.coalesce(func.sum(LlmCallRow.cache_write_tokens), 0),
+                        func.coalesce(func.sum(LlmCallRow.cost_usd), 0),
+                    )
+                    .where(LlmCallRow.run_id == run_id)
+                    .group_by(LlmCallRow.stage)
+                )
+            ).all()
+        stages: dict[str, LlmCallTotals] = {}
+        for (
+            stage,
+            calls,
+            usage_calls,
+            priced_calls,
+            neutral_calls,
+            tokens_in,
+            tokens_out,
+            cache_read,
+            cache_write,
+            cost,
+        ) in rows:
+            stages[str(stage)] = LlmCallTotals(
+                calls=int(calls),
+                usage_calls=int(usage_calls),
+                priced_calls=int(priced_calls),
+                neutral_calls=int(neutral_calls),
+                tokens_in=int(tokens_in),
+                tokens_out=int(tokens_out),
+                cache_read_tokens=int(cache_read),
+                cache_write_tokens=int(cache_write),
+                cost_usd=round(float(cost), 6),
+            )
+        return LlmCallTotals.of_stages(stages)
+
+
+def _llm_call(row: LlmCallRow) -> LlmCall:
+    return LlmCall(
+        id=row.id,
+        run_id=row.run_id,
+        stage=row.stage,
+        request=row.request,
+        response=row.response,
+        tokens_in=row.tokens_in,
+        tokens_out=row.tokens_out,
+        cache_read_tokens=row.cache_read_tokens,
+        cache_write_tokens=row.cache_write_tokens,
+        cost_usd=float(row.cost_usd) if row.cost_usd is not None else None,
+        price_checked_on=row.price_checked_on,
+        model=row.model,
+        latency_ms=row.latency_ms,
+    )
 
 
 class SqlStore:
@@ -1258,7 +1378,7 @@ class SqlStore:
             llm_calls=SqlLlmCallRepository(sessions),
             access=SqlAccessRepository(sessions),
             onboarding=SqlOnboardingRepository(sessions),
-            llm_credentials=SqlLlmCredentialRepository(sessions),
+            credentials=SqlCredentialRepository(sessions),
             api_tokens=SqlApiTokenRepository(sessions),
             transaction=transaction,
         )

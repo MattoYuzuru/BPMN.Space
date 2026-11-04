@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from pydantic.json_schema import models_json_schema
+from starlette.routing import Route
 
 from app.api.auth import CSRF_COOKIE, build_auth_router
 from app.api.errors import install_error_handlers
@@ -21,6 +22,7 @@ from app.config import Settings, get_settings
 from app.container import Container, build_container
 from app.infra.seed import build_seed
 from app.log_filters import install_log_filters
+from app.mcp import MCP_PATH, build_mcp
 from app.services.api_tokens import bearer_secret
 from app.services.auth import SESSION_COOKIE, optional_user
 from app.services.presence import PresenceRegistry
@@ -81,22 +83,27 @@ def create_app(settings: Settings | None = None, *, container: Container | None 
     settings = settings or get_settings()
     container = container or build_container(settings)
     install_log_filters()
+    # MCP-сервер (RFC-0007): отдельное ASGI-приложение на `/mcp`, вне OpenAPI и вне CSRF REST.
+    mcp = build_mcp(container)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        database = container.database
-        if database:
-            recovered_runs = await database.initialize()
-            if settings.seed_demo_data:
-                await database.seed(build_seed)
-            for run_id in recovered_runs:
-                container.runs.resume(run_id)
-        try:
-            yield
-        finally:
-            await container.spawner.shutdown()
+        # FastAPI не запускает lifespan вложенных ASGI-приложений — менеджер сессий MCP
+        # поднимаем сами, иначе Streamable HTTP не примет ни одного запроса.
+        async with mcp.lifespan():
+            database = container.database
             if database:
-                await database.dispose()
+                recovered_runs = await database.initialize()
+                if settings.seed_demo_data:
+                    await database.seed(build_seed)
+                for run_id in recovered_runs:
+                    container.runs.resume(run_id)
+            try:
+                yield
+            finally:
+                await container.spawner.shutdown()
+                if database:
+                    await database.dispose()
 
     app = FastAPI(
         title="Архитектор BPMN-диаграмм",
@@ -106,6 +113,7 @@ def create_app(settings: Settings | None = None, *, container: Container | None 
     )
     app.state.container = container
     app.state.auth_enabled = settings.auth_enabled
+    app.state.mcp = mcp
     app.state.presence = PresenceRegistry()
     if not settings.auth_enabled:
         app.dependency_overrides[optional_user] = lambda: None
@@ -143,6 +151,9 @@ def create_app(settings: Settings | None = None, *, container: Container | None 
         if container.database:
             await container.database.check()
         return {"status": "ok"}
+
+    # MCP — обычный ASGI-route, а не APIRoute: в OpenAPI и /docs его нет (RFC-0007).
+    app.router.routes.append(Route(MCP_PATH, endpoint=mcp.app, name="mcp", include_in_schema=False))
 
     app.openapi = lambda: _openapi(app)  # type: ignore[method-assign]
     return app

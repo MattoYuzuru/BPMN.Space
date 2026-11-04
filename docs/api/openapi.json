@@ -12,6 +12,30 @@
           "text": {
             "title": "Text",
             "type": "string"
+          },
+          "via": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`agent` — ответ записал внешний агент владельца токена (MCP, RFC-0007); null — человек в интерфейсе",
+            "title": "Via"
+          },
+          "via_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Название токена доступа, которым ответил агент",
+            "title": "Via Name"
           }
         },
         "required": [
@@ -427,6 +451,94 @@
         "title": "Body_transcribe",
         "type": "object"
       },
+      "CapabilityCardSchema": {
+        "description": "Карточка возможности для «Настроек → Инструменты».",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "capability": {
+            "enum": [
+              "llm",
+              "speech_to_text",
+              "ocr",
+              "vision",
+              "video_understanding",
+              "web_search",
+              "web_fetch",
+              "tts"
+            ],
+            "title": "Capability",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "keys": {
+            "description": "Рабочих ключей: включённых и не исчерпанных",
+            "title": "Keys",
+            "type": "integer"
+          },
+          "kinds": {
+            "items": {
+              "enum": [
+                "llm",
+                "speech_to_text",
+                "ocr",
+                "vision",
+                "video",
+                "web_search",
+                "web_fetch",
+                "tts"
+              ],
+              "type": "string"
+            },
+            "title": "Kinds",
+            "type": "array"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Code"
+          },
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/CredentialProvider"
+            },
+            "title": "Providers",
+            "type": "array"
+          },
+          "tool": {
+            "description": "Имя инструмента, которое увидит модель",
+            "title": "Tool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability",
+          "label",
+          "description",
+          "tool",
+          "kinds",
+          "providers",
+          "keys",
+          "available"
+        ],
+        "title": "CapabilityCardSchema",
+        "type": "object"
+      },
       "ChecklistEntry": {
         "properties": {
           "completed_at": {
@@ -542,6 +654,505 @@
         "title": "CollaborationTicket",
         "type": "object"
       },
+      "CostRange": {
+        "description": "Диапазон стоимости; `null` — цены выбранной модели неизвестны.",
+        "properties": {
+          "currency": {
+            "default": "USD",
+            "title": "Currency",
+            "type": "string"
+          },
+          "max_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Usd"
+          },
+          "min_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Usd"
+          }
+        },
+        "title": "CostRange",
+        "type": "object"
+      },
+      "Credential": {
+        "properties": {
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Только у совместимого провайдера",
+            "title": "Base Url"
+          },
+          "capabilities": {
+            "description": "Возможности, которые закрывает ключ",
+            "items": {
+              "enum": [
+                "llm",
+                "speech_to_text",
+                "ocr",
+                "vision",
+                "video_understanding",
+                "web_search",
+                "web_fetch",
+                "tts"
+              ],
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "default_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "exhausted_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ключ отдыхает: провайдер сообщил об исчерпанной квоте",
+            "title": "Exhausted Until"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_default": {
+            "description": "Ключ модели по умолчанию (только для `llm`)",
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "key_hint": {
+            "description": "Последние 4 символа ключа; пусто у коротких ключей",
+            "title": "Key Hint",
+            "type": "string"
+          },
+          "kinds": {
+            "items": {
+              "enum": [
+                "llm",
+                "speech_to_text",
+                "ocr",
+                "vision",
+                "video",
+                "web_search",
+                "web_fetch",
+                "tts"
+              ],
+              "type": "string"
+            },
+            "title": "Kinds",
+            "type": "array"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Понятный текст последней ошибки",
+            "title": "Last Error"
+          },
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Класс последней ошибки (RFC-0006)",
+            "title": "Last Error Code"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "monthly_limit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonthlyLimit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "priority": {
+            "description": "Меньше — раньше в переборе",
+            "title": "Priority",
+            "type": "integer"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kinds",
+          "provider",
+          "label",
+          "base_url",
+          "key_hint",
+          "default_model",
+          "priority",
+          "enabled",
+          "monthly_limit",
+          "exhausted_until",
+          "last_error_code",
+          "last_error",
+          "is_default",
+          "capabilities",
+          "created_at",
+          "last_used_at"
+        ],
+        "title": "Credential",
+        "type": "object"
+      },
+      "CredentialCheckResult": {
+        "description": "Итог проверки ключа: отказ провайдера — `ok=false`, а не ошибка запроса.",
+        "properties": {
+          "capability": {
+            "anyOf": [
+              {
+                "enum": [
+                  "llm",
+                  "speech_to_text",
+                  "ocr",
+                  "vision",
+                  "video_understanding",
+                  "web_search",
+                  "web_fetch",
+                  "tts"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capability"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Code"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "detail"
+        ],
+        "title": "CredentialCheckResult",
+        "type": "object"
+      },
+      "CredentialCreate": {
+        "properties": {
+          "api_key": {
+            "description": "Принимается один раз; сохраняется зашифрованным",
+            "format": "password",
+            "title": "Api Key",
+            "type": "string",
+            "writeOnly": true
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "default_model": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "is_default": {
+            "default": false,
+            "description": "Только для ключа модели",
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "kinds": {
+            "description": "Типы задач, которые закрывает ключ: llm, speech_to_text, …",
+            "items": {
+              "enum": [
+                "llm",
+                "speech_to_text",
+                "ocr",
+                "vision",
+                "video",
+                "web_search",
+                "web_fetch",
+                "tts"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Kinds",
+            "type": "array"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "monthly_limit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonthlyLimit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "priority": {
+            "default": 100,
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Priority",
+            "type": "integer"
+          },
+          "provider": {
+            "maxLength": 32,
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kinds",
+          "provider",
+          "api_key"
+        ],
+        "title": "CredentialCreate",
+        "type": "object"
+      },
+      "CredentialList": {
+        "properties": {
+          "capabilities": {
+            "description": "Карточки всех возможностей: какие ключи есть и какие нужны",
+            "items": {
+              "$ref": "#/components/schemas/CapabilityCardSchema"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Credential"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "storage_available": {
+            "description": "false — на сервере не задан CREDENTIALS_ENCRYPTION_KEY, ключи не принимаются",
+            "title": "Storage Available",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "items",
+          "storage_available",
+          "capabilities"
+        ],
+        "title": "CredentialList",
+        "type": "object"
+      },
+      "CredentialProvider": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "CredentialProvider",
+        "type": "object"
+      },
+      "CredentialUpdate": {
+        "properties": {
+          "clear_monthly_limit": {
+            "default": false,
+            "title": "Clear Monthly Limit",
+            "type": "boolean"
+          },
+          "default_model": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "is_default": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Default"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "monthly_limit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonthlyLimit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "maximum": 1000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          }
+        },
+        "title": "CredentialUpdate",
+        "type": "object"
+      },
       "DiagramConflictResponse": {
         "properties": {
           "code": {
@@ -633,6 +1244,27 @@
           "run"
         ],
         "title": "DoneEventData",
+        "type": "object"
+      },
+      "DurationRange": {
+        "description": "Диапазон длительности прогона в секундах.",
+        "properties": {
+          "max_sec": {
+            "minimum": 0.0,
+            "title": "Max Sec",
+            "type": "integer"
+          },
+          "min_sec": {
+            "minimum": 0.0,
+            "title": "Min Sec",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "min_sec",
+          "max_sec"
+        ],
+        "title": "DurationRange",
         "type": "object"
       },
       "ErrorEventData": {
@@ -752,6 +1384,27 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "IntRange": {
+        "description": "Диапазон целых чисел: нижняя и верхняя оценка.",
+        "properties": {
+          "max": {
+            "minimum": 0.0,
+            "title": "Max",
+            "type": "integer"
+          },
+          "min": {
+            "minimum": 0.0,
+            "title": "Min",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "min",
+          "max"
+        ],
+        "title": "IntRange",
         "type": "object"
       },
       "ItemSource": {
@@ -1343,6 +1996,49 @@
         "title": "MediaInfo",
         "type": "object"
       },
+      "MonthlyLimit": {
+        "description": "Необязательный месячный лимит ключа: минуты, запросы или деньги.",
+        "properties": {
+          "cost_usd": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "minutes": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minutes"
+          },
+          "requests": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requests"
+          }
+        },
+        "title": "MonthlyLimit",
+        "type": "object"
+      },
       "OnboardingEvent": {
         "properties": {
           "item": {
@@ -1824,6 +2520,14 @@
             ],
             "description": "Фрагмент источника, вызвавший вопрос"
           },
+          "actions": {
+            "description": "Действия технического вопроса; у бизнес-вопроса пусто",
+            "items": {
+              "$ref": "#/components/schemas/QuestionAction"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
           "answer": {
             "anyOf": [
               {
@@ -1838,6 +2542,17 @@
             "description": "Что модель сделает, если вопрос проигнорировать",
             "title": "Assumption",
             "type": "string"
+          },
+          "blocking": {
+            "default": false,
+            "description": "Блокирующий технический вопрос переводит прогон в `waiting`",
+            "title": "Blocking",
+            "type": "boolean"
+          },
+          "category": {
+            "$ref": "#/components/schemas/QuestionCategory",
+            "default": "business",
+            "description": "`business` влияет на граф, `technical` касается материалов и запуска"
           },
           "code": {
             "description": "Номер внутри проекта: Q-1, Q-2, …",
@@ -1874,7 +2589,16 @@
             "type": "string"
           },
           "kind": {
-            "$ref": "#/components/schemas/QuestionKind"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuestionKind"
+              },
+              {
+                "$ref": "#/components/schemas/TechnicalQuestionKind"
+              }
+            ],
+            "description": "Тип: бизнес-вопрос процесса или технический вопрос запуска",
+            "title": "Kind"
           },
           "project_id": {
             "format": "uuid",
@@ -1913,6 +2637,66 @@
         "title": "Question",
         "type": "object"
       },
+      "QuestionAction": {
+        "description": "Действие по техническому вопросу вместо текстового ответа.",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/QuestionActionKind",
+            "description": "open_settings — открыть настройки; retry — повторить; continue_without — продолжить без этого; raise_budget — поднять бюджет"
+          },
+          "label": {
+            "description": "Подпись для интерфейса",
+            "title": "Label",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          }
+        },
+        "required": [
+          "kind",
+          "label"
+        ],
+        "title": "QuestionAction",
+        "type": "object"
+      },
+      "QuestionActionKind": {
+        "description": "Действие по техническому вопросу вместо текстового ответа (RFC-0006).",
+        "enum": [
+          "open_settings",
+          "retry",
+          "continue_without",
+          "raise_budget"
+        ],
+        "title": "QuestionActionKind",
+        "type": "string"
+      },
+      "QuestionActionRequest": {
+        "description": "Действие по техническому вопросу; для `raise_budget` нужен новый бюджет.",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/QuestionActionKind"
+          },
+          "budget": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunBudget"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Новый бюджет для действия `raise_budget` (только рост)"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "QuestionActionRequest",
+        "type": "object"
+      },
       "QuestionAnswerCreate": {
         "properties": {
           "text": {
@@ -1928,6 +2712,15 @@
         "title": "QuestionAnswerCreate",
         "type": "object"
       },
+      "QuestionCategory": {
+        "description": "Категория вопроса (RFC-0006, шаг 2): бизнес-вопрос или технический.\n\nТехнические вопросы касаются материалов и запуска, на граф не влияют и в IR не попадают.",
+        "enum": [
+          "business",
+          "technical"
+        ],
+        "title": "QuestionCategory",
+        "type": "string"
+      },
       "QuestionEventData": {
         "properties": {
           "question": {
@@ -1941,6 +2734,7 @@
         "type": "object"
       },
       "QuestionKind": {
+        "description": "Бизнес-вопрос: касается процесса и влияет на граф (RFC §2.2).",
         "enum": [
           "missing_actor",
           "ambiguous_condition",
@@ -2019,6 +2813,17 @@
       },
       "Run": {
         "properties": {
+          "cost": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunCost"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Потрачено на прогон: токены, кеш и деньги с разбивкой по этапам; null — вызовов ещё не было"
+          },
           "credential_id": {
             "anyOf": [
               {
@@ -2180,6 +2985,102 @@
         "title": "Run",
         "type": "object"
       },
+      "RunBudget": {
+        "description": "Бюджет одного прогона: хотя бы одна граница должна быть задана.\n\nДостигнутый бюджет не роняет прогон: он переходит в `waiting` с блокирующим техническим\nвопросом `budget_reached`, и после решения пользователя продолжается.",
+        "properties": {
+          "cost_usd": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Лимит стоимости в долларах по ценам справочника на момент вызова",
+            "title": "Cost Usd"
+          },
+          "tokens": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Лимит суммы входных и выходных токенов прогона",
+            "title": "Tokens"
+          }
+        },
+        "title": "RunBudget",
+        "type": "object"
+      },
+      "RunCost": {
+        "description": "Потрачено на прогон по журналу вызовов модели (`llm_calls`).\n\n`complete=false` — у части вызовов не сообщены токены (mock) или неизвестны цены модели,\nпоэтому суммы неполные; `cost_usd=null` — цены неизвестны ни у одного вызова.",
+        "properties": {
+          "by_stage": {
+            "items": {
+              "$ref": "#/components/schemas/StageCost"
+            },
+            "title": "By Stage",
+            "type": "array"
+          },
+          "cache_read_tokens": {
+            "title": "Cache Read Tokens",
+            "type": "integer"
+          },
+          "cache_write_tokens": {
+            "title": "Cache Write Tokens",
+            "type": "integer"
+          },
+          "calls": {
+            "title": "Calls",
+            "type": "integer"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "currency": {
+            "const": "USD",
+            "default": "USD",
+            "title": "Currency",
+            "type": "string"
+          },
+          "tokens_in": {
+            "title": "Tokens In",
+            "type": "integer"
+          },
+          "tokens_out": {
+            "title": "Tokens Out",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tokens_in",
+          "tokens_out",
+          "cache_read_tokens",
+          "cache_write_tokens",
+          "calls",
+          "complete"
+        ],
+        "title": "RunCost",
+        "type": "object"
+      },
       "RunCreate": {
         "properties": {
           "base_version_id": {
@@ -2285,8 +3186,147 @@
         "title": "RunErrorEvent",
         "type": "object"
       },
+      "RunEstimate": {
+        "description": "Оценка прогона: диапазоны, а не одно число.\n\n`complete=false` — на пути есть модель без цен (совместимый провайдер, mock), поэтому\nстоимость неполная. Оценка приблизительная: число запросов и длина ответов зависят от\nматериалов и решений модели.",
+        "properties": {
+          "breakdown": {
+            "items": {
+              "$ref": "#/components/schemas/StageEstimate"
+            },
+            "title": "Breakdown",
+            "type": "array"
+          },
+          "calls": {
+            "$ref": "#/components/schemas/IntRange",
+            "description": "Запросов к модели"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostRange"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Деньги; null — цены модели неизвестны"
+          },
+          "duration": {
+            "$ref": "#/components/schemas/DurationRange"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "priced_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Дата, на которую сверены цены",
+            "title": "Priced On"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "tokens": {
+            "$ref": "#/components/schemas/IntRange",
+            "description": "Всего токенов: вход и ответ"
+          }
+        },
+        "required": [
+          "tokens",
+          "calls",
+          "cost",
+          "duration",
+          "breakdown",
+          "complete"
+        ],
+        "title": "RunEstimate",
+        "type": "object"
+      },
+      "RunEstimateRequest": {
+        "description": "Что оценивать: режим и тот же профиль, что будет у запуска.",
+        "properties": {
+          "credential_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Свой ключ модели; не задан — ключ по умолчанию, затем модель сервера",
+            "title": "Credential Id"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/RunMode",
+            "default": "build",
+            "description": "`analyze` или `build`"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Модель; требует `credential_id`",
+            "title": "Model"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunProfile"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Профиль прогона: effort и смысловая сверка"
+          }
+        },
+        "title": "RunEstimateRequest",
+        "type": "object"
+      },
       "RunEvent": {
-        "description": "Одно SSE-сообщение: поле `event:` — тип, `data:` — JSON из `data`, `id:` — номер.\n\nПорядок: `stage` на каждый этап; на этапе сверки — `question` на каждый изменённый или\nновый вопрос, затем `summary`; при сборке — `version`; последним всегда `done`\n(при ошибке перед ним — `error`). Переподключение — заголовок `Last-Event-ID`.",
+        "description": "Одно SSE-сообщение: поле `event:` — тип, `data:` — JSON из `data`, `id:` — номер.\n\nПорядок: `stage` на каждый этап; на этапе сверки — `question` на каждый изменённый или\nновый вопрос, затем `summary`; при сборке — `version`; после каждого этапа с вызовами\nмодели — `usage` (потраченные токены и деньги); последним всегда `done` (при ошибке перед\nним — `error`). Переподключение — заголовок `Last-Event-ID`.",
         "discriminator": {
           "mapping": {
             "done": "#/components/schemas/RunDoneEvent",
@@ -2294,6 +3334,7 @@
             "question": "#/components/schemas/RunQuestionEvent",
             "stage": "#/components/schemas/RunStageEvent",
             "summary": "#/components/schemas/RunSummaryEvent",
+            "usage": "#/components/schemas/RunUsageEvent",
             "version": "#/components/schemas/RunVersionEvent"
           },
           "propertyName": "event"
@@ -2310,6 +3351,9 @@
           },
           {
             "$ref": "#/components/schemas/RunVersionEvent"
+          },
+          {
+            "$ref": "#/components/schemas/RunUsageEvent"
           },
           {
             "$ref": "#/components/schemas/RunDoneEvent"
@@ -2331,6 +3375,17 @@
       "RunProfile": {
         "description": "Профиль прогона (RFC-0005). Пусто — умолчания сервера и модели.",
         "properties": {
+          "budget": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunBudget"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Бюджет прогона: токены и/или деньги. Достигнутый бюджет переводит прогон в `waiting` с блокирующим техническим вопросом"
+          },
           "effort": {
             "anyOf": [
               {
@@ -2418,6 +3473,7 @@
         "enum": [
           "queued",
           "running",
+          "waiting",
           "succeeded",
           "failed",
           "cancelled"
@@ -2475,6 +3531,24 @@
           "data"
         ],
         "title": "RunSummaryEvent",
+        "type": "object"
+      },
+      "RunUsageEvent": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RunCost"
+          },
+          "event": {
+            "const": "usage",
+            "title": "Event",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event",
+          "data"
+        ],
+        "title": "RunUsageEvent",
         "type": "object"
       },
       "RunVersionEvent": {
@@ -2978,6 +4052,19 @@
             "title": "Created At",
             "type": "string"
           },
+          "credential_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ключ пользователя, которым оплачен вызов; null — серверный провайдер. Нужен для учёта расхода по плательщику",
+            "title": "Credential Id"
+          },
           "model": {
             "anyOf": [
               {
@@ -3142,6 +4229,104 @@
         "title": "SourceUpdate",
         "type": "object"
       },
+      "StageCost": {
+        "description": "Стоимость одного этапа вызовов модели.",
+        "properties": {
+          "cache_read_tokens": {
+            "title": "Cache Read Tokens",
+            "type": "integer"
+          },
+          "cache_write_tokens": {
+            "title": "Cache Write Tokens",
+            "type": "integer"
+          },
+          "calls": {
+            "title": "Calls",
+            "type": "integer"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "label": {
+            "description": "Подпись этапа для интерфейса",
+            "title": "Label",
+            "type": "string"
+          },
+          "stage": {
+            "description": "Шаг пайплайна: analyze, structure, …",
+            "title": "Stage",
+            "type": "string"
+          },
+          "tokens_in": {
+            "title": "Tokens In",
+            "type": "integer"
+          },
+          "tokens_out": {
+            "title": "Tokens Out",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stage",
+          "label",
+          "calls",
+          "tokens_in",
+          "tokens_out",
+          "cache_read_tokens",
+          "cache_write_tokens"
+        ],
+        "title": "StageCost",
+        "type": "object"
+      },
+      "StageEstimate": {
+        "description": "Разбивка оценки по этапам пайплайна.",
+        "properties": {
+          "calls": {
+            "$ref": "#/components/schemas/IntRange"
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "tokens_in": {
+            "$ref": "#/components/schemas/IntRange"
+          },
+          "tokens_out": {
+            "$ref": "#/components/schemas/IntRange"
+          }
+        },
+        "required": [
+          "stage",
+          "label",
+          "calls",
+          "tokens_in",
+          "tokens_out"
+        ],
+        "title": "StageEstimate",
+        "type": "object"
+      },
       "StageEventData": {
         "properties": {
           "label": {
@@ -3183,6 +4368,77 @@
         ],
         "title": "TargetRoute",
         "type": "string"
+      },
+      "TechnicalQuestionKind": {
+        "description": "Тип технического вопроса: что именно мешает прогону или чтению материалов.",
+        "enum": [
+          "quota_exhausted",
+          "credential_invalid",
+          "capability_missing",
+          "budget_reached",
+          "input_incomplete"
+        ],
+        "title": "TechnicalQuestionKind",
+        "type": "string"
+      },
+      "ToolUnavailableErrorResponse": {
+        "description": "Возможность не выполнена (RFC-0006): причина, прогресс и альтернативы.\n\nТекст провайдера в сообщение не входит — только класс причины и структурный прогресс.",
+        "properties": {
+          "alternatives": {
+            "description": "Чем заменить: например, `vision:frames`",
+            "items": {
+              "type": "string"
+            },
+            "title": "Alternatives",
+            "type": "array"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Класс причины: quota_exhausted, auth, transient, unsupported, fatal или capability_missing",
+            "title": "Code"
+          },
+          "detail": {
+            "description": "Сообщение об ошибке для пользователя, на русском",
+            "title": "Detail",
+            "type": "string"
+          },
+          "done": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Что уже обработано, например «00:00–34:10»",
+            "title": "Done"
+          },
+          "remaining": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Что осталось, например «34:10–80:00»",
+            "title": "Remaining"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "ToolUnavailableErrorResponse",
+        "type": "object"
       },
       "TourState": {
         "properties": {
@@ -4579,6 +5835,355 @@
         "summary": "Revoke Api Token",
         "tags": [
           "api-tokens"
+        ]
+      }
+    },
+    "/api/v1/me/credentials": {
+      "get": {
+        "description": "Все ключи пользователя, карточки возможностей и признак доступности хранилища.",
+        "operationId": "list_credentials",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "List Credentials",
+        "tags": [
+          "credentials"
+        ]
+      },
+      "post": {
+        "description": "Проверяет ключ дешёвым запросом провайдера и сохраняет его зашифрованным.\n\nОдин ключ может закрывать несколько возможностей: OpenAI — модели и распознавание речи.",
+        "operationId": "create_credential",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Credential"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Конфликт состояния"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Слишком много запросов; повторите через `Retry-After` секунд"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Сервис или помощник не настроен"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Create Credential",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/api/v1/me/credentials/{credential_id}": {
+      "delete": {
+        "operationId": "delete_credential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credential Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Delete Credential",
+        "tags": [
+          "credentials"
+        ]
+      },
+      "patch": {
+        "description": "Название, модель, приоритет, включённость и лимит; ключ и адрес не меняются.",
+        "operationId": "update_credential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credential Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Credential"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Update Credential",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/api/v1/me/credentials/{credential_id}/check": {
+      "post": {
+        "description": "Проверка ключа для каждого типа: отказ провайдера — `ok=false` с понятной причиной.\n\nУспешная проверка снимает отметку ошибки и снова включает ключ, отключённый после отказа\nпровайдера. Для возможностей волны 3 проверка честно отвечает, что пока недоступна.",
+        "operationId": "check_credential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credential Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialCheckResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Слишком много запросов; повторите через `Retry-After` секунд"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Сервис или помощник не настроен"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Check Credential",
+        "tags": [
+          "credentials"
         ]
       }
     },
@@ -6507,6 +8112,7 @@
     },
     "/api/v1/projects/{project_id}/questions": {
       "get": {
+        "description": "Вопросы проекта: `category=technical` — отдельная вкладка технических вопросов.",
         "operationId": "list_questions",
         "parameters": [
           {
@@ -6533,6 +8139,22 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/QuestionCategory"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
             }
           }
         ],
@@ -6717,6 +8339,125 @@
           }
         ],
         "summary": "Start Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/runs/estimate": {
+      "post": {
+        "description": "Оценить прогон до запуска: запросы, токены, деньги и длительность диапазоном.\n\nПрофиль и модель — те же, что у запуска; ключ пользователя нужен только для бесплатного\n`count_tokens` Anthropic. При неизвестных ценах модели `complete=false`, а `cost=null`.",
+        "operationId": "estimate_run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunEstimateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunEstimate"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Слишком много запросов; повторите через `Retry-After` секунд"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Сервис или помощник не настроен"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Estimate Run",
         "tags": [
           "runs"
         ]
@@ -7558,6 +9299,115 @@
         ]
       }
     },
+    "/api/v1/questions/{question_id}/actions": {
+      "post": {
+        "description": "Действие по техническому вопросу: настройки, повтор, продолжить без этого, бюджет.\n\nДействия с прогоном (`retry`, `continue_without`, `raise_budget`) продолжают ожидающий\nпрогон и поэтому по токену доступа требуют ещё и право `runs:start`.",
+        "operationId": "apply_question_action",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "question_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Question Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuestionActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Question"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Конфликт состояния"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Apply Question Action",
+        "tags": [
+          "questions"
+        ]
+      }
+    },
     "/api/v1/questions/{question_id}/answer": {
       "post": {
         "description": "Ответ создаёт источник `kind=answer`; вопрос становится `answered`.\nСледующий прогон подтвердит ответ (`resolved`) или вернёт вопрос (`open`).",
@@ -8124,6 +9974,105 @@
         ]
       }
     },
+    "/api/v1/runs/{run_id}/resume": {
+      "post": {
+        "description": "Продолжить прогон, ждущий действия по техническому вопросу (`waiting` → `queued`).\n\nОткрытые блокирующие технические вопросы этого прогона закрываются как принятые без\nдействия; работа начинается заново с первого этапа, бюджет считает всё потраченное.",
+        "operationId": "resume_run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Конфликт состояния"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoneErrorResponse"
+                }
+              }
+            },
+            "description": "Ссылка истекла либо автор удалил проект"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Resume Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
     "/api/v1/samples": {
       "get": {
         "description": "Учебные материалы для «Примеров» в меню источника; доступ — как у `/examples`.",
@@ -8677,7 +10626,7 @@
     },
     "/api/v1/transcriptions": {
       "post": {
-        "description": "Расшифровка голоса для правки перед сохранением (источник или ответ на вопрос).",
+        "description": "Расшифровка голоса для правки перед сохранением (источник или ответ на вопрос).\n\nУ вошедшего пользователя — на его ключах распознавания (RFC-0006), иначе — серверный\nпровайдер. Если рабочих ключей нет, `503` с причиной и структурным прогрессом.",
         "operationId": "transcribe",
         "requestBody": {
           "content": {
@@ -8749,6 +10698,16 @@
               }
             },
             "description": "Слишком много запросов; повторите через `Retry-After` секунд"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolUnavailableErrorResponse"
+                }
+              }
+            },
+            "description": "Нет рабочего ключа распознавания или провайдер не принял запись"
           }
         },
         "security": [

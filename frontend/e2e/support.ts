@@ -62,6 +62,23 @@ export function questionCard(page: Page, code: string): Locator {
   return page.locator(`[data-question="${code}"]`)
 }
 
+/**
+ * Подтвердить запуск в диалоге оценки: после волны 2 кнопки шапки открывают диалог,
+ * а прогон стартует по его главной кнопке.
+ */
+export async function confirmRunDialog(page: Page, mode: 'analyze' | 'build') {
+  const dialog = page.getByRole('dialog', {
+    name: mode === 'analyze' ? 'Анализ проекта' : 'Сборка схемы',
+  })
+  await expect(dialog).toBeVisible()
+  await dialog
+    .getByRole('button', {
+      name: mode === 'analyze' ? 'Запустить анализ' : 'Построить схему',
+    })
+    .click()
+  await expect(dialog).toBeHidden()
+}
+
 /** Запустить прогон кнопкой и дождаться его конца по карточке хода (role=status, SSE). */
 export async function startRun(page: Page, mode: 'analyze' | 'build') {
   const button =
@@ -69,6 +86,7 @@ export async function startRun(page: Page, mode: 'analyze' | 'build') {
       ? page.getByRole('button', { name: 'Анализ', exact: true })
       : page.getByRole('button', { name: 'Построить схему' }).first()
   await button.click()
+  await confirmRunDialog(page, mode)
   const card = page.getByRole('status', { name: /Ход прогона/ })
   // Сначала появляются этапы нового прогона, затем итог.
   await expect(card.getByRole('list', { name: 'Этапы прогона' })).toBeVisible()

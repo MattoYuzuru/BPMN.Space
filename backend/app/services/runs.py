@@ -38,6 +38,7 @@ from app.domain.models import (
     Source,
     SourceKind,
     SourceStatus,
+    TechnicalQuestionKind,
     Version,
     VersionOrigin,
 )
@@ -45,6 +46,8 @@ from app.domain.onboarding import ChecklistItem
 from app.domain.questions import quote_in_source, reconcile, run_summary
 from app.domain.runs import (
     ACTIVE_STATUSES,
+    WAITING_LABEL,
+    RunCost,
     RunError,
     RunEvent,
     RunEventKind,
@@ -60,23 +63,36 @@ from app.infra.tasks import TaskSpawner
 from app.ingest.context import build_run_context, describe_context, source_snapshot_hash
 from app.llm.base import (
     DEADLINE_MESSAGE,
+    BudgetReachedError,
+    LlmUsage,
     PipelineError,
     ProcessPipeline,
+    run_budget,
     run_deadline,
+    track_run_usage,
     track_usage,
 )
-from app.llm.capabilities import RunProfile
+from app.llm.capabilities import Budget, ModelCapabilities, RunProfile, merge_budget
 from app.llm.client import PROVIDER_MOCK, redact_secrets
+from app.llm.estimate import cost_of_usage
 from app.services.common import Runtime, get_project, get_run
-from app.services.errors import ConflictError, NotFoundError, ServiceError, StaleVersionError
+from app.services.errors import (
+    ConflictError,
+    InvalidInputError,
+    NotFoundError,
+    ServiceError,
+    StaleVersionError,
+)
 from app.services.model_resolver import (
     ModelResolver,
     ResolvedModel,
     pipeline_budget,
+    pipeline_capabilities,
     pipeline_limits,
     pipeline_model,
     pipeline_provider,
 )
+from app.services.technical_questions import TechnicalQuestionService
 from app.services.versions import add_version
 
 logger = logging.getLogger(__name__)
@@ -115,8 +131,13 @@ def _json_data(value: Any) -> Any:
     return value
 
 
+def _execution(run: Run) -> dict[str, Any]:
+    """Служебные данные исполнения прогона (`ir.execution`)."""
+    return dict((run.ir or {}).get("execution") or {})
+
+
 def _credential_id(run: Run) -> UUID | None:
-    raw = (run.ir or {}).get("execution", {}).get("credential_id")
+    raw = _execution(run).get("credential_id")
     return UUID(raw) if raw else None
 
 
@@ -186,6 +207,7 @@ class RunService:
         deadline_for: Callable[[int], float | None] | None = None,
         progress: ProgressRecorder | None = None,
         broadcast: RealtimePublisher | None = None,
+        technical: TechnicalQuestionService | None = None,
     ) -> None:
         self._repos = repos
         if resolver is None:
@@ -204,6 +226,8 @@ class RunService:
         self._deadline_for = deadline_for
         self._progress = progress
         self._broadcast = broadcast
+        # Технические вопросы: бюджет, а позже квоты и ключи инструментов (RFC-0006).
+        self._technical = technical or TechnicalQuestionService(repos, runtime=runtime)
         self._limit = asyncio.Semaphore(max(max_concurrent, 1))
         self._cancel_requested: set[UUID] = set()
         # Этот lock ускоряет конфликт внутри процесса; уникальный индекс защищает между процессами.
@@ -231,10 +255,23 @@ class RunService:
         credential_id: UUID | None = None,
         model: str | None = None,
         profile: RunProfile | None = None,
+        expected_model: str | None = None,
+        expected_provider: str | None = None,
     ) -> Run:
+        """`expected_model`/`expected_provider` — привязка к оценке: если прогон пойдёт
+        другой моделью (сменился ключ или умолчание), запуск отклоняется вместо тихой
+        подмены бюджета и стоимости."""
         resolved = await self._resolver.resolve(
             created_by, credential_id=credential_id, model=model, profile=profile
         )
+        if expected_model is not None and (
+            resolved.model != expected_model
+            or (expected_provider is not None and resolved.provider != expected_provider)
+        ):
+            await resolved.release()
+            raise ConflictError(
+                "Модель или ключ прогона изменились после оценки — оцените прогон заново"
+            )
         try:
             async with self._start_slot(project_id), self._repos.atomic() as repos:
                 # Блокировка проекта общая с ручным сохранением схемы и удалением проекта.
@@ -312,8 +349,145 @@ class RunService:
         """Запустить подтверждённую БД работу после старта единственного backend-процесса."""
         self._spawner.spawn(self._execute(run_id), name=f"run-{run_id}")
 
+    async def resume_waiting(self, run_id: UUID) -> Run:
+        """Продолжить прогон, ждущий действия пользователя (`waiting` → `queued`).
+
+        Перед продолжением проверяется, что причина ожидания устранена: исчерпанный бюджет
+        возвращает 409, а не новый технический вопрос через один запрос. Открытые вопросы
+        этого прогона становятся `obsolete`: у пользователя не остаётся висящих карточек.
+        Работа начинается заново с первого этапа — checkpoint исполнения не ведётся, поэтому
+        повтор может снова оплатить запрос модели (кеш производных появится вместе с волной
+        инструментов). Бюджет считает всё потраченное по журналу вызовов, а не только новую
+        попытку.
+        """
+        run = await get_run(self._repos, run_id)
+        if run.status is not RunStatus.WAITING:
+            raise ConflictError("Прогон не ждёт действий пользователя")
+        now = self._rt.clock()
+        async with self._repos.atomic() as repos:
+            if await repos.projects.lock(run.project_id) is None:
+                raise NotFoundError("Проект не найден")
+            current = await repos.runs.get(run_id)
+            if current is None:
+                raise NotFoundError("Прогон не найден")
+            if current.status is not RunStatus.WAITING:
+                raise ConflictError("Прогон уже не ждёт действий пользователя")
+            profile = RunProfile.from_json(_execution(current).get("profile"))
+            if _budget_exhausted(profile.budget, await self._spent_totals(run_id)):
+                raise ConflictError(
+                    "Бюджет прогона исчерпан: поднимите его и продолжите или отмените прогон. "
+                    "Без нового бюджета прогон остановится сразу после продолжения"
+                )
+            questions = await repos.questions.list_by_project(current.project_id)
+            for question in questions:
+                if (
+                    question.is_technical
+                    and question.run_id == current.id
+                    and question.status is QuestionStatus.OPEN
+                ):
+                    question.status = QuestionStatus.OBSOLETE
+                    question.updated_at = now
+                    await repos.questions.update(question)
+            current.status = RunStatus.QUEUED
+            current.stage = None
+            current.progress = 0.0
+            current.error = None
+            current.finished_at = None
+            await repos.runs.update(current)
+            await repos.projects.touch(current.project_id, now)
+        self.resume(run_id)
+        return current
+
+    async def raise_budget(self, run_id: UUID, budget: Budget) -> Run:
+        """Поднять бюджет ждущего прогона: границы объединяются монотонно вверх.
+
+        Новый бюджет сохраняется в `ir.execution.profile`, поэтому восстановление после
+        рестарта и продолжение после `waiting` берут его же. Запись идёт под блокировкой
+        проекта с перечитыванием прогона (как `resume_waiting`). Проверяется, что у модели
+        известны цены (для границы в деньгах) и что новая граница выше уже потраченного:
+        иначе продолжение немедленно вернулось бы в `waiting`.
+        """
+        now = self._rt.clock()
+        run = await get_run(self._repos, run_id)
+        if run.status is not RunStatus.WAITING:
+            raise ConflictError("Бюджет можно поднять только у прогона, ждущего действия")
+        capabilities = await self._model_capabilities(run)
+        async with self._repos.atomic() as repos:
+            if await repos.projects.lock(run.project_id) is None:
+                raise NotFoundError("Проект не найден")
+            current = await repos.runs.get(run_id)
+            if current is None:
+                raise NotFoundError("Прогон не найден")
+            if current.status is not RunStatus.WAITING:
+                raise ConflictError("Прогон уже не ждёт действий пользователя")
+            execution = _execution(current)
+            profile = RunProfile.from_json(execution.get("profile"))
+            merged = merge_budget(profile.budget, budget)
+            if merged == profile.budget:
+                raise InvalidInputError(
+                    "Новый бюджет должен быть больше текущего: бюджет можно только поднять"
+                )
+            spent_tokens, spent_cost = await self._spent_totals(run_id)
+            _check_budget_raisable(merged, capabilities, spent_tokens, spent_cost)
+            execution["profile"] = replace(profile, budget=merged).to_json()
+            current.ir = {**(current.ir or {}), "execution": execution}
+            await repos.runs.update(current)
+            await repos.projects.touch(current.project_id, now)
+            return current
+
+    async def _model_capabilities(self, run: Run) -> ModelCapabilities:
+        """Возможности модели прогона без запросов к провайдеру (для проверки бюджета).
+
+        Восстановление пайплайна расшифровывает ключ, но ничего не отправляет провайдеру;
+        после проверки клиент отпускается и создаётся заново при продолжении прогона.
+        """
+        try:
+            resolved = await self._run_pipeline(run)
+        except PipelineError as error:
+            raise ConflictError(str(error)) from error
+        try:
+            return resolved.capabilities
+        finally:
+            await resolved.release()
+
+    async def _spent_totals(self, run_id: UUID) -> tuple[int, float | None]:
+        """Потрачено прогоном: токены и стоимость по журналу вызовов модели."""
+        totals = await self._repos.llm_calls.totals(run_id)
+        return totals.tokens_in + totals.tokens_out, (
+            totals.cost_usd if totals.priced_calls else None
+        )
+
+    async def _obsolete_run_questions(self, run: Run) -> None:
+        """Закрыть открытые технические вопросы прогона как неактуальные.
+
+        Вызывается перед постановкой нового вопроса, при завершении, ошибке и отмене: у
+        пользователя не должно оставаться висящих карточек по уже законченному прогону.
+        Сбой уборки не ломает прогон.
+        """
+        now = self._rt.clock()
+        try:
+            async with self._repos.atomic() as repos:
+                if await repos.projects.lock(run.project_id) is None:
+                    return
+                questions = await repos.questions.list_by_project(run.project_id)
+                for question in questions:
+                    if (
+                        question.is_technical
+                        and question.run_id == run.id
+                        and question.status is QuestionStatus.OPEN
+                    ):
+                        question.status = QuestionStatus.OBSOLETE
+                        question.updated_at = now
+                        await repos.questions.update(question)
+        except Exception:
+            logger.exception("Прогон %s: не удалось закрыть технические вопросы", run.id)
+
     async def get(self, run_id: UUID) -> Run:
         return await get_run(self._repos, run_id)
+
+    async def cost(self, run_id: UUID) -> RunCost | None:
+        """Стоимость прогона по журналу вызовов модели: токены, кеш, деньги, этапы."""
+        return RunCost.of(await self._repos.llm_calls.totals(run_id))
 
     async def cancel(self, run_id: UUID) -> Run:
         """Отменить общий прогон проекта; безопасно повторяется после его завершения."""
@@ -338,6 +512,9 @@ class RunService:
             current.error = "Прогон отменён участником"
             current.finished_at = self._rt.clock()
             await self._repos.runs.update(current)
+            # Висящие технические вопросы отменённого прогона закрываются: действие по ним
+            # уже ничего не продолжит.
+            await self._obsolete_run_questions(current)
             await self._publish(current, RunEventKind.DONE, current)
         elif not cancelled_task:
             return current
@@ -371,7 +548,10 @@ class RunService:
                 # получают `done`: иначе поток висел бы вечно. Повтор `done` шина игнорирует.
                 # Если прогона нет в БД без ошибки чтения, закрывать нечего.
                 try:
-                    if run is not None or sys.exc_info()[0] is not None:
+                    # Прогон в `waiting` не завершён: `done` не отправляем, поток SSE остаётся
+                    # открытым до действия пользователя (или отмены).
+                    waiting = run is not None and run.status is RunStatus.WAITING
+                    if not waiting and (run is not None or sys.exc_info()[0] is not None):
                         lost = run or self._lost_run(run_id)
                         await self._publish(lost, RunEventKind.DONE, lost)
                 finally:
@@ -400,7 +580,7 @@ class RunService:
         total = sum(len(s.content) for s in sources if s.active and s.status is SourceStatus.READY)
         return self._deadline_for(total)
 
-    async def _drive(self, run: Run) -> None:
+    async def _drive(self, run: Run) -> None:  # noqa: PLR0912 — диспетчер исходов прогона
         execution_started = time.perf_counter()
         deadline = await self._deadline(run)
         scope: asyncio.Timeout | None = None
@@ -437,7 +617,11 @@ class RunService:
                 await self._repos.runs.update(run)
             except Exception:
                 logger.exception("Не удалось сохранить отмену прогона %s", run.id)
+            await self._obsolete_run_questions(run)
             await self._publish(run, RunEventKind.DONE, run)
+        except BudgetReachedError as error:
+            # Мягкая остановка: не ошибка, а ожидание решения пользователя (RFC-0005, шаг 5).
+            await self._wait_for_budget(run, error, execution_started=execution_started)
         except (PipelineError, BpmnFormatError, BpmnToolsError, StaleVersionError) as error:
             await self._fail(run, str(error), execution_started=execution_started)
         except TimeoutError:
@@ -478,21 +662,43 @@ class RunService:
     async def _run_stages(self, run: Run, execution_started: float) -> None:
         resolved = await self._run_pipeline(run)
         try:
-            await self._run_stages_with(run, execution_started, resolved.pipeline)
+            await self._run_stages_with(
+                run, execution_started, resolved.pipeline, profile=resolved.profile
+            )
         finally:
             await resolved.release()
 
+    async def _spent_usage(self, run_id: UUID) -> LlmUsage:
+        """Уже потраченное прогоном: продолжение после `waiting` считает бюджет по всему."""
+        totals = await self._repos.llm_calls.totals(run_id)
+        return LlmUsage(
+            tokens_in=totals.tokens_in,
+            tokens_out=totals.tokens_out,
+            cache_read_tokens=totals.cache_read_tokens,
+            cache_write_tokens=totals.cache_write_tokens,
+            requests=totals.usage_calls,
+        )
+
     async def _run_stages_with(
-        self, run: Run, execution_started: float, pipeline: ProcessPipeline
+        self,
+        run: Run,
+        execution_started: float,
+        pipeline: ProcessPipeline,
+        *,
+        profile: RunProfile | None = None,
     ) -> None:
         run.status = RunStatus.RUNNING
         await self._repos.runs.update(run)
         state = _RunState(pipeline=pipeline)
-        for stage in stages_for(run.mode):
-            await self._enter(run, stage)
-            if pipeline_provider(pipeline) == PROVIDER_MOCK:
-                await self._pace(stage)
-            await self._perform(run, stage, state)
+        budget = profile.budget if profile is not None else None
+        # Накопитель токенов за весь прогон и бюджет: проверка перед каждым запросом к модели
+        # (RFC-0005, шаг 5). Потраченное до продолжения после `waiting` входит в счёт.
+        with run_budget(budget), track_run_usage(await self._spent_usage(run.id)):
+            for stage in stages_for(run.mode):
+                await self._enter(run, stage)
+                if pipeline_provider(pipeline) == PROVIDER_MOCK:
+                    await self._pace(stage)
+                await self._perform(run, stage, state)
         # Пункты отмечаются до статуса `succeeded`: кто увидит успех (SSE или опрос), уже видит их.
         await self._record_progress(run)
         run.status = RunStatus.SUCCEEDED
@@ -501,6 +707,8 @@ class RunService:
         run.latency_ms = max(0, round((time.perf_counter() - execution_started) * 1000))
         await self._repos.runs.update(run)
         await self._repos.projects.touch(run.project_id, run.finished_at)
+        # Вопросы, ждавшие действий по этому прогону, больше не актуальны.
+        await self._obsolete_run_questions(run)
 
     async def _record_progress(self, run: Run) -> None:
         """Успешная сборка отмечает пункты чека тому, кто запустил прогон. Не бросает."""
@@ -530,6 +738,44 @@ class RunService:
             s.kind is SourceKind.ANSWER and previous.created_at < s.created_at <= run.started_at
             for s in sources
         )
+
+    async def _wait_for_budget(
+        self, run: Run, error: BudgetReachedError, *, execution_started: float
+    ) -> None:
+        """Мягкая остановка: прогон ждёт решения по бюджету, а не падает.
+
+        Создаётся блокирующий технический вопрос `budget_reached` с действиями «поднять
+        бюджет» и «открыть настройки». Событие `done` не отправляется: поток SSE остаётся
+        открытым, пока пользователь не продолжит прогон или не отменит его.
+        """
+        stage_name = (
+            stage_label(run.status, run.stage) if run.stage is not None else "вызовы модели"
+        )
+        run.status = RunStatus.WAITING
+        run.error = None
+        run.finished_at = None
+        run.latency_ms = max(0, round((time.perf_counter() - execution_started) * 1000))
+        await self._repos.runs.update(run)
+        budget = error.budget
+        limit = f" ({budget.describe()})" if budget is not None else ""
+        # Дублей не создаём: прошлые вопросы этого исполнения становятся неактуальными.
+        await self._obsolete_run_questions(run)
+        question = await self._technical.create(
+            run.project_id,
+            TechnicalQuestionKind.BUDGET_REACHED,
+            f"Бюджет прогона{limit} исчерпан на этапе «{stage_name}». "
+            "Поднимите бюджет в профиле прогона и продолжите или остановите прогон.",
+            run_id=run.id,
+            blocking=True,
+        )
+        await self._publish(run, RunEventKind.QUESTION, question)
+        if run.stage is not None:
+            # Подпись «ждёт вашего действия» вместо названия этапа.
+            await self._publish(
+                run,
+                RunEventKind.STAGE,
+                StageProgress(stage=run.stage, label=WAITING_LABEL, progress=run.progress),
+            )
 
     async def _enter(self, run: Run, stage: RunStage) -> None:
         run.stage = stage
@@ -596,6 +842,7 @@ class RunService:
                     stage="analyze",
                     request={"context": describe_context(context)},
                     call=lambda: state.model().analyze(context),
+                    capabilities=pipeline_capabilities(state.model()),
                 )
                 run.analysis = _json_data(state.analysis)
                 await self._repos.runs.update(run)
@@ -603,8 +850,15 @@ class RunService:
                 await self._reconcile(run, state)
             case RunStage.STRUCTURING:
                 context = self._require(state)
+                # Технические вопросы снова отсекаем: они не участвуют в сборке графа и не
+                # попадают в промпт структуры и смысловой сверки (RFC-0006, шаг 2).
                 context = replace(
-                    context, questions=await self._repos.questions.list_by_project(run.project_id)
+                    context,
+                    questions=[
+                        question
+                        for question in await self._repos.questions.list_by_project(run.project_id)
+                        if not question.is_technical
+                    ],
                 )
                 state.context = context
                 state.draft = await self._model_call(
@@ -615,6 +869,7 @@ class RunService:
                         "analysis": _json_data(state.analysis),
                     },
                     call=lambda: state.model().structure(context, state.analysis),
+                    capabilities=pipeline_capabilities(state.model()),
                 )
                 if state.draft is None:
                     raise PipelineError("Пайплайн не вернул BPMN-черновик")
@@ -720,7 +975,9 @@ class RunService:
         async with self._repos.atomic() as repos:
             project = await repos.projects.lock(run.project_id)
             sources = await repos.sources.lock_by_project(run.project_id)
-            current = await repos.questions.list_by_project(run.project_id)
+            all_questions = await repos.questions.list_by_project(run.project_id)
+            # Технические вопросы не участвуют в сверке бизнес-решений и в IR не попадают.
+            current = [q for q in all_questions if not q.is_technical]
             head_version = await repos.versions.latest(run.project_id)
             usable = [
                 ContextSource(
@@ -749,8 +1006,10 @@ class RunService:
                 )
             else:
                 before = {q.id: deepcopy(q) for q in current}
+                # Нумерация новых бизнес-вопросов идёт по всем вопросам проекта: технические
+                # тоже занимают код, иначе уникальный индекс (project_id, code) нарушится.
                 outcome = reconcile(
-                    current,
+                    all_questions,
                     state.analysis,
                     snapshot,
                     project_id=run.project_id,
@@ -850,9 +1109,15 @@ class RunService:
                     "Материалы проекта изменились во время сборки; "
                     "повторите её от обновлённых источников"
                 )
-            if state.context and _question_snapshot(
-                await repos.questions.list_by_project(run.project_id)
-            ) != _question_snapshot(state.context.questions):
+            current_questions = [
+                question
+                for question in await repos.questions.list_by_project(run.project_id)
+                # Технические вопросы не входят в контекст сборки и не меняют её снимок.
+                if not question.is_technical
+            ]
+            if state.context and _question_snapshot(current_questions) != _question_snapshot(
+                state.context.questions
+            ):
                 raise PipelineError("Ответы или допущения изменились во время сборки; повторите её")
             sources = {source.id: source for source in locked_sources}
             for citation in state.draft.trace.values():
@@ -902,7 +1167,8 @@ class RunService:
     async def _graph_questions(
         self, repos: Repositories, run: Run, draft: DiagramDraft, budget_chars: int | None = None
     ) -> list[Question]:
-        questions = await repos.questions.list_by_project(run.project_id)
+        all_questions = await repos.questions.list_by_project(run.project_id)
+        questions = [question for question in all_questions if not question.is_technical]
         for question in questions:
             if question.code in draft.bindings:
                 await repos.questions.bind_elements(question.id, draft.bindings[question.code])
@@ -938,7 +1204,7 @@ class RunService:
                 budget_chars=budget_chars or self._context_budget,
             )
             outcome = reconcile(
-                questions,
+                all_questions,
                 AnalysisResult(new_questions=proposals),
                 context.evidence_sources or context.sources,
                 project_id=run.project_id,
@@ -965,37 +1231,102 @@ class RunService:
         stage: str,
         request: dict[str, Any],
         call: Callable[[], Awaitable[Any]],
+        capabilities: ModelCapabilities | None = None,
     ) -> Any:
-        """Вызов шага пайплайна с записью аудита: запрос, ответ или ошибка, задержка, токены."""
+        """Вызов шага пайплайна с записью аудита: запрос, ответ или ошибка, задержка, токены.
+
+        Запись в `llm_calls` делается и при отмене прогона: `CancelledError` не наследуется
+        от `Exception`, поэтому отдельная ветка пишет строку под `asyncio.shield` и только
+        потом пробрасывает исключение. Без этого потраченные на прерванном шаге токены
+        выпадали бы из журнала, и продолжение после рестарта не учитывало бы их в бюджете.
+        """
         started = time.perf_counter()
         response: Any = None
         failure: Exception | None = None
         with track_usage() as usage:
             try:
                 response = await call()
+            except asyncio.CancelledError:
+                await self._record_model_call(
+                    run,
+                    stage=stage,
+                    request=request,
+                    response={"error": "Вызов модели прерван отменой прогона"},
+                    usage=usage,
+                    capabilities=capabilities,
+                    started=started,
+                )
+                raise
             except Exception as error:
                 failure = error
-        await self._resolver.mark(
-            _credential_id(run), redact_secrets(str(failure)) if failure else None
-        )
-        # Токены известны только у провайдеров, которые их сообщают (mock — `null`).
-        await self._repos.llm_calls.add(
-            LlmCall(
-                id=self._rt.new_id(),
-                run_id=run.id,
-                stage=stage,
-                request=_json_data(request),
-                response={"error": redact_secrets(str(failure))}
-                if failure
-                else _json_data(response),
-                tokens_in=usage.tokens_in if usage.requests else None,
-                tokens_out=usage.tokens_out if usage.requests else None,
-                latency_ms=max(0, round((time.perf_counter() - started) * 1000)),
-            )
+        await self._record_model_call(
+            run,
+            stage=stage,
+            request=request,
+            response={"error": redact_secrets(str(failure))}
+            if failure is not None
+            else _json_data(response),
+            usage=usage,
+            capabilities=capabilities,
+            started=started,
         )
         if failure is not None:
+            if isinstance(failure, BudgetReachedError):
+                # Достигнутый бюджет — не проблема ключа: помечать его fatal нельзя.
+                await self._resolver.mark(_credential_id(run), None)
+            else:
+                await self._resolver.mark(_credential_id(run), redact_secrets(str(failure)))
             raise failure
+        await self._resolver.mark(_credential_id(run), None)
+        await self._publish_cost(run)
         return response
+
+    async def _record_model_call(
+        self,
+        run: Run,
+        *,
+        stage: str,
+        request: dict[str, Any],
+        response: Any,
+        usage: LlmUsage,
+        capabilities: ModelCapabilities | None,
+        started: float,
+    ) -> None:
+        """Запись строки `llm_calls`; при отмене — под shield, чтобы строка не потерялась."""
+        prices = capabilities.prices if capabilities is not None else None
+        cost = cost_of_usage(usage if usage.requests else None, prices)
+        call = LlmCall(
+            id=self._rt.new_id(),
+            run_id=run.id,
+            stage=stage,
+            request=_json_data(request),
+            response=response,
+            tokens_in=usage.tokens_in if usage.requests else None,
+            tokens_out=usage.tokens_out if usage.requests else None,
+            cache_read_tokens=usage.cache_read_tokens if usage.requests else None,
+            cache_write_tokens=usage.cache_write_tokens if usage.requests else None,
+            cost_usd=cost.cost_usd,
+            price_checked_on=cost.checked_on,
+            model=run.model,
+            latency_ms=max(0, round((time.perf_counter() - started) * 1000)),
+        )
+        try:
+            await asyncio.shield(self._repos.llm_calls.add(call))
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Прогон %s: не удалось записать вызов модели", run.id)
+
+    async def _publish_cost(self, run: Run) -> RunCost | None:
+        """Событие `usage`: сколько уже потрачено. Ошибка публикации не ломает прогон."""
+        try:
+            cost = await self.cost(run.id)
+            if cost is not None:
+                await self._publish(run, RunEventKind.USAGE, cost)
+            return cost
+        except Exception:
+            logger.exception("Прогон %s: не удалось опубликовать стоимость", run.id)
+            return None
 
     async def _fail(self, run: Run, message: str, *, execution_started: float) -> None:
         run.status = RunStatus.FAILED
@@ -1008,6 +1339,7 @@ class RunService:
             # Даже если БД недоступна, подписчик должен узнать об ошибке и закрыть поток.
             logger.exception("Не удалось сохранить ошибку прогона %s", run.id)
         finally:
+            await self._obsolete_run_questions(run)
             await self._publish(run, RunEventKind.ERROR, RunError(message=message))
             await self._publish(run, RunEventKind.DONE, run)
 
@@ -1034,3 +1366,39 @@ class RunService:
         except Exception:
             # Realtime is a best-effort projection; it must never fail or stop the durable run.
             logger.exception("Прогон %s: не удалось разослать realtime-событие", run.id)
+
+
+def _budget_exhausted(budget: Budget | None, spent: tuple[int, float | None]) -> bool:
+    """Достигнут ли бюджет: продолжение без его поднятия сразу вернулось бы в `waiting`."""
+    if budget is None:
+        return False
+    spent_tokens, spent_cost = spent
+    if budget.tokens is not None and spent_tokens >= budget.tokens:
+        return True
+    return budget.cost_usd is not None and spent_cost is not None and spent_cost >= budget.cost_usd
+
+
+def _check_budget_raisable(
+    budget: Budget,
+    capabilities: ModelCapabilities,
+    spent_tokens: int,
+    spent_cost: float | None,
+) -> None:
+    """Новый бюджет должен быть проверяемым и выше уже потраченного.
+
+    Бюджет в деньгах требует известных цен модели; граница ниже потраченного означала бы
+    немедленную остановку после продолжения.
+    """
+    if budget.cost_usd is not None and capabilities.prices is None:
+        raise InvalidInputError(
+            "Бюджет в деньгах нельзя проверить: у модели нет цен в справочнике. "
+            "Задайте бюджет в токенах или выберите модель с известными ценами"
+        )
+    if budget.tokens is not None and budget.tokens <= spent_tokens:
+        raise InvalidInputError(
+            f"Бюджет должен быть выше уже потраченного: потрачено {spent_tokens} токенов"
+        )
+    if budget.cost_usd is not None and spent_cost is not None and budget.cost_usd <= spent_cost:
+        raise InvalidInputError(
+            f"Бюджет должен быть выше уже потраченного: потрачено ≈ ${spent_cost:.2f}"
+        )

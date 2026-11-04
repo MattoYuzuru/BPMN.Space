@@ -8,6 +8,7 @@ import {
   type Page,
   test,
 } from '@playwright/test'
+import { confirmRunDialog } from './support'
 
 /**
  * Обучение: приветствие и тур из 11 шагов. Каждый сценарий регистрирует своего пользователя
@@ -235,8 +236,9 @@ test('приветствие и весь тур от создания проек
   await test.step('шаг 5: ждём разбор документа, затем «Построить схему»', async () => {
     const card = coach(page, 'Постройте схему')
     await expect(card).toBeVisible()
-    await expect(card).toContainText('Модель прочитает источники', { timeout: 30_000 })
+    await expect(card).toContainText('подтвердите запуск', { timeout: 30_000 })
     await page.getByRole('banner').getByRole('button', { name: 'Построить схему' }).click()
+    await confirmRunDialog(page, 'build')
   })
 
   await test.step('шаг 6: ход прогона', async () => {
@@ -477,6 +479,7 @@ test('fail-early: «Повторить» запускает прогон сно�
     }
   })
   await page.getByRole('banner').getByRole('button', { name: 'Построить схему' }).click()
+  await confirmRunDialog(page, 'build')
 
   const failed = coach(page, 'Прогон не удался')
   await expect(failed).toBeVisible({ timeout: 60_000 })
@@ -505,6 +508,7 @@ test('fail-structuring: вопросы есть, схемы нет — шаги 
   })
   await page.goto(`/projects/${projectId}`)
   await page.getByRole('banner').getByRole('button', { name: 'Построить схему' }).click()
+  await confirmRunDialog(page, 'build')
 
   await expect(coach(page, 'Ответьте на вопрос')).toBeVisible({ timeout: 90_000 })
   const first = page.locator('[data-question-id]').first()
@@ -538,6 +542,7 @@ test('no-questions: вопросов нет — шаги 7–8 пропущен�
   })
   await page.goto(`/projects/${projectId}`)
   await page.getByRole('banner').getByRole('button', { name: 'Построить схему' }).click()
+  await confirmRunDialog(page, 'build')
 
   const card = coach(page, 'Вопросов нет')
   await expect(card).toBeVisible({ timeout: 90_000 })

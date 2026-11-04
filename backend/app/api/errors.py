@@ -19,6 +19,7 @@ from app.services.errors import (
     ServiceError,
     SpeechNotRecognizedError,
     StaleVersionError,
+    ToolUnavailableError,
     UnauthorizedError,
     UnavailableError,
     UnsupportedMediaError,
@@ -92,6 +93,18 @@ def install_error_handlers(app: FastAPI) -> None:
             )
         if isinstance(error, SpeechNotRecognizedError):
             return JSONResponse({"detail": error.message, "code": "NO_SPEECH"}, status_code=status)
+        if isinstance(error, ToolUnavailableError):
+            # Структурный отказ инструмента (RFC-0006): та же форма, что у технического вопроса.
+            return JSONResponse(
+                {
+                    "detail": error.message,
+                    "code": error.reason,
+                    "done": error.done,
+                    "remaining": error.remaining,
+                    "alternatives": list(error.alternatives),
+                },
+                status_code=status,
+            )
         return JSONResponse({"detail": error.message}, status_code=status)
 
     async def request_validation(_: Request, error: Exception) -> JSONResponse:

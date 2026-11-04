@@ -114,8 +114,8 @@ describe('Доступ для агентов', () => {
     const command = screen.getByLabelText('Команда для Claude Code') as HTMLTextAreaElement
     expect(command.value).toBe(mcpCommand(window.location.origin, SECRET))
     expect(command.value).toContain('/mcp --header "Authorization: Bearer bps_')
-    // Сервер появится в волне 2: команда показана, но текст честно говорит, что она пока не работает.
-    expect(screen.getAllByText(/MCP-сервер пока не запущен/).length).toBeGreaterThan(0)
+    // MCP-сервер волны 2 работает: команда подключает его к Claude Code.
+    expect(screen.getByText(/MCP-сервер работает/)).toBeInTheDocument()
     // Тур волн 2–4 ждёт факты создания токена и копирования команды.
     expect(signals).toContain('agent.token.created')
     await user.click(screen.getByRole('button', { name: 'Копировать команду' }))

@@ -30,6 +30,7 @@ from app.llm.client import (
     ModelInfo,
     RetryPolicy,
     TransientLlmError,
+    approximate_tokens,
     auth_message,
     timeout_message,
     token_count,
@@ -137,9 +138,13 @@ class AnthropicClient:
         usage = message.usage
         cached = token_count(getattr(usage, "cache_read_input_tokens", 0)) or 0
         created = token_count(getattr(usage, "cache_creation_input_tokens", 0)) or 0
+        input_tokens = token_count(usage.input_tokens) or 0
         record_usage(
-            tokens_in=(token_count(usage.input_tokens) or 0) + cached + created,
+            # `tokens_in` — все входные токены: обычный вход, чтение и запись кеша.
+            tokens_in=input_tokens + cached + created,
             tokens_out=token_count(usage.output_tokens),
+            cache_read=cached,
+            cache_write=created,
         )
         if message.stop_reason == "max_tokens":
             raise OutputTruncatedError(
@@ -154,6 +159,26 @@ class AnthropicClient:
         if not text.strip():
             raise RuntimeError("Модель вернула пустой или неподдерживаемый ответ")
         return text
+
+    async def count_tokens(self, system: str, user: str) -> int:
+        """Точное число входных токенов бесплатным `messages.count_tokens`.
+
+        Вызывается до запуска, когда ключ ещё не подтверждён рабочим запросом модели: сбой
+        счётчика не должен ломать оценку, поэтому при ошибке возвращается оценка по знакам.
+        """
+        try:
+            result = await self._sdk.messages.count_tokens(
+                model=self._config.model,
+                system=[{"type": "text", "text": system}],
+                messages=[{"role": "user", "content": user}],
+                timeout=10.0,
+            )
+            counted = token_count(getattr(result, "input_tokens", None))
+            if counted:
+                return counted
+        except (anthropic.APIStatusError, anthropic.APIConnectionError, anthropic.APITimeoutError):
+            pass
+        return approximate_tokens(system, user, capabilities_for("anthropic", self._config.model))
 
     async def list_models(self) -> list[ModelInfo]:
         try:

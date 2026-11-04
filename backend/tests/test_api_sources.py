@@ -217,6 +217,8 @@ def test_silent_transcription_returns_recoverable_error(
         provider.transcribe.side_effect = NoSpeechError
     else:
         provider.transcribe.return_value = Transcript(text="  ", duration_sec=2)
+    # Проверяем обработку «тишины» сервисом без маршрутизации по ключам (она в своих тестах).
+    container.transcriptions._stt_for_user = None
     container.transcriptions._stt = provider
     response = client.post(
         f"{API}/transcriptions", files={"file": ("silence.webm", b"audio", "audio/webm")}

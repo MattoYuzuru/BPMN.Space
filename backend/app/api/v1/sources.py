@@ -28,7 +28,11 @@ from app.api.auth import OptionalUserDep
 from app.api.deps import ContainerDep
 from app.api.limits import read_upload
 from app.api.ratelimit import limit_expensive
-from app.api.schemas.common import TranscriptionErrorResponse, errors
+from app.api.schemas.common import (
+    ToolUnavailableErrorResponse,
+    TranscriptionErrorResponse,
+    errors,
+)
 from app.api.schemas.onboarding import SampleAdd
 from app.api.schemas.projects import Transcription
 from app.api.schemas.sources import Source, SourceTextCreate, SourceUpdate
@@ -114,7 +118,12 @@ async def create_file_source(  # noqa: PLR0917 - multipart form fields are separ
             project_id, file_name=file_name, mime=file.content_type, data=data, title=title
         )
     if slow:
-        background.add_task(container.sources.process_file, source.id)
+        # Ключи распознавания — инициатора загрузки (RFC-0006); гостю по ссылке — серверные.
+        background.add_task(
+            container.sources.process_file,
+            source.id,
+            initiator_id=user.id if user is not None else None,
+        )
     await container.onboarding.record(user.id if user else None, ChecklistItem.DOCUMENT_UPLOADED)
     return Source.model_validate(source)
 
@@ -138,7 +147,12 @@ async def create_sample_source(  # noqa: PLR0917 - FastAPI binds each parameter 
     await ensure_project_access(request, container, project_id, user, write=True)
     source, slow = await container.samples.add(project_id, body.sample_id)
     if slow:
-        background.add_task(container.sources.process_file, source.id)
+        # Ключи распознавания — инициатора загрузки (RFC-0006); гостю по ссылке — серверные.
+        background.add_task(
+            container.sources.process_file,
+            source.id,
+            initiator_id=user.id if user is not None else None,
+        )
     await container.onboarding.record(
         user.id if user else None,
         ChecklistItem.VOICE_ADDED
@@ -209,6 +223,10 @@ async def delete_source(
             "model": TranscriptionErrorResponse,
             "description": "Некорректная запись или речь не распознана",
         },
+        503: {
+            "model": ToolUnavailableErrorResponse,
+            "description": "Нет рабочего ключа распознавания или провайдер не принял запись",
+        },
     },
 )
 async def transcribe(
@@ -217,8 +235,13 @@ async def transcribe(
     file: Annotated[UploadFile, File(description="Аудио: webm/ogg (opus), wav или mp3")],
     user: OptionalUserDep,
 ) -> Transcription:
-    """Расшифровка голоса для правки перед сохранением (источник или ответ на вопрос)."""
-    require_account(request, user)
+    """Расшифровка голоса для правки перед сохранением (источник или ответ на вопрос).
+
+    У вошедшего пользователя — на его ключах распознавания (RFC-0006), иначе — серверный
+    провайдер. Если рабочих ключей нет, `503` с причиной и структурным прогрессом."""
+    caller_id = require_account(request, user)
     data = await read_upload(file, subject="Запись", limit=container.settings.max_audio_bytes)
-    transcript = await container.transcriptions.transcribe(data, mime=file.content_type)
+    transcript = await container.transcriptions.transcribe(
+        data, mime=file.content_type, user_id=caller_id
+    )
     return Transcription.model_validate(transcript)

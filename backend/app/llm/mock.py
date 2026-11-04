@@ -39,6 +39,8 @@ from app.domain.questions import find_source_with_quote, normalize, quote_in_sou
 from app.fixtures.generic import RESPONSIBLE_MARKER, generic_questions
 from app.fixtures.types import DiagramRule, Playbook
 from app.llm.base import PipelineError
+from app.llm.capabilities import ModelCapabilities
+from app.llm.client import approximate_tokens
 
 _MAX_STEPS = 8
 _MAX_TASK_NAME = 60
@@ -134,6 +136,10 @@ class MockPipeline:
     @property
     def model_name(self) -> str:
         return "recorded-fixtures"
+
+    async def count_tokens(self, system: str, user: str) -> int:
+        """Mock не обращается к провайдеру: оценка по знакам и `chars_per_token` справочника."""
+        return approximate_tokens(system, user, ModelCapabilities())
 
     async def analyze(self, context: RunContext) -> AnalysisResult:
         if _has_marker(MARKER_FAIL_EARLY, context.sources):

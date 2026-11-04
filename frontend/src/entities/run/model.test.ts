@@ -3,9 +3,11 @@ import {
   formatSummary,
   initialRunView,
   type Run,
+  type RunCost,
   type RunEvent,
   type RunView,
   reduceRun,
+  runStatusView,
   runSteps,
 } from './model'
 
@@ -30,6 +32,8 @@ const question = (status: Question['status']): Question => ({
   text: 'Кто согласует бюджет?',
   assumption: 'Руководитель отдела',
   element_ids: [],
+  category: 'business',
+  blocking: false,
   created_at: '2026-10-02T10:00:00Z',
   updated_at: '2026-10-02T10:00:00Z',
 })
@@ -164,5 +168,103 @@ describe('formatSummary', () => {
     expect(formatSummary({ resolved: 2, open: 2, new: 1 })).toBe('Решено 2, осталось 2, новых 1')
     expect(formatSummary({ resolved: 0, open: 3, new: 0 })).toBe('Осталось 3')
     expect(formatSummary({ resolved: 0, open: 0, new: 0 })).toBe('Открытых вопросов нет')
+  })
+})
+
+describe('стоимость, бюджет и ожидание прогона', () => {
+  const cost: RunCost = {
+    calls: 8,
+    tokens_in: 120_000,
+    tokens_out: 14_000,
+    cache_read_tokens: 40_000,
+    cache_write_tokens: 9_000,
+    cost_usd: 2.71,
+    complete: true,
+    currency: 'USD',
+    by_stage: [
+      {
+        stage: 'extracting',
+        label: 'Извлечение',
+        calls: 8,
+        cost_usd: 2.71,
+        tokens_in: 120_000,
+        tokens_out: 14_000,
+        cache_read_tokens: 40_000,
+        cache_write_tokens: 9_000,
+      },
+    ],
+  }
+  const technical = (blocking: boolean): Question => ({
+    ...question('open'),
+    id: 'tq-1',
+    code: 'TQ-1',
+    kind: 'budget_reached',
+    category: 'technical',
+    blocking,
+    actions: [{ kind: 'raise_budget', label: 'Поднять бюджет' }],
+    text: 'Бюджет прогона исчерпан',
+  })
+
+  it('потраченное приходит событием usage и остаётся в состоянии', () => {
+    const view = play([{ type: 'usage', id: 1, data: cost }])
+    expect(view.cost?.cost_usd).toBe(2.71)
+    expect(view.budget).toBeNull()
+  })
+
+  it('блокирующий технический вопрос переводит прогон в waiting, этап возвращает в running', () => {
+    const waiting = play([
+      stage(1, 'reading_sources'),
+      { type: 'question', id: 2, data: { question: technical(true) } },
+    ])
+    expect(waiting.status).toBe('waiting')
+    expect(waiting.questions.map((item) => item.id)).toEqual(['tq-1'])
+    const resumed = reduceRun(waiting, stage(3, 'extracting'), 9000)
+    expect(resumed.status).toBe('running')
+  })
+
+  it('неблокирующий технический вопрос не останавливает прогон', () => {
+    const view = play([{ type: 'question', id: 1, data: { question: technical(false) } }])
+    expect(view.status).toBe('running')
+  })
+
+  it('начальное состояние знает waiting, стоимость и бюджет профиля', () => {
+    const view = initialRunView(
+      {
+        ...run,
+        status: 'waiting',
+        stage_label: 'Ждёт вашего действия',
+        cost,
+        profile: { budget: { cost_usd: 10, tokens: null } },
+      },
+      Date.now(),
+    )
+    expect(runStatusView('waiting')).toBe('waiting')
+    expect(view.status).toBe('waiting')
+    expect(view.finishedAt).toBeNull()
+    expect(view.cost?.cache_read_tokens).toBe(40_000)
+    expect(view.budget).toEqual({ cost_usd: 10, tokens: null })
+  })
+
+  it('done с ожиданием не закрывает карточку, а обычный done добавляет стоимость', () => {
+    const waiting = play([
+      {
+        type: 'done',
+        id: 1,
+        data: { run: { ...run, status: 'waiting', cost } },
+      },
+    ])
+    expect(waiting.status).toBe('waiting')
+    expect(waiting.finishedAt).toBeNull()
+    expect(waiting.cost?.calls).toBe(8)
+
+    const finished = play([
+      {
+        type: 'done',
+        id: 1,
+        data: { run: { ...run, status: 'succeeded', finished_at: '2026-10-02T10:01:00Z', cost } },
+      },
+    ])
+    expect(finished.status).toBe('succeeded')
+    expect(finished.cost?.cost_usd).toBe(2.71)
   })
 })

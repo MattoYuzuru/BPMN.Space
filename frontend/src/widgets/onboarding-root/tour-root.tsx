@@ -7,7 +7,7 @@ import {
   useUpdateTour,
 } from '@/entities/onboarding'
 import { projectQueryOptions, projectsInfiniteOptions } from '@/entities/project'
-import { sortQuestions } from '@/entities/question'
+import { isTechnical, sortQuestions } from '@/entities/question'
 import { useRunStore, useRunView, useStartRun } from '@/entities/run'
 import { useCurrentUser } from '@/entities/session'
 import { useCreateProjectDialog } from '@/features/create-project/model'
@@ -110,7 +110,8 @@ export default function TourRoot({ state }: { state: OnboardingState }) {
 
   const data = project.data
   const deleted = project.error instanceof ApiError && project.error.status === 404
-  const questions = data ? sortQuestions(data.questions) : []
+  // Технические вопросы касаются запуска, а не процесса: тур их не считает бизнес-вопросами.
+  const questions = data ? sortQuestions(data.questions.filter((q) => !isTechnical(q))) : []
   const openQuestionIds = questions.filter((q) => q.status === 'open').map((q) => q.id)
 
   // Итог прогона по данным проекта: после перезагрузки, а также когда прогон закончился, пока никто

@@ -3,18 +3,19 @@
 Mock: ждёт `mock_transcription_delay_sec` и возвращает примерную, заранее заготовленную
 расшифровку на тему энергетики (выбор детерминирован по содержимому файла), а не распознаёт
 загруженный звук; длительность оценивается по размеру.
-Боевой адаптер — Deepgram (`deepgram.py`, `STT_PROVIDER=deepgram`): один синхронный запрос
-на запись или сегмент. Длинные файлы и видео режет на сегменты `media.py` (ffmpeg).
+Боевые адаптеры живут в `ingest/adapters/` (RFC-0006): Deepgram и OpenAI-совместимый провайдер
+(OpenAI, Groq), выбор — маршрутизатор по ключам пользователя. Длинные файлы и видео режет на
+сегменты `media.py` (ffmpeg).
 TODO(real): #6 RFC §5.2 предполагает Yandex SpeechKit: `ffmpeg` перепаковывает webm/opus в
 OGG_OPUS mono; запись ≤ 30 с и ≤ 1 МБ — STT v1 синхронно, длиннее — v3 `recognizeFileAsync` +
-опрос `getRecognition`. Deepgram-адаптер не делает асинхронную обработку: длинные записи
-режет `media.py`.
+опрос `getRecognition`. Адаптеры не делают асинхронную обработку: длинные записи режет `media.py`.
 """
 
 import asyncio
 import hashlib
 from dataclasses import dataclass
 from typing import Protocol
+from uuid import UUID
 
 _OPUS_BYTES_PER_SECOND = 4000  # ~32 кбит/с — типичный битрейт записи MediaRecorder
 _MAX_ESTIMATE_SEC = 3600.0
@@ -30,11 +31,17 @@ class TimedText:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Transcript:
+    """Расшифровка сегмента или записи; метаданные — для `derivation` и оценки стоимости."""
+
     text: str
     duration_sec: float
     language: str = "ru-RU"
     # Реплики с таймкодами, если провайдер их вернул; нужны для `[мм:сс]` в длинных записях.
     utterances: tuple[TimedText, ...] = ()
+    provider: str | None = None  # кто ответил: `deepgram`, `openai`, `groq`, `mock`…
+    model: str | None = None  # модель провайдера, если известна
+    cost_usd: float | None = None  # None — провайдер стоимость не сообщает
+    credential_id: UUID | None = None  # ключ пользователя, которым оплачен вызов
 
 
 class NoSpeechError(Exception):

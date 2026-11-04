@@ -12,6 +12,19 @@
 		reverse_proxy backend:8000
 	}
 
+	# MCP-сервер внешних агентов (RFC-0007): Streamable HTTP, вход по Bearer-токену.
+	# flush_interval -1 нужен для потоковых ответов MCP; адрес — https://<домен>/mcp.
+	handle /mcp {
+		reverse_proxy backend:8000 {
+			flush_interval -1
+		}
+	}
+	handle /mcp/* {
+		reverse_proxy backend:8000 {
+			flush_interval -1
+		}
+	}
+
 	handle {
 		root * /srv
 		@assets path /assets/*

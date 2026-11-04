@@ -15,7 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from uuid import UUID
 
-from app.domain.credentials import LlmCredential
+from app.domain.credentials import Credential
 from app.infra.crypto import CredentialCipher, CredentialCipherError
 from app.infra.repositories.base import Repositories
 from app.llm.base import ProcessPipeline
@@ -39,7 +39,7 @@ SOURCE_SERVER = "server"
 SOURCE_MOCK = "mock"
 NO_KEY_MESSAGE = "Добавьте ключ модели в настройках"
 
-type PipelineFactory = Callable[[LlmConfig, LlmCredential], ProcessPipeline]
+type PipelineFactory = Callable[[LlmConfig, Credential], ProcessPipeline]
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,17 +160,25 @@ class ModelResolver:
         model: str | None,
         allow_mock: bool,
     ) -> ResolvedModel:
-        repo = self._repos.llm_credentials if self._repos else None
-        credential: LlmCredential | None = None
+        repo = self._repos.credentials if self._repos else None
+        credential: Credential | None = None
         if user_id is not None and repo is not None:
             if credential_id is not None:
                 credential = await repo.get(credential_id)
-                if credential is None or credential.user_id != user_id:
+                if credential is None or credential.user_id != user_id or not credential.is_llm:
                     # Чужой ключ неотличим от несуществующего.
                     raise NotFoundError("Ключ модели не найден")
             else:
+                # Выключенный или исчерпанный ключ модели не берём: работает следующий по
+                # приоритету, затем — модель сервера. Так же поступает маршрутизатор.
+                candidates = [
+                    item
+                    for item in await repo.list_by_user(user_id)
+                    if item.is_llm and item.enabled and not item.is_exhausted(self._rt.clock())
+                ]
                 credential = next(
-                    (item for item in await repo.list_by_user(user_id) if item.is_default), None
+                    (item for item in candidates if item.is_default),
+                    candidates[0] if candidates else None,
                 )
         elif credential_id is not None:
             raise NotFoundError("Ключ модели не найден")
@@ -196,9 +204,9 @@ class ModelResolver:
         if credential_id is None:
             resolved = self._server_choice(allow_mock=True)
         else:
-            repo = self._repos.llm_credentials if self._repos else None
+            repo = self._repos.credentials if self._repos else None
             credential = await repo.get(credential_id) if repo else None
-            if credential is None or credential.user_id != user_id:
+            if credential is None or credential.user_id != user_id or not credential.is_llm:
                 raise NotFoundError("Ключ модели удалён. Запустите прогон заново")
             resolved = self._for_credential(credential, model)
         # Записанный профиль проверен при запуске; после рестарта уточнения Models API могут
@@ -218,6 +226,7 @@ class ModelResolver:
                 checked = checked_profile(checked, resolved.capabilities, resolved.model)
                 if resolved.source == SOURCE_SERVER:
                     self._check_server_profile(checked, resolved)
+                self._check_budget(checked, resolved)
             except (UnsupportedEffortError, InvalidInputError) as error:
                 await resolved.release()
                 raise InvalidInputError(str(error)) from None
@@ -232,6 +241,26 @@ class ModelResolver:
             resolved.source,
             checked,
         )
+
+    def _check_budget(self, profile: RunProfile, resolved: ResolvedModel) -> None:
+        """Бюджет должен быть проверяемым: иначе молчаливое обещание остановки.
+
+        Бюджет в деньгах требует известных цен модели; mock не сообщает токены, поэтому на нём
+        ни один бюджет не сработает. В этих случаях — 422 с понятным объяснением.
+        """
+        budget = profile.budget
+        if budget is None:
+            return
+        if resolved.provider == PROVIDER_MOCK:
+            raise InvalidInputError(
+                "Бюджет прогона нельзя проверить на демонстрационной модели: "
+                "добавьте ключ модели в настройках"
+            )
+        if budget.cost_usd is not None and resolved.capabilities.prices is None:
+            raise InvalidInputError(
+                "Бюджет в деньгах нельзя проверить: у модели нет цен в справочнике. "
+                "Задайте бюджет в токенах или выберите модель с известными ценами"
+            )
 
     def _check_server_profile(self, profile: RunProfile, resolved: ResolvedModel) -> None:
         """Модель сервера платит оператор: глубже его потолка и со сверкой, которую он
@@ -256,7 +285,7 @@ class ModelResolver:
                 "Для более тщательной работы добавьте свой ключ модели в настройках"
             )
 
-    def _for_credential(self, credential: LlmCredential, model: str | None) -> ResolvedModel:
+    def _for_credential(self, credential: Credential, model: str | None) -> ResolvedModel:
         if self._cipher is None or self._factory is None:
             raise UnavailableError("Ключи моделей на сервере не поддерживаются")
         if not model:
@@ -276,12 +305,15 @@ class ModelResolver:
 
     async def mark(self, credential_id: UUID | None, error: str | None) -> None:
         """Запоминает итог использования ключа; сбой учёта не ломает прогон."""
-        repo = self._repos.llm_credentials if self._repos else None
+        repo = self._repos.credentials if self._repos else None
         if credential_id is None or repo is None:
             return
         try:
             await repo.mark_used(
-                credential_id, self._rt.clock(), redact_secrets(error) if error else None
+                credential_id,
+                self._rt.clock(),
+                redact_secrets(error) if error else None,
+                error_code="fatal" if error else None,
             )
         except Exception:
             logger.exception("Не удалось записать использование ключа модели")

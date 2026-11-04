@@ -16,6 +16,11 @@ export const llmCredentialKeys = {
   models: (id: string) => ['llm-credentials', id, 'models'] as const,
 }
 
+/** Ключи в «Инструментах» — тот же набор: после мутации перечитываем и его. */
+function invalidateToolCredentials(client: QueryClient) {
+  void client.invalidateQueries({ queryKey: ['credentials'] })
+}
+
 export const llmCredentialsQueryOptions = queryOptions({
   queryKey: llmCredentialKeys.all,
   queryFn: async ({ signal }) => unwrap(await api.GET('/api/v1/me/llm-credentials', { signal })),
@@ -70,7 +75,10 @@ export function useCreateLlmCredential() {
   return useMutation({
     mutationFn: async (body: Schemas['LlmCredentialCreate']) =>
       unwrap(await api.POST('/api/v1/me/llm-credentials', { body })),
-    onSuccess: () => client.invalidateQueries({ queryKey: llmCredentialKeys.all }),
+    onSuccess: () => {
+      invalidateToolCredentials(client)
+      return client.invalidateQueries({ queryKey: llmCredentialKeys.all })
+    },
   })
 }
 
@@ -84,7 +92,10 @@ export function useUpdateLlmCredential() {
           body,
         }),
       ),
-    onSuccess: () => client.invalidateQueries({ queryKey: llmCredentialKeys.all }),
+    onSuccess: () => {
+      invalidateToolCredentials(client)
+      return client.invalidateQueries({ queryKey: llmCredentialKeys.all })
+    },
     onError: (error) => toast.error('Не удалось сохранить', { description: errorMessage(error) }),
   })
 }
@@ -101,6 +112,7 @@ export function useDeleteLlmCredential() {
       ),
     onSuccess: (_data, id) => {
       forget(id)
+      invalidateToolCredentials(client)
       return client.invalidateQueries({ queryKey: llmCredentialKeys.all })
     },
     onError: (error) => toast.error('Не удалось удалить', { description: errorMessage(error) }),

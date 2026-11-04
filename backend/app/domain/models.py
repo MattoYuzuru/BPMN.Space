@@ -126,6 +126,9 @@ class Source:
     duration_sec: float | None = None
     question_id: UUID | None = None
     error: str | None = None
+    # Источник готов, но прочитан не полностью (страницы без текстового слоя, обрезанные листы).
+    warning: str | None = None
+    unreadable_pages: list[int] = field(default_factory=list[int])
     file_key: str | None = None  # внутреннее: ключ файла в хранилище (infra/storage)
     digest: str | None = None  # внутреннее: кэш дайджеста источника для контекстного окна
 
@@ -230,6 +233,27 @@ class Report:
 
 
 @dataclass(slots=True, kw_only=True)
+class VersionSummary:
+    """Строка истории: без XML, цитат и полного отчёта, только счётчики проверки."""
+
+    id: UUID
+    project_id: UUID
+    number: int
+    origin: VersionOrigin
+    created_at: datetime
+    diff: VersionDiff
+    lint_count: int
+    assumption_count: int
+    run_id: UUID | None
+    actor_email: str | None
+    label: str | None
+    checkpoint: bool
+    session_started_at: datetime
+    updated_at: datetime
+    saved_count: int
+
+
+@dataclass(slots=True, kw_only=True)
 class Version:
     id: UUID
     project_id: UUID
@@ -243,3 +267,39 @@ class Version:
     lanes: list[str] = field(default_factory=list[str])
     run_id: UUID | None = None
     actor_email: str | None = None  # кто создал версию; для старых записей неизвестен
+    label: str | None = None  # имя контрольной точки
+    checkpoint: bool = False  # закреплена человеком: сессия правок на ней закрыта
+    session_started_at: datetime | None = None  # начало сессии правок; по умолчанию created_at
+    updated_at: datetime | None = None  # последнее автосохранение, влитое в версию
+    saved_count: int = 1  # сколько сохранений влито в версию
+
+    def __post_init__(self) -> None:
+        self.session_started_at = self.session_started_at or self.created_at
+        self.updated_at = self.updated_at or self.created_at
+
+    @property
+    def lint_count(self) -> int:
+        return len(self.report.lint)
+
+    @property
+    def assumption_count(self) -> int:
+        return len(self.report.assumptions)
+
+    def summary(self) -> VersionSummary:
+        return VersionSummary(
+            id=self.id,
+            project_id=self.project_id,
+            number=self.number,
+            origin=self.origin,
+            created_at=self.created_at,
+            diff=self.diff,
+            lint_count=self.lint_count,
+            assumption_count=self.assumption_count,
+            run_id=self.run_id,
+            actor_email=self.actor_email,
+            label=self.label,
+            checkpoint=self.checkpoint,
+            session_started_at=self.session_started_at or self.created_at,
+            updated_at=self.updated_at or self.created_at,
+            saved_count=self.saved_count,
+        )

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import { readdir, readFile } from 'node:fs/promises'
 import { test } from 'node:test'
+import { WorkerPool } from '../pool.mjs'
 import { createToolsServer } from '../server.mjs'
 import { layout, lint, parse } from '../tools.mjs'
 
@@ -107,24 +108,93 @@ test('worker deadline выдаёт 504 и health остаётся доступе
   }
 })
 
-test('конкурентные запросы ограничены двумя workers', async () => {
-  const server = createToolsServer().listen(0, '127.0.0.1')
+const post = (url, path = 'layout') =>
+  fetch(`${url}/${path}`, { method: 'POST', body: JSON.stringify({ xml: sample }) })
+
+async function withServer(options, run) {
+  const server = createToolsServer(options).listen(0, '127.0.0.1')
   await once(server, 'listening')
-  const url = `http://127.0.0.1:${server.address().port}`
   try {
-    const statuses = await Promise.all(
-      Array.from(
-        { length: 8 },
-        async () =>
-          (await fetch(`${url}/layout`, { method: 'POST', body: JSON.stringify({ xml: sample }) }))
-            .status,
-      ),
-    )
-    assert.ok(statuses.filter((status) => status === 200).length <= 2)
-    assert.ok(statuses.includes(503))
-    assert.equal((await fetch(`${url}/health`)).status, 200)
+    await run(`http://127.0.0.1:${server.address().port}`, server)
   } finally {
     server.close()
     await once(server, 'close')
   }
+}
+
+test('очередь пула обслуживает всплеск запросов без 503', async () => {
+  await withServer({}, async (url, server) => {
+    const statuses = await Promise.all(
+      Array.from({ length: 8 }, async () => (await post(url)).status),
+    )
+    assert.deepEqual(statuses, Array(8).fill(200))
+    assert.ok(server.pool.spawned <= 2, 'worker-ы переиспользуются, а не создаются на запрос')
+    assert.equal((await fetch(`${url}/health`)).status, 200)
+  })
+})
+
+test('переполнение очереди даёт 503, health остаётся доступен', async () => {
+  await withServer({ poolSize: 1, queueLimit: 1 }, async (url) => {
+    const statuses = await Promise.all(
+      Array.from({ length: 8 }, async () => (await post(url)).status),
+    )
+    assert.ok(statuses.includes(200))
+    assert.ok(statuses.includes(503))
+    assert.ok(statuses.every((status) => status === 200 || status === 503))
+    assert.equal((await fetch(`${url}/health`)).status, 200)
+  })
+})
+
+test('worker пересоздаётся после лимита задач', async () => {
+  await withServer({ poolSize: 1, maxJobsPerWorker: 2 }, async (url, server) => {
+    for (let index = 0; index < 5; index += 1) assert.equal((await post(url)).status, 200)
+    assert.equal(server.pool.spawned, 3)
+  })
+})
+
+test('таймаут пересоздаёт worker и следующий запрос проходит', async () => {
+  const pool = new WorkerPool({ size: 1, jobTimeoutMs: 1 })
+  await assert.rejects(pool.run('layout', sample), { code: 'timeout', status: 504 })
+  pool.jobTimeoutMs = 30_000
+  const message = await pool.run('layout', sample)
+  assert.equal(message.ok, true)
+  assert.equal(pool.spawned, 2)
+  await pool.close()
+})
+
+test('сбой worker даёт 503, пул продолжает работать', async () => {
+  const pool = new WorkerPool({
+    size: 1,
+    workerUrl: new URL('./crash-worker.mjs', import.meta.url),
+  })
+  await assert.rejects(pool.run('layout', 'crash'), { code: 'crash', status: 503 })
+  const message = await pool.run('layout', 'ok')
+  assert.equal(message.ok, true)
+  await pool.close()
+})
+
+test('отмена ожидающей и выполняющейся задачи освобождает пул', async () => {
+  const pool = new WorkerPool({ size: 1, queueLimit: 4 })
+  const running = new AbortController()
+  const waiting = new AbortController()
+  const first = pool.run('layout', sample, running.signal)
+  const second = pool.run('layout', sample, waiting.signal)
+  waiting.abort()
+  running.abort()
+  await assert.rejects(first, { code: 'cancelled' })
+  await assert.rejects(second, { code: 'cancelled' })
+  assert.equal((await pool.run('layout', sample)).ok, true)
+  await pool.close()
+})
+
+test('HTTP-ответ при сбое worker несёт code=crash', async () => {
+  const workerUrl = new URL('./crash-worker.mjs', import.meta.url)
+  await withServer({ workerUrl, poolSize: 1 }, async (url) => {
+    const response = await fetch(`${url}/layout`, {
+      method: 'POST',
+      body: JSON.stringify({ xml: 'crash' }),
+    })
+    assert.equal(response.status, 503)
+    assert.equal((await response.json()).code, 'crash')
+  })
 })

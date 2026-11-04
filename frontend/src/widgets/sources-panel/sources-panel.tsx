@@ -2,6 +2,7 @@ import { AnimatePresence, m } from 'motion/react'
 import { useState } from 'react'
 import {
   ACCEPTED_FILES,
+  ACCEPTED_FILES_HINT,
   SOURCE_KIND,
   type Source,
   sourceMeta,
@@ -120,7 +121,7 @@ export function SourcesPanel({ onCollapse }: { onCollapse: () => void }) {
               multiple
               onFiles={upload}
               title="Перетащите документ"
-              hint=".txt, .md, .csv, .docx, .pdf"
+              hint={ACCEPTED_FILES_HINT}
               className="mx-1"
             />
           )}
@@ -136,7 +137,7 @@ export function SourcesPanel({ onCollapse }: { onCollapse: () => void }) {
             upload(files)
           }}
           title="Отпустите, чтобы загрузить"
-          hint=".txt, .md, .csv, .docx, .pdf"
+          hint={ACCEPTED_FILES_HINT}
           className="absolute inset-2 z-10 animate-fade-in border-accent bg-accent-subtle/90 backdrop-blur-sm"
         />
       )}

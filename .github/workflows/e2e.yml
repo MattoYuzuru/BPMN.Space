@@ -1,0 +1,49 @@
+# Playwright e2e против Docker-стека. Долгий прогон, поэтому не блокирует PR:
+# запускается вручную и раз в сутки.
+name: E2E
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx --workspace frontend playwright install --with-deps chromium
+      - name: Запуск стека
+        run: docker compose up -d --build --wait --wait-timeout 300
+      - name: Playwright
+        run: make e2e E2E_BASE_URL=http://localhost:8080
+        env:
+          E2E_BASE_URL: http://localhost:8080
+      - name: Отчёт Playwright
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 7
+      - name: Логи стека
+        if: failure()
+        run: docker compose logs --tail=300
+      - name: Остановка стека
+        if: always()
+        run: docker compose down -v

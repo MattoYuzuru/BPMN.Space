@@ -37,10 +37,10 @@ from app.infra.repositories.memory import InMemoryStore
 from app.infra.tasks import AsyncioTaskSpawner
 from app.llm.base import PipelineError
 from app.llm.mock import MockPipeline
-from app.llm.openai_compatible import OpenAICompatiblePipeline
 from app.services.common import Runtime
 from app.services.runs import RunService
 from app.services.versions import add_version
+from tests.llm_helpers import ScriptedPipeline
 
 SOURCE_ID = UUID("11111111-1111-4111-8111-111111111111")
 TEXT = (
@@ -245,7 +245,7 @@ async def test_recorded_adapter_response_ir_and_citations():
         created_at=datetime.now(UTC),
     )
     context = RunContext(project_id=uuid4(), project_title="Заявка", sources=[source], questions=[])
-    pipeline = OpenAICompatiblePipeline(
+    pipeline = ScriptedPipeline(
         api_key="test-only",
         complete=lambda _s, _p: json.dumps(graph_case("nested"), ensure_ascii=False),
     )
@@ -274,7 +274,7 @@ async def test_three_repairs_then_failure_without_draft():
         calls.append(json.loads(prompt))
         return json.dumps(invalid)
 
-    pipeline = OpenAICompatiblePipeline(api_key="test-only", complete=complete)
+    pipeline = ScriptedPipeline(api_key="test-only", complete=complete)
     with pytest.raises(PipelineError, match="трёх исправлений"):
         await pipeline.structure(
             RunContext(project_id=uuid4(), project_title="Заявка", sources=[source], questions=[]),
@@ -333,7 +333,7 @@ async def test_empty_manual_lane_blocks_structure_before_model_and_keeps_version
         calls.append(json.loads(prompt))
         return json.dumps(graph_case())
 
-    class RecordedAnalysisPipeline(OpenAICompatiblePipeline):
+    class RecordedAnalysisPipeline(ScriptedPipeline):
         async def analyze(self, context: RunContext) -> AnalysisResult:
             return AnalysisResult()
 
@@ -438,7 +438,7 @@ async def test_open_assumption_has_real_node_binding_and_short_answer_has_questi
         seen.append(json.loads(prompt))
         return json.dumps(data)
 
-    pipeline = OpenAICompatiblePipeline(api_key="test-only", complete=complete)
+    pipeline = ScriptedPipeline(api_key="test-only", complete=complete)
     context = RunContext(
         project_id=q.project_id, project_title="Заявка", sources=[source], questions=[q]
     )

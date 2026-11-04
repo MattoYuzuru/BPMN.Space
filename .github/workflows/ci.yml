@@ -1,0 +1,165 @@
+# Проверки репозитория на GitHub Actions. Зеркалят локальные цели Makefile
+# (`make check`); деплой остаётся ручным (docs/deployment.md).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Новый запуск для той же ветки отменяет устаревший.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  UV_FROZEN: "1"
+
+jobs:
+  lint:
+    name: lint (make check-fast)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - run: npm ci
+      - run: uv sync --frozen
+        working-directory: backend
+      - run: make check-fast
+
+  backend-tests:
+    name: backend-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      # Версия совпадает с compose.yaml.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: arkhitektor
+          POSTGRES_USER: arkhitektor
+          POSTGRES_PASSWORD: local-dev-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U arkhitektor -d arkhitektor"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      # Часть тестов backend поднимает настоящий Node-сервис layout/lint.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: infra/bpmn-tools/package-lock.json
+      - run: npm --prefix infra/bpmn-tools ci --ignore-scripts
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - run: uv sync --frozen
+        working-directory: backend
+      - name: pytest с покрытием (make test-backend)
+        run: make test-backend
+      - name: Тесты PostgreSQL (make test-postgres без запуска compose)
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://arkhitektor:local-dev-only@localhost:5432/arkhitektor
+        run: uv run pytest tests/test_persistence.py tests/test_auth_http.py tests/test_onboarding_http.py -rs
+
+  frontend-tests:
+    name: frontend-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: make test-frontend
+      - name: Сборка и бюджет бандла (make build)
+        run: make build
+
+  bpmn-tools:
+    name: bpmn-tools
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: infra/bpmn-tools/package-lock.json
+      - run: npm --prefix infra/bpmn-tools ci
+      - run: npm --prefix infra/bpmn-tools test
+
+  contract:
+    name: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - run: npm ci
+      - run: uv sync --frozen
+        working-directory: backend
+      - run: scripts/contract-check.sh
+
+  secrets:
+    name: secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: make secrets
+
+  docker:
+    name: docker (build + smoke)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Сборка образов
+        run: docker compose build
+      - name: Запуск стека
+        run: docker compose up -d --wait --wait-timeout 240
+      - name: Проверка здоровья через web
+        run: |
+          curl -fsS --retry 5 --retry-delay 2 http://localhost:8080/health
+          echo
+          curl -fsS -o /dev/null http://localhost:8080/
+      - name: Логи при падении
+        if: failure()
+        run: docker compose logs --tail=200
+      - name: Остановка стека
+        if: always()
+        run: docker compose down -v

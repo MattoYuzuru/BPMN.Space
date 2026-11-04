@@ -1,0 +1,291 @@
+"""Аудио и видео как источник (ADR-0012): ffmpeg → сегменты → STT → текст с таймкодами.
+
+Файл лежит на диске (потоковая загрузка), ffmpeg без shell и с таймаутом извлекает звук,
+переводит в mono 16 кГц opus и режет на сегменты по ~10 минут; сегменты расшифровываются с
+ограниченной параллельностью и склеиваются в текст со строками `[мм:сс] реплика`. Любой
+сегмент, который не удалось расшифровать после повтора, делает весь источник `failed`: тихо
+пропущенных кусков записи нет. Временные файлы удаляются всегда.
+"""
+
+import asyncio
+import json
+import logging
+import shutil
+import tempfile
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from pathlib import Path
+
+from app.domain.concurrency import bounded_gather
+from app.ingest.stt import NoSpeechError, SpeechToText, Transcript
+
+logger = logging.getLogger(__name__)
+
+AUDIO_EXTENSIONS = (".mp3", ".wav", ".ogg", ".opus", ".m4a", ".flac", ".aac", ".webm")
+VIDEO_EXTENSIONS = (".mp4", ".mov", ".mkv")
+# Входные опции ffmpeg/ffprobe: только локальный файл и контейнеры из допустимых расширений.
+# Без них плейлист HLS под видом .mp3 мог бы читать другие файлы или ходить по сети.
+INPUT_GUARD = (
+    "-protocol_whitelist",
+    "file",
+    "-format_whitelist",
+    "mp3,wav,ogg,flac,aac,matroska,webm,mov,mp4,m4a,3gp,3g2,mj2",
+)
+MEDIA_EXTENSIONS = (*AUDIO_EXTENSIONS, *VIDEO_EXTENSIONS)
+
+_SEGMENT_MIME = "audio/ogg"
+_STDERR_LOG_LIMIT = 2000
+_BLOCK_SEC = 30.0
+_RAW_FALLBACK_LIMIT = 60 * 1024 * 1024
+
+
+def is_media(file_name: str) -> bool:
+    return file_name.lower().endswith(MEDIA_EXTENSIONS)
+
+
+class MediaError(Exception):
+    """Не удалось обработать запись. Сообщение — для пользователя."""
+
+
+def format_timecode(seconds: float) -> str:
+    total = max(int(seconds), 0)
+    return f"[{total // 60:02d}:{total % 60:02d}]"
+
+
+@dataclass(frozen=True, slots=True)
+class MediaProbe:
+    duration_sec: float
+    has_audio: bool
+
+
+class FfmpegRunner:
+    """Тонкая обёртка над ffmpeg/ffprobe: аргументы списком, таймаут, без shell."""
+
+    def __init__(self, *, ffmpeg: str, ffprobe: str, timeout_sec: float) -> None:
+        self._ffmpeg = ffmpeg
+        self._ffprobe = ffprobe
+        self._timeout = timeout_sec
+
+    @property
+    def available(self) -> bool:
+        return shutil.which(self._ffmpeg) is not None and shutil.which(self._ffprobe) is not None
+
+    async def _run(self, args: list[str], *, timeout_sec: float) -> bytes:
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *args,
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except OSError as error:
+            raise MediaError("На сервере недоступен ffmpeg для обработки записи") from error
+        try:
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout_sec)
+        except TimeoutError:
+            process.kill()
+            await process.wait()
+            raise MediaError("Обработка записи заняла слишком много времени") from None
+        except asyncio.CancelledError:
+            process.kill()
+            await process.wait()
+            raise
+        if process.returncode != 0:
+            logger.warning(
+                "ffmpeg завершился с кодом %s: %s",
+                process.returncode,
+                stderr.decode(errors="replace")[-_STDERR_LOG_LIMIT:],
+            )
+            raise MediaError("Не удалось прочитать запись: файл повреждён или формат не поддержан")
+        return stdout
+
+    async def probe(self, source: Path) -> MediaProbe:
+        out = await self._run(
+            [
+                self._ffprobe,
+                "-v",
+                "error",
+                "-print_format",
+                "json",
+                "-show_entries",
+                "format=duration:stream=codec_type",
+                *INPUT_GUARD,
+                str(source),
+            ],
+            timeout_sec=min(self._timeout, 120.0),
+        )
+        try:
+            data = json.loads(out)
+            streams = data.get("streams", [])
+            duration = float(data.get("format", {}).get("duration") or 0.0)
+        except (ValueError, TypeError, AttributeError):
+            raise MediaError("Не удалось определить длительность записи") from None
+        has_audio = any(item.get("codec_type") == "audio" for item in streams)
+        return MediaProbe(duration_sec=duration, has_audio=has_audio)
+
+    async def segment(self, source: Path, out_dir: Path, *, segment_sec: int) -> list[Path]:
+        """Звук → mono 16 кГц opus сегментами по `segment_sec`; пути по порядку записи."""
+        pattern = out_dir / "segment_%05d.ogg"
+        await self._run(
+            [
+                self._ffmpeg,
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                *INPUT_GUARD,
+                "-i",
+                str(source),
+                "-vn",
+                "-map",
+                "0:a:0",
+                "-ac",
+                "1",
+                "-ar",
+                "16000",
+                "-c:a",
+                "libopus",
+                "-b:a",
+                "24k",
+                "-f",
+                "segment",
+                "-segment_time",
+                str(segment_sec),
+                "-reset_timestamps",
+                "1",
+                str(pattern),
+            ],
+            timeout_sec=self._timeout,
+        )
+        return await asyncio.to_thread(lambda: sorted(out_dir.glob("segment_*.ogg")))
+
+
+def stitch(parts: list[tuple[float, Transcript | None]], *, block_sec: float = _BLOCK_SEC) -> str:
+    """Склеивает сегменты по времени: `[мм:сс] текст`; реплики с таймкодами объединяются в блоки.
+
+    `parts` — пары «смещение сегмента, расшифровка» (None — тишина). Порядок строго по смещению.
+    """
+    lines: list[str] = []
+    for offset, transcript in sorted(parts, key=lambda item: item[0]):
+        if transcript is None:
+            continue
+        if not transcript.utterances:
+            lines.append(f"{format_timecode(offset)} {transcript.text.strip()}")
+            continue
+        block_start = 0.0
+        block: list[str] = []
+        for item in transcript.utterances:
+            if block and item.start_sec - block_start >= block_sec:
+                lines.append(f"{format_timecode(offset + block_start)} {' '.join(block)}")
+                block = []
+            if not block:
+                block_start = item.start_sec
+            block.append(item.text)
+        if block:
+            lines.append(f"{format_timecode(offset + block_start)} {' '.join(block)}")
+    return "\n".join(lines)
+
+
+class MediaTranscriber:
+    def __init__(
+        self,
+        stt: SpeechToText,
+        runner: FfmpegRunner,
+        *,
+        segment_sec: int = 600,
+        parallel_segments: int = 3,
+        max_duration_sec: float = 4 * 3600.0,
+        timeout_base_sec: float = 60.0,
+        timeout_per_audio_sec: float = 0.3,
+        max_concurrent_jobs: int = 1,
+        raw_fallback: bool = False,
+        attempts: int = 2,
+    ) -> None:
+        self._stt = stt
+        self._runner = runner
+        self._segment_sec = segment_sec
+        self._parallel = parallel_segments
+        self._max_duration = max_duration_sec
+        self._timeout_base = timeout_base_sec
+        self._timeout_per_audio = timeout_per_audio_sec
+        self._jobs = max_concurrent_jobs
+        self._raw_fallback = raw_fallback
+        self._attempts = attempts
+        self._semaphore: asyncio.Semaphore | None = None
+
+    def segment_timeout(self, duration_sec: float) -> float:
+        return self._timeout_base + self._timeout_per_audio * max(duration_sec, 0.0)
+
+    async def transcribe(self, source: Path) -> Transcript:
+        """Расшифровка файла записи; `MediaError` / `NoSpeechError` при неудаче."""
+        if self._semaphore is None:
+            self._semaphore = asyncio.Semaphore(self._jobs)
+        async with self._semaphore:
+            if not self._runner.available:
+                return await self._without_ffmpeg(source)
+            return await self._with_ffmpeg(source)
+
+    async def _without_ffmpeg(self, source: Path) -> Transcript:
+        """Без ffmpeg работает только mock-STT на небольшом файле, чтобы демо не ломалось."""
+        if not self._raw_fallback:
+            raise MediaError("На сервере не установлен ffmpeg: записи пока не обрабатываются")
+        size = (await asyncio.to_thread(source.stat)).st_size
+        if size > _RAW_FALLBACK_LIMIT:
+            raise MediaError("Файл слишком большой для обработки без ffmpeg")
+        data = await asyncio.to_thread(source.read_bytes)
+        return await self._stt.transcribe(data, mime=None)
+
+    async def _with_ffmpeg(self, source: Path) -> Transcript:
+        probe = await self._runner.probe(source)
+        if not probe.has_audio:
+            raise MediaError("В файле нет звуковой дорожки")
+        if probe.duration_sec > self._max_duration:
+            hours = self._max_duration / 3600
+            raise MediaError(f"Запись длиннее {hours:g} ч. Разделите её на части")
+        workdir = Path(await asyncio.to_thread(tempfile.mkdtemp, prefix="media-"))
+        try:
+            segments = await self._runner.segment(source, workdir, segment_sec=self._segment_sec)
+            if not segments:
+                raise MediaError("В записи не найдено звука для расшифровки")
+            parts = await bounded_gather(
+                [
+                    self._segment_factory(index, path, probe.duration_sec)
+                    for index, path in enumerate(segments)
+                ],
+                limit=self._parallel,
+            )
+        finally:
+            await asyncio.to_thread(shutil.rmtree, workdir, True)
+        text = stitch(parts)
+        if not text.strip():
+            raise NoSpeechError
+        return Transcript(text=text, duration_sec=probe.duration_sec)
+
+    def _segment_factory(
+        self, index: int, path: Path, total_sec: float
+    ) -> Callable[[], Awaitable[tuple[float, Transcript | None]]]:
+        offset = float(index * self._segment_sec)
+        duration = max(min(float(self._segment_sec), total_sec - offset), 1.0)
+
+        async def run() -> tuple[float, Transcript | None]:
+            data = await asyncio.to_thread(path.read_bytes)
+            for attempt in range(1, self._attempts + 1):
+                try:
+                    transcript = await asyncio.wait_for(
+                        self._stt.transcribe(data, mime=_SEGMENT_MIME),
+                        timeout=self.segment_timeout(duration),
+                    )
+                except NoSpeechError:
+                    return offset, None
+                except (RuntimeError, TimeoutError):
+                    if attempt == self._attempts:
+                        raise MediaError(
+                            f"Не удалось расшифровать фрагмент записи с {format_timecode(offset)}. "
+                            "Повторите загрузку позже"
+                        ) from None
+                else:
+                    return offset, transcript
+            raise AssertionError  # pragma: no cover
+
+        return run

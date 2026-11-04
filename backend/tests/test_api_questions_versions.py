@@ -81,11 +81,21 @@ def test_unhelpful_answer_returns_question_to_open(client: TestClient) -> None:
 
 
 def test_versions_list_detail_and_download(client: TestClient) -> None:
-    versions = client.get(f"{API}/projects/{DEMO}/versions").json()
+    page = client.get(f"{API}/projects/{DEMO}/versions").json()
+    versions = page["items"]
+    assert page["next_before"] is None
     assert [v["number"] for v in versions] == [2, 1]
-    assert all("xml" not in v for v in versions)
-    v1 = versions[1]
-    assert v1["report"]["lint"] == [
+    assert all("xml" not in v and "trace" not in v and "report" not in v for v in versions)
+    assert versions[1]["lint_count"] == 1
+    assert versions[1]["checkpoint"] is False
+    assert versions[1]["saved_count"] == 1
+    assert versions[0]["diff"] == {"added": 3, "removed": 0, "changed": 2}
+    assert versions[0]["assumption_count"] > 0
+
+    detail = client.get(f"{API}/versions/{versions[0]['id']}").json()
+    assert detail["report"]["lint"] == []
+    old = client.get(f"{API}/versions/{versions[1]['id']}").json()
+    assert old["report"]["lint"] == [
         {
             "rule": "fake-join",
             "message": "Входящие потоки не объединены шлюзом",
@@ -93,13 +103,8 @@ def test_versions_list_detail_and_download(client: TestClient) -> None:
             "severity": "warning",
         }
     ]
-    assert versions[0]["diff"] == {"added": 3, "removed": 0, "changed": 2}
-    assumptions = {
-        (a["element_id"], a["question_id"]) for a in versions[0]["report"]["assumptions"]
-    }
+    assumptions = {(a["element_id"], a["question_id"]) for a in detail["report"]["assumptions"]}
     assert ("Gateway_Power", _question("Q-2")) in assumptions
-
-    detail = client.get(f"{API}/versions/{versions[0]['id']}").json()
     assert detail["xml"] == read_bpmn("tp861_v2")
 
     download = client.get(f"{API}/versions/{versions[0]['id']}/xml")
@@ -169,16 +174,58 @@ def test_save_manual_diagram_errors(client: TestClient) -> None:
 
 def test_identical_diagram_save_does_not_create_version(client: TestClient) -> None:
     versions = client.get(f"{API}/projects/{DEMO}/versions").json()
-    head = versions[0]
+    head = versions["items"][0]
     xml = client.get(f"{API}/versions/{head['id']}").json()["xml"]
     for _ in range(3):
         response = client.put(
             f"{API}/projects/{DEMO}/diagram", json={"xml": xml, "base_version_id": head["id"]}
         )
         assert response.status_code == 201
-        assert response.json() == head
+        assert response.json()["id"] == head["id"]
     assert client.get(f"{API}/projects/{DEMO}/versions").json() == versions
     stale = client.put(
-        f"{API}/projects/{DEMO}/diagram", json={"xml": xml, "base_version_id": versions[1]["id"]}
+        f"{API}/projects/{DEMO}/diagram",
+        json={"xml": xml, "base_version_id": versions["items"][1]["id"]},
     )
     assert stale.status_code == 409
+
+
+def test_versions_are_paginated_by_number_cursor(client: TestClient) -> None:
+    first = client.get(f"{API}/projects/{DEMO}/versions", params={"limit": 1}).json()
+    assert [v["number"] for v in first["items"]] == [2]
+    assert first["next_before"] == 2
+    second = client.get(
+        f"{API}/projects/{DEMO}/versions", params={"limit": 1, "before": first["next_before"]}
+    ).json()
+    assert [v["number"] for v in second["items"]] == [1]
+    assert second["next_before"] is None
+    for bad in ({"limit": 0}, {"limit": 101}, {"before": 0}):
+        assert client.get(f"{API}/projects/{DEMO}/versions", params=bad).status_code == 422
+
+
+def test_checkpoint_marks_version_and_closes_session(client: TestClient) -> None:
+    head = client.get(f"{API}/projects/{DEMO}").json()["latest_version"]["id"]
+    response = client.post(
+        f"{API}/projects/{DEMO}/versions/{head}/checkpoint", json={"label": " Согласовано "}
+    )
+    assert response.status_code == 200
+    assert response.json()["checkpoint"] is True
+    assert response.json()["label"] == "Согласовано"
+    listed = client.get(f"{API}/projects/{DEMO}/versions").json()["items"][0]
+    assert listed["checkpoint"] is True
+    assert listed["label"] == "Согласовано"
+
+    assert (
+        client.post(
+            f"{API}/projects/{DEMO}/versions/{head}/checkpoint", json={"label": "я" * 121}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(f"{API}/projects/{DEMO}/versions/{MISSING}/checkpoint", json={}).status_code
+        == 404
+    )
+    assert (
+        client.post(f"{API}/projects/{MISSING}/versions/{head}/checkpoint", json={}).status_code
+        == 404
+    )

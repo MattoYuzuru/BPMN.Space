@@ -6,6 +6,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import { api, type Schemas, unwrap } from '@/shared/api/client'
+import { resetAccountState } from '@/shared/lib/account-reset'
 import type { Session } from './model'
 
 export const sessionKeys = {
@@ -32,6 +33,8 @@ export function useCurrentUser() {
 /** Всё, что относится к прошлому пользователю, выбрасываем: проекты, версии, вопросы. */
 export function dropAccountData(client: QueryClient) {
   client.removeQueries({ predicate: (query) => query.queryKey[0] !== sessionKeys.all[0] })
+  // Хранилища вне кэша запросов (прогоны, запомненная модель, ...) тоже принадлежат прошлому аккаунту.
+  resetAccountState()
 }
 
 export interface Credentials {

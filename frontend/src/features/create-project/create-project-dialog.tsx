@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { type FormEvent, useEffect, useState } from 'react'
 import { examplesQueryOptions } from '@/entities/example'
 import { useCreateProjectFromExample } from '@/entities/project'
-import { ACCEPTED_FILES } from '@/entities/source'
+import { ACCEPTED_FILES, ACCEPTED_FILES_HINT } from '@/entities/source'
 import { appendDictation, VoiceDictation } from '@/features/voice-record/voice-dictation'
 import { errorMessage } from '@/shared/api/client'
 import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
@@ -168,7 +168,7 @@ function BlankForm() {
               accept={ACCEPTED_FILES.join(',')}
               onFiles={addFiles}
               title="Перетащите документы"
-              hint=".txt, .md, .csv, .docx, .pdf"
+              hint={ACCEPTED_FILES_HINT}
             />
             {files.length > 0 && (
               <ul className="flex flex-wrap gap-1.5" aria-label="Выбранные документы">

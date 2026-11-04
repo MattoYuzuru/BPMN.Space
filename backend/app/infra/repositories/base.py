@@ -1,6 +1,6 @@
 """Интерфейсы репозиториев. В приложении используется SQL-реализация, в тестах — in-memory."""
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime
@@ -8,15 +8,18 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from app.domain.access import ProjectMember, ProjectRole, ProjectScope, ResourceKind, ShareLink
+from app.domain.credentials import LlmCredential
 from app.domain.models import (
     LlmCall,
     Project,
     Question,
     QuestionStatus,
     Run,
+    RunMode,
     Source,
     SourceStatus,
     Version,
+    VersionSummary,
 )
 from app.domain.onboarding import (
     ChecklistItem,
@@ -42,6 +45,19 @@ class AccessProjectMissingError(Exception):
     """Проект удалён между проверкой ссылки и изменением состава участников."""
 
 
+@dataclass(frozen=True, slots=True)
+class ProjectStats:
+    """Агрегаты карточки проекта; считаются в БД без загрузки содержимого."""
+
+    sources: int = 0  # без ответов на вопросы
+    has_material: bool = False  # есть активный нефейловый источник (не ответ)
+    questions_open: int = 0
+    questions_resolved: int = 0
+    versions: int = 0
+    lanes: tuple[str, ...] = ()  # дорожки последней версии
+    active_run_mode: RunMode | None = None
+
+
 class ActiveRunConflictError(Exception):
     """В БД уже есть активный прогон этого проекта (гарантия уникального индекса)."""
 
@@ -54,6 +70,13 @@ class ProjectRepository(Protocol):
         ...
 
     async def get(self, project_id: UUID) -> Project | None: ...
+    async def stats(self, project_ids: Sequence[UUID]) -> dict[UUID, ProjectStats]:
+        """Агрегаты карточек: число запросов не зависит от числа проектов.
+
+        Проекты без данных возвращаются с нулевыми значениями.
+        """
+        ...
+
     async def update(self, project: Project) -> None:
         """Меняет только название и описание (`updated_at` — через `touch`)."""
         ...
@@ -175,6 +198,9 @@ class RunRepository(Protocol):
         ...
 
     async def active_for_project(self, project_id: UUID) -> Run | None: ...
+    async def last_succeeded_id(self, project_id: UUID) -> UUID | None:
+        """Id последнего успешного прогона (по `started_at`) без загрузки IR и анализа."""
+        ...
 
 
 class VersionRepository(Protocol):
@@ -185,6 +211,32 @@ class VersionRepository(Protocol):
         ...
 
     async def latest(self, project_id: UUID) -> Version | None: ...
+    async def by_number(self, project_id: UUID, number: int) -> Version | None: ...
+
+    async def list_page(
+        self, project_id: UUID, *, limit: int, before: int | None = None
+    ) -> list[VersionSummary]:
+        """Лёгкая страница истории: без XML, цитат и отчёта (только счётчики проверки).
+
+        Версии по убыванию номера строго ниже `before`. Чтобы узнать, есть ли следующая
+        страница, вызывающий запрашивает `limit + 1`.
+        """
+        ...
+
+    async def replace(self, old_id: UUID, version: Version) -> None:
+        """Заменить последнюю версию новой строкой с тем же номером (сессия правок).
+
+        Только под блокировкой проекта и только для версии без зависимых (`has_dependants`).
+        """
+        ...
+
+    async def has_dependants(self, version_id: UUID) -> bool:
+        """Версия служит базой дельты другой версии или на неё ссылается прогон."""
+        ...
+
+    async def mark_checkpoint(self, version_id: UUID, label: str | None) -> Version | None:
+        """Закрепить версию как контрольную точку (идемпотентно); имя заменяется, если задано."""
+        ...
 
 
 class LlmCallRepository(Protocol):
@@ -272,6 +324,35 @@ class OnboardingRepository(Protocol):
         ...
 
 
+class LlmCredentialRepository(Protocol):
+    async def list_by_user(self, user_id: UUID) -> list[LlmCredential]:
+        """Ключи пользователя: по умолчанию первым, затем по времени создания."""
+        ...
+
+    async def get(self, credential_id: UUID) -> LlmCredential | None: ...
+    async def count(self, user_id: UUID) -> int: ...
+    async def save(self, credential: LlmCredential) -> None:
+        """Создаёт или обновляет; `is_default=True` снимает флаг с остальных ключей владельца."""
+        ...
+
+    async def update_fields(
+        self,
+        credential_id: UUID,
+        *,
+        label: str | None = None,
+        default_model: str | None = None,
+        is_default: bool | None = None,
+        clear_default_model: bool = False,
+    ) -> LlmCredential | None:
+        """Меняет только перечисленные колонки: параллельный `mark_used` не затирается."""
+        ...
+
+    async def delete(self, credential_id: UUID) -> bool: ...
+    async def mark_used(self, credential_id: UUID, at: datetime, error: str | None) -> None:
+        """Время последнего использования и текст последней ошибки (`None` — успех)."""
+        ...
+
+
 @dataclass(frozen=True, slots=True)
 class Repositories:
     projects: ProjectRepository
@@ -284,6 +365,8 @@ class Repositories:
     access: AccessRepository | None = None
     # None, если хранилище не умеет онбординг; обе реализации (SQL и in-memory) его дают.
     onboarding: OnboardingRepository | None = None
+    # None, если хранилище не умеет ключи моделей; SQL и in-memory его дают.
+    llm_credentials: LlmCredentialRepository | None = None
     # Открывает транзакцию PostgreSQL; None — репозитории и так атомарны (in-memory).
     transaction: Callable[[], AbstractAsyncContextManager["Repositories"]] | None = None
 

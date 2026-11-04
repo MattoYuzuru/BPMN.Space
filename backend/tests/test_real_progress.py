@@ -3,20 +3,42 @@
 from unittest.mock import AsyncMock
 
 import pytest
+from pydantic import SecretStr
 
 from app.config import Settings
 from app.container import _mock_pace, build_container
-from app.domain.models import RunStage
+from app.domain.analysis import AnalysisResult, RunContext
+from app.domain.models import RunMode, RunStage, SourceKind
 
 
-@pytest.mark.parametrize("provider", ["deepseek", "openai_compatible"])
-async def test_real_provider_never_waits_for_demo_pace(provider, monkeypatch) -> None:
-    sleep = AsyncMock()
-    monkeypatch.setattr("app.container.asyncio.sleep", sleep)
-    settings = Settings(llm_provider=provider, mock_delay_scale=1)
-    for stage in RunStage:
-        await _mock_pace(settings)(stage)
-    sleep.assert_not_awaited()
+class _FakePipeline:
+    model_name = "fake"
+
+    def __init__(self, provider: str) -> None:
+        self.provider = provider
+
+    async def aclose(self) -> None:
+        return None
+
+    async def analyze(self, context: RunContext) -> AnalysisResult:
+        return AnalysisResult()
+
+
+@pytest.mark.parametrize(
+    ("provider", "paced"), [("openai_compatible", False), ("anthropic", False), ("mock", True)]
+)
+async def test_only_mock_pipeline_waits_for_demo_pace(provider: str, paced: bool) -> None:
+    container = build_container(Settings(mock_delay_scale=0, seed_demo_data=False))
+    pace = AsyncMock()
+    container.runs._pace = pace
+    container.runs._pipeline = _FakePipeline(provider)
+    project = (await container.projects.create(title="П", description=None)).project
+    await container.sources.create_text(
+        project.id, content="Текст.", title="Т", kind=SourceKind.TEXT, duration_sec=None
+    )
+    await container.runs.start(project.id, mode=RunMode.ANALYZE, created_by=None)
+    await container.spawner.wait_idle()
+    assert bool(pace.await_count) is paced
 
 
 async def test_mock_demo_pace_remains_configurable(monkeypatch) -> None:
@@ -32,7 +54,7 @@ def test_real_document_parser_has_no_demo_delay(provider, delay) -> None:
         database_url=None,
         seed_demo_data=False,
         llm_provider=provider,
-        llm_api_key="test-only",
+        llm_api_key=SecretStr("test-only"),
         llm_model="test-model",
         llm_base_url="https://llm.example.test/v1",
         mock_delay_scale=1,

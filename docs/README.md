@@ -3,6 +3,7 @@
 - [Архитектура и API](rfc/0001-architecture.md)
 - [Совместная работа в реальном времени](rfc/0002-realtime-collaboration.md)
 - [Воспроизведение BPMN и модель бизнес-времени](rfc/0003-process-playback-and-timing.md)
+- [Агентный режим: инструменты для чтения источников](rfc/0004-agent-mode.md)
 - Backend:
   - [Аккаунты и общий доступ к проектам](backend/auth-and-sharing.md)
   - [Постоянное хранение данных](backend/persistence.md)
@@ -24,3 +25,6 @@
   - [Компактное хранение истории XML](adr/0007-compact-version-storage.md)
   - [Полное чтение оснований, смысловая проверка и восстановление](adr/0008-evidence-semantic-review-and-recovery.md)
   - [Удаление проекта и выход участника](adr/0009-project-deletion-and-leaving.md)
+  - [Сессии правок и контрольные точки версий](adr/0010-editing-sessions-and-checkpoints.md)
+  - [Пользовательские ключи моделей](adr/0011-user-llm-credentials.md)
+  - [Длинные документы, таблицы и записи](adr/0012-long-documents-and-media.md)

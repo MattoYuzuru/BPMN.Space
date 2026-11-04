@@ -37,8 +37,9 @@ def build_rules(settings: Settings) -> tuple[list[BodyRule], BodyRule]:
     specific = [
         BodyRule(
             re.compile(rf"^{prefix}/projects/[^/]+/sources/file$"),
-            settings.max_upload_bytes + _MULTIPART_OVERHEAD,
-            too_large("Файл", settings.max_upload_bytes).message,
+            # Документы и записи делят маршрут: точный лимит по типу проверяют сервис и роут.
+            max(settings.max_upload_bytes, settings.max_media_bytes) + _MULTIPART_OVERHEAD,
+            too_large("Файл", max(settings.max_upload_bytes, settings.max_media_bytes)).message,
         ),
         BodyRule(
             re.compile(rf"^{prefix}/transcriptions$"),

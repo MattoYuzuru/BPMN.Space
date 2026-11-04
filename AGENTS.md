@@ -17,6 +17,10 @@
 Полнота контекста, независимая смысловая сверка и повтор запуска после рестарта —
 [ADR-0008](docs/adr/0008-evidence-semantic-review-and-recovery.md); это не OCR и не распределённая очередь.
 
+Длинные документы, XLSX/PPTX, страницы PDF без текста и расшифровка записей:
+[ADR-0012](docs/adr/0012-long-documents-and-media.md), пределы — `docs/backend/generation-quality.md`.
+
+Сессии правок и контрольные точки (автосохранения сливаются в версию): [ADR-0010](docs/adr/0010-editing-sessions-and-checkpoints.md).
 Удаление и выход участника: [ADR-0009](docs/adr/0009-project-deletion-and-leaving.md).
 `DELETE /projects/{id}` зависит от роли: owner удаляет для всех, участник выходит сам.
 
@@ -30,6 +34,7 @@
 | `frontend/src/entities/{session,share}`, маршруты `/login`, `/share/$token` | аккаунты и общий доступ: правила — `docs/backend/auth-and-sharing.md`, UI-паттерны — стайлгайд §16 |
 | `frontend/src/features/onboarding`, `widgets/onboarding-root`, `shared/lib/{tour-anchors,onboarding-signals}.ts` | обучение: движок тура, сценарий из 11 шагов, приветствие, подсказки-указатели, якоря `data-tour`, сигналы приложения — `docs/frontend/onboarding.md`, паттерн — стайлгайд §10 |
 | `backend/app/{domain,services,api/v1}/onboarding.py`, `fixtures/samples*` | онбординг: тур, чек-лист «Начало работы», учебные материалы «Примеры»; правила — `docs/backend/onboarding.md` |
+| `backend/app/llm/{client,factory,pipeline,anthropic,openai,openai_compatible,net_guard}.py`, `services/{model_resolver,llm_credentials}.py`, `infra/crypto.py`, `api/v1/llm_credentials.py`, `frontend/src/{entities/llm-credential,features/llm-credentials,features/model-picker}`, маршрут `/settings` | модельно-независимый запуск: свои ключи пользователя (шифруются), провайдеры Anthropic/OpenAI/совместимые, выбор модели на прогон, защита от SSRF — [ADR-0011](docs/adr/0011-user-llm-credentials.md), `docs/backend/подключение-провайдеров.md` |
 | `backend/migrations/` | Alembic-миграции PostgreSQL; правила и сохраняемые сущности — `docs/backend/persistence.md` |
 | `backend/app/fixtures/` | демо-данные mock-а: тексты, BPMN-схемы, записанные ответы модели (`make fixtures` пересобирает схемы) |
 | `examples/` | примеры входа и выхода для жюри (копии фикстур) |
@@ -42,7 +47,7 @@
 | `docs/` | RFC, ADR, стайлгайд и архитектура фронтенда (`docs/frontend/`), бэкенда (`docs/backend/`) |
 | `scripts/` | `contract-check.sh`, `verify.sh`, `mr-report.sh`, `agent-hooks/` |
 | `compose.yaml`, `infra/caddy/` | локальный стек: `make up` → http://localhost:8080 |
-| `docs/deployment.md`, `scripts/deploy.sh` | ручной деплой проверенного commit SHA на демо-VM; GitLab CI/CD не используется |
+| `docs/deployment.md`, `scripts/deploy.sh` | ручной деплой проверенного commit SHA на демо-VM; GitLab CI/CD не используется; проверки на GitHub Actions не деплоят |
 
 ## Команды
 
@@ -84,6 +89,7 @@ make deploy       # задеплоить commit из main после MR и make 
 
 - Git (lefthook, ставится при `npm ci`): pre-commit — biome, design-lint, ruff, secretlint по изменённым файлам; pre-push выбирает точечные проверки документации/agent hooks либо полный `make check` по публикуемому delta.
 - Claude Code (`.claude/settings.json`): после правки файла — его форматирование и линт; перед завершением ответа — `make check-fast` для новых изменений этой сессии, с кешем успешного неизменного кандидата. Чтение и ранее оставленный dirty checkout сами по себе gate не запускают.
+- GitHub Actions (`.github/workflows/ci.yml`): на push в `main` и pull request гоняет lint, тесты backend (+ PostgreSQL), frontend, bpmn-tools, контракт, секреты и сборку Docker-стека со smoke-проверкой `/health`. Playwright e2e — отдельно (`e2e.yml`, вручную и раз в сутки). Деплой остаётся ручным.
 - Другие агенты: после изменения кода запускайте `make check-fast`, перед MR с кодом — `make verify`. Для документации/agent hooks достаточно [точечных проверок](scripts/agent-hooks/README.md).
 
 ## Скиллы (`.claude/skills/`)

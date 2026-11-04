@@ -55,6 +55,13 @@ class Run(ApiModel):
     summary: RunSummary | None = None
     version_id: UUID | None = Field(default=None, description="Версия, собранная прогоном")
     error: str | None = Field(default=None, description="Причина для `status=failed`")
+    provider: str | None = Field(
+        default=None, description="Провайдер модели: anthropic, openai, openai_compatible, mock"
+    )
+    model: str | None = Field(default=None, description="Модель, на которой выполнен прогон")
+    credential_id: UUID | None = Field(
+        default=None, description="Ключ пользователя, с которым запущен прогон; null — сервер"
+    )
     warnings: list[str] = Field(
         default_factory=list,
         description=(
@@ -65,6 +72,7 @@ class Run(ApiModel):
 
     @classmethod
     def of(cls, run: models.Run) -> "Run":
+        execution = (run.ir or {}).get("execution", {})
         return cls(
             id=run.id,
             project_id=run.project_id,
@@ -79,6 +87,9 @@ class Run(ApiModel):
             version_id=run.version_id,
             error=run.error,
             warnings=list(run.warnings),
+            provider=execution.get("provider"),
+            model=run.model,
+            credential_id=execution.get("credential_id"),
         )
 
 
@@ -100,6 +111,13 @@ class RunCreate(ApiModel):
         return self
 
     mode: RunMode = Field(description="`analyze` — только вопросы, `build` — вопросы и схема")
+    credential_id: UUID | None = Field(
+        default=None,
+        description="Свой ключ модели; не задан — ключ по умолчанию, затем модель сервера",
+    )
+    model: str | None = Field(
+        default=None, max_length=128, description="Модель; требует `credential_id`"
+    )
 
 
 class StageEventData(ApiModel):

@@ -25,6 +25,7 @@ from app.container import build_container
 from app.domain.analysis import AnalysisResult
 from app.domain.bpmn.compiler import compile_graph
 from app.domain.bpmn.ir import GraphIR
+from app.domain.credentials import LlmCredential
 from app.domain.models import (
     Answer,
     LlmCall,
@@ -72,7 +73,6 @@ from app.infra.version_maintenance import maintain as maintain_versions
 from app.ingest.parsers import LocalDocumentParser
 from app.llm.base import PipelineError
 from app.llm.mock import MockPipeline
-from app.llm.openai_compatible import OpenAICompatiblePipeline
 from app.main import create_app
 from app.services.access import AccessService, ProjectRole
 from app.services.common import Runtime
@@ -83,13 +83,14 @@ from app.services.runs import RunService, _RunState
 from app.services.sharing import SharingService
 from app.services.sources import SourceService
 from app.services.versions import VersionService, add_version
+from tests.llm_helpers import ScriptedPipeline
 from tests.test_graph_ir import SOURCE_ID, TEXT, graph_case
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
 
 
-@pytest.fixture
-async def sql_store() -> AsyncIterator[tuple[SqlStore, async_sessionmaker[AsyncSession]]]:
+@asynccontextmanager
+async def sql_test_store() -> AsyncIterator[tuple[SqlStore, async_sessionmaker[AsyncSession]]]:
     url = os.getenv("TEST_DATABASE_URL")
     if not url:
         pytest.skip("TEST_DATABASE_URL не задан; PostgreSQL-интеграционный тест пропущен")
@@ -118,6 +119,12 @@ async def sql_store() -> AsyncIterator[tuple[SqlStore, async_sessionmaker[AsyncS
         async with admin_engine.begin() as connection:
             await connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
         await admin_engine.dispose()
+
+
+@pytest.fixture
+async def sql_store() -> AsyncIterator[tuple[SqlStore, async_sessionmaker[AsyncSession]]]:
+    async with sql_test_store() as stored:
+        yield stored
 
 
 def test_postgres_schema_has_domain_tables_and_active_run_constraint() -> None:
@@ -944,7 +951,7 @@ async def test_graph_commit_rollback_keeps_run_consistent_and_allows_retry(  # n
         ir={"execution": {"base_version_id": str(head.id), "replace_manual": False}},
     )
     await repos.runs.add(run)
-    pipeline = OpenAICompatiblePipeline(
+    pipeline = ScriptedPipeline(
         api_key="recorded-only", complete=lambda _s, _p: json.dumps(graph_case())
     )
     spawner = AsyncioTaskSpawner()
@@ -1100,7 +1107,7 @@ async def test_source_insert_serializes_with_snapshot_resolution_in_postgres(  #
     spawner = AsyncioTaskSpawner()
     runs = RunService(
         repos,
-        pipeline=OpenAICompatiblePipeline(api_key="recorded-only", complete=recorded),
+        pipeline=ScriptedPipeline(api_key="recorded-only", complete=recorded),
         bpmn_tools=MockBpmnTools(),
         events=InMemoryRunEventBus(),
         spawner=spawner,
@@ -1498,10 +1505,12 @@ async def test_compact_storage_downgrade_requires_lossless_restore(sql_store) ->
         config.attributes["connection"] = connection
         command.downgrade(config, "0010_merge_heads")
 
-    async with sessions.begin() as session:
+    # Отказ откатывается целиком: DDL более новых миграций (0013, 0012) не должен остаться.
+    async with sessions() as session:
         connection = await session.connection()
         with pytest.raises(RuntimeError, match="restore"):
             await connection.run_sync(downgrade)
+        await session.rollback()
     assert await repos.versions.get(version.id) == version
     assert await repos.versions.maintain_batch(project.id, restore=True) == 1
     async with sessions.begin() as session:
@@ -1581,3 +1590,68 @@ async def test_interrupted_runs_recover_twice_then_stop(sql_store):
     saved = await repos.runs.get(run.id)
     assert saved.status is RunStatus.FAILED
     assert "лимит" in saved.error
+
+
+async def test_llm_credentials_persist_encrypted_with_single_default_and_cascade(
+    sql_store,
+) -> None:
+    store, sessions = sql_store
+    repo = store.repositories().llm_credentials
+    assert repo is not None
+    user_id = uuid4()
+    async with sessions.begin() as session:
+        session.add(
+            UserRow(
+                id=user_id,
+                email="keys@example.com",
+                hashed_password="x",  # noqa: S106
+                is_active=True,
+                is_superuser=False,
+                is_verified=False,
+            )
+        )
+    secret = "sk-plaintext-secret-9999"  # noqa: S105
+    now = datetime.now(UTC)
+
+    def credential(label: str, *, default: bool) -> LlmCredential:
+        return LlmCredential(
+            id=uuid4(),
+            user_id=user_id,
+            provider="openai",
+            label=label,
+            base_url=None,
+            encrypted_key=b"gAAAA-cipher-not-" + label.encode(),
+            key_hint=secret[-4:],
+            default_model="gpt-4o",
+            is_default=default,
+            created_at=now,
+        )
+
+    first, second = credential("a", default=True), credential("b", default=True)
+    await repo.save(first)
+    await repo.save(second)  # новый ключ по умолчанию снимает флаг с первого
+    items = await repo.list_by_user(user_id)
+    assert [item.label for item in items] == ["b", "a"]
+    assert [item.is_default for item in items] == [True, False]
+    assert await repo.count(user_id) == 2
+    await repo.mark_used(first.id, now, "x" * 600)
+    reloaded = await repo.get(first.id)
+    assert reloaded is not None
+    assert reloaded.last_error == "x" * 500
+    # Правка настроек меняет только свои колонки: отметка использования переживает её.
+    updated = await repo.update_fields(first.id, label="a2", is_default=True)
+    assert updated is not None
+    assert (updated.label, updated.is_default) == ("a2", True)
+    assert updated.last_error == "x" * 500
+    assert updated.last_used_at == now
+    assert [item.is_default for item in await repo.list_by_user(user_id)] == [True, False]
+    cleared = await repo.update_fields(first.id, clear_default_model=True)
+    assert cleared is not None
+    assert cleared.default_model is None
+    assert await repo.update_fields(uuid4(), label="x") is None
+    async with sessions() as session:
+        raw = (await session.execute(text("SELECT encrypted_key FROM user_llm_credentials"))).all()
+    assert all(secret.encode() not in bytes(row[0]) for row in raw)
+    async with sessions.begin() as session:
+        await session.execute(text("DELETE FROM users WHERE id = :id"), {"id": user_id})
+    assert await repo.count(user_id) == 0

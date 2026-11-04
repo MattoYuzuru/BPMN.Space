@@ -146,6 +146,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/llm-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Llm Credentials */
+        get: operations["list_llm_credentials"];
+        put?: never;
+        /**
+         * Create Llm Credential
+         * @description Проверяет ключ запросом списка моделей у провайдера и сохраняет его зашифрованным.
+         */
+        post: operations["create_llm_credential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/llm-credentials/{credential_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Llm Credential */
+        delete: operations["delete_llm_credential"];
+        options?: never;
+        head?: never;
+        /** Update Llm Credential */
+        patch: operations["update_llm_credential"];
+        trace?: never;
+    };
+    "/api/v1/me/llm-credentials/{credential_id}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Llm Models */
+        get: operations["list_llm_models"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/onboarding": {
         parameters: {
             query?: never;
@@ -555,8 +611,10 @@ export interface paths {
         put?: never;
         /**
          * Create File Source
-         * @description Документ. `.txt`/`.md`/`.csv` готовы сразу; `.docx`/`.pdf` приходят в `processing`
-         *     и становятся `ready` или `failed` в фоне — обновляйте проект, пока есть `processing`.
+         * @description Документ или запись. `.txt`/`.md`/`.csv` готовы сразу; `.docx`/`.xlsx`/`.pptx`/`.pdf` и
+         *     аудио/видео приходят в `processing` и становятся `ready` или `failed` в фоне — обновляйте
+         *     проект, пока есть `processing`. Страницы PDF без текста дают `ready` с `warning`.
+         *     Записи пишутся на диск потоком (лимит `MAX_MEDIA_BYTES`), документы — `MAX_UPLOAD_BYTES`.
          */
         post: operations["create_file_source"];
         delete?: never;
@@ -615,11 +673,31 @@ export interface paths {
         };
         /**
          * List Versions
-         * @description Версии без XML, последняя — первой.
+         * @description Страница истории без XML, цитат и отчёта: новые первыми, дальше — по `next_before`.
          */
         get: operations["list_versions"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/versions/{version_id}/checkpoint": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Checkpoint Version
+         * @description Закрепить версию как контрольную точку: автосохранения в неё больше не вливаются.
+         */
+        post: operations["checkpoint_version"];
         delete?: never;
         options?: never;
         head?: never;
@@ -952,6 +1030,11 @@ export interface components {
         /** AssistantRequest */
         AssistantRequest: {
             /**
+             * Credential Id
+             * @description Свой ключ модели; не задан — ключ по умолчанию, затем сервер
+             */
+            credential_id?: string | null;
+            /**
              * Diagram Xml
              * @default
              */
@@ -960,6 +1043,8 @@ export interface components {
             history?: components["schemas"]["AssistantTurn"][];
             /** Message */
             message: string;
+            /** Model */
+            model?: string | null;
         };
         /** AssistantResponse */
         AssistantResponse: {
@@ -995,7 +1080,7 @@ export interface components {
         Body_create_file_source: {
             /**
              * File
-             * @description .txt, .md, .csv, .docx или .pdf
+             * @description .txt, .md, .csv, .docx, .xlsx, .pptx, .pdf или аудио/видео (.mp3 .wav .ogg .opus .m4a .flac .aac .webm .mp4 .mov .mkv)
              */
             file: string;
             /** Title */
@@ -1042,6 +1127,14 @@ export interface components {
         ChecklistUpdate: {
             /** Hidden */
             hidden: boolean;
+        };
+        /** CheckpointRequest */
+        CheckpointRequest: {
+            /**
+             * Label
+             * @description Имя контрольной точки; пустое — без имени
+             */
+            label?: string | null;
         };
         /** CollaborationTicket */
         CollaborationTicket: {
@@ -1169,8 +1262,110 @@ export interface components {
          * @enum {string}
          */
         LintSeverity: "error" | "warning";
+        /** LlmCredential */
+        LlmCredential: {
+            /**
+             * Base Url
+             * @description Только для совместимого провайдера
+             */
+            base_url: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Default Model */
+            default_model: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Is Default */
+            is_default: boolean;
+            /**
+             * Key Hint
+             * @description Последние 4 символа ключа; пусто у коротких ключей
+             */
+            key_hint: string;
+            /** Label */
+            label: string;
+            /**
+             * Last Error
+             * @description Ошибка последнего использования ключа
+             */
+            last_error: string | null;
+            /** Last Used At */
+            last_used_at: string | null;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "anthropic" | "openai" | "openai_compatible";
+        };
+        /** LlmCredentialCreate */
+        LlmCredentialCreate: {
+            /**
+             * Api Key
+             * Format: password
+             * @description Принимается один раз; сохраняется зашифрованным
+             */
+            api_key: string;
+            /** Base Url */
+            base_url?: string | null;
+            /** Default Model */
+            default_model?: string | null;
+            /**
+             * Is Default
+             * @default false
+             */
+            is_default: boolean;
+            /** Label */
+            label?: string | null;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "anthropic" | "openai" | "openai_compatible";
+        };
+        /** LlmCredentialList */
+        LlmCredentialList: {
+            /** Items */
+            items: components["schemas"]["LlmCredential"][];
+            /**
+             * Storage Available
+             * @description false — на сервере не задан CREDENTIALS_ENCRYPTION_KEY, ключи не принимаются
+             */
+            storage_available: boolean;
+        };
+        /** LlmCredentialUpdate */
+        LlmCredentialUpdate: {
+            /** Default Model */
+            default_model?: string | null;
+            /** Is Default */
+            is_default?: boolean | null;
+            /** Label */
+            label?: string | null;
+        };
+        /** LlmModel */
+        LlmModel: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+        };
+        /** LlmModelList */
+        LlmModelList: {
+            /** Items */
+            items: components["schemas"]["LlmModel"][];
+        };
         /** LocalAssistantRequest */
         LocalAssistantRequest: {
+            /**
+             * Credential Id
+             * @description Свой ключ модели; не задан — ключ по умолчанию, затем сервер
+             */
+            credential_id?: string | null;
             /**
              * Diagram Xml
              * @default
@@ -1180,6 +1375,8 @@ export interface components {
             history?: components["schemas"]["AssistantTurn"][];
             /** Message */
             message: string;
+            /** Model */
+            model?: string | null;
             /** Project Title */
             project_title: string;
             /**
@@ -1485,6 +1682,11 @@ export interface components {
         /** Run */
         Run: {
             /**
+             * Credential Id
+             * @description Ключ пользователя, с которым запущен прогон; null — сервер
+             */
+            credential_id?: string | null;
+            /**
              * Error
              * @description Причина для `status=failed`
              */
@@ -1497,6 +1699,11 @@ export interface components {
              */
             id: string;
             mode: components["schemas"]["RunMode"];
+            /**
+             * Model
+             * @description Модель, на которой выполнен прогон
+             */
+            model?: string | null;
             /** Progress */
             progress: number;
             /**
@@ -1504,6 +1711,11 @@ export interface components {
              * Format: uuid
              */
             project_id: string;
+            /**
+             * Provider
+             * @description Провайдер модели: anthropic, openai, openai_compatible, mock
+             */
+            provider?: string | null;
             /** @description Текущий или последний этап; null — в очереди */
             stage: components["schemas"]["RunStage"] | null;
             /**
@@ -1537,8 +1749,18 @@ export interface components {
              * @description Голова, которую видит инициатор; устаревшая — 409
              */
             base_version_id?: string | null;
+            /**
+             * Credential Id
+             * @description Свой ключ модели; не задан — ключ по умолчанию, затем модель сервера
+             */
+            credential_id?: string | null;
             /** @description `analyze` — только вопросы, `build` — вопросы и схема */
             mode: components["schemas"]["RunMode"];
+            /**
+             * Model
+             * @description Модель; требует `credential_id`
+             */
+            model?: string | null;
             /**
              * Replace Manual
              * @description Осознанно пересобрать из источников вместо manual; требует актуальный base_version_id
@@ -1818,6 +2040,16 @@ export interface components {
             status: components["schemas"]["SourceStatus"];
             /** Title */
             title: string;
+            /**
+             * Unreadable Pages
+             * @description Номера страниц PDF без текстового слоя (сканы): их текст не извлечён
+             */
+            unreadable_pages?: number[];
+            /**
+             * Warning
+             * @description Для `status=ready`: источник прочитан не полностью (см. `unreadable_pages`)
+             */
+            warning?: string | null;
         };
         /**
          * SourceKind
@@ -1989,10 +2221,22 @@ export interface components {
              */
             actor_email?: string | null;
             /**
+             * Assumption Count
+             * @description Элементов на допущениях
+             */
+            assumption_count: number;
+            /**
+             * Checkpoint
+             * @description Версия закреплена и не принимает автосохранения
+             */
+            checkpoint: boolean;
+            /**
              * Created At
              * Format: date-time
+             * @description Начало сессии правок (для сборки — момент сборки)
              */
             created_at: string;
+            /** @description Сравнение с предыдущей версией */
             diff: components["schemas"]["VersionDiff"];
             /**
              * Id
@@ -2000,10 +2244,20 @@ export interface components {
              */
             id: string;
             /**
+             * Label
+             * @description Имя контрольной точки
+             */
+            label?: string | null;
+            /**
              * Lanes
              * @description Названия дорожек
              */
             lanes: string[];
+            /**
+             * Lint Count
+             * @description Замечаний bpmnlint
+             */
+            lint_count: number;
             /** Number */
             number: number;
             origin: components["schemas"]["VersionOrigin"];
@@ -2016,12 +2270,29 @@ export interface components {
             /** Run Id */
             run_id?: string | null;
             /**
+             * Saved Count
+             * @description Сколько автосохранений влито в версию
+             */
+            saved_count: number;
+            /**
+             * Session Started At
+             * Format: date-time
+             * @description Начало сессии правок
+             */
+            session_started_at: string;
+            /**
              * Trace
              * @description Трассировка: id элемента схемы → цитата
              */
             trace: {
                 [key: string]: components["schemas"]["Quote"];
             };
+            /**
+             * Updated At
+             * Format: date-time
+             * @description Последнее автосохранение, влитое в версию
+             */
+            updated_at: string;
         };
         /** VersionDetail */
         VersionDetail: {
@@ -2031,10 +2302,22 @@ export interface components {
              */
             actor_email?: string | null;
             /**
+             * Assumption Count
+             * @description Элементов на допущениях
+             */
+            assumption_count: number;
+            /**
+             * Checkpoint
+             * @description Версия закреплена и не принимает автосохранения
+             */
+            checkpoint: boolean;
+            /**
              * Created At
              * Format: date-time
+             * @description Начало сессии правок (для сборки — момент сборки)
              */
             created_at: string;
+            /** @description Сравнение с предыдущей версией */
             diff: components["schemas"]["VersionDiff"];
             /**
              * Id
@@ -2042,10 +2325,20 @@ export interface components {
              */
             id: string;
             /**
+             * Label
+             * @description Имя контрольной точки
+             */
+            label?: string | null;
+            /**
              * Lanes
              * @description Названия дорожек
              */
             lanes: string[];
+            /**
+             * Lint Count
+             * @description Замечаний bpmnlint
+             */
+            lint_count: number;
             /** Number */
             number: number;
             origin: components["schemas"]["VersionOrigin"];
@@ -2058,12 +2351,29 @@ export interface components {
             /** Run Id */
             run_id?: string | null;
             /**
+             * Saved Count
+             * @description Сколько автосохранений влито в версию
+             */
+            saved_count: number;
+            /**
+             * Session Started At
+             * Format: date-time
+             * @description Начало сессии правок
+             */
+            session_started_at: string;
+            /**
              * Trace
              * @description Трассировка: id элемента схемы → цитата
              */
             trace: {
                 [key: string]: components["schemas"]["Quote"];
             };
+            /**
+             * Updated At
+             * Format: date-time
+             * @description Последнее автосохранение, влитое в версию
+             */
+            updated_at: string;
             /**
              * Xml
              * @description BPMN 2.0 XML с координатами (DI)
@@ -2091,6 +2401,19 @@ export interface components {
          * @enum {string}
          */
         VersionOrigin: "generated" | "manual";
+        /** VersionPage */
+        VersionPage: {
+            /**
+             * Items
+             * @description Версии по убыванию номера
+             */
+            items: components["schemas"]["VersionSummary"][];
+            /**
+             * Next Before
+             * @description Значение `before` для следующей страницы; null — конец истории
+             */
+            next_before?: number | null;
+        };
         /** VersionReport */
         VersionReport: {
             /** Assumptions */
@@ -2099,6 +2422,77 @@ export interface components {
             lint: components["schemas"]["LintIssue"][];
             /** Xsd Valid */
             xsd_valid: boolean;
+        };
+        /**
+         * VersionSummary
+         * @description Строка истории: без XML, цитат и полного отчёта проверки.
+         */
+        VersionSummary: {
+            /**
+             * Actor Email
+             * @description Автор версии; null для старых записей
+             */
+            actor_email?: string | null;
+            /**
+             * Assumption Count
+             * @description Элементов на допущениях
+             */
+            assumption_count: number;
+            /**
+             * Checkpoint
+             * @description Версия закреплена и не принимает автосохранения
+             */
+            checkpoint: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Начало сессии правок (для сборки — момент сборки)
+             */
+            created_at: string;
+            /** @description Сравнение с предыдущей версией */
+            diff: components["schemas"]["VersionDiff"];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Label
+             * @description Имя контрольной точки
+             */
+            label?: string | null;
+            /**
+             * Lint Count
+             * @description Замечаний bpmnlint
+             */
+            lint_count: number;
+            /** Number */
+            number: number;
+            origin: components["schemas"]["VersionOrigin"];
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Run Id */
+            run_id?: string | null;
+            /**
+             * Saved Count
+             * @description Сколько автосохранений влито в версию
+             */
+            saved_count: number;
+            /**
+             * Session Started At
+             * Format: date-time
+             * @description Начало сессии правок
+             */
+            session_started_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             * @description Последнее автосохранение, влитое в версию
+             */
+            updated_at: string;
         };
         /** Body_auth:session.login */
         login: {
@@ -2405,6 +2799,262 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Example"][];
+                };
+            };
+        };
+    };
+    list_llm_credentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmCredentialList"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_llm_credential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LlmCredentialCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmCredential"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Конфликт состояния */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Слишком много запросов; повторите через `Retry-After` секунд */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Сервис или помощник не настроен */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_llm_credential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    update_llm_credential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LlmCredentialUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmCredential"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_llm_models: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmModelList"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Слишком много запросов; повторите через `Retry-After` секунд */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -4202,7 +4852,11 @@ export interface operations {
     };
     list_versions: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                /** @description Только номера меньше этого */
+                before?: number | null;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -4217,11 +4871,83 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Version"][];
+                    "application/json": components["schemas"]["VersionPage"];
                 };
             };
             /** @description Требуется вход в аккаунт */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    checkpoint_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckpointRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Version"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

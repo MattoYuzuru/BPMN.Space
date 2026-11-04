@@ -15,7 +15,7 @@
 
 Структура: записанная схема (`DiagramRule`), если её цитаты есть в источниках; иначе
 линейная схема по шагам, извлечённым из текста; после ручной правки — схема аналитика.
-Рабочий путь — `openai_compatible.py`; этот модуль остаётся фикстурой для
+Рабочий путь — `pipeline.py` поверх адаптеров провайдеров; этот модуль остаётся фикстурой для
 тестов сервисов и демо без ключа (RFC §9.1).
 """
 
@@ -123,6 +123,13 @@ class MockPipeline:
     def __init__(self, *, playbook: Playbook, read_bpmn: Callable[[str], str]) -> None:
         self._playbook = playbook
         self._read_bpmn = read_bpmn
+
+    @property
+    def provider(self) -> str:
+        return "mock"
+
+    async def aclose(self) -> None:
+        return None
 
     @property
     def model_name(self) -> str:

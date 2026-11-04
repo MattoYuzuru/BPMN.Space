@@ -8,23 +8,26 @@ SQL-реализация (`sql.py`). Операции здесь не преры
 """
 
 import copy
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from app.domain.access import ProjectScope
+from app.domain.credentials import LlmCredential
 from app.domain.models import (
     LlmCall,
     Project,
     Question,
     QuestionStatus,
     Run,
+    RunStatus,
     Source,
     SourceKind,
     SourceStatus,
     Version,
+    VersionSummary,
 )
 from app.domain.onboarding import (
     ChecklistItem,
@@ -37,7 +40,7 @@ from app.domain.onboarding import (
 )
 from app.domain.questions import normalize
 from app.domain.runs import ACTIVE_STATUSES
-from app.infra.repositories.base import PageKey, Repositories
+from app.infra.repositories.base import PageKey, ProjectStats, Repositories
 
 
 @dataclass(slots=True)
@@ -50,6 +53,7 @@ class InMemoryStore:
     llm_calls: dict[UUID, LlmCall] = field(default_factory=dict[UUID, LlmCall])
     project_owners: dict[UUID, UUID] = field(default_factory=dict[UUID, UUID])
     public_projects: set[UUID] = field(default_factory=set[UUID])
+    llm_credentials: dict[UUID, LlmCredential] = field(default_factory=dict[UUID, LlmCredential])
     onboarding: dict[UUID, UserOnboarding] = field(default_factory=dict[UUID, UserOnboarding])
     onboarding_items: dict[tuple[UUID, ChecklistItem], CompletedItem] = field(
         default_factory=dict[tuple[UUID, ChecklistItem], CompletedItem]
@@ -81,6 +85,7 @@ class InMemoryStore:
             versions=InMemoryVersionRepository(self),
             llm_calls=InMemoryLlmCallRepository(self),
             onboarding=InMemoryOnboardingRepository(self),
+            llm_credentials=InMemoryLlmCredentialRepository(self),
         )
 
 
@@ -105,6 +110,37 @@ class InMemoryProjectRepository:
     async def get(self, project_id: UUID) -> Project | None:
         item = self._items.get(project_id)
         return copy.deepcopy(item) if item else None
+
+    async def stats(self, project_ids: Sequence[UUID]) -> dict[UUID, ProjectStats]:
+        store = self._store
+        result: dict[UUID, ProjectStats] = {}
+        for project_id in project_ids:
+            sources = [
+                s
+                for s in store.sources.values()
+                if s.project_id == project_id and s.kind is not SourceKind.ANSWER
+            ]
+            questions = [q for q in store.questions.values() if q.project_id == project_id]
+            versions = [v for v in store.versions.values() if v.project_id == project_id]
+            latest = max(versions, key=lambda v: v.number, default=None)
+            active = next(
+                (
+                    r
+                    for r in store.runs.values()
+                    if r.project_id == project_id and r.status in ACTIVE_STATUSES
+                ),
+                None,
+            )
+            result[project_id] = ProjectStats(
+                sources=len(sources),
+                has_material=any(s.active and s.status is not SourceStatus.FAILED for s in sources),
+                questions_open=sum(1 for q in questions if q.status is QuestionStatus.OPEN),
+                questions_resolved=sum(1 for q in questions if q.status is QuestionStatus.RESOLVED),
+                versions=len(versions),
+                lanes=tuple(latest.lanes) if latest else (),
+                active_run_mode=active.mode if active else None,
+            )
+        return result
 
     async def update(self, project: Project) -> None:
         stored = self._items.get(project.id)
@@ -207,7 +243,16 @@ class InMemorySourceRepository:
         *,
         only_status: SourceStatus | None = None,
     ) -> bool:
-        unknown = set(changes) - {"title", "content", "status", "active", "error"}
+        unknown = set(changes) - {
+            "title",
+            "content",
+            "status",
+            "active",
+            "error",
+            "warning",
+            "unreadable_pages",
+            "duration_sec",
+        }
         if unknown:
             raise ValueError(f"Поля источника нельзя менять точечно: {sorted(unknown)}")
         stored = self._items.get(source_id)
@@ -314,10 +359,19 @@ class InMemoryRunRepository:
                 return copy.deepcopy(run)
         return None
 
+    async def last_succeeded_id(self, project_id: UUID) -> UUID | None:
+        done = [
+            r
+            for r in self._items.values()
+            if r.project_id == project_id and r.status is RunStatus.SUCCEEDED
+        ]
+        return max(done, key=lambda r: (r.started_at, r.id)).id if done else None
+
 
 class InMemoryVersionRepository:
     def __init__(self, store: InMemoryStore) -> None:
         self._items = store.versions
+        self._runs = store.runs
 
     async def add(self, version: Version) -> None:
         self._items[version.id] = copy.deepcopy(version)
@@ -338,6 +392,34 @@ class InMemoryVersionRepository:
         items = await self.list_by_project(project_id)
         return items[0] if items else None
 
+    async def by_number(self, project_id: UUID, number: int) -> Version | None:
+        for item in self._items.values():
+            if item.project_id == project_id and item.number == number:
+                return copy.deepcopy(item)
+        return None
+
+    async def list_page(
+        self, project_id: UUID, *, limit: int, before: int | None = None
+    ) -> list[VersionSummary]:
+        items = await self.list_by_project(project_id, include_xml=False)
+        return [v.summary() for v in items if before is None or v.number < before][:limit]
+
+    async def replace(self, old_id: UUID, version: Version) -> None:
+        self._items.pop(old_id, None)
+        self._items[version.id] = copy.deepcopy(version)
+
+    async def has_dependants(self, version_id: UUID) -> bool:
+        return any(run.version_id == version_id for run in self._runs.values())
+
+    async def mark_checkpoint(self, version_id: UUID, label: str | None) -> Version | None:
+        item = self._items.get(version_id)
+        if item is None:
+            return None
+        item.checkpoint = True
+        if label is not None:
+            item.label = label or None
+        return copy.deepcopy(item)
+
 
 class InMemoryLlmCallRepository:
     def __init__(self, store: InMemoryStore) -> None:
@@ -345,6 +427,65 @@ class InMemoryLlmCallRepository:
 
     async def add(self, call: LlmCall) -> None:
         self._items[call.id] = copy.deepcopy(call)
+
+
+class InMemoryLlmCredentialRepository:
+    def __init__(self, store: InMemoryStore) -> None:
+        self._items = store.llm_credentials
+
+    async def list_by_user(self, user_id: UUID) -> list[LlmCredential]:
+        own = [item for item in self._items.values() if item.user_id == user_id]
+        own.sort(key=lambda item: (not item.is_default, item.created_at, str(item.id)))
+        return [copy.deepcopy(item) for item in own]
+
+    async def get(self, credential_id: UUID) -> LlmCredential | None:
+        item = self._items.get(credential_id)
+        return copy.deepcopy(item) if item else None
+
+    async def count(self, user_id: UUID) -> int:
+        return sum(1 for item in self._items.values() if item.user_id == user_id)
+
+    async def save(self, credential: LlmCredential) -> None:
+        if credential.is_default:
+            for item in self._items.values():
+                if item.user_id == credential.user_id and item.id != credential.id:
+                    item.is_default = False
+        self._items[credential.id] = copy.deepcopy(credential)
+
+    async def update_fields(
+        self,
+        credential_id: UUID,
+        *,
+        label: str | None = None,
+        default_model: str | None = None,
+        is_default: bool | None = None,
+        clear_default_model: bool = False,
+    ) -> LlmCredential | None:
+        item = self._items.get(credential_id)
+        if item is None:
+            return None
+        if is_default:
+            for other in self._items.values():
+                if other.user_id == item.user_id and other.id != item.id:
+                    other.is_default = False
+        if label is not None:
+            item.label = label
+        if default_model is not None:
+            item.default_model = default_model
+        elif clear_default_model:
+            item.default_model = None
+        if is_default is not None:
+            item.is_default = is_default
+        return copy.deepcopy(item)
+
+    async def delete(self, credential_id: UUID) -> bool:
+        return self._items.pop(credential_id, None) is not None
+
+    async def mark_used(self, credential_id: UUID, at: datetime, error: str | None) -> None:
+        item = self._items.get(credential_id)
+        if item is not None:
+            item.last_used_at = at
+            item.last_error = error[:500] if error else None
 
 
 class InMemoryOnboardingRepository:

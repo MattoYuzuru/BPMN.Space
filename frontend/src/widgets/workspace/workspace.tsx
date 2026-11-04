@@ -102,7 +102,14 @@ export function WorkspaceView({
   const editorRef = useRef<DiagramEditorHandle | null>(null)
   const sourcesRef = usePanelRef()
   const questionsRef = usePanelRef()
-  const ui = useWorkspaceUi()
+  const expandRequest = useWorkspaceUi((state) => state.expandRequest)
+  const focusRequest = useWorkspaceUi((state) => state.focusRequest)
+  const sourcesCollapsed = useWorkspaceUi((state) => state.sourcesCollapsed)
+  const questionsCollapsed = useWorkspaceUi((state) => state.questionsCollapsed)
+  const textSuggestion = useWorkspaceUi((state) => state.textSuggestion)
+  const dialog = useWorkspaceUi((state) => state.dialog)
+  const setCollapsed = useWorkspaceUi((state) => state.setCollapsed)
+  const setDialog = useWorkspaceUi((state) => state.setDialog)
   const layout = useDefaultLayout({
     id: 'workspace-panels',
     panelIds: ['sources', 'diagram', 'questions'],
@@ -112,7 +119,6 @@ export function WorkspaceView({
   useEffect(() => () => useWorkspaceUi.getState().reset(), [])
 
   // Просьба развернуть панель (например, из обучения): панель может быть свёрнута или ещё не готова.
-  const expandRequest = ui.expandRequest
   useEffect(() => {
     if (!expandRequest) return
     const expand = () => {
@@ -162,7 +168,6 @@ export function WorkspaceView({
   )
 
   // Просьба показать вопрос на схеме (из чек-листа): выбор и фокус делает сам экран.
-  const focusRequest = ui.focusRequest
   const { selectQuestion } = api
   // biome-ignore lint/correctness/useExhaustiveDependencies: только новая просьба
   useEffect(() => {
@@ -189,10 +194,10 @@ export function WorkspaceView({
               collapsible
               collapsedSize={COLLAPSED}
               onResize={(size) =>
-                ui.setCollapsed('sources', size.inPixels <= Number.parseInt(COLLAPSED, 10) + 1)
+                setCollapsed('sources', size.inPixels <= Number.parseInt(COLLAPSED, 10) + 1)
               }
             >
-              {ui.sourcesCollapsed ? (
+              {sourcesCollapsed ? (
                 <CollapsedRail
                   side="left"
                   icon="file-text"
@@ -218,10 +223,10 @@ export function WorkspaceView({
               collapsible
               collapsedSize={COLLAPSED}
               onResize={(size) =>
-                ui.setCollapsed('questions', size.inPixels <= Number.parseInt(COLLAPSED, 10) + 1)
+                setCollapsed('questions', size.inPixels <= Number.parseInt(COLLAPSED, 10) + 1)
               }
             >
-              {ui.questionsCollapsed ? (
+              {questionsCollapsed ? (
                 <CollapsedRail
                   side="right"
                   icon="message-question"
@@ -241,14 +246,14 @@ export function WorkspaceView({
         <>
           <AddTextDialog
             projectId={project.id}
-            suggestion={ui.textSuggestion}
-            open={ui.dialog === 'text'}
-            onOpenChange={(open) => ui.setDialog(open ? 'text' : null)}
+            suggestion={textSuggestion}
+            open={dialog === 'text'}
+            onOpenChange={(open) => setDialog(open ? 'text' : null)}
           />
           <AddVoiceDialog
             projectId={project.id}
-            open={ui.dialog === 'voice'}
-            onOpenChange={(open) => ui.setDialog(open ? 'voice' : null)}
+            open={dialog === 'voice'}
+            onOpenChange={(open) => setDialog(open ? 'voice' : null)}
           />
         </>
       )}

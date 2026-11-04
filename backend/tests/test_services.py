@@ -14,6 +14,7 @@ from app.domain.models import QuestionStatus, Run, RunMode, RunStage, RunStatus,
 from app.domain.runs import RunError, RunEventKind
 from app.infra.bpmn_tools import MockBpmnTools
 from app.infra.events import InMemoryRunEventBus
+from app.infra.repositories.memory import InMemoryStore
 from app.infra.seed import DEMO_PROJECT_ID, build_seed
 from app.infra.storage import InMemoryFileStorage
 from app.infra.tasks import AsyncioTaskSpawner
@@ -24,7 +25,11 @@ from app.ingest.parsers import (
     decode_text,
 )
 from app.ingest.stt import MockSpeechToText
+from app.services.common import Runtime
 from app.services.errors import ConflictError, InvalidInputError
+from app.services.model_resolver import ResolvedModel
+from app.services.runs import RunService
+from tests.llm_helpers import ScriptedPipeline
 
 
 @pytest.fixture
@@ -456,3 +461,35 @@ async def test_task_spawner_deduplicates_active_task_names():
     release.set()
     await spawner.wait_idle()
     assert count == 1
+
+
+async def test_execute_releases_model_client_when_run_never_starts() -> None:
+    """Клиент из `_pipelines` закрывается, даже если `_drive` не добрался до `_run_stages`."""
+
+    released: list[bool] = []
+
+    class Tracked(ResolvedModel):
+        async def release(self) -> None:
+            released.append(True)
+
+    repos = InMemoryStore().repositories()
+    runs = RunService(
+        repos,
+        pipeline=ScriptedPipeline(api_key="test-only", complete=lambda _s, _p: "{}"),
+        bpmn_tools=None,  # type: ignore[arg-type]
+        events=InMemoryRunEventBus(),
+        spawner=AsyncioTaskSpawner(),
+        runtime=Runtime(),
+        max_concurrent=1,
+    )
+    run_id = uuid4()
+    runs._pipelines[run_id] = Tracked(
+        pipeline=ScriptedPipeline(api_key="test-only", complete=lambda _s, _p: "{}"),
+        provider="x",
+        model="m",
+        credential_id=None,
+        source="user",
+    )
+    await runs._execute(run_id)
+    assert released == [True]
+    assert run_id not in runs._pipelines

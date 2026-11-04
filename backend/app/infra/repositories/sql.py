@@ -1,14 +1,14 @@
 """SQLAlchemy-репозитории PostgreSQL, сохраняющие публичные dataclass-ы domain."""
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import CursorResult, and_, delete, func, or_, select, update
+from sqlalchemy import CursorResult, and_, case, delete, func, or_, select, tuple_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import defer
@@ -39,6 +39,7 @@ from app.domain.models import (
     Version,
     VersionDiff,
     VersionOrigin,
+    VersionSummary,
 )
 from app.domain.questions import normalize
 from app.domain.runs import ACTIVE_STATUSES
@@ -54,7 +55,13 @@ from app.infra.db_models import (
     SourceRow,
 )
 from app.infra.repositories.access_sql import SqlAccessRepository
-from app.infra.repositories.base import ActiveRunConflictError, PageKey, Repositories
+from app.infra.repositories.base import (
+    ActiveRunConflictError,
+    PageKey,
+    ProjectStats,
+    Repositories,
+)
+from app.infra.repositories.llm_credentials_sql import SqlLlmCredentialRepository
 from app.infra.repositories.onboarding_sql import SqlOnboardingRepository
 from app.infra.repositories.session import BoundSessions, SessionFactory
 from app.infra.version_codec import (
@@ -100,6 +107,8 @@ def _source(row: SourceRow) -> Source:
         duration_sec=row.duration_sec,
         question_id=row.question_id,
         error=row.error,
+        warning=row.warning,
+        unreadable_pages=list(row.unreadable_pages or []),
         file_key=row.file_key,
         digest=row.digest,
     )
@@ -155,8 +164,14 @@ def _run(row: RunRow) -> Run:
     )
 
 
-def _version(row: DiagramVersionRow, xml: str) -> Version:
-    report_json = row.report
+def _version(
+    row: DiagramVersionRow,
+    xml: str,
+    trace_json: Mapping[str, Any] | None = None,
+    report_json: Mapping[str, Any] | None = None,
+) -> Version:
+    """`trace_json`/`report_json` — разрешённые значения версий с общими метаданными."""
+    report_json = row.report if report_json is None else report_json
     report = Report(
         xsd_valid=report_json["xsd_valid"],
         lint=[
@@ -179,7 +194,7 @@ def _version(row: DiagramVersionRow, xml: str) -> Version:
     )
     trace = {
         element_id: Quote(source_id=UUID(value["source_id"]), quote=value["quote"])
-        for element_id, value in row.trace.items()
+        for element_id, value in (row.trace if trace_json is None else trace_json).items()
     }
     return Version(
         id=row.id,
@@ -194,6 +209,31 @@ def _version(row: DiagramVersionRow, xml: str) -> Version:
         lanes=list(row.lanes),
         run_id=row.run_id,
         actor_email=row.actor_email,
+        label=row.label,
+        checkpoint=row.checkpoint,
+        session_started_at=row.session_started_at,
+        updated_at=row.updated_at,
+        saved_count=row.saved_count,
+    )
+
+
+def _summary(row: DiagramVersionRow) -> VersionSummary:
+    return VersionSummary(
+        id=row.id,
+        project_id=row.project_id,
+        number=row.number,
+        origin=VersionOrigin(row.origin),
+        created_at=row.created_at,
+        diff=VersionDiff(**row.diff),
+        lint_count=row.lint_count,
+        assumption_count=row.assumption_count,
+        run_id=row.run_id,
+        actor_email=row.actor_email,
+        label=row.label,
+        checkpoint=row.checkpoint,
+        session_started_at=row.session_started_at or row.created_at,
+        updated_at=row.updated_at or row.created_at,
+        saved_count=row.saved_count,
     )
 
 
@@ -221,6 +261,93 @@ class SqlProjectRepository:
         async with self.sessions() as session:
             row = await session.get(ProjectRow, project_id)
             return _project(row) if row else None
+
+    async def stats(self, project_ids: Sequence[UUID]) -> dict[UUID, ProjectStats]:
+        ids = list(dict.fromkeys(project_ids))
+        if not ids:
+            return {}
+        answer = SourceKind.ANSWER.value
+        async with self.sessions() as session:
+            sources = {
+                row.project_id: (row.total, row.material)
+                for row in await session.execute(
+                    select(
+                        SourceRow.project_id,
+                        func.count().label("total"),
+                        func.count(
+                            case(
+                                (
+                                    and_(
+                                        SourceRow.active.is_(True),
+                                        SourceRow.status != SourceStatus.FAILED.value,
+                                    ),
+                                    1,
+                                )
+                            )
+                        ).label("material"),
+                    )
+                    .where(SourceRow.project_id.in_(ids), SourceRow.kind != answer)
+                    .group_by(SourceRow.project_id)
+                )
+            }
+            questions = {
+                (row.project_id, row.status): row.total
+                for row in await session.execute(
+                    select(QuestionRow.project_id, QuestionRow.status, func.count().label("total"))
+                    .where(
+                        QuestionRow.project_id.in_(ids),
+                        QuestionRow.status.in_(
+                            [QuestionStatus.OPEN.value, QuestionStatus.RESOLVED.value]
+                        ),
+                    )
+                    .group_by(QuestionRow.project_id, QuestionRow.status)
+                )
+            }
+            versions = {
+                row.project_id: (row.total, row.newest)
+                for row in await session.execute(
+                    select(
+                        DiagramVersionRow.project_id,
+                        func.count().label("total"),
+                        func.max(DiagramVersionRow.number).label("newest"),
+                    )
+                    .where(DiagramVersionRow.project_id.in_(ids))
+                    .group_by(DiagramVersionRow.project_id)
+                )
+            }
+            # Дорожки читаются только у последней версии каждого проекта.
+            newest = {pid: number for pid, (_, number) in versions.items()}
+            lanes: dict[UUID, list[str]] = {}
+            if newest:
+                for row in await session.execute(
+                    select(DiagramVersionRow.project_id, DiagramVersionRow.lanes).where(
+                        tuple_(DiagramVersionRow.project_id, DiagramVersionRow.number).in_(
+                            list(newest.items())
+                        )
+                    )
+                ):
+                    lanes[row.project_id] = list(row.lanes)
+            active = {
+                row.project_id: row.mode
+                for row in await session.execute(
+                    select(RunRow.project_id, RunRow.mode).where(
+                        RunRow.project_id.in_(ids),
+                        RunRow.status.in_([status.value for status in ACTIVE_STATUSES]),
+                    )
+                )
+            }
+        return {
+            pid: ProjectStats(
+                sources=sources.get(pid, (0, 0))[0],
+                has_material=sources.get(pid, (0, 0))[1] > 0,
+                questions_open=questions.get((pid, QuestionStatus.OPEN.value), 0),
+                questions_resolved=questions.get((pid, QuestionStatus.RESOLVED.value), 0),
+                versions=versions.get(pid, (0, 0))[0],
+                lanes=tuple(lanes.get(pid, ())),
+                active_run_mode=RunMode(active[pid]) if pid in active else None,
+            )
+            for pid in ids
+        }
 
     async def update(self, project: Project) -> None:
         async with self.sessions.begin() as session:
@@ -372,7 +499,18 @@ class SqlProjectRepository:
             return int(await session.scalar(statement) or 0)
 
 
-_PATCHABLE_SOURCE_FIELDS = frozenset({"title", "content", "status", "active", "error"})
+_PATCHABLE_SOURCE_FIELDS = frozenset(
+    {
+        "title",
+        "content",
+        "status",
+        "active",
+        "error",
+        "warning",
+        "unreadable_pages",
+        "duration_sec",
+    }
+)
 
 
 class SqlSourceRepository:
@@ -396,6 +534,8 @@ class SqlSourceRepository:
             duration_sec=item.duration_sec,
             question_id=item.question_id,
             error=item.error,
+            warning=item.warning,
+            unreadable_pages=item.unreadable_pages or None,
             file_key=item.file_key,
             digest=item.digest,
         )
@@ -626,6 +766,18 @@ class SqlRunRepository:
             ).all()
             return [_run(row) for row in rows]
 
+    async def last_succeeded_id(self, project_id: UUID) -> UUID | None:
+        async with self.sessions() as session:
+            return await session.scalar(
+                select(RunRow.id)
+                .where(
+                    RunRow.project_id == project_id,
+                    RunRow.status == RunStatus.SUCCEEDED.value,
+                )
+                .order_by(RunRow.started_at.desc(), RunRow.id.desc())
+                .limit(1)
+            )
+
     async def active_for_project(self, project_id: UUID) -> Run | None:
         async with self.sessions() as session:
             row = await session.scalar(
@@ -677,13 +829,112 @@ class SqlVersionRepository:
             lanes=item.lanes,
             run_id=item.run_id,
             actor_email=item.actor_email,
+            label=item.label,
+            checkpoint=item.checkpoint,
+            session_started_at=item.session_started_at,
+            updated_at=item.updated_at,
+            saved_count=item.saved_count,
+            lint_count=len(item.report.lint),
+            assumption_count=len(item.report.assumptions),
         )
 
     async def add(self, version: Version) -> None:
         async with self.sessions.begin() as session:
             row = self._row(version)
             await self._pack_row(session, row)
+            await self._share_metadata(session, row)
             session.add(row)
+
+    async def replace(self, old_id: UUID, version: Version) -> None:
+        async with self.sessions.begin() as session:
+            await session.execute(delete(DiagramVersionRow).where(DiagramVersionRow.id == old_id))
+            row = self._row(version)
+            await self._pack_row(session, row)
+            await self._share_metadata(session, row)
+            session.add(row)
+
+    async def has_dependants(self, version_id: UUID) -> bool:
+        async with self.sessions() as session:
+            based = await session.scalar(
+                select(DiagramVersionRow.id)
+                .where(DiagramVersionRow.base_version_id == version_id)
+                .limit(1)
+            )
+            if based is not None:
+                return True
+            run = await session.scalar(
+                select(RunRow.id).where(RunRow.version_id == version_id).limit(1)
+            )
+            return run is not None
+
+    async def mark_checkpoint(self, version_id: UUID, label: str | None) -> Version | None:
+        async with self.sessions.begin() as session:
+            row = await session.get(DiagramVersionRow, version_id)
+            if row is None:
+                return None
+            row.checkpoint = True
+            if label is not None:
+                row.label = label or None
+            await session.flush()
+            return await self._load(session, row)
+
+    @staticmethod
+    async def _metadata(
+        session: AsyncSession, row: DiagramVersionRow
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Цитаты и отчёт версии; общие с прошлой версией читаются у ближайшего владельца."""
+        trace, report = row.trace, row.report
+        for inherited, column, name in (
+            (row.trace_inherited, DiagramVersionRow.trace, "trace"),
+            (row.report_inherited, DiagramVersionRow.report, "report"),
+        ):
+            if not inherited:
+                continue
+            flag = (
+                DiagramVersionRow.trace_inherited
+                if name == "trace"
+                else DiagramVersionRow.report_inherited
+            )
+            owner = await session.scalar(
+                select(column)
+                .where(
+                    DiagramVersionRow.project_id == row.project_id,
+                    DiagramVersionRow.number < row.number,
+                    flag.is_(False),
+                )
+                .order_by(DiagramVersionRow.number.desc())
+                .limit(1)
+            )
+            if name == "trace":
+                trace = owner or {}
+            else:
+                report = owner or {"xsd_valid": False, "lint": [], "assumptions": []}
+        return trace, report
+
+    async def _load(self, session: AsyncSession, row: DiagramVersionRow) -> Version:
+        trace, report = await self._metadata(session, row)
+        return _version(row, await self._xml(session, row), trace, report)
+
+    async def _share_metadata(self, session: AsyncSession, row: DiagramVersionRow) -> None:
+        """Ручная правка с теми же цитатами/отчётом, что у прошлой версии, их не копирует.
+
+        Замер и обоснование — ADR-0010: JSONB метаданных весит в разы больше сжатой дельты XML.
+        """
+        if row.origin != VersionOrigin.MANUAL.value or row.number <= 1:
+            return
+        previous = await session.scalar(
+            select(DiagramVersionRow).where(
+                DiagramVersionRow.project_id == row.project_id,
+                DiagramVersionRow.number == row.number - 1,
+            )
+        )
+        if previous is None:
+            return
+        trace, report = await self._metadata(session, previous)
+        if row.trace == trace:
+            row.trace, row.trace_inherited = {}, True
+        if row.report == report:
+            row.report, row.report_inherited = {}, True
 
     @staticmethod
     def _decode_chain(rows: list[DiagramVersionRow], target: DiagramVersionRow) -> str:
@@ -806,10 +1057,73 @@ class SqlVersionRepository:
                 await session.flush()
             return len(rows)
 
+    async def materialize_inherited_batch(self, project_id: UUID, *, limit: int = 100) -> int:
+        """Вернуть унаследованные цитаты/отчёт в строки версий (подготовка отката, ADR-0010).
+
+        Код до сессий правок читает `trace`/`report` только из самой строки. Повтор безопасен.
+        """
+        if not 1 <= limit <= MAX_MAINTENANCE_BATCH:
+            raise ValueError("Размер пакета должен быть от 1 до 1000")
+        async with self.sessions.begin() as session:
+            project = await session.scalar(
+                select(ProjectRow).where(ProjectRow.id == project_id).with_for_update()
+            )
+            if project is None:
+                return 0
+            rows = list(
+                await session.scalars(
+                    select(DiagramVersionRow)
+                    .where(
+                        DiagramVersionRow.project_id == project_id,
+                        or_(
+                            DiagramVersionRow.trace_inherited.is_(True),
+                            DiagramVersionRow.report_inherited.is_(True),
+                        ),
+                    )
+                    .order_by(DiagramVersionRow.number)
+                    .limit(limit)
+                )
+            )
+            for row in rows:
+                row.trace, row.report = await self._metadata(session, row)
+                row.trace_inherited = row.report_inherited = False
+                await session.flush()
+            return len(rows)
+
     async def get(self, version_id: UUID) -> Version | None:
         async with self.sessions() as session:
             row = await session.get(DiagramVersionRow, version_id)
-            return _version(row, await self._xml(session, row)) if row else None
+            return await self._load(session, row) if row else None
+
+    async def by_number(self, project_id: UUID, number: int) -> Version | None:
+        async with self.sessions() as session:
+            row = await session.scalar(
+                select(DiagramVersionRow).where(
+                    DiagramVersionRow.project_id == project_id,
+                    DiagramVersionRow.number == number,
+                )
+            )
+            return await self._load(session, row) if row else None
+
+    async def list_page(
+        self, project_id: UUID, *, limit: int, before: int | None = None
+    ) -> list[VersionSummary]:
+        async with self.sessions() as session:
+            query = (
+                select(DiagramVersionRow)
+                .options(
+                    defer(DiagramVersionRow.bpmn_xml, raiseload=True),
+                    defer(DiagramVersionRow.packed_xml, raiseload=True),
+                    defer(DiagramVersionRow.trace, raiseload=True),
+                    defer(DiagramVersionRow.report, raiseload=True),
+                )
+                .where(DiagramVersionRow.project_id == project_id)
+                .order_by(DiagramVersionRow.number.desc())
+                .limit(limit)
+            )
+            if before is not None:
+                query = query.where(DiagramVersionRow.number < before)
+            return [_summary(row) for row in (await session.scalars(query)).all()]
 
     async def list_by_project(self, project_id: UUID, *, include_xml: bool = True) -> list[Version]:
         async with self.sessions() as session:
@@ -830,8 +1144,23 @@ class SqlVersionRepository:
                     .order_by(DiagramVersionRow.number.desc())
                 )
             ).all()
+            # Строки от новых к старым: общие метаданные берём у ближайшей старшей строки-владельца.
+            shared: dict[UUID, tuple[dict[str, Any], dict[str, Any]]] = {}
+            trace_owner: dict[str, Any] = {}
+            report_owner: dict[str, Any] = {}
+            for row in reversed(rows):
+                if not row.trace_inherited:
+                    trace_owner = row.trace
+                if not row.report_inherited:
+                    report_owner = row.report
+                shared[row.id] = (trace_owner, report_owner)
             return [
-                _version(row, await self._xml(session, row) if include_xml else "") for row in rows
+                _version(
+                    row,
+                    await self._xml(session, row) if include_xml else "",
+                    *shared[row.id],
+                )
+                for row in rows
             ]
 
     async def latest(self, project_id: UUID) -> Version | None:
@@ -842,7 +1171,7 @@ class SqlVersionRepository:
                 .order_by(DiagramVersionRow.number.desc())
                 .limit(1)
             )
-            return _version(row, await self._xml(session, row)) if row else None
+            return await self._load(session, row) if row else None
 
 
 class SqlLlmCallRepository:
@@ -893,5 +1222,6 @@ class SqlStore:
             llm_calls=SqlLlmCallRepository(sessions),
             access=SqlAccessRepository(sessions),
             onboarding=SqlOnboardingRepository(sessions),
+            llm_credentials=SqlLlmCredentialRepository(sessions),
             transaction=transaction,
         )

@@ -488,7 +488,8 @@ erDiagram
 | GET | `/api/v1/projects/{id}/questions?status=` | вопросы проекта |
 | POST | `/api/v1/questions/{id}/answer` | ответ текстом (голос — через `/transcriptions`) → источник `answer` |
 | POST | `/api/v1/questions/{id}/ignore` · `/reopen` | принять допущение · вернуть вопрос; недопустимый переход → `409` |
-| GET | `/api/v1/projects/{id}/versions` · `/versions/{id}` | версии с диффом и отчётом · версия с XML |
+| GET | `/api/v1/projects/{id}/versions?limit&before` · `/versions/{id}` | страница истории без XML и отчёта (`{items, next_before}`) · версия с XML и отчётом |
+| POST | `/api/v1/projects/{id}/versions/{version_id}/checkpoint` | закрепить версию контрольной точкой (ADR-0010) |
 | GET | `/api/v1/versions/{id}/xml` | скачать `.bpmn` (SVG/PNG экспортирует bpmn-js на фронтенде) |
 | PUT | `/api/v1/projects/{id}/diagram` | сохранить ручную правку из bpmn-js → новая версия `manual`; `409`, пока идёт сборка; `413`, если схема больше `MAX_DIAGRAM_BYTES` |
 | GET / DELETE | `/api/v1/projects/{id}/members` · `/members/{user_id}` | владелец просматривает список редакторов и отзывает доступ |
@@ -592,7 +593,7 @@ DEEPGRAM_API_KEY=...
 ```
 
 - Отдельной папки `ai/` нет. Скиллы лежат в `.claude/skills/`, оттуда их находит Claude Code; другие агенты находят их через `AGENTS.md`. Скрипты прогонов — в `scripts/` и `backend/scripts/`, записанные данные — в `backend/app/fixtures/`. Общий каталог `evals/` пока не реализован.
-- **Промпты** — код продукта: `backend/app/llm/question_analysis.py`, `graph_generation.py`, `openai_compatible.py`. Схемы ответов проверяются Pydantic; `fixtures/ir` хранит записанные тестовые графы.
+- **Промпты** — код продукта: `backend/app/llm/question_analysis.py`, `graph_generation.py`, `pipeline.py`. Схемы ответов проверяются Pydantic; `fixtures/ir` хранит записанные тестовые графы.
 - **Авторизация приложения** — аккаунт email/пароль и серверная cookie-сессия; Caddy Basic Auth может дополнительно закрывать демо-контур. Изменяющие API-запросы из браузера требуют CSRF cookie и заголовок `X-CSRF-Token`.
 
 ## 9. Качество без CI

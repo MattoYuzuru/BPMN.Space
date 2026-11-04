@@ -14,6 +14,7 @@ import hashlib
 import json
 from collections.abc import Sequence
 from copy import deepcopy
+from dataclasses import dataclass
 from typing import Any
 
 from app.domain.analysis import MAX_SOURCE_TEXT_CHARS, ContextSource, RunContext
@@ -25,6 +26,22 @@ from app.domain.models import (
     Version,
     VersionOrigin,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class _LlmLimits:
+    parallel_requests: int = 1
+    chunk_chars: int = 24_000
+
+
+_limits = _LlmLimits()
+
+
+def configure_llm_limits(*, parallel_requests: int, chunk_chars: int) -> None:
+    """Задаёт параллельность и размер порции для новых контекстов (вызывает `container.py`)."""
+    global _limits  # noqa: PLW0603 — процессная настройка, выставляется при сборке контейнера
+    _limits = _LlmLimits(parallel_requests=max(parallel_requests, 1), chunk_chars=chunk_chars)
+
 
 # Меньше этого источнику не выделяем: короткий обрывок вреднее, чем его отсутствие.
 MIN_SOURCE_SHARE_CHARS = 2_000
@@ -139,6 +156,12 @@ def build_run_context(
         if s.active and s.status is SourceStatus.READY and s.content.strip()
     ]
     fitted, warnings = fit_sources(usable, budget_chars=budget_chars)
+    unreadable = [
+        s for s in sources if s.active and s.status is SourceStatus.READY and s.unreadable_pages
+    ]
+    for s in sources:
+        if s.active and s.status is SourceStatus.READY and s.content.strip() and s.warning:
+            warnings.append(f"Источник «{s.title[:80]}» прочитан не полностью: {s.warning}")
     unavailable = [s for s in sources if s.active and s.status is not SourceStatus.READY]
     if unavailable:
         warnings.append(
@@ -169,7 +192,9 @@ def build_run_context(
         evidence_sources=usable,
         analysis_budget_chars=budget_chars,
         source_snapshot_hash=source_snapshot_hash(sources),
-        analysis_input_complete=not unavailable,
+        analysis_input_complete=not unavailable and not unreadable,
+        parallel_requests=_limits.parallel_requests,
+        chunk_chars=_limits.chunk_chars,
     )
 
 

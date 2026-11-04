@@ -1,10 +1,15 @@
 """Единственный источник конфигурации backend. Все значения — из окружения / `.env`."""
 
+import logging
 from functools import lru_cache
+from typing import Annotated
 
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from app.domain.concurrency import adaptive_deadline
+
+logger = logging.getLogger(__name__)
 _MB = 1024 * 1024
 # Квитанции удаления доступны 30 дней; содержимое проектов удаляется сразу.
 DELETED_PROJECT_NOTICE_DAYS = 30
@@ -46,19 +51,55 @@ class Settings(BaseSettings):
     max_concurrent_runs: int = 2
     # Общий срок одного прогона (секунды, 0 — без срока): новые запросы к модели после него
     # не начинаются, прогон завершается ошибкой, а не висит.
+    # Это нижняя граница: к ней прибавляется время на объём источников (см. `run_deadline`).
     run_deadline_sec: float = 600.0
+    # Дополнительные секунды срока на каждую 1000 символов источников (длинные документы).
+    run_deadline_per_1k_chars_sec: float = Field(default=4.0, ge=0)
+    # Жёсткий потолок адаптивного срока (по умолчанию 2 часа); 0 — потолка нет.
+    run_deadline_max_sec: float = Field(default=7200.0, ge=0)
     # Анализ: бюджет одного запроса целиком, включая schema; полные источники идут порциями.
     # Построение: бюджет оснований после порционного извлечения; переполнение — явный отказ.
+    # Для моделей с большим контекстом увеличьте значение: документ пройдёт без извлечения.
     llm_context_budget_chars: int = 120_000
+    # Размер порции текста при извлечении оснований и смысловой сверке (символы).
+    llm_chunk_chars: int = Field(default=24_000, ge=1_000)
+    # Сколько независимых запросов порций к модели одновременно (анализ, извлечение, сверка).
+    llm_parallel_requests: int = Field(default=4, ge=1, le=32)
 
     # --- Ограничения загрузок ---
-    max_upload_bytes: int = 20 * _MB
+    # Документы (.txt .md .csv .docx .xlsx .pptx .pdf).
+    max_upload_bytes: int = 50 * _MB
+    # Голосовая заметка из микрофона (`POST /transcriptions`, синхронно).
     max_audio_bytes: int = 60 * _MB
+    # Файлы аудио и видео, загружаемые как источник (расшифровываются в фоне через ffmpeg).
+    max_media_bytes: int = 500 * _MB
     max_diagram_bytes: int = 5 * _MB
-    max_text_chars: int = 200_000
+
+    # --- Сессии правок (ADR-0010): автосохранения одного автора сливаются в одну версию ---
+    # Пауза между сохранениями, после которой правка начинает новую версию (0 — не сливать).
+    version_session_idle_sec: float = Field(default=600.0, ge=0)
+    # Предельная длительность одной сессии правок, даже если автор не останавливался.
+    version_session_max_sec: float = Field(default=3600.0, ge=0)
+    # Текст одного источника после разбора (≈ 500 страниц).
+    max_text_chars: int = 1_500_000
     # Разбор документов: у PDF ограничены число страниц и время (в отдельном потоке).
-    max_pdf_pages: int = 300
-    parse_timeout_sec: float = 60.0
+    max_pdf_pages: int = 1000
+    # Таблицы Excel: строк с данными на лист; остаток не молчаливо пропускается, а даёт warning.
+    max_sheet_rows: int = 20_000
+    parse_timeout_sec: float = 180.0
+
+    # --- Аудио и видео (ingest/media.py): ffmpeg режет звук, STT читает сегменты параллельно ---
+    ffmpeg_path: str = "ffmpeg"
+    ffprobe_path: str = "ffprobe"
+    media_segment_sec: int = Field(default=600, ge=30, le=1800)
+    media_ffmpeg_timeout_sec: float = Field(default=3600.0, gt=0)
+    media_max_duration_sec: float = Field(default=4 * 3600.0, gt=0)
+    # Одновременно расшифровываемых сегментов и одновременных медиазаданий.
+    stt_parallel_segments: int = Field(default=3, ge=1, le=16)
+    media_max_concurrent_jobs: int = Field(default=1, ge=1, le=8)
+    # Срок запроса сегмента: база + доля длительности сегмента.
+    stt_segment_timeout_base_sec: float = Field(default=60.0, gt=0)
+    stt_segment_timeout_per_audio_sec: float = Field(default=0.3, ge=0)
 
     # --- Mock-реализация (#2): задержки имитируют работу модели и STT ---
     # Множитель всех задержек: 0 — мгновенно (тесты), 1 — как в демо.
@@ -74,12 +115,13 @@ class Settings(BaseSettings):
     }
     mock_transcription_delay_sec: float = 1.0
     mock_parse_delay_sec: float = 1.5
-    # Засевать ли демо-проекты при старте (в тестах можно выключить).
-    seed_demo_data: bool = True
+    # Засевать ли демо-проекты при старте. None — по окружению: в production выключено,
+    # иначе включено (в тестах можно выключить явно).
+    seed_demo_data: bool | None = None
 
     # Внешние провайдеры выключены по умолчанию. Секреты задаются только в корневом .env.
     llm_provider: str = "mock"
-    llm_api_key: str | None = None
+    llm_api_key: SecretStr | None = None
     llm_base_url: str | None = None
     llm_model: str | None = None
     llm_timeout_sec: float = 120.0
@@ -93,8 +135,21 @@ class Settings(BaseSettings):
     llm_max_retries: int = 3
     llm_retry_base_sec: float = 1.0
     llm_retry_max_sec: float = 30.0
+    # Глубина рассуждения Anthropic (`output_config.effort`): low | medium | high.
+    llm_anthropic_effort: str = "medium"
+    # Ключи моделей пользователей (ADR-0011): Fernet-ключи через запятую; первый шифрует,
+    # все расшифровывают (ротация). Сгенерировать: `make credentials-key`. В production без
+    # него пользовательские ключи не принимаются; в dev берётся временный ключ процесса.
+    credentials_encryption_key: SecretStr | None = None
+    # Хосты закрытых сетей, к которым разрешено ходить совместимым провайдерам пользователей
+    # (локальный vLLM/Ollama в dev). Пусто — только публичные адреса по HTTPS.
+    llm_allowed_private_hosts: Annotated[list[str], NoDecode] = []
+    # Потолок тела ответа сервера модели (чат и /models): защита памяти от чужого сервера.
+    llm_max_response_bytes: int = Field(default=8 * _MB, ge=1024)
+    # Сколько секунд хранить список моделей аккаунта пользователя.
+    llm_models_cache_sec: float = 300.0
     # Старые имена оставлены для плавного перехода production .env с DeepSeek.
-    deepseek_api_key: str | None = None
+    deepseek_api_key: SecretStr | None = None
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-flash"
     deepseek_timeout_sec: float = 120.0
@@ -106,7 +161,8 @@ class Settings(BaseSettings):
     deepseek_retry_base_sec: float = 1.0
     deepseek_retry_max_sec: float = 30.0
     stt_provider: str = "mock"
-    deepgram_api_key: str | None = None
+    deepgram_api_key: SecretStr | None = None
+    deepgram_timeout_sec: float = 120.0
 
     @field_validator(
         "database_url",
@@ -115,6 +171,8 @@ class Settings(BaseSettings):
         "llm_api_key",
         "deepseek_api_key",
         "deepgram_api_key",
+        "credentials_encryption_key",
+        "seed_demo_data",
         mode="before",
     )
     @classmethod
@@ -124,23 +182,103 @@ class Settings(BaseSettings):
             return None
         return value
 
-    def llm_connection(self) -> tuple[str, str, str]:
-        """Эффективные URL, модель и ключ; generic-настройки имеют приоритет над legacy."""
+    @field_validator("llm_allowed_private_hosts", mode="before")
+    @classmethod
+    def _split_hosts(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [part.strip().lower() for part in value.split(",") if part.strip()]
+        return value
+
+    @model_validator(mode="after")
+    def _resolve_defaults(self) -> "Settings":
+        if self.seed_demo_data is None:
+            self.seed_demo_data = not self.is_production
+        return self
+
+    @property
+    def is_production(self) -> bool:
+        return self.app_env.lower() in {"prod", "production"}
+
+    def llm_connection(self) -> tuple[SecretStr, str, str]:
+        """Эффективные ключ, URL и модель; generic-настройки имеют приоритет над legacy."""
         provider = self.llm_provider.lower()
-        api_key = self.llm_api_key or (self.deepseek_api_key if provider == "deepseek" else None)
-        base_url = self.llm_base_url or (self.deepseek_base_url if provider == "deepseek" else None)
-        model = self.llm_model or (self.deepseek_model if provider == "deepseek" else None)
+        legacy = provider == "deepseek"
+        api_key = self.llm_api_key or (self.deepseek_api_key if legacy else None)
+        base_url = self.llm_base_url or (self.deepseek_base_url if legacy else None)
+        model = self.llm_model or (self.deepseek_model if legacy else None)
+        if provider == "anthropic":
+            base_url = base_url or "https://api.anthropic.com"
+        if provider == "openai":
+            base_url = base_url or "https://api.openai.com/v1"
         if not api_key or not base_url or not model:
             raise ValueError(
                 f"LLM_PROVIDER={self.llm_provider} требует LLM_API_KEY, LLM_BASE_URL и LLM_MODEL"
             )
         return api_key, base_url, model
 
+    def llm_runtime(self, *, warn: bool = False) -> dict[str, float | int | bool | None]:
+        """Таймаут, повторы и thinking: generic `LLM_*` главнее legacy `DEEPSEEK_*`.
+
+        Legacy-имена действуют только для `LLM_PROVIDER=deepseek` и только если соответствующее
+        generic-имя не задано; об их использовании пишется предупреждение.
+        """
+        legacy = self.llm_provider.lower() == "deepseek"
+        explicit = self.model_fields_set
+        pairs = {
+            "timeout_sec": ("llm_timeout_sec", "deepseek_timeout_sec"),
+            "max_retries": ("llm_max_retries", "deepseek_max_retries"),
+            "retry_base_sec": ("llm_retry_base_sec", "deepseek_retry_base_sec"),
+            "retry_max_sec": ("llm_retry_max_sec", "deepseek_retry_max_sec"),
+        }
+        values: dict[str, float | int | bool | None] = {}
+        for key, (generic, old) in pairs.items():
+            if generic not in explicit and legacy and old in explicit:
+                if warn:
+                    logger.warning(
+                        "Переменная %s устарела: задайте %s", old.upper(), generic.upper()
+                    )
+                values[key] = getattr(self, old)
+            else:
+                values[key] = getattr(self, generic)
+        values["thinking"] = self.deepseek_thinking_enabled if legacy else None
+        return values
+
+    def validate_for_runtime(self) -> None:
+        """Отказ при старте, если production молча работал бы на заглушках."""
+        if not self.is_production:
+            return
+        if self.stt_provider.lower() == "mock":
+            raise ValueError(
+                "Production не принимает STT_PROVIDER=mock: задайте STT_PROVIDER=deepgram "
+                "и DEEPGRAM_API_KEY, иначе записи превратились бы в заготовленный текст"
+            )
+        if self.llm_provider.lower() == "mock" and not self.credentials_encryption_key:
+            raise ValueError(
+                "Production не принимает LLM_PROVIDER=mock без CREDENTIALS_ENCRYPTION_KEY: "
+                "задайте провайдера сервера или включите ключи пользователей"
+            )
+
     @property
     def cookie_secure(self) -> bool:
         if self.session_cookie_secure is not None:
             return self.session_cookie_secure
-        return self.app_env.lower() in {"prod", "production"}
+        return self.is_production
+
+    def context_budget_chars(self) -> int:
+        """Бюджет контекста; для моделей с большим окном увеличьте `LLM_CONTEXT_BUDGET_CHARS`."""
+        return self.llm_context_budget_chars
+
+    def run_deadline(self, total_chars: int = 0) -> float | None:
+        """Срок прогона: `run_deadline_sec` — нижняя граница, плюс время на объём источников.
+
+        `None` — срока нет (`RUN_DEADLINE_SEC=0`). Потолок `run_deadline_max_sec` не ниже базы.
+        """
+        return adaptive_deadline(
+            self.run_deadline_sec,
+            total_chars=total_chars,
+            per_1k_chars_sec=self.run_deadline_per_1k_chars_sec,
+            max_sec=self.run_deadline_max_sec,
+        )
 
     def mock_delay(self, seconds: float) -> float:
         return max(seconds, 0.0) * max(self.mock_delay_scale, 0.0)

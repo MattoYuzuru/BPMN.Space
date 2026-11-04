@@ -17,7 +17,7 @@ Deepgram (`STT_PROVIDER=deepgram`). Заглушки стоят за интер�
 flowchart TB
     api["api/ — роуты v1, схемы контракта, SSE, ошибки {detail}"] --> services
     services["services/ — сценарии: projects, sources, questions, runs, versions, catalog"] --> llm & ingest & infra & domain
-    llm["llm/ — ProcessPipeline · openai_compatible.py · question_analysis.py · graph_generation.py · mock.py"] --> domain
+    llm["llm/ — ProcessPipeline · pipeline.py · client/openai/anthropic/openai_compatible.py · question_analysis.py · graph_generation.py · mock.py"] --> domain
     ingest["ingest/ — parsers.py · stt.py · context.py"] --> domain
     infra["infra/ — repositories/ · events.py · tasks.py · bpmn_tools.py · storage.py · seed.py"] --> domain
     domain["domain/ — модели, вопросы и сверка, статусы, курсор, bpmn/ (IR, импортёр, manual policy, компилятор, дифф, XSD)"]
@@ -73,9 +73,9 @@ XSD в копии ответа. Старый `true`, полученный заг
 | Полный BPMN за пределами IR v1 | Реализованы один пул/процесс, XOR/AND, циклы, альтернативные message-старты, раздельные ends и приоритет ручной логики; неподдерживаемая ручная семантика вызывает отказ обычной сборки | Расширение IR/импортёра: несколько пулов и message flow, подпроцессы, boundary events, OR; не уплощать исходный XML | §5.3–5.5 · продолжение #5 после #20–#21 |
 | Дифф версий (`domain/bpmn/diff.py`) | Сравнение узлов и дорожек по `id` | Потоки/условия и бизнес-подписи изменений; сопоставление без общих `id` | #31 |
 | Mock-пайплайн (`llm/mock.py`) | Записанные ответы по фразам-триггерам (`fixtures/playbook.py`); режим по умолчанию (`LLM_PROVIDER=mock`) | Остаётся фикстурой для тестов и демо без ключа; golden set и замеры качества — скилл `prompt-eval` | §9.1 · #5 |
-| Бюджет контекста модели (`ingest/context.py`) | Анализ вопросов проходит полный evidence snapshot порциями. Для структуры по-прежнему используется лимит символов с явным предупреждением об обрезке | Общий контекст для анализа/структуры/чата, цитируемые дайджесты и модельный бюджет токенов | §5.2 п. 3 · #26 |
-| Разбор документов (`ingest/parsers.py`) | `.docx` — абзацы XML, включая текст ячеек, но без структуры таблиц/объединений, колонтитулов и смысловой нумерации; PDF — pypdf с границами страниц, полностью пустой текст отклоняется, смешанный текст/сканы может потерять часть содержания; CSV — JSON-массивы ячеек с исходным порядком | Структурный DOCX и явные пропущенные страницы PDF (#24), OCR (#25) | §5.2 · #24–#25 |
-| Распознавание речи (`ingest/stt.py`, `ingest/deepgram.py`) | По умолчанию mock (правдоподобная расшифровка); `STT_PROVIDER=deepgram` — один синхронный запрос без перепаковки | Yandex SpeechKit из RFC: ffmpeg → OGG_OPUS mono, клип ≤ 30 с — v1 синхронно, длиннее — v3 `recognizeFileAsync` + `getRecognition` | §5.2 · #6 |
+| Бюджет контекста модели (`ingest/context.py`) | Анализ вопросов проходит полный evidence snapshot порциями (параллельно, `LLM_PARALLEL_REQUESTS`). Структура получает полный текст либо проверенные цитаты из всех порций, при переполнении — сжатие цитат или явный отказ | Общий контекст для анализа/структуры/чата, цитируемые дайджесты и модельный бюджет токенов | §5.2 п. 3 · #26 |
+| Разбор документов (`ingest/parsers.py`) | DOCX/PPTX — структурный OOXML (заголовки, списки, markdown-таблицы), XLSX — openpyxl, PDF — pypdf с границами страниц; страницы без текстового слоя — `ready` с `warning`/`unreadable_pages` ([ADR-0012](../adr/0012-long-documents-and-media.md)); CSV — JSON-массивы ячеек | OCR для `unreadable_pages` (Tesseract или Yandex Vision), колонтитулы и сноски DOCX (#25) | §5.2 · #25 |
+| Распознавание речи (`ingest/stt.py`, `ingest/deepgram.py`, `ingest/media.py`) | По умолчанию mock (правдоподобная расшифровка; без ffmpeg принимает файл целиком); `STT_PROVIDER=deepgram` — ffmpeg режет запись на сегменты по 10 минут, сегменты идут параллельно, текст — `[мм:сс] реплика`; голосовая заметка с микрофона — один синхронный запрос | Yandex SpeechKit из RFC (v3 `recognizeFileAsync` + `getRecognition`), диаризация, перекрытие сегментов на границах | §5.2 · #6 |
 | Счётчики в списке проектов (`services/projects.py`) | На каждый проект несколько запросов (источники, вопросы, версии) | Один агрегирующий SQL-запрос на страницу | #6 |
 | Фоновые задачи (`infra/tasks.py`) и SSE-журнал (`infra/events.py`) | `asyncio` внутри процесса. После перезапуска прогоны и разбор файлов в работе помечаются `failed` с понятной причиной, возобновления нет; журнал SSE живёт в памяти | Осознанно остаётся (один backend, RFC §6 — без Redis); при масштабировании — очередь и общий журнал | §5.1, §6 |
 | Хранилище файлов (`infra/storage.py`) | `LocalFileStorage` на volume `/data/uploads` | S3-совместимое хранилище, если понадобится несколько узлов | §4 |
@@ -172,7 +172,9 @@ Mock-модель (`llm/mock.py`) детерминирована и зависи
 Всё задаётся в `backend/app/config.py` и `.env.example`. Для этого документа важны:
 `LLM_PROVIDER`, `STT_PROVIDER`; mock — `MOCK_DELAY_SCALE` (0 — мгновенно), `MOCK_STAGE_DELAYS`,
 `MOCK_TRANSCRIPTION_DELAY_SEC`, `MOCK_PARSE_DELAY_SEC`, `SEED_DEMO_DATA`; прогоны —
-`MAX_CONCURRENT_RUNS`, `RUN_DEADLINE_SEC`, `LLM_CONTEXT_BUDGET_CHARS`; DeepSeek —
+`MAX_CONCURRENT_RUNS`, `RUN_DEADLINE_SEC` (+ `RUN_DEADLINE_PER_1K_CHARS_SEC`, `RUN_DEADLINE_MAX_SEC`),
+`LLM_CONTEXT_BUDGET_CHARS`, `LLM_CHUNK_CHARS`, `LLM_PARALLEL_REQUESTS`; DeepSeek —
 `DEEPSEEK_TIMEOUT_SEC`, `DEEPSEEK_MAX_RETRIES`, `DEEPSEEK_RETRY_BASE_SEC`,
-`DEEPSEEK_RETRY_MAX_SEC`; загрузки — `MAX_UPLOAD_BYTES`, `MAX_AUDIO_BYTES`, `MAX_DIAGRAM_BYTES`,
-`MAX_TEXT_CHARS`, `MAX_PDF_PAGES`, `PARSE_TIMEOUT_SEC`.
+`DEEPSEEK_RETRY_MAX_SEC`; загрузки — `MAX_UPLOAD_BYTES`, `MAX_MEDIA_BYTES`, `MAX_AUDIO_BYTES`, `MAX_DIAGRAM_BYTES`,
+`MAX_TEXT_CHARS`, `MAX_PDF_PAGES`, `MAX_SHEET_ROWS`, `PARSE_TIMEOUT_SEC`, `MEDIA_SEGMENT_SEC`,
+`STT_PARALLEL_SEGMENTS`, `DEEPGRAM_TIMEOUT_SEC`.

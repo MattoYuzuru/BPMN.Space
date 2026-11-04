@@ -13,11 +13,16 @@ from app.domain.bpmn.lint import lint_document
 from app.domain.models import LintIssue, LintSeverity
 
 HTTP_INPUT_ERROR = 422
+HTTP_BUSY = 503
 MAX_ISSUES = 1000
 
 
 class BpmnToolsError(ValueError):
     """Сервис недоступен или ответ не прошёл проверку. Не превращается в фальшивый успех."""
+
+
+class BpmnToolsTransientError(BpmnToolsError):
+    """Сервис занят или соединение оборвано: запрос можно повторить."""
 
 
 class BpmnToolsInputError(BpmnFormatError):
@@ -29,10 +34,27 @@ class BpmnTools(Protocol):
     async def lint(self, xml: str) -> list[LintIssue]: ...
 
 
+def _worker_crashed(error: HTTPError) -> bool:
+    """`crash` — worker упал на этом XML (в том числе по памяти): повтор повторит и сбой."""
+    try:
+        data = json.loads(error.read(4096))
+    except (ValueError, UnicodeError, OSError):
+        return False
+    return isinstance(data, dict) and data.get("code") == "crash"
+
+
 class HttpBpmnTools:
     quality = "full"
 
-    def __init__(self, url: str, *, timeout_sec: float = 20, max_bytes: int = 5 * 1024 * 1024):
+    def __init__(
+        self,
+        url: str,
+        *,
+        timeout_sec: float = 20,
+        max_bytes: int = 5 * 1024 * 1024,
+        retries: int = 2,
+        backoff_sec: float = 0.15,
+    ):
         parsed = urlsplit(url)
         if (
             parsed.scheme not in {"http", "https"}
@@ -46,6 +68,8 @@ class HttpBpmnTools:
         self._url = url.rstrip("/")
         self._timeout = timeout_sec
         self._max_bytes = max_bytes
+        self._retries = max(retries, 0)
+        self._backoff = backoff_sec
         self._warnings: ContextVar[tuple[str, ...]] = ContextVar("bpmn_tools_warnings", default=())
 
     def warnings(self) -> list[str]:
@@ -55,11 +79,22 @@ class HttpBpmnTools:
         if len(xml.encode()) > self._max_bytes:
             raise BpmnToolsInputError("Схема превышает лимит внутреннего сервиса")
         # Отмена освобождает await; urllib-поток всё равно имеет конечный socket timeout.
-        try:
-            async with asyncio.timeout(self._timeout + 1):
-                result = await asyncio.to_thread(self._request, operation, xml)
-        except TimeoutError:
-            raise BpmnToolsError("Сервис проверки схемы не ответил в отведённое время") from None
+        # Кратковременная занятость (503) и обрыв соединения повторяются с небольшой паузой.
+        attempt = 0
+        while True:
+            try:
+                async with asyncio.timeout(self._timeout + 1):
+                    result = await asyncio.to_thread(self._request, operation, xml)
+                break
+            except BpmnToolsTransientError as error:
+                if attempt >= self._retries:
+                    raise BpmnToolsError(str(error)) from None
+                await asyncio.sleep(self._backoff * 2**attempt)
+                attempt += 1
+            except TimeoutError:
+                raise BpmnToolsError(
+                    "Сервис проверки схемы не ответил в отведённое время"
+                ) from None
         if not isinstance(result, dict):
             raise BpmnToolsError("Сервис проверки схемы вернул некорректный ответ")
         return result
@@ -82,9 +117,23 @@ class HttpBpmnTools:
                 raise BpmnToolsInputError(
                     "Сервис проверки отверг BPMN XML: проверьте элементы и ссылки"
                 ) from None
+            if error.code == HTTP_BUSY and not _worker_crashed(error):
+                raise BpmnToolsTransientError(
+                    f"Сервис проверки схемы недоступен (HTTP {error.code})"
+                ) from None
             raise BpmnToolsError(f"Сервис проверки схемы недоступен (HTTP {error.code})") from None
-        except (URLError, TimeoutError, OSError):
+        except TimeoutError:
             raise BpmnToolsError("Не удалось связаться с сервисом проверки схемы") from None
+        except URLError as error:
+            if isinstance(error.reason, TimeoutError):
+                raise BpmnToolsError("Не удалось связаться с сервисом проверки схемы") from None
+            raise BpmnToolsTransientError(
+                "Не удалось связаться с сервисом проверки схемы"
+            ) from None
+        except OSError:
+            raise BpmnToolsTransientError(
+                "Не удалось связаться с сервисом проверки схемы"
+            ) from None
         except (ValueError, UnicodeError):
             raise BpmnToolsError("Сервис проверки схемы вернул некорректный JSON") from None
 

@@ -131,7 +131,7 @@ def test_pdf_and_broken_docx(client: TestClient) -> None:
 
 def test_file_upload_errors(client: TestClient, container: Container) -> None:
     project_id = create_project(client)
-    status, body = _upload(client, project_id, "схема.xlsx", b"data")
+    status, body = _upload(client, project_id, "схема.xls", b"data")
     assert status == 415
     assert "Формат не поддерживается" in str(body["detail"])
     status, body = _upload(client, project_id, "пустой.txt", b"")

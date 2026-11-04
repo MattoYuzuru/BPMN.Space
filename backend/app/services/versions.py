@@ -1,13 +1,22 @@
 """Сценарии версий схемы: список, получение XML, сохранение ручной правки из bpmn-js."""
 
+import asyncio
 from collections.abc import Mapping
+from datetime import datetime
 from uuid import UUID
 
-from app.domain.bpmn.document import BpmnFormatError, ensure_safe_xml
+from app.domain.bpmn.document import BpmnFormatError
 from app.domain.bpmn.importer import retain_trace
 from app.domain.bpmn.xsd import require_valid_bpmn
-from app.domain.models import LintIssue, Quote, RunMode, Version, VersionOrigin
-from app.domain.versions import build_version, rechecked_version
+from app.domain.models import (
+    LintIssue,
+    Quote,
+    RunMode,
+    Version,
+    VersionOrigin,
+    VersionSummary,
+)
+from app.domain.versions import build_version
 from app.infra.bpmn_tools import BpmnTools, BpmnToolsError
 from app.infra.repositories.base import Repositories
 from app.services.common import Runtime, get_project, get_version, too_large
@@ -18,6 +27,9 @@ from app.services.errors import (
     StaleVersionError,
     UnavailableError,
 )
+
+#: Предел имени контрольной точки (совпадает с колонкой `diagram_versions.label`).
+MAX_LABEL_CHARS = 120
 
 
 async def add_version(
@@ -33,13 +45,15 @@ async def add_version(
     actor_email: str | None = None,
     expected_base_version_id: UUID | None = None,
     enforce_base: bool = False,
+    xsd_checked: bool = False,
 ) -> Version:
     """Новая версия: номер, дифф с прошлой, допущения по текущим вопросам, дорожки.
 
     Номер берётся под блокировкой проекта в одной транзакции: ручное сохранение и прогон
     (или два редактора) получают подряд идущие номера и не упираются в уникальный индекс.
     """
-    require_valid_bpmn(xml)
+    if not xsd_checked:
+        await asyncio.to_thread(require_valid_bpmn, xml)
     async with repos.atomic() as tx:
         if await tx.projects.lock(project_id) is None:
             raise NotFoundError("Проект не найден")
@@ -50,7 +64,8 @@ async def add_version(
             )
         questions = await tx.questions.list_by_project(project_id)
         now = runtime.clock()
-        version = build_version(
+        version = await asyncio.to_thread(
+            build_version,
             version_id=runtime.new_id(),
             project_id=project_id,
             number=previous.number + 1 if previous else 1,
@@ -60,6 +75,7 @@ async def add_version(
             questions=questions,
             lint=lint,
             xsd_valid=True,
+            xsd_checked=True,
             trace=trace,
             created_at=now,
             run_id=run_id,
@@ -78,21 +94,59 @@ class VersionService:
         bpmn_tools: BpmnTools,
         runtime: Runtime,
         max_diagram_bytes: int,
+        session_idle_sec: float = 0.0,
+        session_max_sec: float = 0.0,
     ) -> None:
         self._repos = repos
         self._tools = bpmn_tools
         self._rt = runtime
         self._max_bytes = max_diagram_bytes
+        self._session_idle = session_idle_sec
+        self._session_max = session_max_sec
 
-    async def list(self, project_id: UUID) -> list[Version]:
+    async def list_page(
+        self, project_id: UUID, *, limit: int, before: int | None = None
+    ) -> tuple[list[VersionSummary], int | None]:
+        """Страница истории без XML и цитат; второй элемент — курсор `before` следующей страницы."""
         await get_project(self._repos, project_id)
-        return [
-            rechecked_version(version)
-            for version in await self._repos.versions.list_by_project(project_id)
-        ]
+        rows = await self._repos.versions.list_page(project_id, limit=limit + 1, before=before)
+        page = rows[:limit]
+        return page, (page[-1].number if len(rows) > limit and page else None)
 
     async def get(self, version_id: UUID) -> Version:
         return await get_version(self._repos, version_id)
+
+    async def checkpoint(
+        self, project_id: UUID, version_id: UUID, *, label: str | None = None
+    ) -> Version:
+        """Закрепить версию как контрольную точку: она больше не принимает автосохранения."""
+        name = label.strip() if label is not None else None
+        if name is not None and len(name) > MAX_LABEL_CHARS:
+            raise InvalidInputError(f"Название длиннее {MAX_LABEL_CHARS} символов")
+        async with self._repos.atomic() as repos:
+            if await repos.projects.lock(project_id) is None:
+                raise NotFoundError("Проект не найден")
+            current = await repos.versions.get(version_id)
+            if current is None or current.project_id != project_id:
+                raise NotFoundError("Версия не найдена")
+            marked = await repos.versions.mark_checkpoint(version_id, name)
+            if marked is None:
+                raise NotFoundError("Версия не найдена")
+            return marked
+
+    def _coalescable(self, head: Version | None, actor_email: str | None, now: datetime) -> bool:
+        """Автосохранение вливается в последнюю версию, пока сессия правок того же автора жива."""
+        if head is None or self._session_idle <= 0 or not actor_email:
+            return False
+        if head.origin is not VersionOrigin.MANUAL or head.checkpoint:
+            return False
+        if head.actor_email != actor_email:
+            return False
+        last = head.updated_at or head.created_at
+        started = head.session_started_at or head.created_at
+        if (now - last).total_seconds() >= self._session_idle:
+            return False
+        return self._session_max <= 0 or (now - started).total_seconds() < self._session_max
 
     async def save_manual(
         self,
@@ -113,8 +167,9 @@ class VersionService:
         if not xml.strip():
             raise InvalidInputError("Схема пустая")
         try:
-            require_valid_bpmn(xml)
-            ensure_safe_xml(xml)  # только BPMN-пространства имён, без PI, DTD и script
+            # Одна XSD-проверка (она же отсекает небезопасный XML: DTD, PI, script и чужие
+            # пространства имён) и вне цикла событий; повторно её не вызывают ниже.
+            await asyncio.to_thread(require_valid_bpmn, xml)
             lint = await self._tools.lint(xml)
         except BpmnToolsError as error:
             raise UnavailableError(str(error)) from error
@@ -142,7 +197,20 @@ class VersionService:
             # Повтор идентичного сохранения не раздувает историю и не меняет автора.
             if previous is not None and previous.xml == xml:
                 return previous
-            trace = retain_trace(previous.xml, xml, previous.trace) if previous else {}
+            now = self._rt.clock()
+            if (
+                previous is not None
+                and self._coalescable(previous, actor_email, now)
+                and not await repos.versions.has_dependants(previous.id)
+            ):
+                return await self._coalesce(
+                    repos, previous, xml=xml, lint=lint, actor_email=actor_email, now=now
+                )
+            trace = (
+                await asyncio.to_thread(retain_trace, previous.xml, xml, previous.trace)
+                if previous
+                else {}
+            )
             return await add_version(
                 repos,
                 self._rt,
@@ -152,4 +220,45 @@ class VersionService:
                 lint=lint,
                 trace=trace,
                 actor_email=actor_email,
+                xsd_checked=True,
             )
+
+    async def _coalesce(
+        self,
+        repos: Repositories,
+        head: Version,
+        *,
+        xml: str,
+        lint: list[LintIssue],
+        actor_email: str | None,
+        now: datetime,
+    ) -> Version:
+        """Заменяет последнюю версию сессии: тот же номер, новый id, дифф от предшественника.
+
+        Новый id нужен, чтобы `base_version_id` соавторов и вкладок честно устаревал.
+        """
+        base = await repos.versions.by_number(head.project_id, head.number - 1)
+        questions = await repos.questions.list_by_project(head.project_id)
+        trace = await asyncio.to_thread(retain_trace, base.xml, xml, base.trace) if base else {}
+        version = await asyncio.to_thread(
+            build_version,
+            version_id=self._rt.new_id(),
+            project_id=head.project_id,
+            number=head.number,
+            origin=VersionOrigin.MANUAL,
+            xml=xml,
+            previous_xml=base.xml if base else None,
+            questions=questions,
+            lint=lint,
+            xsd_valid=True,
+            xsd_checked=True,
+            trace=trace,
+            created_at=head.created_at,
+            actor_email=actor_email,
+            session_started_at=head.session_started_at,
+            saved_count=head.saved_count + 1,
+        )
+        version.updated_at = now
+        await repos.versions.replace(head.id, version)
+        await repos.projects.touch(head.project_id, now)
+        return version

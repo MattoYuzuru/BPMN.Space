@@ -61,6 +61,18 @@ rollback() {
         return 1
       fi
     fi
+    # Волна 2 (обобщённые ключи и технические вопросы) неаддитивна для старого кода:
+    # `user_llm_credentials` намеренно оставлена legacy-таблицей (0020), а статус `waiting`
+    # старый RunStatus не знает. Перед переключением закрываем ожидающие прогоны как failed,
+    # чтобы откат кода ниже волны 2 не падал на чтении прогонов. Ключи инструментов при
+    # откате схемы не переносятся — об этом предупреждаем, схему откатывает человек.
+    if ssh "$deploy_user@$deploy_host" "test -f '$release/backend/migrations/versions/0020_user_credentials.py' && ! test -f '$previous/backend/migrations/versions/0020_user_credentials.py'"; then
+      echo "Схема БД новее откатываемого релиза (волна 2): закрываю ожидающие прогоны перед откатом кода." >&2
+      if ! ssh "$deploy_user@$deploy_host" "set -eu; cd '$release'; docker compose --env-file '$remote_root/shared/.env' -p arkhitektor -f compose.yaml -f compose.prod.yaml exec -T db sh -c 'psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -c \"UPDATE runs SET status = '\''failed'\'', error = COALESCE(error, '\''Прогон остановлен при откате на предыдущую версию'\''), finished_at = COALESCE(finished_at, now()) WHERE status = '\''waiting'\'';\"'"; then
+        echo "Не удалось закрыть ожидающие прогоны. Откат продолжен, но старый код может не прочитать такой прогон; проверьте логи и данные." >&2
+      fi
+      echo "Внимание: откат кода не откатывает схему. Полный откат ниже волны 2 — через alembic downgrade (см. docs/deployment.md); ключи инструментов при downgrade 0020 теряются." >&2
+    fi
     ssh "$deploy_user@$deploy_host" "set -eu; ln -sfn '$previous' '$remote_root/current'; cd '$previous'; docker compose --env-file '$remote_root/shared/.env' -p arkhitektor -f compose.yaml -f compose.prod.yaml up -d --build --remove-orphans"
   else
     ssh "$deploy_user@$deploy_host" "cd '$release' && docker compose --env-file '$remote_root/shared/.env' -p arkhitektor -f compose.yaml -f compose.prod.yaml down" || true

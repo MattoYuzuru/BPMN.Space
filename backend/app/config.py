@@ -204,6 +204,11 @@ class Settings(BaseSettings):
     capability_breaker_cooldown_sec: float = Field(default=60.0, ge=0)
     # Пауза ключа при исчерпанной квоте, если провайдер не прислал `Retry-After`.
     capability_quota_cooldown_sec: float = Field(default=3600.0, ge=0)
+    # Один вызов адаптера (запрос к провайдеру) и бюджет на весь перебор ключей и запасной
+    # путь. Внешний дедлайн обработки записи берёт их с запасом, чтобы маршрутизатор успел
+    # перейти к следующему ключу или серверному провайдеру.
+    capability_request_timeout_sec: float = Field(default=120.0, gt=0)
+    capability_run_deadline_sec: float = Field(default=600.0, gt=0)
 
     @field_validator(
         "database_url",

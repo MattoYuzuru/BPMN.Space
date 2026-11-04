@@ -160,7 +160,8 @@ async def _drop(admin: Any, engine: Any, schema: str) -> None:
     await admin.dispose()
 
 
-async def test_migration_0020_moves_llm_keys_and_back() -> None:
+async def test_migration_0020_keeps_legacy_table_and_rolls_llm_keys_back() -> None:
+    """0020 не удаляет legacy-таблицу; downgrade возвращает в неё и ключи, созданные после."""
     admin, engine, config, schema, url = await _migration_config()
     del url
 
@@ -168,18 +169,24 @@ async def test_migration_0020_moves_llm_keys_and_back() -> None:
         config.attributes["connection"] = sync_connection
         getattr(command, action)(config, revision)
 
+    def tables(sync_connection: Any) -> set[str]:
+        return set(inspect(sync_connection).get_table_names())
+
     try:
         async with engine.begin() as connection:
             await connection.run_sync(migrate, "upgrade", "0017_api_tokens")
             user_id = uuid4()
+            new_user_id = uuid4()
             credential_id = uuid4()
-            await connection.execute(
-                text(
-                    "INSERT INTO users (id, email, hashed_password, is_active, is_superuser, "
-                    "is_verified) VALUES (:id, 'legacy@example.com', 'x', true, false, false)"
-                ),
-                {"id": user_id},
-            )
+            new_credential_id = uuid4()
+            for uid, email in ((user_id, "legacy@example.com"), (new_user_id, "new@example.com")):
+                await connection.execute(
+                    text(
+                        "INSERT INTO users (id, email, hashed_password, is_active, is_superuser, "
+                        "is_verified) VALUES (:id, :email, 'x', true, false, false)"
+                    ),
+                    {"id": uid, "email": email},
+                )
             await connection.execute(
                 text(
                     "INSERT INTO user_llm_credentials (id, user_id, provider, label, base_url, "
@@ -191,9 +198,17 @@ async def test_migration_0020_moves_llm_keys_and_back() -> None:
             )
 
             await connection.run_sync(migrate, "upgrade", "head")
-            tables = await connection.run_sync(lambda sync: set(inspect(sync).get_table_names()))
-            assert "user_credentials" in tables
-            assert "user_llm_credentials" not in tables
+            tables_now = await connection.run_sync(tables)
+            assert "user_credentials" in tables_now
+            # Legacy-таблица сохранена: откат только кода должен запускать старый релиз.
+            assert "user_llm_credentials" in tables_now
+            legacy_rows = (
+                await connection.execute(
+                    text("SELECT id FROM user_llm_credentials WHERE id = :id"),
+                    {"id": credential_id},
+                )
+            ).all()
+            assert legacy_rows == [(credential_id,)]
             row = (
                 await connection.execute(
                     text(
@@ -211,10 +226,30 @@ async def test_migration_0020_moves_llm_keys_and_back() -> None:
             assert (row.priority, row.enabled) == (100, True)
             assert row.last_error == "старая ошибка"
 
-            await connection.run_sync(migrate, "downgrade", "0017_api_tokens")
-            tables = await connection.run_sync(lambda sync: set(inspect(sync).get_table_names()))
-            assert "user_llm_credentials" in tables
-            assert "user_credentials" not in tables
+            # Ключ, созданный после релиза: только в новой таблице. И ключ инструмента.
+            await connection.execute(
+                text(
+                    "INSERT INTO user_credentials (id, user_id, kinds, provider, label, "
+                    "encrypted_key, key_hint, default_model, priority, enabled, is_default, "
+                    "created_at) VALUES (:id, :user, ARRAY['llm']::varchar[], 'openai', "
+                    "'Новый', :key, '5678', 'gpt-4o', 10, true, true, now())"
+                ),
+                {"id": new_credential_id, "user": new_user_id, "key": b"new-cipher"},
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO user_credentials (id, user_id, kinds, provider, label, "
+                    "encrypted_key, key_hint, priority, enabled, is_default, created_at) "
+                    "VALUES (:id, :user, ARRAY['speech_to_text']::varchar[], 'deepgram', 'STT', "
+                    ":key, '1234', 100, true, false, now())"
+                ),
+                {"id": uuid4(), "user": user_id, "key": b"stt-cipher"},
+            )
+
+            await connection.run_sync(migrate, "downgrade", "0019_technical_questions")
+            tables_now = await connection.run_sync(tables)
+            assert "user_credentials" not in tables_now
+            assert "user_llm_credentials" in tables_now
             old = (
                 await connection.execute(
                     text(
@@ -226,11 +261,35 @@ async def test_migration_0020_moves_llm_keys_and_back() -> None:
             ).one()
             assert (old.provider, old.label, old.key_hint) == ("openai", "Старый", "1234")
             assert (old.default_model, old.is_default) == ("gpt-4o", True)
+            # Ключ модели, созданный после релиза, перенесён обратно (и стал по умолчанию).
+            created = (
+                await connection.execute(
+                    text(
+                        "SELECT user_id, provider, label, key_hint, is_default "
+                        "FROM user_llm_credentials WHERE id = :id"
+                    ),
+                    {"id": new_credential_id},
+                )
+            ).one()
+            assert (created.user_id, created.provider, created.label) == (
+                new_user_id,
+                "openai",
+                "Новый",
+            )
+            assert created.is_default is True
+            # Ключи инструментов в прежней схеме не представлены: откат их не сохраняет.
+            instrument = (
+                await connection.execute(
+                    text("SELECT count(*) FROM user_llm_credentials WHERE label = 'STT'")
+                )
+            ).scalar_one()
+            assert instrument == 0
     finally:
         await _drop(admin, engine, schema)
 
 
-async def test_migration_0020_downgrade_refuses_to_drop_non_llm_keys() -> None:
+async def test_downgrade_0019_converts_waiting_runs_to_failed() -> None:
+    """Старый код не знает RunStatus.waiting: откат 0019 закрывает ожидающие прогоны."""
     admin, engine, config, schema, url = await _migration_config()
     del url
 
@@ -241,24 +300,46 @@ async def test_migration_0020_downgrade_refuses_to_drop_non_llm_keys() -> None:
     try:
         async with engine.begin() as connection:
             await connection.run_sync(migrate, "upgrade", "head")
-            user_id = uuid4()
+            user_id, project_id, run_id = uuid4(), uuid4(), uuid4()
             await connection.execute(
                 text(
                     "INSERT INTO users (id, email, hashed_password, is_active, is_superuser, "
-                    "is_verified) VALUES (:id, 'stt@example.com', 'x', true, false, false)"
+                    "is_verified) VALUES (:id, 'wait@example.com', 'x', true, false, false)"
                 ),
                 {"id": user_id},
             )
             await connection.execute(
                 text(
-                    "INSERT INTO user_credentials (id, user_id, kinds, provider, label, "
-                    "encrypted_key, key_hint, priority, enabled, is_default, created_at) "
-                    "VALUES (:id, :user, ARRAY['speech_to_text']::varchar[], 'deepgram', 'STT', "
-                    ":key, '1234', 100, true, false, now())"
+                    "INSERT INTO projects (id, title, created_at, updated_at, public_read_only) "
+                    "VALUES (:id, 'Ожидание', now(), now(), false)"
                 ),
-                {"id": uuid4(), "user": user_id, "key": b"ciphertext"},
+                {"id": project_id},
             )
-            with pytest.raises(RuntimeError, match="невозможен"):
-                await connection.run_sync(migrate, "downgrade", "0017_api_tokens")
+            await connection.execute(
+                text(
+                    "INSERT INTO runs (id, project_id, mode, status, started_at, progress, "
+                    "warnings) VALUES (:id, :project, 'analyze', 'waiting', now(), 0, "
+                    "'[]'::jsonb)"
+                ),
+                {"id": run_id, "project": project_id},
+            )
+
+            await connection.run_sync(migrate, "downgrade", "0018_llm_call_cost")
+            run = (
+                await connection.execute(
+                    text("SELECT status, error, finished_at FROM runs WHERE id = :id"),
+                    {"id": run_id},
+                )
+            ).one()
+            assert run.status == "failed"
+            assert run.error is not None
+            assert "откате" in run.error
+            assert run.finished_at is not None
+            columns = await connection.run_sync(
+                lambda sync: {item["name"] for item in inspect(sync).get_columns("questions")}
+            )
+            assert "category" not in columns
+            assert "actions" not in columns
+            assert "blocking" not in columns
     finally:
         await _drop(admin, engine, schema)

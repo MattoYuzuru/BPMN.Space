@@ -5,12 +5,18 @@ OCR, vision, видео, поиск и чтение страниц, TTS. Шиф�
 пользователю остаются как в ADR-0011: перешифровывать ничего не нужно, столбцы совместимы.
 
 Существующие ключи моделей переносятся без потери данных (`kinds = {llm}`, приоритет 100,
-включены, отметки использования и ошибки сохраняются). Откат возвращает прежнюю таблицу
-ключей моделей; ключи других типов при откате потерялись бы, поэтому downgrade честно
-останавливается, пока они есть.
+включены, отметки использования и ошибки сохраняются). Старая таблица `user_llm_credentials`
+**не удаляется в этом релизе**: она остаётся legacy-копией, чтобы откат только кода
+(scripts/deploy.sh переключает релиз, но не схему) запускал старый код без
+`relation "user_llm_credentials" does not exist`. Удалить её отдельной миграцией можно
+только в следующем релизе, когда откат к коду до волны 2 уже не поддерживается.
+
+Откат (`downgrade`) переносит ключи типа `llm`, созданные после релиза, обратно в
+legacy-таблицу и удаляет `user_credentials`. Ключи инструментов (не-LLM) в прежней схеме не
+представлены и при откате теряются — это фиксируется в docs/deployment.md.
 
 Revision ID: 0020_user_credentials
-Revises: 0017_api_tokens
+Revises: 0019_technical_questions
 """
 
 import sqlalchemy as sa
@@ -88,63 +94,36 @@ def upgrade() -> None:
             "last_used_at, last_error FROM user_llm_credentials"
         )
     )
-    op.drop_index("uq_user_llm_credentials_default", table_name="user_llm_credentials")
-    op.drop_index("ix_user_llm_credentials_user_id", table_name="user_llm_credentials")
-    op.drop_table("user_llm_credentials")
+    # `user_llm_credentials` намеренно остаётся: это legacy-копия для отката только кода.
+    # Удаление — отдельной миграцией в следующем релизе, когда такой откат не поддерживается.
 
 
 def downgrade() -> None:
-    bind = op.get_bind()
-    # Ключи не-LLM типов в прежнюю схему не помещаются: откат не должен их молча терять.
-    stray = bind.execute(
-        sa.text(
-            "SELECT count(*) FROM user_credentials WHERE NOT (kinds <@ ARRAY['llm']::varchar[])"
-        )
-    ).scalar_one()
-    if stray:
-        raise RuntimeError(
-            "Откат 0020_user_credentials невозможен: есть ключи не-LLM типов ("
-            f"{stray}). Удалите их в настройках или не откатывайтесь на схему без обобщённых "
-            "ключей — иначе они пропадут"
-        )
-    op.create_table(
-        "user_llm_credentials",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("provider", sa.String(length=32), nullable=False),
-        sa.Column("label", sa.String(length=60), nullable=False),
-        sa.Column("base_url", sa.String(length=500), nullable=True),
-        sa.Column("encrypted_key", sa.LargeBinary(), nullable=False),
-        sa.Column("key_hint", sa.String(length=8), nullable=False),
-        sa.Column("default_model", sa.String(length=128), nullable=True),
-        sa.Column("is_default", sa.Boolean(), server_default=sa.false(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("last_used_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("last_error", sa.String(length=500), nullable=True),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.CheckConstraint(
-            "provider IN ('anthropic', 'openai', 'openai_compatible')",
-            name="ck_user_llm_credentials_provider",
-        ),
-    )
-    op.create_index("ix_user_llm_credentials_user_id", "user_llm_credentials", ["user_id"])
-    op.create_index(
-        "uq_user_llm_credentials_default",
-        "user_llm_credentials",
-        ["user_id"],
-        unique=True,
-        postgresql_where=sa.text("is_default"),
-    )
+    # Возвращаем в legacy-таблицу ключи моделей, созданные/изменённые после релиза.
     op.execute(
         sa.text(
             "INSERT INTO user_llm_credentials (id, user_id, provider, label, base_url, "
             "encrypted_key, key_hint, default_model, is_default, created_at, last_used_at, "
             "last_error) "
             "SELECT id, user_id, provider, label, base_url, encrypted_key, key_hint, "
-            "default_model, is_default, created_at, last_used_at, last_error "
-            "FROM user_credentials WHERE kinds <@ ARRAY['llm']::varchar[]"
+            "default_model, false, created_at, last_used_at, last_error "
+            "FROM user_credentials WHERE kinds <@ ARRAY['llm']::varchar[] "
+            "ON CONFLICT (id) DO NOTHING"
         )
     )
+    # «По умолчанию» — не больше одного ключа на пользователя (частичный уникальный индекс).
+    op.execute(
+        sa.text(
+            "UPDATE user_llm_credentials AS legacy SET is_default = true "
+            "FROM user_credentials AS current "
+            "WHERE legacy.id = current.id AND current.is_default "
+            "AND NOT EXISTS ("
+            "  SELECT 1 FROM user_llm_credentials AS other "
+            "  WHERE other.user_id = current.user_id AND other.is_default"
+            ")"
+        )
+    )
+    # Ключи инструментов (не-LLM) в прежней схеме не представлены: при откате теряются.
     op.drop_index("uq_user_credentials_default", table_name="user_credentials")
     op.drop_index("ix_user_credentials_user_priority", table_name="user_credentials")
     op.drop_index("ix_user_credentials_user_id", table_name="user_credentials")

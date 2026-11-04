@@ -4,6 +4,7 @@ Fake-адаптеры без сети: перебор по приоритету,
 пометки ключей (исчерпание, недействительность) и структурный результат отказа.
 """
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -67,14 +68,29 @@ class _FakeAdapter:
         action = script.pop(0) if script else None
         if isinstance(action, CapabilityError):
             raise action
-        return Transcript(text="расшифровано", duration_sec=1.0, provider="fake", model="fake-1")
+        if isinstance(action, float):
+            await asyncio.sleep(action)  # медленный провайдер: проверка таймаута вызова
+        return Transcript(
+            text="расшифровано",
+            duration_sec=1.0,
+            provider="fake",
+            model="fake-1",
+            credential_id=self.credential_id,
+        )
 
     async def aclose(self) -> None:
         return None
 
 
 class _Harness:
-    def __init__(self, *, attempts: int = 2, threshold: int = 3) -> None:
+    def __init__(
+        self,
+        *,
+        attempts: int = 2,
+        threshold: int = 3,
+        request_timeout_sec: float = 120.0,
+        run_deadline_sec: float = 600.0,
+    ) -> None:
         self.clock = _Clock()
         store = InMemoryStore()
         self.repos: Repositories = store.repositories()
@@ -103,6 +119,8 @@ class _Harness:
                 breaker_threshold=threshold,
                 breaker_cooldown_sec=60,
                 quota_cooldown_sec=3600,
+                request_timeout_sec=request_timeout_sec,
+                run_deadline_sec=run_deadline_sec,
             ),
             monotonic=self.clock.monotonic,
             sleep=_no_sleep,
@@ -179,7 +197,7 @@ async def test_quota_is_not_retried_and_key_rests() -> None:
     user_id = uuid4()
     quota = await harness.add(user_id=user_id, priority=10)
     harness.plan[quota.id] = [
-        CapabilityError(ErrorClass.QUOTA_EXHAUSTED, "кончилась квота", retry_after_sec=120)
+        CapabilityError(ErrorClass.QUOTA_EXHAUSTED, "кончилась квота", retry_after_sec=3600)
     ]
     spare = await harness.add(user_id=user_id, priority=20)
 
@@ -192,7 +210,8 @@ async def test_quota_is_not_retried_and_key_rests() -> None:
     assert stored is not None
     assert stored.last_error_code == "quota_exhausted"
     assert stored.exhausted_until is not None
-    assert stored.exhausted_until == NOW + timedelta(seconds=120)
+    # Долгий Retry-After не обрезается: ключ не тратит запросы, пока квота не вернётся.
+    assert stored.exhausted_until == NOW + timedelta(seconds=3600)
 
 
 async def test_transient_is_retried_then_next_key_is_used() -> None:
@@ -416,3 +435,71 @@ async def test_checkable_adapter_is_created_with_user_base_url() -> None:
     assert result == "https://stt.example.com/v1:whisper-1"
     assert adapter is not None
     assert adapter.context.api_key == PLAIN_KEY
+
+
+async def test_slow_adapter_call_times_out_as_transient_and_next_key_is_used() -> None:
+    """Таймаут одного вызова: маршрутизатор помечает ключ и идёт дальше, а не висит."""
+    harness = _Harness(attempts=1, request_timeout_sec=0.02)
+    user_id = uuid4()
+    slow = await harness.add(user_id=user_id, priority=10)
+    harness.plan[slow.id] = [0.3]
+    await harness.add(user_id=user_id, priority=20)
+
+    transcript = await harness.run(user_id=user_id)
+
+    assert transcript.text == "расшифровано"
+    stored = await harness.repos.credentials.get(slow.id)  # type: ignore[union-attr]
+    assert stored is not None
+    assert stored.last_error_code == "transient"
+    assert stored.enabled is True
+
+
+async def test_unexpected_adapter_creation_error_is_fatal_and_recorded() -> None:
+    """Непредвиденная ошибка адаптера — FATAL: отказ записывается, 500 наружу не уходит."""
+    store = InMemoryStore()
+    repos = store.repositories()
+    cipher = CredentialCipher(SecretStr(Fernet.generate_key().decode()), allow_ephemeral=False)
+    registry = AdapterRegistry()
+
+    def broken(context: AdapterContext) -> object:
+        del context
+        raise RuntimeError("boom")
+
+    registry.register(
+        AdapterSpec(Capability.SPEECH_TO_TEXT, "broken", "Broken", broken)  # type: ignore[arg-type]
+    )
+    user_id = uuid4()
+    credential = Credential(
+        id=uuid4(),
+        user_id=user_id,
+        provider="broken",
+        label="Сломанный",
+        encrypted_key=cipher.encrypt(user_id, PLAIN_KEY),
+        key_hint="6789",
+        kinds=(CredentialKind.SPEECH_TO_TEXT,),
+        created_at=NOW,
+    )
+    await repos.credentials.save(credential)  # type: ignore[union-attr]
+    router = CapabilityRouter(
+        repos,
+        cipher=cipher,
+        registry=registry,
+        runtime=Runtime(clock=lambda: NOW),
+        policy=RoutingPolicy(max_attempts=1, request_timeout_sec=1),
+        monotonic=lambda: 0.0,
+        sleep=_no_sleep,
+    )
+
+    with pytest.raises(CapabilityUnavailableError) as info:
+        await router.run(
+            user_id=user_id,
+            capability=Capability.SPEECH_TO_TEXT,
+            invoke=lambda adapter: adapter.transcribe(b"audio", mime=None),
+        )
+
+    assert info.value.outcome.status == "failed"
+    assert info.value.outcome.reason == "fatal"
+    stored = await repos.credentials.get(credential.id)  # type: ignore[union-attr]
+    assert stored is not None
+    assert stored.last_error_code == "fatal"
+    assert stored.enabled is True

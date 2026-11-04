@@ -15,6 +15,7 @@ import tempfile
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
+from uuid import UUID
 
 from app.domain.capabilities import CapabilityOutcome, CapabilityUnavailableError
 from app.ingest.stt import NoSpeechError, SpeechToText, Transcript
@@ -80,6 +81,7 @@ class MediaJob:
     provider: str | None = None
     model: str | None = None
     cost_usd: float | None = None
+    credential_id: UUID | None = None  # чей ключ оплатил расшифровку
     # Структурный результат отказа маршрутизации: причина, покрытый и оставшийся диапазон.
     routing: CapabilityOutcome | None = None
 
@@ -235,6 +237,7 @@ class MediaTranscriber:
         attempts: int = 2,
         provider: str = "mock",
         model: str | None = None,
+        routing_deadline_sec: float = 0.0,
     ) -> None:
         self.provider = provider  # для `derivation` производной расшифровки (RFC-0006)
         self.model = model
@@ -248,6 +251,10 @@ class MediaTranscriber:
         self._jobs = max_concurrent_jobs
         self._raw_fallback = raw_fallback
         self._attempts = attempts
+        # Запас времени на перебор ключей и запасной серверный путь внутри маршрутизатора:
+        # сам маршрутизатор ограничивает один вызов адаптера, а этот дедлайн не даёт
+        # оборвать его до перехода к следующему ключу.
+        self._routing_deadline = max(routing_deadline_sec, 0.0)
         self._semaphore: asyncio.Semaphore | None = None
 
     def segment_timeout(self, duration_sec: float) -> float:
@@ -303,6 +310,7 @@ class MediaTranscriber:
             job.provider = transcript.provider or self.provider
             job.model = transcript.model or self.model
             job.cost_usd = transcript.cost_usd
+            job.credential_id = transcript.credential_id
         return transcript
 
     async def _with_ffmpeg(
@@ -352,16 +360,21 @@ class MediaTranscriber:
         model = next((item.model for item in transcripts if item.model), None)
         costs = [item.cost_usd for item in transcripts if item.cost_usd is not None]
         cost_usd = sum(costs) if costs else None
+        credential_id = next(
+            (item.credential_id for item in transcripts if item.credential_id is not None), None
+        )
         if job is not None:
             job.provider = provider or self.provider
             job.model = model or self.model
             job.cost_usd = cost_usd
+            job.credential_id = credential_id
         return Transcript(
             text=text,
             duration_sec=probe.duration_sec,
             provider=provider or self.provider,
             model=model or self.model,
             cost_usd=cost_usd,
+            credential_id=credential_id,
         )
 
     async def _collect_segments(
@@ -435,7 +448,7 @@ class MediaTranscriber:
                 try:
                     transcript = await asyncio.wait_for(
                         engine.transcribe(data, mime=_SEGMENT_MIME),
-                        timeout=self.segment_timeout(duration),
+                        timeout=self.segment_timeout(duration) + self._routing_deadline,
                     )
                 except NoSpeechError:
                     return offset, None

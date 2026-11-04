@@ -2954,6 +2954,11 @@ export interface components {
              */
             created_at: string;
             /**
+             * Credential Id
+             * @description Ключ пользователя, которым оплачен вызов; null — серверный провайдер. Нужен для учёта расхода по плательщику
+             */
+            credential_id?: string | null;
+            /**
              * Model
              * @description Модель провайдера, если известна
              */

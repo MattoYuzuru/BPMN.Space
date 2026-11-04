@@ -4052,6 +4052,19 @@
             "title": "Created At",
             "type": "string"
           },
+          "credential_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ключ пользователя, которым оплачен вызов; null — серверный провайдер. Нужен для учёта расхода по плательщику",
+            "title": "Credential Id"
+          },
           "model": {
             "anyOf": [
               {

@@ -75,6 +75,11 @@ class OpenAISttAdapter:
             raise CapabilityError(
                 ErrorClass.TRANSIENT, f"{self._label} временно недоступен: повторите позже"
             ) from None
+        except ValueError as error:
+            raise CapabilityError(
+                ErrorClass.UNSUPPORTED,
+                f"Адрес провайдера отклонён проверкой безопасности: {error}",
+            ) from None
         if response.status_code >= HTTP_ERROR_STATUS:
             raise await provider_error(response, provider_label=self._label)
         return f"Ключ {self._label} действует"
@@ -99,6 +104,11 @@ class OpenAISttAdapter:
             raise CapabilityError(
                 ErrorClass.TRANSIENT, f"{self._label} временно недоступен: повторите позже"
             ) from None
+        except ValueError as error:
+            raise CapabilityError(
+                ErrorClass.UNSUPPORTED,
+                f"Адрес провайдера отклонён проверкой безопасности: {error}",
+            ) from None
         if response.status_code >= HTTP_ERROR_STATUS:
             raise await provider_error(response, provider_label=self._label)
         try:
@@ -117,4 +127,5 @@ class OpenAISttAdapter:
             language=str(payload.get("language") or "ru"),
             provider=self.provider,
             model=self.model,
+            credential_id=self.credential_id,
         )

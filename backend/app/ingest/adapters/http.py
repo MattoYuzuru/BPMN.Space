@@ -17,7 +17,6 @@ from app.domain.capabilities import CapabilityError, ErrorClass
 # слой `ingest` не зависит от `llm`.
 type AdapterClientFactory = Callable[[str, bool, float], httpx.AsyncClient]
 
-_RETRY_AFTER_MAX_SEC = 30.0
 _BODY_SNIFF_BYTES = 4096
 HTTP_ERROR_STATUS = 400
 _SERVER_ERROR_STATUS = 500
@@ -53,27 +52,46 @@ def provider_client(
     `client_factory`: только слой сервисов знает правила SSRF и закрепление IP. Прямое
     создание клиента без фабрики допустимо лишь с подменённым транспортом (тесты адаптера).
     """
-    if client_factory is not None:
-        return client_factory(base_url, guard_host, timeout_sec)
-    if guard_host and transport is None:
-        raise ValueError("Для адреса пользователя нужен клиент с защитой от SSRF")
-    return httpx.AsyncClient(
-        base_url=base_url,
-        timeout=timeout_sec,
-        transport=transport,
-        follow_redirects=False,
-        trust_env=not guard_host,
-    )
+    try:
+        if client_factory is not None:
+            return client_factory(base_url, guard_host, timeout_sec)
+        if guard_host and transport is None:
+            raise CapabilityError(
+                ErrorClass.UNSUPPORTED,
+                "Для адреса пользователя нужен клиент с защитой от SSRF",
+            )
+        return httpx.AsyncClient(
+            base_url=base_url,
+            timeout=timeout_sec,
+            transport=transport,
+            follow_redirects=False,
+            trust_env=not guard_host,
+        )
+    except CapabilityError:
+        raise
+    except (ValueError, httpx.InvalidURL) as error:
+        # Проверка SSRF (`UnsafeBaseUrlError` — тоже ValueError) и битый адрес — не 500:
+        # это класс `unsupported`, по которому маршрутизатор перейдёт к следующему ключу,
+        # а сохранение ключа вернёт пользователю 422.
+        raise CapabilityError(
+            ErrorClass.UNSUPPORTED,
+            f"Адрес провайдера отклонён проверкой безопасности: {error}",
+        ) from None
 
 
 def retry_after(response: httpx.Response) -> float | None:
-    """`Retry-After` в секундах (форму с датой не разбираем: достаточно обычной паузы)."""
+    """`Retry-After` в секундах без обрезки.
+
+    Обрезать нельзя: при исчерпанной квоте провайдер может просить паузу в час, и именно она
+    уходит в `exhausted_until`. Короткий предел действует только на паузы между повторами
+    (`RoutingPolicy.max_retry_after_sec`), чтобы прогон не висел.
+    """
     value = response.headers.get("Retry-After")
     try:
         seconds = float(value) if value is not None else None
     except ValueError:
         return None
-    return min(seconds, _RETRY_AFTER_MAX_SEC) if seconds is not None and seconds >= 0 else None
+    return seconds if seconds is not None and seconds >= 0 else None
 
 
 def classify_status(status_code: int, *, body: str) -> ErrorClass:

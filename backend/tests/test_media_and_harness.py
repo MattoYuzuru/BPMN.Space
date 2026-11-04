@@ -683,3 +683,38 @@ async def test_real_ffmpeg_accepts_containers_but_not_hls_playlist(tmp_path: Pat
             check=True,
         )
         assert (await runner.probe(target)).has_audio, name
+
+
+async def test_routing_deadline_extends_segment_timeout(tmp_path: Path) -> None:
+    """Внешний дедлайн сегмента даёт маршрутизатору время на ключи и серверный путь."""
+
+    class SlowStt:
+        async def transcribe(self, data: bytes, *, mime: str | None) -> Transcript:
+            del data, mime
+            await asyncio.sleep(0.15)
+            return Transcript(text="речь", duration_sec=10)
+
+    source = tmp_path / "a.mp3"
+    source.write_bytes(b"x")
+    runner = _FakeRunner(segments=1, probe=MediaProbe(10, True))
+
+    lenient = MediaTranscriber(
+        SlowStt(),  # type: ignore[arg-type]
+        runner,
+        timeout_base_sec=0.05,
+        timeout_per_audio_sec=0,
+        attempts=1,
+        routing_deadline_sec=0.5,
+    )
+    assert (await lenient.transcribe(source)).text == "[00:00] речь"
+
+    strict = MediaTranscriber(
+        SlowStt(),  # type: ignore[arg-type]
+        runner,
+        timeout_base_sec=0.05,
+        timeout_per_audio_sec=0,
+        attempts=1,
+        routing_deadline_sec=0,
+    )
+    with pytest.raises(MediaError, match="Не удалось расшифровать"):
+        await strict.transcribe(source)

@@ -194,6 +194,16 @@ class CredentialService:
             raise NotFoundError("Ключ не найден")
         return credential
 
+    async def _own_llm(self, user_id: UUID, credential_id: UUID) -> Credential:
+        """Ключ модели для прежнего `/me/llm-credentials`: не-LLM ключ для него не существует.
+
+        Такой ключ неотличим от чужого или удалённого: `404`, а не удаление или правка.
+        """
+        credential = await self._own(user_id, credential_id)
+        if not credential.is_llm:
+            raise NotFoundError("Ключ модели не найден")
+        return credential
+
     async def create(
         self,
         user_id: UUID,
@@ -403,6 +413,10 @@ class CredentialService:
             await adapter.check()
         except CapabilityError as error:
             raise InvalidInputError(error.message) from None
+        except ValueError as error:
+            raise InvalidInputError(
+                f"Адрес провайдера отклонён проверкой безопасности: {error}"
+            ) from None
         finally:
             if adapter is not None:
                 await adapter.aclose()
@@ -460,6 +474,14 @@ class CredentialService:
                 capability=capability,
                 last_error_code=error.error_class.value,
             )
+        except ValueError as error:
+            # Проверка SSRF не должна превращаться в 500: это отказ класса `unsupported`.
+            return CredentialCheck(
+                ok=False,
+                detail=f"Адрес провайдера отклонён проверкой безопасности: {error}",
+                capability=capability,
+                last_error_code=ErrorClass.UNSUPPORTED.value,
+            )
         await self._repo.mark_used(credential.id, self._rt.clock(), None)
         if not credential.enabled:
             # Ключ был помечен недействительным: успешная проверка включает его снова.
@@ -467,16 +489,47 @@ class CredentialService:
         return CredentialCheck(ok=True, detail=detail, capability=capability)
 
     async def _record_failure(self, credential: Credential, error: CapabilityError) -> None:
+        """Пишет класс и текст ошибки. Ключи моделей не выключаются даже при отказе 401.
+
+        Выключенный LLM-ключ резолвер молча пропускает, и прогон уходит на модель сервера
+        (платит оператор), а пользователь не видит причину. Поэтому для `llm` только
+        `last_error_code`/`last_error`: модель сообщит об ошибке ключа, а проверить его можно
+        в настройках. Ключи инструментов по-прежнему помечаются недействительными.
+        """
         try:
             await self._repo.mark_failure(
                 credential.id,
                 self._rt.clock(),
                 error=error.message,
                 error_code=error.error_class.value,
-                disable=error.error_class is ErrorClass.AUTH,
+                disable=error.error_class is ErrorClass.AUTH and not credential.is_llm,
             )
         except Exception:
             logger.exception("Не удалось записать отказ ключа %s", credential.id)
+
+    async def update_llm(
+        self,
+        user_id: UUID,
+        credential_id: UUID,
+        *,
+        label: str | None = None,
+        default_model: str | None = None,
+        is_default: bool | None = None,
+    ) -> Credential:
+        """Совместимость `/me/llm-credentials`: правит только ключи моделей."""
+        await self._own_llm(user_id, credential_id)
+        return await self.update(
+            user_id,
+            credential_id,
+            label=label,
+            default_model=default_model,
+            is_default=is_default,
+        )
+
+    async def delete_llm(self, user_id: UUID, credential_id: UUID) -> None:
+        """Совместимость `/me/llm-credentials`: удаляет только ключи моделей."""
+        await self._own_llm(user_id, credential_id)
+        await self.delete(user_id, credential_id)
 
     async def update(
         self,
@@ -532,9 +585,7 @@ class CredentialService:
 
     async def models(self, user_id: UUID, credential_id: UUID) -> list[ModelInfo]:
         """Список моделей LLM-ключа с возможностями (ADR-0011); только для типа `llm`."""
-        credential = await self._own(user_id, credential_id)
-        if not credential.is_llm:
-            raise InvalidInputError("Список моделей есть только у ключей моделей")
+        credential = await self._own_llm(user_id, credential_id)
         cached = self._models.get(credential_id)
         now = self._monotonic()
         if cached is not None and now - cached[0] < self._cache_sec:

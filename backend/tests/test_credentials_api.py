@@ -372,3 +372,80 @@ def test_check_unsupported_capability_is_honest(stack: Stack) -> None:
     assert body["capability"] == "vision"
     assert body["last_error_code"] == "unsupported"
     assert OPENAI_KEY not in response.text
+
+
+# ---------- ревью волны 2: 401 не выключает LLM-ключ, не-LLM скрыт от прежней ручки ----------
+
+
+def _create_llm(stack: Stack, **extra: Any) -> dict[str, Any]:
+    response = _call(
+        stack,
+        "post",
+        "/me/llm-credentials",
+        json={"provider": "openai", "api_key": OPENAI_KEY, **extra},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def test_llm_auth_failure_keeps_key_enabled_and_visible(stack: Stack) -> None:
+    """Один 401 не выключает ключ модели: иначе прогон молча уходит на модель сервера."""
+    created = _create_llm(stack)
+    stack.valid_keys.discard(OPENAI_KEY)
+    stack.container.credentials._models.clear()  # без закешированного успешного списка
+
+    models = _call(stack, "get", f"/me/llm-credentials/{created['id']}/models")
+    assert models.status_code == 422, models.text
+
+    listed = _call(stack, "get", "/me/credentials").json()["items"][0]
+    assert listed["enabled"] is True  # ключ не выключен
+    assert listed["last_error_code"] == "auth"
+    assert listed["last_error"]
+    legacy = _call(stack, "get", "/me/llm-credentials").json()["items"][0]
+    assert legacy["last_error"]
+    assert legacy["is_default"] is True
+
+    checked = _call(stack, "post", f"/me/credentials/{created['id']}/check")
+    assert checked.status_code == 200, checked.text
+    assert checked.json()["ok"] is False
+    assert checked.json()["last_error_code"] == "auth"
+    assert _call(stack, "get", "/me/credentials").json()["items"][0]["enabled"] is True
+
+
+def test_llm_compat_routes_hide_non_llm_keys(stack: Stack) -> None:
+    """Прежняя ручка ключей моделей не правит и не удаляет ключи инструментов (404)."""
+    stt = _create(stack)
+
+    patched = _call(stack, "patch", f"/me/llm-credentials/{stt['id']}", json={"label": "x"})
+    assert patched.status_code == 404
+    deleted = _call(stack, "delete", f"/me/llm-credentials/{stt['id']}")
+    assert deleted.status_code == 404
+    models = _call(stack, "get", f"/me/llm-credentials/{stt['id']}/models")
+    assert models.status_code == 404
+    # Ключ инструмента на месте и виден в общем списке.
+    generic = _call(stack, "get", "/me/credentials").json()["items"]
+    assert [item["id"] for item in generic] == [stt["id"]]
+
+
+def test_private_stt_base_url_is_422_not_500() -> None:
+    """Закреплённый транспорт отклоняет приватный адрес: это 422, а не 500 (ревью волны 2)."""
+    settings = _settings(seed_demo_data=False)
+    container = build_container(settings)  # без подмены транспорта работает SSRF-защита
+    app = create_app(settings, container=container)
+    app.dependency_overrides[optional_user] = lambda: ALICE
+    with TestClient(app) as client:
+        response = client.post(
+            f"{API}/me/credentials",
+            json={
+                "kinds": ["speech_to_text"],
+                "provider": "openai_compatible",
+                "api_key": OPENAI_KEY,
+                "base_url": "https://127.0.0.1:1/v1",
+            },
+        )
+    assert response.status_code == 422, response.text
+    assert "безопасност" in response.json()["detail"]
+    assert OPENAI_KEY not in response.text
+    assert (
+        _call(Stack(settings), "get", "/me/credentials").json()["items"] == []
+    )  # ключ не сохранён

@@ -26,8 +26,16 @@ class RecordedClient:
     def __init__(self, recorded: str) -> None:
         self._recorded = recorded
 
-    async def complete(self, system: str, user: str, *, json_mode: bool, max_tokens: int) -> str:
-        del system, user, json_mode, max_tokens  # сигнатура протокола `LlmClient`
+    async def complete(
+        self,
+        system: str,
+        user: str,
+        *,
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> str:
+        del system, user, json_mode, max_tokens, effort  # сигнатура протокола `LlmClient`
         return self._recorded
 
     async def list_models(self) -> list[ModelInfo]:

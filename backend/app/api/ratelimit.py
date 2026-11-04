@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse, Response
 
 from app.api.auth import OptionalUserDep
 from app.config import Settings
-from app.domain.api_tokens import hash_secret
+from app.domain.api_tokens import hash_secret, looks_like_secret
 from app.services.api_tokens import bearer_secret
 
 WINDOW_SEC = 60.0
@@ -74,6 +74,8 @@ class RateLimits:
     auth: SlidingWindowLimiter
     expensive: SlidingWindowLimiter
     expensive_ip: SlidingWindowLimiter
+    # Отдельная таблица для токенов доступа: перебор мусорных Bearer не вытесняет ключи IP.
+    api_token: SlidingWindowLimiter
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "RateLimits":
@@ -83,6 +85,7 @@ class RateLimits:
             auth=SlidingWindowLimiter(settings.rate_limit_auth_per_min),
             expensive=SlidingWindowLimiter(settings.rate_limit_expensive_per_min),
             expensive_ip=SlidingWindowLimiter(settings.rate_limit_expensive_ip_per_min),
+            api_token=SlidingWindowLimiter(settings.rate_limit_api_per_min),
         )
 
 
@@ -123,9 +126,10 @@ def install_rate_limits(app: FastAPI, settings: Settings) -> None:
                     return too_many_requests(retry)
             retry = limits.api.check(ip)
             secret = bearer_secret(request) if retry is None else None
-            if secret:
-                # Ключ — хеш секрета: так же для неизвестных токенов, без запроса к БД.
-                retry = limits.api.check(f"token:{hash_secret(secret)}")
+            # Считаем только строки формата `bps_…`: остальные отклонит аутентификация, а их
+            # перебор уже ограничен лимитом на IP. Ключ — хеш секрета, без запроса к БД.
+            if secret and looks_like_secret(secret):
+                retry = limits.api_token.check(hash_secret(secret))
             if retry is not None:
                 return too_many_requests(retry)
         return await call_next(request)

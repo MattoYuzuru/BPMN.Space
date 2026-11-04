@@ -9,7 +9,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, FastAPI
 from fastapi.routing import APIRoute, _iter_routes_with_context
 from starlette.requests import Request
 
@@ -33,6 +33,7 @@ from app.services.api_tokens import (
     check_route_policy,
     route_token_policy,
 )
+from app.services.auth import optional_user, required_user, stream_user
 from app.services.common import Runtime
 from app.services.errors import (
     ConflictError,
@@ -345,3 +346,82 @@ def test_require_scope_is_dependency_marker() -> None:
     marker = require_scope(ApiScope.PROJECTS_READ)
     assert isinstance(marker, type(Depends(lambda: None)))
     assert marker.dependency() is None
+
+
+def test_scope_marker_on_include_router_is_ignored() -> None:
+    """Пометка в `include_router(dependencies=…)` не попадает в дерево исходного маршрута и не
+    открывает его; пометка в `APIRouter(dependencies=…)` входит в сам маршрут и учитывается."""
+    inner = APIRouter()
+
+    @inner.get("/inner")
+    async def inner_route() -> None: ...
+
+    outer = APIRouter(dependencies=[require_scope(ApiScope.PROJECTS_READ)])
+
+    @outer.get("/outer")
+    async def outer_route() -> None: ...
+
+    app = FastAPI()
+    app.include_router(inner, dependencies=[require_scope(ApiScope.PROJECTS_READ)])
+    app.include_router(outer)
+    routes = {
+        route.path: route
+        for route, _ in _iter_routes_with_context(app.router.routes)
+        if isinstance(route, APIRoute)
+    }
+    full = _token(scopes=tuple(ApiScope))
+    assert route_token_policy(routes["/inner"]) == ()
+    with pytest.raises(ForbiddenError, match="недоступно по токену"):
+        check_route_policy(_request({}, routes["/inner"]), full)
+    check_route_policy(_request({}, routes["/outer"]), full)
+
+
+def _calls(dependant: Any) -> list[Any]:
+    found = [dependant.call]
+    for child in dependant.dependencies:
+        found.extend(_calls(child))
+    return found
+
+
+# Маршруты без пользователя: публичные данные или вход по паролю.
+PUBLIC_ROUTES = {
+    ("GET", "/api/v1/examples"),
+    ("GET", "/api/v1/samples"),
+    ("GET", "/api/v1/auth/csrf"),
+    ("POST", "/api/v1/auth/session/login"),
+    ("POST", "/api/v1/auth/register"),
+    ("GET", "/health"),
+}
+# Маршруты FastAPI Users, которые читают cookie своей зависимостью, а не `optional_user`.
+# Заголовок `Authorization` на них отклоняет middleware (`main.py`), CSRF обязателен.
+COOKIE_ONLY_ROUTES = {("POST", "/api/v1/auth/session/logout")}
+
+
+def test_every_authenticating_route_goes_through_optional_or_stream_user() -> None:
+    """Обход дерева зависимостей всех маршрутов: пользователь определяется только через
+    `optional_user`/`required_user`/`stream_user` (там проверяется токен), иначе маршрут явно
+    в белом списке. Маршрут с пометкой права обязан определять пользователя."""
+    app = create_app(Settings(database_url=None, app_env="test", seed_demo_data=False))
+    entry_points = {optional_user, required_user, stream_user}
+    seen: set[tuple[str, str]] = set()
+    for route, context in _iter_routes_with_context(app.router.routes):
+        if not isinstance(route, APIRoute):
+            continue
+        path = context.path_format if context else route.path
+        calls = _calls(route.dependant)
+        via_entry = any(call in entry_points for call in calls)
+        library_auth = any(
+            getattr(call, "__name__", "").startswith("current_user") for call in calls
+        )
+        for method in route.methods or ():
+            key = (method, path)
+            seen.add(key)
+            if route_token_policy(route):
+                assert via_entry, f"{key}: право объявлено, но пользователь не определяется"
+            if via_entry:
+                continue
+            if library_auth:
+                assert key in COOKIE_ONLY_ROUTES, f"{key}: cookie FastAPI Users в обход токена"
+            else:
+                assert key in PUBLIC_ROUTES, f"{key}: маршрут не определяет пользователя"
+    assert seen >= PUBLIC_ROUTES | COOKIE_ONLY_ROUTES

@@ -121,14 +121,15 @@ _cookie_user = _users.current_user(active=True, optional=True)
 async def token_user(connection: HTTPConnection, secret: str) -> UserRow:
     """Владелец действующего токена доступа (RFC-0007) с проверкой права маршрута.
 
-    Сначала секрет (`401` без подробностей), затем политика маршрута (`403`): неизвестный токен
-    не узнаёт, какие права нужны. Пользователь читается в короткой сессии, как у потоков.
+    Сначала секрет и владелец (`401` без подробностей: неизвестный, отозванный, истёкший токен
+    и токен заблокированного аккаунта неразличимы), затем политика маршрута (`403`): токен без
+    действующего владельца не узнаёт, какие права нужны. Пользователь читается в короткой
+    сессии, как у потоков.
     """
     container = connection.app.state.container
     token = await container.api_tokens.authenticate(secret)
     if token is None:
         raise UnauthorizedError(INVALID_ACCESS_MESSAGE)
-    check_route_policy(connection, token)
     database = container.database
     if database is None:
         raise UnavailableError("Для учётных записей требуется PostgreSQL")
@@ -137,6 +138,7 @@ async def token_user(connection: HTTPConnection, secret: str) -> UserRow:
         if user is None or not user.is_active:
             raise UnauthorizedError(INVALID_ACCESS_MESSAGE)
         session.expunge(user)
+    check_route_policy(connection, token)
     remember_api_token(connection, token)
     return user
 

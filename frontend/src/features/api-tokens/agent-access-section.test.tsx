@@ -147,6 +147,46 @@ describe('Доступ для агентов', () => {
     })
   })
 
+  it('не закрывается, пока токен создаётся, и показывает секрет после ответа', async () => {
+    stubApi({
+      'GET /api/v1/me/api-tokens': { body: { items: [] } },
+      'GET /api/v1/projects': { body: page([]) },
+      'POST /api/v1/me/api-tokens': { status: 201, body: { ...token, secret: SECRET } },
+    })
+    // Ответ на создание придерживаем, пока тест не попробует закрыть окно.
+    const stubbed = globalThis.fetch
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const method = input instanceof Request ? input.method : (init?.method ?? 'GET')
+      if (
+        method === 'POST' &&
+        String(input instanceof Request ? input.url : input).includes('api-tokens')
+      ) {
+        await gate
+      }
+      return stubbed(input, init)
+    })
+    const { user } = mount()
+    await user.click(await screen.findByRole('button', { name: 'Создать токен' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByLabelText('Название'), 'Агент')
+    await user.click(within(dialog).getByRole('button', { name: 'Создать токен' }))
+
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: 'Отмена' })).toBeDisabled(),
+    )
+    await user.keyboard('{Escape}')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(within(dialog).queryByRole('button', { name: 'Закрыть' })).toBeNull()
+
+    release()
+    expect(await screen.findByText('Токен создан')).toBeInTheDocument()
+    expect(screen.getByLabelText('Токен')).toHaveValue(SECRET)
+  })
+
   it('ошибку сервера показывает в форме', async () => {
     stubApi({
       'GET /api/v1/me/api-tokens': { body: { items: [] } },

@@ -1,6 +1,7 @@
 import {
   findQuoteRanges,
   isAcceptedFile,
+  limitParts,
   quoteReferences,
   type Source,
   sourceMeta,
@@ -73,5 +74,29 @@ describe('метаданные источника', () => {
     expect(isAcceptedFile('notes.md')).toBe(true)
     expect(isAcceptedFile('roles.CSV')).toBe(true)
     expect(isAcceptedFile('scan.png')).toBe(false)
+  })
+})
+
+describe('поддерживаемые форматы и показ длинного текста', () => {
+  it('принимает документы Office, аудио и видео', () => {
+    for (const name of ['t.XLSX', 'd.pptx', 'm.mp4', 'v.MOV', 'a.m4a', 'r.mkv'])
+      expect(isAcceptedFile(name)).toBe(true)
+    expect(isAcceptedFile('old.xls')).toBe(false)
+  })
+
+  it('показывает длительность записи вместо размера', () => {
+    const recording = { kind: 'file', duration_sec: 3725, size_bytes: 9_000_000, content: 'x' }
+    expect(sourceMeta(recording as Source)).toBe('1:02:05')
+  })
+
+  it('ограничивает только показ: хвост обрезается, цитата остаётся целой', () => {
+    const body = 'а'.repeat(100)
+    const ranges = [{ start: 40, end: 60, kind: 'about' as const, ref: 'q1' }]
+    const parts = splitByRanges(body, ranges)
+    const visible = limitParts(parts, 50)
+    expect(visible.map((part) => part.text.length)).toEqual([40, 20])
+    expect(visible[1]?.range?.ref).toBe('q1')
+    expect(limitParts(parts, 10).map((part) => part.text.length)).toEqual([10])
+    expect(limitParts(parts, 1000).map((part) => part.text.length)).toEqual([40, 20, 40])
   })
 })

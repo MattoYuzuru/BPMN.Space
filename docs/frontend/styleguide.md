@@ -396,6 +396,7 @@ OKLCH-значения — в `tokens.css` (`--palette-<цвет>-<ступен�
 | `Avatar` (`name`, `src`, `size`) | Участник или роль; без картинки — инициалы |
 | `TreeView` (`items`, `label`, `selectedId`, `onSelect`, `expandedIds`, `defaultExpandedIds`, `onExpandedChange`, `emptyLabel`) | Дерево материалов и оснований; ARIA `tree`/`treeitem`: уровни, раскрытие стрелками, Home/End, Enter. Узел — `{ id, label, icon?, meta?, children? }`, `meta` — бейдж, стоимость, статус |
 | `Slider` (`value`, `onValueChange`, `onValueCommit`, `min`, `max`, `step`, `label`, `formatValue`, `showValue`, `disabled`) | Один бегунок: перемотка записи, длительность. Клавиатуру даёт Radix; скринридер читает `formatValue` (например, «0:27») |
+| `MediaPlayer` (`src`, `kind`, `label`, `durationSec`, `initialTime`, `onTimeUpdate`, `onSeek`, `ref`) | Плеер записи без нативных контролов: play/pause, перемотка `Slider`, время, загрузка и ошибка с «Повторить». `ref.seek(seconds)` — перемотка с таймкода цитаты/реплики; файл читается браузером по Range через `GET /sources/{id}/media` |
 | `CostMeter` (`estimate`, `spent`, `budget`, `currency`, `incomplete`, `label`, `size`) | Стоимость прогона: диапазон оценки и/или потраченное против бюджета. Превышение — Сурик, неполная оценка — Янтарь; полоса показывает диапазон и потраченное |
 | `Stepper` (`steps: { id, title, description?, meta?, status }[]`, `aria-label`) | Ход этапов: `complete`, `current`, `upcoming`, `error` |
 | `Progress` (`value?`, `tone`, `size`, `label`) | Ход загрузки; без `value` — импульс тока |
@@ -591,6 +592,35 @@ OKLCH-значения — в `tokens.css` (`--palette-<цвет>-<ступен�
 - Пусто — `EmptyState` «Ключей инструментов нет»; без шифрования на сервере — предупреждение и
   недоступная кнопка. Якоря: `settings.tools`, `tools.addKey`, `tools.priority`.
 
+### Материалы и плеер
+
+Запись в листе источника играет: `SourceMedia` (`widgets/sources-panel`) показывает `MediaPlayer`,
+реплики `GET /sources/{id}/segments` и перематывает к таймкоду. Для расшифровки плеер играет
+корневую запись (`sourcePlayback`), а реплики берёт у расшифровки. Таймкоды `[мм:сс]` в тексте —
+кнопки: клик перематывает плеер; текущая реплика подсвечена. Файл читается браузером по Range с
+cookies (same-origin); ошибка загрузки/истёкшая ссылка — спокойное сообщение и «Повторить».
+Якорь плеера — `source.player`.
+
+Производные узлы волны 3 подписываются capability `frames`, `vision`, `media_feed`, `summary`,
+`ocr`: показываются провайдер/модель, стоимость `cost_usd`, кадры/страницы из `derivation.params`.
+`trust=observed` — «по изображению и таймкодам», `trust=summary` — «навигация, не основание схемы»
+(янтарная метка); такая сводка в основания не идёт. Дерево умеет фильтр «Все / Исходные» и считает
+все узлы.
+
+### Сканы и распознавание
+
+Если у PDF есть `unreadable_pages`, в листе видна янтарная плашка и действие `SourceOcrAction`:
+«Распознать страницы» (`POST /sources/{id}/ocr`), прогресс по узлу OCR, частичный результат и повтор.
+Готовые страницы не распознаются и не оплачиваются заново; полученный текст — производный источник с
+`trust=extracted`, его можно править как любой материал (`edited_by_human`).
+
+### Профили записи
+
+Перед загрузкой аудио/видео открывается `MediaProfileDialog`: «Только звук / Звук + редкие кадры /
+Подробно», длительность из метаданных браузера и `POST /projects/{id}/sources/media/estimate` —
+минуты STT, число кадров, диапазон `$`, примечание. Выбор уходит в форме как `media_profile`.
+Предупреждение о конфиденциальности: запись уходит провайдеру, в том числе за пределы РФ.
+
 ### Обучение
 
 Тур ведёт новичка по главному сценарию руками: затемнение, прожектор на одном элементе и рядом карточка. Правила:
@@ -716,6 +746,7 @@ OKLCH-значения — в `tokens.css` (`--palette-<цвет>-<ступен�
 - `npm run --workspace frontend test` — поведение компонентов (Checkbox, Select, Dialog/ConfirmDialog, Tabs, SegmentedControl, Toast, Button), тема, форматирование и **контраст токенов** (`src/shared/styles/tokens.test.ts`: каждая пара текста ≥ 4.5:1, графика ≥ 3:1 в обеих темах, полнота тёмной темы, контракт имён, гамут sRGB).
 - Новые компоненты проверяются рядом с кодом: `shared/ui/{cost-meter,slider,tree-view,secret-input,copy-field}/*.test.tsx` — стоимость и бюджет, клавиатура дерева и ARIA-роли, перемотка стрелками, показ секрета и копирование. Словарь возможностей, уровни доверия, стоимость, страницы без текста и счётчик дерева — `entities/source/model.test.ts`; поведение дерева материалов — `widgets/sources-panel/*.test.tsx`.
 - `/styleguide` — визуальная проверка в обеих темах; контраст пересчитывается из токенов прямо на странице. Разделы «Материалы» (`#materials`), «Прогон и стоимость» (`#run`) и «Волна 2: оценка и инструменты» (`#wave2`) показывают дерево, метки, плеер, `CostMeter`, `Slider`, оценку до запуска, ожидание прогона, технический вопрос и карточки ключей.
+- Волна 3 проверяется рядом с кодом: `shared/ui/media-player/*.test.tsx` (плеер: play/pause, seek, ошибка), `features/add-source/media-profile-dialog.test.tsx` (профили и оценка), `features/source-ocr/*.test.tsx` (OCR-действие), `widgets/sources-panel/*.test.tsx` (плеер/реплики, фильтр дерева), `entities/tool-credential/model.test.ts` (каталог провайдеров). Витрина — `#wave3` (плеер, реплики, профили, OCR).
 - Волна 2 проверяется рядом с кодом: `entities/run/{model,estimate}.test.ts` (usage, `waiting`, стоимость, бюджет, подписи оценки), `entities/question/model.test.ts` (технические вопросы и действия), `entities/tool-credential/model.test.ts` (возможности, ошибки, лимиты), `features/run-analysis/run-start-dialog.test.tsx` (оценка, бюджет и запуск), `features/question-technical/*.test.tsx` (действия), `features/tools-credentials/*.test.tsx` (ключи и проверка), `widgets/run-progress/*.test.tsx` (стоимость и «Продолжить»).
 
 ![Семантические токены, тёмная тема, окно 1024px](screenshots/semantic-tokens-dark-1024.png)

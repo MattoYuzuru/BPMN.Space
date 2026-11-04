@@ -146,8 +146,8 @@ async def test_budget_stop_waits_with_technical_question(settings: Settings) -> 
         with pytest.raises(ConflictError, match="уже идёт"):
             await container.runs.start(DEMO_PROJECT_ID, mode=RunMode.BUILD, created_by=None)
 
-        # Бюджет можно только поднять.
-        with pytest.raises(InvalidInputError, match="только поднять"):
+        # Бюджет можно только поднять: запрошенное меньшее значение не поднимает границу.
+        with pytest.raises(InvalidInputError, match="больше текущего"):
             await container.runs.raise_budget(run.id, Budget(tokens=5))
 
         # Действие «поднять бюджет» сохраняет новый бюджет и продолжает прогон.
@@ -223,8 +223,10 @@ async def test_technical_question_create_and_actions_without_run(settings: Setti
         # Технический вопрос нельзя решить текстовым ответом.
         with pytest.raises(InvalidInputError, match="действием"):
             await container.questions.answer(question.id, text="Прочитайте сами")
-        # «Повторить» без прогона недоступно, «продолжить без этого» закрывает вопрос.
-        with pytest.raises(ConflictError, match="связан с прогоном"):
+        # «Повторить» без прогона не предлагается и недоступно, «продолжить без этого»
+        # закрывает вопрос.
+        assert QuestionActionKind.RETRY not in {item.kind for item in question.actions}
+        with pytest.raises(InvalidInputError, match="недоступно"):
             await container.technical_questions.apply_action(question.id, QuestionActionKind.RETRY)
         ignored = await container.technical_questions.apply_action(
             question.id, QuestionActionKind.CONTINUE_WITHOUT

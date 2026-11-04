@@ -3,7 +3,7 @@ import { act, renderHook } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { type ProjectDetail, projectKeys } from '@/entities/project'
 import type { Run, RunEvent } from '@/entities/run'
-import { useRunStore } from '@/entities/run'
+import { rememberedRunId, rememberRun, useRunStore } from '@/entities/run'
 import { type OnboardingSignal, subscribeOnboardingSignals } from '@/shared/lib/onboarding-signals'
 import { stubApi } from '@/test/api-stub'
 import { RUN_POLL_MS, RUN_STATUS_POLL_MS, useRunTracker } from './use-run-tracker'
@@ -60,7 +60,7 @@ const project = (patch: Partial<ProjectDetail> = {}) =>
 const signals: OnboardingSignal[] = []
 let unsubscribe: () => void = () => {}
 
-function setup(active: Run, detail: ProjectDetail = project()) {
+function setup(active: Run | null, detail: ProjectDetail = project()) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   client.setQueryData(projectKeys.detail('p-1'), detail)
   const wrapper = ({ children }: { children: ReactNode }) => (
@@ -82,6 +82,7 @@ const done = (patch: Partial<Run>): RunEvent => ({
 })
 
 beforeEach(() => {
+  window.sessionStorage.clear()
   vi.useFakeTimers({ shouldAdvanceTime: true })
   signals.length = 0
   stream.handlers = undefined
@@ -311,5 +312,41 @@ describe('useRunTracker: ожидание технического вопрос�
     expect(useRunStore.getState().views['p-1']?.label).toBe('Ждёт вашего действия')
     // Поток не закрываем: ожидание продолжается, `done` ещё не пришёл.
     expect(stream.closed).toBe(0)
+  })
+})
+
+describe('useRunTracker: восстановление после перезагрузки', () => {
+  it('активный waiting из проекта сразу показывает карточку хода', () => {
+    setup(run({ status: 'waiting', stage_label: 'Ждёт вашего действия' }))
+    expect(useRunStore.getState().views['p-1']?.status).toBe('waiting')
+    expect(useRunStore.getState().expanded['p-1']).toBe(true)
+  })
+
+  it('без active_run подхватывает запомненный прогон и подключает SSE', async () => {
+    rememberRun('p-1', 'r-1')
+    stubApi({
+      'GET /api/v1/runs/r-1': {
+        body: run({ status: 'waiting', stage_label: 'Ждёт вашего действия' }),
+      },
+    })
+    setup(null)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20)
+    })
+    expect(useRunStore.getState().views['p-1']?.status).toBe('waiting')
+    expect(useRunStore.getState().expanded['p-1']).toBe(true)
+    expect(stream.opened).toContain('r-1')
+    expect(rememberedRunId('p-1')).toBe('r-1')
+  })
+
+  it('завершённый запомненный прогон не открывает карточку', async () => {
+    rememberRun('p-1', 'r-1')
+    stubApi({ 'GET /api/v1/runs/r-1': { body: run({ status: 'succeeded' }) } })
+    setup(null)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20)
+    })
+    expect(useRunStore.getState().views['p-1']).toBeUndefined()
+    expect(rememberedRunId('p-1')).toBeNull()
   })
 })

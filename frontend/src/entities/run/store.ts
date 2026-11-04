@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { registerAccountReset } from '@/shared/lib/account-reset'
+import { rememberRun } from './last-run'
 import {
   initialRunView,
   type Run,
@@ -40,6 +41,9 @@ export const useRunStore = create<RunStore>((set) => ({
   presented: {},
   track: (run, startedHere = false) =>
     set((state) => {
+      if (run.status !== 'succeeded' && run.status !== 'failed' && run.status !== 'cancelled') {
+        rememberRun(run.project_id, run.id)
+      }
       const current = state.views[run.project_id]
       if (current?.runId === run.id) return state
       return {

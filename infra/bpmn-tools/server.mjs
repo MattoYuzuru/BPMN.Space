@@ -4,7 +4,7 @@ import { PoolError, WorkerPool } from './pool.mjs'
 
 const MAX_BODY = 8 * 1024 * 1024
 const MAX_XML = 5 * 1024 * 1024
-const timeoutMs = Math.max(100, Number(process.env.BPMN_TOOLS_TIMEOUT_SEC || 20) * 1000)
+const timeoutMs = Math.max(100, Number(process.env.BPMN_TOOLS_TIMEOUT_SEC || 60) * 1000)
 
 const envInt = (name, fallback) => {
   const value = Number.parseInt(process.env[name] ?? '', 10)

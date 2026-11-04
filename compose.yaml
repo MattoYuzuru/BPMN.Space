@@ -2,9 +2,33 @@
 # PostgreSQL хранит проекты и состояние прогона; загруженные файлы живут в volume.
 name: arkhitektor
 
+# Ротация логов контейнеров и лимиты ресурсов (под VPS на 4 ГБ) общие для локального стека
+# и production: compose.prod.yaml накладывается поверх этого файла.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: "${LOG_MAX_FILE:-5}"
+
 services:
   db:
     image: postgres:16-alpine
+    # Параметры для 4 ГБ RAM: backend держит до 20 соединений пула, остальное — запас.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-256MB}
+      - -c
+      - effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-768MB}
+      - -c
+      - work_mem=${POSTGRES_WORK_MEM:-8MB}
+      - -c
+      - maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-64MB}
+      - -c
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:-40}
+    mem_limit: ${DB_MEM_LIMIT:-1g}
+    cpus: ${DB_CPUS:-1.0}
+    logging: *logging
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     environment:
@@ -22,14 +46,23 @@ services:
 
   bpmn-tools:
     build: ./infra/bpmn-tools
+    mem_limit: ${BPMN_TOOLS_MEM_LIMIT:-768m}
+    cpus: ${BPMN_TOOLS_CPUS:-1.0}
+    logging: *logging
     environment:
       BPMN_TOOLS_TIMEOUT_SEC: ${BPMN_TOOLS_TIMEOUT_SEC:-20}
+      BPMN_TOOLS_POOL_SIZE: ${BPMN_TOOLS_POOL_SIZE:-2}
+      BPMN_TOOLS_QUEUE_LIMIT: ${BPMN_TOOLS_QUEUE_LIMIT:-32}
+      BPMN_TOOLS_WORKER_MAX_JOBS: ${BPMN_TOOLS_WORKER_MAX_JOBS:-200}
     expose:
       - "3000"
     restart: unless-stopped
 
   backend:
     build: ./backend
+    mem_limit: ${BACKEND_MEM_LIMIT:-1536m}
+    cpus: ${BACKEND_CPUS:-1.5}
+    logging: *logging
     environment:
       APP_ENV: docker
       AUTH_ENABLED: ${AUTH_ENABLED:-true}
@@ -96,6 +129,9 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+    mem_limit: ${WEB_MEM_LIMIT:-256m}
+    cpus: ${WEB_CPUS:-0.5}
+    logging: *logging
     ports:
       - "${WEB_PORT:-8080}:80"
     volumes:

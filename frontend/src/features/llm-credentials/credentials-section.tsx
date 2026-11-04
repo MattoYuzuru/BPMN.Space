@@ -8,6 +8,7 @@ import {
   useLlmCredentials,
 } from '@/entities/llm-credential'
 import { formatRelative } from '@/shared/lib/format'
+import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import {
   Badge,
   Button,
@@ -34,7 +35,11 @@ export function CredentialsSection() {
   const items = credentials.data?.items ?? []
 
   return (
-    <section aria-labelledby="models-title" className="flex flex-col gap-4">
+    <section
+      aria-labelledby="models-title"
+      className="flex flex-col gap-4"
+      {...tourAnchor(TOUR_ANCHORS.settingsModels)}
+    >
       <div className="flex items-center gap-3">
         <h2
           id="models-title"
@@ -134,7 +139,7 @@ export function CredentialRow({
       <Icon name="key" size={20} className="shrink-0 text-fg-subtle" />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="type-ui-strong truncate text-fg">{credential.label}</span>
+          <span className="type-ui font-medium truncate text-fg">{credential.label}</span>
           {credential.is_default && <Badge tone="accent">По умолчанию</Badge>}
         </div>
         <div className="type-caption flex flex-wrap items-center gap-x-2 text-fg-muted">

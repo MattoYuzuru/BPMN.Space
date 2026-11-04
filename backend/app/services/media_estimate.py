@@ -14,7 +14,7 @@ import math
 from dataclasses import dataclass
 from datetime import date
 
-from app.ingest.frames import FRAME_PROFILES, MediaProfile
+from app.ingest.frames import FRAME_PROFILES, MediaProfile, profile_label
 from app.ingest.frames import media_profile as parse_media_profile
 from app.llm.capabilities import ANTHROPIC_CATALOG
 
@@ -99,7 +99,7 @@ def estimate_media(
 ) -> MediaEstimate:
     """Оценка по длительности и профилю; не обращается к сети и не создаёт записей в БД."""
     profile = _profile(media_profile)
-    label = "Только звук" if profile is MediaProfile.AUDIO else FRAME_PROFILES[profile].label
+    label = profile_label(profile.value) or "Только звук"
     minutes = max(duration_sec, 0.0) / 60.0
     stt_min = round(minutes * min(price for _, _, price in STT_USD_PER_MINUTE), 6)
     stt_max = round(minutes * max(price for _, _, price in STT_USD_PER_MINUTE), 6)

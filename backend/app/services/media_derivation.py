@@ -25,6 +25,7 @@ from typing import Any
 from uuid import UUID
 
 from app.domain.capabilities import Capability, CapabilityIncident, CapabilityIncidentSink
+from app.domain.media import MAX_OCR_PAGES
 from app.domain.models import (
     Source,
     SourceDerivation,
@@ -38,7 +39,6 @@ from app.domain.sources import (
     OCR,
     SUMMARY,
     VISION,
-    derivation_frame_keys,
 )
 from app.infra.repositories.base import Repositories
 from app.infra.storage import FileStorage
@@ -49,7 +49,7 @@ from app.ingest.frames import (
     format_timecode,
     frame_profile,
 )
-from app.ingest.pdf import PdfPagesError, chunks_by_size, take_pages
+from app.ingest.pdf import PdfPagesError, chunks_by_pages, chunks_by_size, take_pages
 from app.llm.base import track_usage
 from app.llm.client import LlmAuthError
 from app.llm.estimate import cost_of_usage
@@ -413,13 +413,22 @@ class MediaDerivationService:
             )
             return
         pages = sorted(source.unreadable_pages)
+        # Защита от счёта в сотни долларов за один файл: лишние страницы остаются нераспознанными
+        # и видны в предупреждении, а не теряются тихо.
+        ignored = pages[MAX_OCR_PAGES:]
+        pages = pages[:MAX_OCR_PAGES]
         cost_usd: float | None = None
         texts: dict[int, str] = {}
-        failed: list[int] = []
+        failed: list[int] = list(ignored)
         failure: BaseException | None = None
         try:
             data = await self._storage.load(source.file_key or "")
-            parts = chunks_by_size(data, pages, limit=self._pdf_chunk_bytes())
+            byte_parts = chunks_by_size(data, pages, limit=self._pdf_chunk_bytes())
+            parts = [
+                chunk
+                for part in byte_parts
+                for chunk in chunks_by_pages(part, size=self._ocr_pages)
+            ]
             with track_usage() as usage:
                 for chunk in parts:
                     try:
@@ -1003,15 +1012,6 @@ class MediaDerivationService:
                 {"status": SourceStatus.FAILED, "error": error},
                 only_status=SourceStatus.PROCESSING,
             )
-
-    async def remove_derived_media(self, sources: list[Source]) -> None:
-        """Убирает файлы кадров при удалении записи и её производных."""
-        for source in sources:
-            for key in derivation_frame_keys(source):
-                try:
-                    await self._storage.delete(key)
-                except OSError:
-                    logger.warning("Не удалён кадр %s", key)
 
 
 _OCR_SYSTEM = (

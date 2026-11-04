@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from pypdf import PdfReader, PdfWriter
 from pypdf.errors import PdfReadError
 
-from app.domain.media import MAX_DOCUMENT_BYTES
+from app.domain.media import MAX_DOCUMENT_BYTES, MAX_DOCUMENT_PAGES
 
 
 class PdfPagesError(ValueError):
@@ -70,4 +70,4 @@ def chunks_by_size(
     total = page_count(data)
     per_page = len(data) / max(total, 1)
     per_part = max(int(limit // per_page), 1) if per_page > 0 else len(ordered)
-    return chunks_by_pages(ordered, size=per_part)
+    return chunks_by_pages(ordered, size=min(per_part, MAX_DOCUMENT_PAGES))

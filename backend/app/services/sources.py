@@ -778,6 +778,8 @@ class SourceService:
         )
         if existing is not None and existing.status is SourceStatus.PROCESSING:
             raise ConflictError("OCR уже выполняется: дождитесь окончания")
+        if existing is not None and existing.edited_by_human:
+            raise ConflictError("Текст OCR правил человек: повтор перезапишет правку")
         if existing is None:
             node = await self._derivations.prepare_ocr(source, initiator_id=initiator_id)
             if node is None:
@@ -807,12 +809,13 @@ class SourceService:
                 cost_usd=derivation.cost_usd,
                 created_at=derivation.created_at,
             )
+        expected = existing.status
         async with self._repos.atomic() as repos:
             await repos.projects.lock(source.project_id)
             await repos.sources.patch(
                 existing.id,
                 {"status": SourceStatus.PROCESSING, "error": None, "derivation": derivation},
-                only_status=SourceStatus.FAILED,
+                only_status=expected,
             )
             await touch_project(repos, source.project_id, now)
         updated = await self._repos.sources.get(existing.id)

@@ -1,9 +1,29 @@
-export { cancelRun, fetchRun, startRun, useStartRun } from './api'
+export {
+  cancelRun,
+  estimateRun,
+  fetchRun,
+  resumeRun,
+  startRun,
+  useResumeRun,
+  useRunEstimate,
+  useStartRun,
+} from './api'
+export {
+  estimateCallsText,
+  estimateCost,
+  estimateCurrency,
+  estimateDurationText,
+  estimateIncomplete,
+  estimateTokensText,
+} from './estimate'
 export {
   formatSummary,
   initialRunView,
   RUN_MODE_LABEL,
   type Run,
+  type RunBudget,
+  type RunCost,
+  type RunEstimate,
   type RunEvent,
   type RunEventType,
   type RunMode,
@@ -11,9 +31,11 @@ export {
   type RunSummary,
   type RunView,
   reduceRun,
+  runStatusView,
   runSteps,
   STAGE_LABEL,
   STAGES,
+  type StageCost,
   type TouchedQuestion,
 } from './model'
 export { useRunStore, useRunView } from './store'

@@ -4,10 +4,13 @@ import {
   formatClock,
   formatCount,
   formatDuration,
+  formatDurationRange,
   formatMoney,
   formatMoneyRange,
   formatNumber,
+  formatNumberRange,
   formatPercent,
+  formatTokens,
   pluralRu,
 } from './format'
 
@@ -66,5 +69,23 @@ describe('color', () => {
     expect(contrastRatio(white, black)).toBeCloseTo(21, 1)
     expect(parseOklch('oklch(50% 0.1 250 / 40%)')).toEqual({ l: 0.5, c: 0.1, h: 250, alpha: 0.4 })
     expect(parseOklch('#fff')).toBeNull()
+  })
+})
+
+describe('числа и диапазоны волны 2', () => {
+  it('пишет токены компактно', () => {
+    expect(formatTokens(950)).toBe('950')
+    expect(formatTokens(12_345)).toBe('12,3\u00a0тыс.')
+    expect(formatTokens(1_200_000)).toBe('1,2\u00a0млн')
+    expect(formatTokens(24_000_000)).toBe('24\u00a0млн')
+  })
+
+  it('пишет диапазоны чисел и длительности', () => {
+    expect(formatNumberRange(8, 12)).toBe('8–12')
+    expect(formatNumberRange(5, 5)).toBe('5')
+    expect(formatDurationRange(12, 30)).toBe('12–30\u00a0с')
+    expect(formatDurationRange(45, 125)).toBe('45\u00a0с – 2\u00a0мин 05\u00a0с')
+    expect(formatDurationRange(60, 180)).toBe('1–3\u00a0мин')
+    expect(formatDurationRange(90, 90)).toBe('1\u00a0мин 30\u00a0с')
   })
 })

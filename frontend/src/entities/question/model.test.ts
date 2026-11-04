@@ -1,4 +1,13 @@
-import { countByGroup, type Question, questionGroup, shiftSummary, sortQuestions } from './model'
+import {
+  countByGroup,
+  isTechnical,
+  QUESTION_ACTION,
+  type Question,
+  questionGroup,
+  shiftSummary,
+  sortQuestions,
+  technicalQuestions,
+} from './model'
 
 const make = (patch: Partial<Question>): Question => ({
   id: patch.code ?? 'q',
@@ -76,5 +85,32 @@ describe('shiftSummary (оптимистичная сводка)', () => {
     expect(shiftSummary(empty, 'open', 'resolved')).toEqual({ ...empty, new: 0, resolved: 1 })
     expect(shiftSummary({ ...empty, new: 0 }, 'open', 'ignored').new).toBe(0)
     expect(shiftSummary(summary, 'open', 'open')).toBe(summary)
+  })
+})
+
+describe('технические вопросы (RFC-0006)', () => {
+  const technical = (patch: Partial<Question>) =>
+    make({ category: 'technical', kind: 'budget_reached', ...patch })
+
+  it('отличает технические от бизнес-вопросов', () => {
+    expect(isTechnical(technical({}))).toBe(true)
+    expect(isTechnical(make({}))).toBe(false)
+  })
+
+  it('для вкладки берёт открытые и ставит блокирующие выше', () => {
+    const list = technicalQuestions([
+      technical({ code: 'TQ-3', severity: 'minor' }),
+      technical({ code: 'TQ-2', blocking: true }),
+      make({ code: 'Q-1' }),
+      technical({ code: 'TQ-4', status: 'resolved' }),
+    ])
+    expect(list.map((question) => question.code)).toEqual(['TQ-2', 'TQ-3'])
+  })
+
+  it('каждое действие знает вариант кнопки и сигнал обучения', () => {
+    expect(QUESTION_ACTION.raise_budget.signal).toBe('budget')
+    expect(QUESTION_ACTION.open_settings.signal).toBe('settings')
+    expect(QUESTION_ACTION.continue_without.signal).toBe('skip')
+    expect(QUESTION_ACTION.retry.variant).toBe('secondary')
   })
 })

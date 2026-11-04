@@ -43,6 +43,8 @@ export const TOUR_ANCHORS = {
   shareReviewer: 'share.reviewer',
   settingsModels: 'settings.models',
   settingsTools: 'settings.tools',
+  toolsAddKey: 'tools.addKey',
+  toolsPriority: 'tools.priority',
   agentTokens: 'agent.tokens',
   agentCreateToken: 'agent.create-token',
   agentCopyCommand: 'agent.copy-command',

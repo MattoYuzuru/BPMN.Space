@@ -152,3 +152,28 @@ export function formatMoneyRange(min: number, max: number, currency = 'USD'): st
 export function formatPercent(value: number): string {
   return `${formatNumber(Math.round(value))}\u00A0%`
 }
+
+/** Компактное число токенов: «950», «12,3 тыс.», «1,2 млн». */
+export function formatTokens(value: number): string {
+  if (value >= 1_000_000) return `${fractionFormat.format(value / 1_000_000)}\u00A0млн`
+  if (value >= 1000) {
+    return `${fractionFormat.format(Math.round((value / 1000) * 10) / 10)}\u00A0тыс.`
+  }
+  return formatNumber(value)
+}
+
+/** Диапазон чисел: «8–12», «950». */
+export function formatNumberRange(min: number, max: number): string {
+  if (min === max) return formatNumber(min)
+  return `${formatNumber(min)}–${formatNumber(max)}`
+}
+
+/** Диапазон длительности по секундам: «12–30 с», «45 с – 2 мин 05 с», «1–3 мин». */
+export function formatDurationRange(minSec: number, maxSec: number): string {
+  const min = Math.max(0, Math.round(minSec))
+  const max = Math.max(min, Math.round(maxSec))
+  if (min === max) return formatDuration(min * 1000)
+  if (max < 60) return `${formatNumber(min)}–${formatNumber(max)}\u00A0с`
+  if (min < 60) return `${formatNumber(min)}\u00A0с – ${formatDuration(max * 1000)}`
+  return `${formatNumber(Math.floor(min / 60))}–${formatNumber(Math.ceil(max / 60))}\u00A0мин`
+}

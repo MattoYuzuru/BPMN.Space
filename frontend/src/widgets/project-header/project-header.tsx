@@ -2,12 +2,13 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
 import { isRunning, projectStatusView, useRenameProject } from '@/entities/project'
-import { useRunView, useStartRun } from '@/entities/run'
+import { type RunMode, useRunView } from '@/entities/run'
 import { RECENT_VERSIONS, VERSION_ORIGIN, versionLabel } from '@/entities/version'
 import { ModelPicker } from '@/features/model-picker/model-picker'
 import { RebuildFromSources } from '@/features/run-analysis/rebuild-from-sources'
+import { RunStartDialog } from '@/features/run-analysis/run-start-dialog'
 import { ShareProjectButton } from '@/features/share-project/share-project-button'
-import { formatRelative } from '@/shared/lib/format'
+import { formatMoney, formatRelative } from '@/shared/lib/format'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import {
   Badge,
@@ -33,8 +34,11 @@ import { PresenceIndicator } from './presence-indicator'
 export function ProjectHeader() {
   const { project, canEdit } = useWorkspace()
   const run = useRunView(project.id)
-  const running = isRunning(project.status) || run?.status === 'running'
-  const status = projectStatusView(project)
+  const waiting = run?.status === 'waiting'
+  const running = isRunning(project.status) || run?.status === 'running' || waiting
+  const status = waiting
+    ? { label: 'Ждёт вашего действия', tone: 'amber' as const, icon: 'clock' as const }
+    : projectStatusView(project)
 
   return (
     <AppHeader
@@ -53,7 +57,7 @@ export function ProjectHeader() {
       </Link>
       <Icon name="chevron-right" size={14} className="shrink-0 text-fg-subtle" />
       <ProjectTitle />
-      <Badge tone={status.tone} dot className="shrink-0">
+      <Badge tone={status.tone} icon={status.icon} dot={!waiting} className="shrink-0">
         {status.label}
       </Badge>
       {!canEdit && (
@@ -135,7 +139,7 @@ function ProjectTitle() {
 function HeaderActions({ running }: { running: boolean }) {
   const { project, canEdit, canShare, viewedVersionId, viewVersion, versions } = useWorkspace()
   const setSheet = useWorkspaceUi((state) => state.setSheet)
-  const start = useStartRun(project.id)
+  const [startDialog, setStartDialog] = useState<RunMode | null>(null)
   const latest = project.latest_version
   const versionList = useQuery({ ...versions.list(project.id), enabled: !!latest })
   const noSources = project.sources.length === 0
@@ -152,6 +156,7 @@ function HeaderActions({ running }: { running: boolean }) {
     <>
       {canEdit && (
         <>
+          <RunCostLabel projectId={project.id} running={running} />
           <ModelPicker />
           <Tooltip
             content={noSources ? 'Сначала добавьте источник' : 'Найти неясности и задать вопросы'}
@@ -162,8 +167,7 @@ function HeaderActions({ running }: { running: boolean }) {
                 leadingIcon="sparkles"
                 size="sm"
                 disabled={noSources || running}
-                loading={start.isPending && start.variables === 'analyze'}
-                onClick={() => start.mutate('analyze')}
+                onClick={() => setStartDialog('analyze')}
               >
                 Анализ
               </Button>
@@ -174,8 +178,7 @@ function HeaderActions({ running }: { running: boolean }) {
             leadingIcon="diagram"
             size="sm"
             disabled={noSources || running}
-            loading={start.isPending && start.variables === 'build'}
-            onClick={() => start.mutate('build')}
+            onClick={() => setStartDialog('build')}
             {...tourAnchor(TOUR_ANCHORS.runBuild)}
           >
             Построить схему
@@ -232,6 +235,43 @@ function HeaderActions({ running }: { running: boolean }) {
       {canShare && <ShareProjectButton projectId={project.id} />}
       <PresenceIndicator projectId={project.id} />
       <span aria-hidden="true" className="mx-1 h-5 w-px bg-border" />
+      {canEdit && startDialog && (
+        <RunStartDialog
+          projectId={project.id}
+          mode={startDialog}
+          open
+          onOpenChange={(next) => !next && setStartDialog(null)}
+        />
+      )}
     </>
+  )
+}
+
+/** Стоимость прогона в шапке: «$2,71 из $10»; обновляется потоком usage. */
+function RunCostLabel({ projectId, running }: { projectId: string; running: boolean }) {
+  const run = useRunView(projectId)
+  const cost = run?.cost?.cost_usd ?? null
+  const budget = run?.budget?.cost_usd ?? null
+  if (!run || (!running && cost === null)) return null
+  const text =
+    cost !== null && budget !== null
+      ? `${formatMoney(cost)} из ${formatMoney(budget)}`
+      : cost !== null
+        ? `Потрачено ${formatMoney(cost)}`
+        : budget !== null
+          ? `Бюджет ${formatMoney(budget)}`
+          : null
+  if (!text) return null
+  return (
+    <Tooltip content="Стоимость прогона" side="bottom">
+      <span
+        className="hidden items-center gap-1.5 rounded-sm px-1.5 type-caption text-fg-muted wide:inline-flex"
+        data-numeric
+        {...tourAnchor(TOUR_ANCHORS.runCost)}
+      >
+        <Icon name="bolt" size={14} className="text-fg-subtle" />
+        {text}
+      </span>
+    </Tooltip>
   )
 }

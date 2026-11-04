@@ -14,6 +14,8 @@ interface RunStore {
   setExpanded: (projectId: string, expanded: boolean) => void
   dismiss: (projectId: string) => void
   finishPresentation: (projectId: string, runId: string) => void
+  /** Прогон продолжен после `waiting`: карточка снова показывает ход. */
+  resume: (run: Run) => void
 }
 
 /**
@@ -61,6 +63,26 @@ export const useRunStore = create<RunStore>((set) => ({
         ? { presented: { ...state.presented, [projectId]: runId } }
         : state,
     ),
+  resume: (run) =>
+    set((state) => {
+      const view = state.views[run.project_id]
+      if (!view || view.runId !== run.id) return state
+      return {
+        views: {
+          ...state.views,
+          [run.project_id]: {
+            ...view,
+            status: 'running',
+            stage: run.stage,
+            progress: run.progress,
+            label: run.stage_label,
+            finishedAt: null,
+            error: null,
+          },
+        },
+        expanded: { ...state.expanded, [run.project_id]: true },
+      }
+    }),
   dismiss: (projectId) =>
     set((state) => {
       const { [projectId]: _removed, ...views } = state.views

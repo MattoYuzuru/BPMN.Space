@@ -1,6 +1,6 @@
 import type { Schemas } from '@/shared/api/client'
-import { formatBytes, formatClock, formatCount } from '@/shared/lib/format'
-import type { IconName } from '@/shared/ui'
+import { formatBytes, formatClock, formatCount, formatNumber } from '@/shared/lib/format'
+import type { BadgeTone, IconName } from '@/shared/ui'
 
 export type Source = Schemas['Source']
 export type SourceKind = Schemas['SourceKind']
@@ -63,7 +63,7 @@ export function isDerived(source: Source): boolean {
 /** Подпись и иконка вида источника; запись отличается от документа, расшифровка — от текста. */
 export function sourceKindOf(source: Source): { label: string; icon: IconName } {
   const capability = source.derivation?.capability
-  if (capability && CAPABILITY[capability]) return CAPABILITY[capability]
+  if (capability) return capabilityInfo(capability)
   if (source.kind === 'file' && isMediaFile(source.file_name)) {
     return source.media?.has_video || /\.(mp4|mov|mkv)$/i.test(source.file_name ?? '')
       ? { label: 'Видеозапись', icon: 'video' }
@@ -72,8 +72,122 @@ export function sourceKindOf(source: Source): { label: string; icon: IconName } 
   return SOURCE_KIND[source.kind]
 }
 
-const CAPABILITY: Record<string, { label: string; icon: IconName }> = {
-  speech_to_text: { label: 'Расшифровка', icon: 'transcript' },
+/** Возможность обработки (RFC-0006): что это за производный материал и чем он получен. */
+export interface CapabilityInfo {
+  /** Вид материала: «Расшифровка», «Распознанный текст». */
+  label: string
+  icon: IconName
+  /** Что происходит, пока материал обрабатывается. */
+  processing: string
+}
+
+/** Словарь возможностей: новый инструмент добавляется строкой, а не правкой всех подписей. */
+export const CAPABILITIES: Record<string, CapabilityInfo> = {
+  speech_to_text: {
+    label: 'Расшифровка',
+    icon: 'transcript',
+    processing: 'Расшифровываю запись',
+  },
+  ocr: { label: 'Распознанный текст', icon: 'file-text', processing: 'Распознаю текст страниц' },
+  vision: { label: 'Описание изображения', icon: 'photo', processing: 'Описываю изображения' },
+  video_understanding: { label: 'Разбор видео', icon: 'video', processing: 'Смотрю видео' },
+  scene_detection: { label: 'Ключевые кадры', icon: 'photo', processing: 'Выбираю кадры' },
+  web_search: { label: 'Результаты поиска', icon: 'search', processing: 'Ищу в интернете' },
+  web_fetch: { label: 'Страница из интернета', icon: 'link', processing: 'Читаю страницу' },
+  code_execution: { label: 'Результат расчёта', icon: 'file-code', processing: 'Считаю' },
+  text_to_speech: { label: 'Озвучка', icon: 'wave-sine', processing: 'Озвучиваю' },
+  summary: { label: 'Краткое содержание', icon: 'notes', processing: 'Сокращаю материал' },
+}
+
+const UNKNOWN_CAPABILITY: CapabilityInfo = {
+  label: 'Материал от ИИ',
+  icon: 'sparkles',
+  processing: 'Обрабатываю материал',
+}
+
+/** Незнакомая возможность не показывается сырым `snake_case`: у неё спокойная общая подпись. */
+export function capabilityInfo(capability: string | null | undefined): CapabilityInfo {
+  return (capability && CAPABILITIES[capability]) || UNKNOWN_CAPABILITY
+}
+
+export function capabilityLabel(capability: string | null | undefined): string {
+  return capabilityInfo(capability).label
+}
+
+/** Уровни доверия (RFC-0006): что из материала можно цитировать в основаниях схемы. */
+export const SOURCE_TRUST: Record<
+  SourceTrust,
+  { label: string; short: string; description: string; tone: BadgeTone }
+> = {
+  primary: {
+    label: 'Первоисточник',
+    short: 'первоисточник',
+    description: 'Текст пользователя: годится в основания схемы.',
+    tone: 'neutral',
+  },
+  extracted: {
+    label: 'Извлечено ИИ',
+    short: 'извлечено',
+    description: 'Расшифровка, OCR или текст страницы: машинное, но сверяемое с исходником.',
+    tone: 'neutral',
+  },
+  observed: {
+    label: 'Наблюдение',
+    short: 'по кадрам',
+    description: 'Описание кадров или событий видео: цитата идёт с пометкой «по изображению».',
+    tone: 'neutral',
+  },
+  external: {
+    label: 'Внешний источник',
+    short: 'внешний',
+    description: 'Результат поиска или публичная страница: ниже приоритетом при конфликте.',
+    tone: 'neutral',
+  },
+  agent: {
+    label: 'От агента',
+    short: 'от агента',
+    description: 'Материал внешнего агента: видно, кто и каким токеном его добавил.',
+    tone: 'accent',
+  },
+  summary: {
+    label: 'Краткое содержание',
+    short: 'пересказ',
+    description: 'Только навигация: в контекст модели и в основания схемы не идёт.',
+    tone: 'amber',
+  },
+}
+
+export function sourceTrustInfo(trust: SourceTrust) {
+  return SOURCE_TRUST[trust] ?? SOURCE_TRUST.primary
+}
+
+/** Материал принёс внешний агент (RFC-0007): у узла своя метка в дереве. */
+export function isAgentSource(source: Source): boolean {
+  return source.origin === 'agent'
+}
+
+/** Стоимость обработки, если провайдер её сообщил (RFC-0006). */
+export function derivationCost(source: Source): number | null {
+  return source.derivation?.cost_usd ?? null
+}
+
+const PAGE_FORMS = ['страница', 'страницы', 'страниц'] as const
+
+/** Короткая подпись для строки дерева: «2 страницы без текста». */
+export function unreadablePagesLabel(pages: readonly number[] | null | undefined): string | null {
+  if (!pages || pages.length === 0) return null
+  return `${formatCount(pages.length, PAGE_FORMS)} без текста`
+}
+
+/** Подробность для листа источника: какие именно страницы PDF остались без текстового слоя. */
+export function unreadablePagesText(pages: readonly number[] | null | undefined): string | null {
+  if (!pages || pages.length === 0) return null
+  const shown = pages
+    .slice(0, 8)
+    .map((page) => formatNumber(page))
+    .join(', ')
+  const rest = pages.length > 8 ? ` и ещё ${formatCount(pages.length - 8, PAGE_FORMS)}` : ''
+  return `Не прочитан текст страниц: ${shown}${rest}. Это сканы без текстового слоя.`
 }
 
 const PROVIDER: Record<string, string> = {
@@ -92,6 +206,11 @@ export function derivationLabel(source: Source): string | undefined {
 export interface SourceNode {
   source: Source
   children: SourceNode[]
+}
+
+/** Сколько всего узлов в дереве материалов: исходные и все производные, любой глубины. */
+export function countSourceTree(nodes: readonly SourceNode[]): number {
+  return nodes.reduce((total, node) => total + 1 + countSourceTree(node.children), 0)
 }
 
 /**

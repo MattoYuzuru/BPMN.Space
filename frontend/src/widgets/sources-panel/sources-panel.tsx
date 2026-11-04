@@ -4,13 +4,19 @@ import {
   ACCEPTED_FILES,
   ACCEPTED_FILES_HINT,
   buildSourceTree,
+  capabilityInfo,
+  countSourceTree,
+  derivationCost,
   derivationLabel,
+  isAgentSource,
   isDerived,
   isMediaFile,
   type Source,
   type SourceNode,
   sourceKindOf,
   sourceMeta,
+  sourceTrustInfo,
+  unreadablePagesLabel,
   useAddSampleSource,
   useDeleteSource,
   useSamples,
@@ -18,6 +24,7 @@ import {
 } from '@/entities/source'
 import { useFileUploads } from '@/features/add-source/use-file-uploads'
 import { cn } from '@/shared/lib/cn'
+import { formatMoney } from '@/shared/lib/format'
 import { listItem } from '@/shared/lib/motion'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import {
@@ -67,7 +74,7 @@ export function SourcesPanel({ onCollapse }: { onCollapse: () => void }) {
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border pr-1.5 pl-4">
         <h2 className="type-subheading text-fg">Источники</h2>
         <span className="type-caption text-fg-subtle" data-numeric>
-          {tree.length}
+          {countSourceTree(tree)}
         </span>
         <div className="ml-auto flex items-center gap-0.5">
           {canEdit && <AddSourceMenu projectId={project.id} onPick={setDialog} onFiles={upload} />}
@@ -82,7 +89,7 @@ export function SourcesPanel({ onCollapse }: { onCollapse: () => void }) {
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-4 p-2 pb-4">
-          <ul className="flex flex-col gap-0.5">
+          <ul className="flex flex-col gap-0.5" {...tourAnchor(TOUR_ANCHORS.sourceTree)}>
             <AnimatePresence initial={false}>
               {tree.map((node) => (
                 <m.li
@@ -237,8 +244,9 @@ function SourceBranch({ node }: { node: SourceNode }) {
   )
 }
 
+/** Подпись хода обработки по возможности: OCR, расшифровка и будущие инструменты — из словаря. */
 function processingLabel(source: Source): string {
-  if (source.derivation?.capability === 'speech_to_text') return 'Расшифровываю запись'
+  if (source.derivation?.capability) return capabilityInfo(source.derivation.capability).processing
   if (isMediaFile(source.file_name)) return 'Обрабатываю запись'
   return 'Разбираю документ'
 }
@@ -254,6 +262,12 @@ function SourceRow({ source, derivedCount }: { source: Source; derivedCount: num
   const processing = source.status === 'processing'
   const failed = source.status === 'failed'
   const warned = source.status === 'ready' && Boolean(source.warning)
+  const trust = sourceTrustInfo(source.trust)
+  // «Агент» уже сказано отдельной меткой; второй раз уровень доверия не повторяем.
+  const showTrust =
+    source.trust !== 'primary' && !(isAgentSource(source) && source.trust === 'agent')
+  const cost = derivationCost(source)
+  const unreadable = unreadablePagesLabel(source.unreadable_pages)
 
   return (
     <div
@@ -289,6 +303,16 @@ function SourceRow({ source, derivedCount }: { source: Source; derivedCount: num
               ИИ
             </Badge>
           )}
+          {isAgentSource(source) && (
+            <Badge tone="accent" icon="user" className="shrink-0">
+              Агент
+            </Badge>
+          )}
+          {showTrust && (
+            <Badge variant="outline" tone={trust.tone} className="shrink-0">
+              {trust.short}
+            </Badge>
+          )}
           {processing ? (
             processingLabel(source)
           ) : failed ? (
@@ -303,6 +327,12 @@ function SourceRow({ source, derivedCount }: { source: Source; derivedCount: num
           ) : (
             <>
               <span>{producer ?? kind.label}</span>
+              {cost !== null && (
+                <>
+                  <span aria-hidden="true" className="h-3 w-px bg-border-strong" />
+                  <span>{formatMoney(cost)}</span>
+                </>
+              )}
               <span aria-hidden="true" className="h-3 w-px bg-border-strong" />
               <span>{sourceMeta(source)}</span>
               {source.edited_by_human && (
@@ -312,6 +342,11 @@ function SourceRow({ source, derivedCount }: { source: Source; derivedCount: num
                 </>
               )}
             </>
+          )}
+          {unreadable && !failed && (
+            <Badge tone="amber" variant="outline" className="shrink-0">
+              {unreadable}
+            </Badge>
           )}
         </span>
         {processing && <Progress label={processingLabel(source)} className="mt-1.5" />}

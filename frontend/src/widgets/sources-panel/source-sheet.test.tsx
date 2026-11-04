@@ -26,14 +26,14 @@ const question = {
   about: { source_id: 's1', quote: 'Инженер проверяет заявку.' },
 } as Question
 
-function setup(content = source.content, mark?: string) {
+function setup(content = source.content, mark?: string, overrides: Partial<Source> = {}) {
   const close = vi.fn()
   const selectQuestion = vi.fn()
   const focusElements = vi.fn()
   const workspace = {
     project: {
       id: 'p1',
-      sources: [{ ...source, content }],
+      sources: [{ ...source, content, ...overrides }],
       questions: [
         question,
         {
@@ -63,6 +63,35 @@ function setup(content = source.content, mark?: string) {
 }
 
 afterEach(() => useWorkspaceUi.getState().reset())
+
+it('показывает уровень доверия и стоимость обработки', () => {
+  setup(source.content, undefined, {
+    origin: 'derived',
+    trust: 'extracted',
+    derivation: {
+      capability: 'speech_to_text',
+      provider: 'deepgram',
+      model: 'nova-3',
+      created_at: '2026-11-04T10:00:00Z',
+      cost_usd: 0.42,
+    },
+  })
+  expect(screen.getByText('Извлечено ИИ')).toBeInTheDocument()
+  expect(screen.getByText('$0,42')).toBeInTheDocument()
+})
+
+it('перечисляет страницы без текстового слоя', () => {
+  setup(source.content, undefined, { unreadable_pages: [12, 15] })
+  expect(
+    screen.getByText('Не прочитан текст страниц: 12, 15. Это сканы без текстового слоя.'),
+  ).toBeInTheDocument()
+})
+
+it('материал агента помечен отдельно', () => {
+  setup(source.content, undefined, { origin: 'agent', trust: 'agent' })
+  expect(screen.getByText('Агент')).toBeInTheDocument()
+  expect(screen.getByText('От агента')).toBeInTheDocument()
+})
 
 it('предлагает все вопросы и элемент для одного фрагмента и открывает выбранный вопрос', async () => {
   const { user, close, selectQuestion } = setup()

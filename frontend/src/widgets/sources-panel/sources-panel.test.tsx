@@ -95,8 +95,8 @@ afterEach(() => useWorkspaceUi.getState().reset())
 it('показывает запись деревом: расшифровка вложена, с меткой «ИИ», провайдером и правкой', async () => {
   const { user, openSource } = renderPanel([record, transcript, rules])
   const region = screen.getByRole('region', { name: 'Источники' })
-  // Счётчик — исходные материалы, без производных узлов.
-  expect(within(region).getByText('2')).toBeInTheDocument()
+  // Счётчик — все материалы дерева: исходные и производные узлы.
+  expect(within(region).getByText('3')).toBeInTheDocument()
   expect(within(region).getByText('Видеозапись')).toBeInTheDocument()
 
   const derived = screen.getByRole('list', { name: 'Получено из «встреча.mp4»' })
@@ -108,6 +108,50 @@ it('показывает запись деревом: расшифровка в�
 
   await user.click(link)
   expect(openSource).toHaveBeenCalledWith('tr')
+})
+
+it('показывает уровень доверия, стоимость обработки, страницы без текста и метку агента', () => {
+  const scan: Source = {
+    ...rules,
+    id: 'scan',
+    title: 'Скан регламента',
+    file_name: 'scan.pdf',
+    kind: 'file',
+    trust: 'extracted',
+    unreadable_pages: [12, 15],
+    warning: 'Часть страниц без текста',
+  }
+  const agentNote: Source = {
+    ...base,
+    id: 'agent',
+    kind: 'text',
+    title: 'Конспект агента',
+    content: 'Материал принёс агент.',
+    status: 'ready',
+    origin: 'agent',
+    trust: 'agent',
+  }
+  renderPanel([
+    {
+      ...transcript,
+      derivation: {
+        capability: 'speech_to_text',
+        provider: 'deepgram',
+        model: 'nova-3',
+        created_at: '2026-11-04T10:01:00Z',
+        cost_usd: 0.42,
+      },
+    },
+    record,
+    scan,
+    agentNote,
+  ])
+  expect(screen.getAllByText('извлечено').length).toBeGreaterThan(0)
+  expect(screen.getByText('$0,42')).toBeInTheDocument()
+  expect(screen.getByText(/2\s+страницы без текста/)).toBeInTheDocument()
+  // «Агент» — отдельная метка, уровень доверия «от агента» не дублируется.
+  expect(screen.getByText('Агент')).toBeInTheDocument()
+  expect(screen.queryByText('от агента')).toBeNull()
 })
 
 it('сбой расшифровки виден и на записи, и на производном узле', () => {

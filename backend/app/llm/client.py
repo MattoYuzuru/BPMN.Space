@@ -15,6 +15,7 @@ from typing import Protocol
 from pydantic import SecretStr
 
 from app.llm.base import DEADLINE_MESSAGE, PipelineError, remaining_sec
+from app.llm.capabilities import ModelCapabilities
 
 PROVIDER_ANTHROPIC = "anthropic"
 PROVIDER_OPENAI = "openai"
@@ -71,6 +72,8 @@ class TransientLlmError(Exception):
 class ModelInfo:
     id: str
     label: str
+    # Возможности по каталогу и описанию провайдера; `None` — заполнит сервис по каталогу.
+    capabilities: ModelCapabilities | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,7 +91,9 @@ class LlmConfig:
     json_mode: bool = True
     json_temperature: float | None = 0.0
     thinking: bool | None = None
-    effort: str = "medium"
+    # Умолчание effort сервера (`LLM_ANTHROPIC_EFFORT`, только если задан явно); `None` —
+    # умолчание модели из каталога. Профиль прогона передаёт свой уровень в `complete`.
+    effort: str | None = None
     # Потолок тела ответа сервера модели: пользовательский сервер не должен съесть память.
     max_response_bytes: int = 8 * 1024 * 1024
 
@@ -97,8 +102,16 @@ class LlmClient(Protocol):
     """Провайдер модели. Токены сообщает через `record_usage`, сбои — `RuntimeError`."""
 
     async def complete(
-        self, system: str, user: str, *, json_mode: bool, max_tokens: int
-    ) -> str: ...
+        self,
+        system: str,
+        user: str,
+        *,
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> str:
+        """`effort` — уровень профиля прогона; адаптер переводит его в параметр провайдера."""
+        ...
 
     async def list_models(self) -> list[ModelInfo]:
         """Список моделей аккаунта; одновременно проверяет, что ключ рабочий."""

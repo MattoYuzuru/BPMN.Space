@@ -13,7 +13,7 @@ import { useRunStore } from './store'
 type RunOptions = Partial<
   Pick<
     components['schemas']['RunCreate'],
-    'base_version_id' | 'replace_manual' | 'credential_id' | 'model'
+    'base_version_id' | 'replace_manual' | 'credential_id' | 'model' | 'profile'
   >
 >
 
@@ -50,7 +50,8 @@ export function useStartRun(projectId: string) {
   const track = useRunStore((state) => state.track)
   const user = useCurrentUser()
   return useMutation({
-    // Выбранные пользователем ключ и модель идут в каждый запуск; не выбраны — решает сервер.
+    // Выбранные пользователем ключ, модель и уровень идут в каждый запуск (анализ и сборка);
+    // не выбраны — решает сервер.
     mutationFn: (input: StartRunInput) => {
       const choice = choiceRequest(getModelChoice(user?.id))
       return typeof input === 'string'

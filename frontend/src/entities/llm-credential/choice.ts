@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { registerAccountReset } from '@/shared/lib/account-reset'
-import type { ModelChoice } from './model'
+import { isEffort, type ModelChoice } from './model'
 
 const STORAGE_PREFIX = 'arkhitektor:model-choice:'
 
@@ -15,7 +15,9 @@ function read(userId: string): ModelChoice | null {
       typeof (value as ModelChoice).credentialId === 'string' &&
       typeof (value as ModelChoice).model === 'string'
     ) {
-      return value as ModelChoice
+      const { credentialId, model, effort } = value as ModelChoice
+      // Уровень из старой или повреждённой записи просто отбрасываем.
+      return isEffort(effort) ? { credentialId, model, effort } : { credentialId, model }
     }
   } catch {
     // Хранилище недоступно или повреждено — просто нет запомненного выбора.

@@ -64,6 +64,7 @@ async def start_run(
             replace_manual=body.replace_manual,
             credential_id=body.credential_id,
             model=body.model,
+            profile=body.profile.to_domain() if body.profile else None,
             created_by=user.id if user else None,
             actor_email=user.email if user else None,
         )

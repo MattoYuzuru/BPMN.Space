@@ -12,6 +12,34 @@ from app.api.schemas.versions import Version
 from app.domain import models
 from app.domain.models import RunMode, RunStage, RunStatus
 from app.domain.runs import stage_label
+from app.llm.capabilities import RunProfile as DomainRunProfile
+
+Effort = Literal["low", "medium", "high", "xhigh", "max"]
+
+
+class RunProfile(ApiModel):
+    """Профиль прогона (RFC-0005). Пусто — умолчания сервера и модели."""
+
+    effort: Effort | None = Field(
+        default=None,
+        description=(
+            "Глубина работы модели: low, medium, high, xhigh, max. Уровень, которого модель "
+            "не поддерживает, — 422; у модели без рассуждения поле игнорируется"
+        ),
+    )
+    semantic_review: bool | None = Field(
+        default=None, description="Смысловая сверка схемы; null — настройка сервера"
+    )
+
+    def to_domain(self) -> DomainRunProfile:
+        return DomainRunProfile(effort=self.effort, semantic_review=self.semantic_review)
+
+    @classmethod
+    def of(cls, stored: object) -> "RunProfile | None":
+        """Профиль из `ir.execution`; у прогонов до RFC-0005 его нет."""
+        if not isinstance(stored, dict):
+            return None
+        return cls.model_validate(DomainRunProfile.from_json(stored).to_json())
 
 
 class RunSummary(ApiModel):
@@ -62,6 +90,9 @@ class Run(ApiModel):
     credential_id: UUID | None = Field(
         default=None, description="Ключ пользователя, с которым запущен прогон; null — сервер"
     )
+    profile: RunProfile | None = Field(
+        default=None, description="Проверенный профиль прогона; null — прогон до RFC-0005"
+    )
     warnings: list[str] = Field(
         default_factory=list,
         description=(
@@ -90,6 +121,7 @@ class Run(ApiModel):
             provider=execution.get("provider"),
             model=run.model,
             credential_id=execution.get("credential_id"),
+            profile=RunProfile.of(execution.get("profile")),
         )
 
 
@@ -117,6 +149,9 @@ class RunCreate(ApiModel):
     )
     model: str | None = Field(
         default=None, max_length=128, description="Модель; требует `credential_id`"
+    )
+    profile: RunProfile | None = Field(
+        default=None, description="Профиль прогона: effort и смысловая сверка"
     )
 
 

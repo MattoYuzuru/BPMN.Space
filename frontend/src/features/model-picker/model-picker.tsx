@@ -43,7 +43,7 @@ export function ModelPicker() {
   const choice = stored && items.some((item) => item.id === stored.credentialId) ? stored : null
   const resolved = resolveChoice(items, choice)
   // Список моделей кэшируется и на сервере, и здесь: уровень в метке без лишних запросов.
-  const models = useLlmModels(resolved?.credential.id)
+  const models = useLlmModels(resolved?.credential.id, { background: true })
   if (!user) return null
   const label = choiceLabel(items, choice, capabilitiesOf(models.data, resolved?.model))
 

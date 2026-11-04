@@ -45,6 +45,8 @@ PROVIDER_LABELS = {
 _MIN_KEY_CHARS = 8
 _MAX_KEY_CHARS = 512
 DEFAULT_ANTHROPIC_MODEL = "claude-opus-5-5"
+# Сколько секунд помнить ошибку списка моделей (неверный или отозванный ключ).
+MODELS_ERROR_CACHE_SEC = 60.0
 
 
 class LlmCredentialService:
@@ -69,6 +71,7 @@ class LlmCredentialService:
         self._cache_sec = models_cache_sec
         self._monotonic = monotonic
         self._models: dict[UUID, tuple[float, list[ModelInfo]]] = {}
+        self._model_errors: dict[UUID, tuple[float, str]] = {}
 
     @property
     def storage_available(self) -> bool:
@@ -219,6 +222,7 @@ class LlmCredentialService:
         await self._own(user_id, credential_id)
         await self._repo.delete(credential_id)
         self._models.pop(credential_id, None)
+        self._model_errors.pop(credential_id, None)
 
     async def models(self, user_id: UUID, credential_id: UUID) -> list[ModelInfo]:
         credential = await self._own(user_id, credential_id)
@@ -226,6 +230,11 @@ class LlmCredentialService:
         now = self._monotonic()
         if cached is not None and now - cached[0] < self._cache_sec:
             return cached[1]
+        # Неработающий ключ: шапка проекта спрашивает список при каждом показе, поэтому ошибка
+        # помнится недолго — без нового запроса к провайдеру и новой записи `last_error`.
+        failed = self._model_errors.get(credential_id)
+        if failed is not None and now - failed[0] < min(self._cache_sec, MODELS_ERROR_CACHE_SEC):
+            raise InvalidInputError(failed[1])
         api_key = self._decrypt(credential)
         config = LlmConfig(
             provider=credential.provider,
@@ -236,8 +245,10 @@ class LlmCredentialService:
         try:
             models = await self._fetch_models(config)
         except InvalidInputError as error:
+            self._model_errors[credential_id] = (now, error.message)
             await self._repo.mark_used(credential_id, self._rt.clock(), error.message)
             raise
+        self._model_errors.pop(credential_id, None)
         self._models[credential_id] = (now, models)
         return models
 

@@ -30,6 +30,30 @@ class OutputTruncatedError(RuntimeError):
     """Провайдер явно не завершил ответ; такой JSON не является полным результатом."""
 
 
+class ContextOverflowError(RuntimeError):
+    """Провайдер отклонил запрос как длиннее окна модели: можно повторить порциями."""
+
+
+CONTEXT_OVERFLOW_MESSAGE = "Запрос не поместился в окно модели"
+_OVERFLOW_MARKERS = (
+    "prompt is too long",
+    "input is too long",
+    "context length",
+    "context_length_exceeded",
+    "maximum context",
+    "context window",
+    "too many tokens",
+)
+
+
+def is_context_overflow(status: int, text: str) -> bool:
+    """HTTP 413 или 400 с признаком «вход длиннее окна» в тексте ошибки провайдера."""
+    if status == 413:  # noqa: PLR2004 — Request Entity Too Large
+        return True
+    lowered = text.lower()
+    return status == 400 and any(marker in lowered for marker in _OVERFLOW_MARKERS)  # noqa: PLR2004
+
+
 class ProcessPipeline(Protocol):
     @property
     def provider(self) -> str: ...

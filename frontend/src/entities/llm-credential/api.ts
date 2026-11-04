@@ -1,8 +1,15 @@
-import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  type QueryClient,
+  queryOptions,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import type { Schemas } from '@/shared/api/client'
 import { api, errorMessage, unwrap } from '@/shared/api/client'
 import { toast } from '@/shared/ui'
 import { useModelChoiceStore } from './choice'
+import type { LlmModel, ModelCapabilities } from './model'
 
 export const llmCredentialKeys = {
   all: ['llm-credentials'] as const,
@@ -35,11 +42,26 @@ export function llmModelsQueryOptions(credentialId: string) {
   })
 }
 
-export function useLlmModels(credentialId: string | undefined) {
+/**
+ * `background` — запрос для метки в шапке: без повторов при фокусе окна и при монтировании
+ * после ошибки, чтобы неработающий ключ не дёргал провайдера на каждый показ страницы.
+ */
+export function useLlmModels(credentialId: string | undefined, { background = false } = {}) {
   return useQuery({
     ...llmModelsQueryOptions(credentialId ?? ''),
     enabled: Boolean(credentialId),
+    ...(background ? { refetchOnWindowFocus: false, retryOnMount: false } : {}),
   })
+}
+
+/** Возможности модели из уже загруженного списка ключа (без запроса). */
+export function cachedModelCapabilities(
+  client: QueryClient,
+  credentialId: string,
+  model: string,
+): ModelCapabilities | undefined {
+  const models = client.getQueryData<LlmModel[]>(llmCredentialKeys.models(credentialId))
+  return models?.find((item) => item.id === model)?.capabilities
 }
 
 /** Создание проверяет ключ у провайдера; ошибку показывает форма, а не тост. */

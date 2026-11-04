@@ -12,7 +12,7 @@ mock (только вне production). Ключ расшифровывается
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from uuid import UUID
 
 from app.domain.credentials import LlmCredential
@@ -20,6 +20,8 @@ from app.infra.crypto import CredentialCipher, CredentialCipherError
 from app.infra.repositories.base import Repositories
 from app.llm.base import ProcessPipeline
 from app.llm.capabilities import (
+    EFFORT_LABELS,
+    EFFORT_LEVELS,
     ModelCapabilities,
     RunProfile,
     UnsupportedEffortError,
@@ -73,6 +75,12 @@ def pipeline_capabilities(pipeline: object) -> ModelCapabilities:
     return caps if isinstance(caps, ModelCapabilities) else ModelCapabilities()
 
 
+def pipeline_limits(pipeline: object) -> dict[str, int | str | None] | None:
+    """Пределы, которые реально уйдут провайдеру; `None` — у mock и тестовых пайплайнов."""
+    limits = getattr(pipeline, "limits", None)
+    return dict(limits) if isinstance(limits, dict) else None
+
+
 def pipeline_budget(pipeline: object) -> int | None:
     """Бюджет источников, рассчитанный из окна модели; `None` — у mock и тестовых пайплайнов."""
     budget = getattr(pipeline, "context_budget_chars", None)
@@ -89,6 +97,7 @@ class ModelResolver:
         factory: PipelineFactory | None = None,
         runtime: Runtime | None = None,
         production: bool = False,
+        server_max_effort: str | None = None,
     ) -> None:
         self._repos = repos
         self._server = server_pipeline
@@ -96,6 +105,8 @@ class ModelResolver:
         self._factory = factory
         self._rt = runtime or Runtime()
         self._production = production
+        # Потолок effort для модели сервера (`LLM_SERVER_MAX_EFFORT`): ключ оператора общий.
+        self._server_max_effort = server_max_effort
 
     @property
     def server_pipeline(self) -> ProcessPipeline | None:
@@ -175,8 +186,13 @@ class ModelResolver:
         credential_id: UUID | None,
         model: str | None,
         profile: RunProfile | None = None,
+        limits: object = None,
     ) -> ResolvedModel:
-        """Выбор и профиль, записанные в прогоне (после рестарта), без подмены умолчаниями."""
+        """Выбор, профиль и пределы, записанные в прогоне (после рестарта), без подмены.
+
+        `limits` — `ir.execution.limits`: бюджет источников, `max_tokens` и отправляемый уровень,
+        рассчитанные при запуске. У прогонов до их записи пределы считаются заново.
+        """
         if credential_id is None:
             resolved = self._server_choice(allow_mock=True)
         else:
@@ -185,10 +201,12 @@ class ModelResolver:
             if credential is None or credential.user_id != user_id:
                 raise NotFoundError("Ключ модели удалён. Запустите прогон заново")
             resolved = self._for_credential(credential, model)
-        # Записанный профиль уже проверен при запуске. После рестарта уточнения Models API
-        # могут ещё не загрузиться, поэтому он не перепроверяется: адаптер сам берёт ближайший
-        # поддерживаемый уровень, и восстановленный прогон идёт с тем же профилем.
-        return await self._with_profile(resolved, profile, validate=False)
+        # Записанный профиль проверен при запуске; после рестарта уточнения Models API могут
+        # ещё не загрузиться, поэтому он не перепроверяется, а пределы берутся из записи.
+        restored = await self._with_profile(resolved, profile, validate=False)
+        if isinstance(restored.pipeline, LlmPipeline) and isinstance(limits, dict):
+            return replace(restored, pipeline=restored.pipeline.restored(limits))
+        return restored
 
     async def _with_profile(
         self, resolved: ResolvedModel, profile: RunProfile | None, *, validate: bool
@@ -198,7 +216,9 @@ class ModelResolver:
         if validate:
             try:
                 checked = checked_profile(checked, resolved.capabilities, resolved.model)
-            except UnsupportedEffortError as error:
+                if resolved.source == SOURCE_SERVER:
+                    self._check_server_profile(checked, resolved)
+            except (UnsupportedEffortError, InvalidInputError) as error:
                 await resolved.release()
                 raise InvalidInputError(str(error)) from None
         pipeline = resolved.pipeline
@@ -212,6 +232,29 @@ class ModelResolver:
             resolved.source,
             checked,
         )
+
+    def _check_server_profile(self, profile: RunProfile, resolved: ResolvedModel) -> None:
+        """Модель сервера платит оператор: глубже его потолка и со сверкой, которую он
+        выключил, её не запускают. Выключить сверку или взять уровень ниже можно."""
+        pipeline = resolved.pipeline
+        if profile.semantic_review and not getattr(pipeline, "semantic_review", False):
+            raise InvalidInputError(
+                "Смысловая сверка на модели сервера выключена администратором. "
+                "Включить её можно на своём ключе модели"
+            )
+        if profile.effort is None:
+            return
+        caps = resolved.capabilities
+        ceiling = self._server_max_effort or getattr(pipeline, "effort", None)
+        ceiling = ceiling or caps.effort_default
+        if ceiling is None:
+            return
+        order = {level: index for index, level in enumerate(EFFORT_LEVELS)}
+        if order[profile.effort] > order.get(ceiling, 0):
+            raise InvalidInputError(
+                f"Модель сервера работает не глубже уровня «{EFFORT_LABELS[ceiling]}». "
+                "Для более тщательной работы добавьте свой ключ модели в настройках"
+            )
 
     def _for_credential(self, credential: LlmCredential, model: str | None) -> ResolvedModel:
         if self._cipher is None or self._factory is None:

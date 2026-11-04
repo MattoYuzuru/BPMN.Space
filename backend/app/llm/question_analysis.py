@@ -40,6 +40,14 @@ _PROMPT_VERSION = "questions-verified-v2"
 _Model = TypeVar("_Model", bound=BaseModel)
 _CALLS: ContextVar[list[int] | None] = ContextVar("question_analysis_calls", default=None)
 _REQUEST_LIMIT: ContextVar[int] = ContextVar("question_analysis_request_limit", default=120_000)
+# Весь проект уместился в один пакет: это итоговый анализ целиком, а не порция (RFC-0005 —
+# такому запросу пайплайн даёт полный максимум ответа модели, порциям — малый лимит).
+_WHOLE_PROJECT: ContextVar[bool] = ContextVar("question_analysis_whole_project", default=False)
+
+
+def whole_project_request() -> bool:
+    """Текущий запрос анализа — по всему проекту одним пакетом."""
+    return _WHOLE_PROJECT.get()
 
 
 class _InputBudgetError(OutputTruncatedError):
@@ -386,12 +394,14 @@ class QuestionAnalyzer:
             return result
         token = _CALLS.set([0])
         limit = _REQUEST_LIMIT.set(context.analysis_budget_chars)
+        whole = _WHOLE_PROJECT.set(False)
         try:
             result = await self._analyze(context, fingerprint)
             result.audit["model_calls"] = (_CALLS.get() or [0])[0]
         finally:
             _CALLS.reset(token)
             _REQUEST_LIMIT.reset(limit)
+            _WHOLE_PROJECT.reset(whole)
         result.warnings = list(dict.fromkeys(result.warnings))
         if not result.warnings:
             self.cache[fingerprint] = deepcopy(result)
@@ -441,6 +451,7 @@ class QuestionAnalyzer:
         ]
         # Порции независимы: запросы идут с ограниченной параллельностью, а предложения
         # обрабатываются строго в порядке порций, поэтому результат не зависит от скорости ответов.
+        _WHOLE_PROJECT.set(len(payloads) == 1)
         scans = await bounded_gather(
             [partial(self._scan, payload) for payload in payloads],
             limit=context.parallel_requests,

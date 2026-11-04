@@ -73,6 +73,7 @@ from app.services.model_resolver import (
     ModelResolver,
     ResolvedModel,
     pipeline_budget,
+    pipeline_limits,
     pipeline_model,
     pipeline_provider,
 )
@@ -270,9 +271,11 @@ class RunService:
                             "credential_id": str(resolved.credential_id)
                             if resolved.credential_id
                             else None,
-                            # Проверенный профиль (без ключей): восстановление после
-                            # рестарта продолжает прогон с тем же effort и сверкой.
+                            # Проверенный профиль (без ключей) и рассчитанные из модели
+                            # пределы: восстановление после рестарта идёт с теми же
+                            # бюджетом, `max_tokens` и отправляемым уровнем.
                             "profile": resolved.profile.to_json(),
+                            "limits": pipeline_limits(resolved.pipeline),
                         }
                     },
                 )
@@ -464,6 +467,7 @@ class RunService:
                 UUID(raw_id) if raw_id else None,
                 run.model,
                 RunProfile.from_json(execution.get("profile")),
+                execution.get("limits"),
             )
         except ServiceError as error:
             raise PipelineError(
@@ -550,14 +554,20 @@ class RunService:
         provider = execution.get("provider")
         if provider and provider != pipeline_provider(pipeline):
             raise PipelineError("Провайдер модели изменился после запуска; создайте новый прогон")
-        recorded = execution.get("profile")
-        current = getattr(pipeline, "profile", None)
-        if (
-            isinstance(recorded, dict)
-            and isinstance(current, RunProfile)
-            and RunProfile.from_json(recorded).effort != current.effort
-        ):
-            raise PipelineError("Профиль модели изменился после запуска; создайте новый прогон")
+        recorded = execution.get("limits")
+        current = pipeline_limits(pipeline)
+        # Записанное при запуске сравнивается с тем, что реально уйдёт провайдеру сейчас:
+        # восстановленный пайплайн берёт запись, только если возможности модели ей не
+        # противоречат (`LlmPipeline.restored`). Иначе прогон останавливается, а не идёт молча
+        # с другим бюджетом, `max_tokens` или уровнем.
+        if isinstance(recorded, dict) and current is not None:
+            changed = [key for key, value in current.items() if recorded.get(key) != value]
+            if changed:
+                raise PipelineError(
+                    "Пределы модели изменились после запуска ("
+                    + ", ".join(sorted(changed))
+                    + "); создайте новый прогон"
+                )
 
     async def _perform(self, run: Run, stage: RunStage, state: _RunState) -> None:
         match stage:
@@ -646,6 +656,17 @@ class RunService:
         """Бюджет источников из окна модели прогона; без него — настройка сервера."""
         return pipeline_budget(state.pipeline) or self._context_budget
 
+    def _sources_budget(self, budget_chars: int | None, versions: list[Version]) -> int:
+        """Бюджет источников за вычетом текущей схемы: она идёт в запрос графа рядом с ними.
+
+        XML длиннее канонического графа, поэтому вычет с запасом. Ниже настройки сервера
+        бюджет не опускается: та заведомо меньше окна любой модели.
+        """
+        budget = budget_chars or self._context_budget
+        if budget <= self._context_budget or not versions:
+            return budget
+        return max(budget - len(versions[0].xml or ""), self._context_budget)
+
     async def _context(self, project_id: UUID, budget_chars: int | None = None) -> RunContext:
         async with self._repos.atomic() as repos:
             await repos.projects.lock(project_id)
@@ -676,7 +697,7 @@ class RunService:
                 sources=await repos.sources.list_by_project(project_id),
                 questions=await repos.questions.list_by_project(project_id),
                 versions=versions,
-                budget_chars=budget_chars or self._context_budget,
+                budget_chars=self._sources_budget(budget_chars, versions),
             )
             base = (
                 versions[0]

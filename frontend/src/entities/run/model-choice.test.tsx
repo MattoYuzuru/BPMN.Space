@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { useModelChoiceStore } from '@/entities/llm-credential'
+import { llmCredentialKeys, useModelChoiceStore } from '@/entities/llm-credential'
 import { type ProjectDetail, projectKeys } from '@/entities/project'
 import { sessionKeys } from '@/entities/session'
 import { stubApi } from '@/test/api-stub'
@@ -14,8 +14,9 @@ vi.mock('@/shared/ui', async (original) => ({
 
 afterEach(() => vi.unstubAllGlobals())
 
-function setup() {
+function setup({ models }: { models?: unknown[] } = {}) {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
+  if (models) client.setQueryData(llmCredentialKeys.models('c1'), models)
   client.setQueryData(projectKeys.detail('p-1'), { id: 'p-1', status: 'empty' } as ProjectDetail)
   client.setQueryData(sessionKeys.all, { auth_enabled: true, user: { id: 'u1', email: 'a@b.ru' } })
   const wrapper = ({ children }: { children: ReactNode }) => (
@@ -44,6 +45,39 @@ describe('запуск прогона с выбранной моделью', () 
       credential_id: 'c1',
       model: 'claude-sonnet-5-5',
     })
+  })
+
+  it('отправляет показанный уровень, только если возможности модели известны', async () => {
+    useModelChoiceStore.setState({
+      choices: { u1: { credentialId: 'c1', model: 'claude-sonnet-5-5', effort: 'max' } },
+    })
+    const calls = stubApi({
+      'POST /api/v1/projects/p-1/runs': {
+        status: 202,
+        body: { id: 'r-3', project_id: 'p-1', mode: 'build', status: 'queued' },
+      },
+    })
+    const hook = setup()
+    await act(async () => {
+      await hook.result.current.mutateAsync('build')
+    })
+    // Список моделей ключа ещё не загружен: уровень не показан и не отправляется.
+    expect(calls.at(-1)?.body).not.toHaveProperty('profile')
+    hook.unmount()
+    const known = setup({
+      models: [
+        {
+          id: 'claude-sonnet-5-5',
+          label: 'x',
+          capabilities: { effort_levels: ['low', 'medium', 'high'], effort_default: 'high' },
+        },
+      ],
+    })
+    await act(async () => {
+      await known.result.current.mutateAsync('build')
+    })
+    // «Максимум» эта модель не умеет: уходит показанный уровень по умолчанию.
+    expect(calls.at(-1)?.body).toMatchObject({ profile: { effort: 'high' } })
   })
 
   it('без выбора не отправляет ничего лишнего: решает сервер', async () => {

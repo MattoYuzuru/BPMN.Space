@@ -12,7 +12,9 @@ from app.domain.concurrency import adaptive_deadline
 logger = logging.getLogger(__name__)
 _MB = 1024 * 1024
 # Переменные, у которых «задано явно» меняет поведение (RFC-0005): пустое значение — не задано.
-_UNSET_WHEN_EMPTY = frozenset({"llm_json_max_tokens", "llm_anthropic_effort"})
+_UNSET_WHEN_EMPTY = frozenset(
+    {"llm_json_max_tokens", "llm_anthropic_effort", "llm_server_max_effort"}
+)
 # Квитанции удаления доступны 30 дней; содержимое проектов удаляется сразу.
 DELETED_PROJECT_NOTICE_DAYS = 30
 
@@ -137,6 +139,10 @@ class Settings(BaseSettings):
     # 5.5 — 128 тыс., потоком); явно заданная переменная становится потолком. У модели с
     # неизвестным максимумом — само значение. Незавершённый length-ответ не применяется.
     llm_json_max_tokens: int = Field(default=16384, ge=256, le=131_072)
+    # Лимит ответа порций: извлечение оснований, смысловая сверка, проверка вопросов пакетами.
+    # Провайдер резервирует лимит выходных токенов в минуту по `max_tokens`, поэтому параллельные
+    # порции не получают полный максимум модели. Обрезанная порция делится, а не теряется.
+    llm_chunk_max_tokens: int = Field(default=16384, ge=256, le=131_072)
     # Температура для JSON-ответов (анализ, сборка). Дефолт провайдера (DeepSeek — 1.0)
     # даёт редкие ответы не по схеме; 0.0 — рекомендация DeepSeek для структурированного вывода.
     llm_json_temperature: float | None = 0.0
@@ -147,6 +153,10 @@ class Settings(BaseSettings):
     # low | medium | high | xhigh | max. Не задана — умолчание модели из справочника (Opus 5.5 —
     # medium, Sonnet 5.5 — high). Уровень из профиля прогона главнее.
     llm_anthropic_effort: str = "medium"
+    # Предельный уровень effort для модели сервера (ключ оператора), который может попросить
+    # любой пользователь: low | medium | high | xhigh | max. Не задан — уровень сервера по
+    # умолчанию (`LLM_ANTHROPIC_EFFORT`, иначе умолчание модели). Свой ключ не ограничивается.
+    llm_server_max_effort: str | None = None
     # Ключи моделей пользователей (ADR-0011): Fernet-ключи через запятую; первый шифрует,
     # все расшифровывают (ротация). Сгенерировать: `make credentials-key`. В production без
     # него пользовательские ключи не принимаются; в dev берётся временный ключ процесса.
@@ -192,12 +202,14 @@ class Settings(BaseSettings):
             return None
         return value
 
-    @field_validator("llm_anthropic_effort")
+    @field_validator("llm_anthropic_effort", "llm_server_max_effort")
     @classmethod
-    def _effort_level(cls, value: str) -> str:
+    def _effort_level(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         level = value.strip().lower()
         if level not in {"low", "medium", "high", "xhigh", "max"}:
-            raise ValueError("LLM_ANTHROPIC_EFFORT: low | medium | high | xhigh | max")
+            raise ValueError("Уровень effort: low | medium | high | xhigh | max")
         return level
 
     @field_validator("llm_allowed_private_hosts", mode="before")

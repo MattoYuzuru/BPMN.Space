@@ -78,6 +78,8 @@ it('показывает уровень доверия и стоимость о�
   })
   expect(screen.getByText('Извлечено ИИ')).toBeInTheDocument()
   expect(screen.getByText('$0,42')).toBeInTheDocument()
+  // Пояснение уровня доверия выведено текстом, а не спрятано в подсказке мыши.
+  expect(screen.getByText(/сверяемое с исходником/)).toBeInTheDocument()
 })
 
 it('перечисляет страницы без текстового слоя', () => {
@@ -91,6 +93,12 @@ it('материал агента помечен отдельно', () => {
   setup(source.content, undefined, { origin: 'agent', trust: 'agent' })
   expect(screen.getByText('Агент')).toBeInTheDocument()
   expect(screen.getByText('От агента')).toBeInTheDocument()
+})
+
+it('неизвестный уровень доверия не выдаётся за первоисточник', () => {
+  setup(source.content, undefined, { trust: 'future' as Source['trust'] })
+  expect(screen.getByText('Уровень доверия неизвестен')).toBeInTheDocument()
+  expect(screen.queryByText('Первоисточник')).toBeNull()
 })
 
 it('предлагает все вопросы и элемент для одного фрагмента и открывает выбранный вопрос', async () => {

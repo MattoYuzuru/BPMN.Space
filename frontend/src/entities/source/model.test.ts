@@ -9,6 +9,7 @@ import {
   findQuoteRanges,
   isAcceptedFile,
   isAgentSource,
+  knownSourceTrust,
   limitParts,
   quoteReferences,
   SOURCE_TRUST,
@@ -208,6 +209,10 @@ describe('возможности, доверие и дополнительные
     }
     expect(sourceTrustInfo('summary').tone).toBe('amber')
     expect(sourceTrustInfo('agent').label).toBe('От агента')
+    // Новый уровень с сервера не притворяется первоисточником.
+    expect(knownSourceTrust('future')).toBeNull()
+    expect(sourceTrustInfo('future').label).toBe('Уровень доверия неизвестен')
+    expect(sourceTrustInfo('future').short).toBe('без уровня')
   })
 
   it('узнаёт материал агента и показывает стоимость обработки', () => {

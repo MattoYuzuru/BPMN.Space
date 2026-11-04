@@ -11,11 +11,12 @@ import {
   isAgentSource,
   isDerived,
   isMediaFile,
+  knownSourceTrust,
+  SOURCE_TRUST,
   type Source,
   type SourceNode,
   sourceKindOf,
   sourceMeta,
-  sourceTrustInfo,
   unreadablePagesLabel,
   useAddSampleSource,
   useDeleteSource,
@@ -262,10 +263,10 @@ function SourceRow({ source, derivedCount }: { source: Source; derivedCount: num
   const processing = source.status === 'processing'
   const failed = source.status === 'failed'
   const warned = source.status === 'ready' && Boolean(source.warning)
-  const trust = sourceTrustInfo(source.trust)
+  const trust = knownSourceTrust(source.trust)
+  const trustBadge = trust && trust !== SOURCE_TRUST.primary ? trust : null
   // «Агент» уже сказано отдельной меткой; второй раз уровень доверия не повторяем.
-  const showTrust =
-    source.trust !== 'primary' && !(isAgentSource(source) && source.trust === 'agent')
+  const showTrust = trustBadge !== null && !(isAgentSource(source) && source.trust === 'agent')
   const cost = derivationCost(source)
   const unreadable = unreadablePagesLabel(source.unreadable_pages)
 
@@ -308,9 +309,9 @@ function SourceRow({ source, derivedCount }: { source: Source; derivedCount: num
               Агент
             </Badge>
           )}
-          {showTrust && (
-            <Badge variant="outline" tone={trust.tone} className="shrink-0">
-              {trust.short}
+          {showTrust && trustBadge && (
+            <Badge variant="outline" tone={trustBadge.tone} className="shrink-0">
+              {trustBadge.short}
             </Badge>
           )}
           {processing ? (
@@ -343,7 +344,8 @@ function SourceRow({ source, derivedCount }: { source: Source; derivedCount: num
               )}
             </>
           )}
-          {unreadable && !failed && (
+          {/* Если сервер уже написал предупреждение, второй раз те же страницы не перечисляем. */}
+          {unreadable && !warned && !failed && (
             <Badge tone="amber" variant="outline" className="shrink-0">
               {unreadable}
             </Badge>

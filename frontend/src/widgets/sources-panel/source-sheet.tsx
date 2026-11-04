@@ -35,7 +35,6 @@ import {
   SheetContent,
   Switch,
   Textarea,
-  Tooltip,
 } from '@/shared/ui'
 import { useWorkspace, useWorkspaceUi } from '@/widgets/workspace/model'
 
@@ -206,13 +205,11 @@ function SourceDetail({
               Агент
             </Badge>
           )}
-          <Tooltip content={trust.description}>
-            <span {...tourAnchor(TOUR_ANCHORS.sourceTrust)}>
-              <Badge variant="outline" tone={trust.tone}>
-                {trust.label}
-              </Badge>
-            </span>
-          </Tooltip>
+          <span {...tourAnchor(TOUR_ANCHORS.sourceTrust)} className="inline-flex">
+            <Badge variant="outline" tone={trust.tone}>
+              {trust.label}
+            </Badge>
+          </span>
           {producer && <span>{producer}</span>}
           {cost !== null && <span>{formatMoney(cost)}</span>}
           {source.edited_by_human && (
@@ -222,6 +219,8 @@ function SourceDetail({
           )}
           <span data-numeric>{sourceMeta(source)}</span>
           <span>{formatDate(new Date(source.created_at))}</span>
+          {/* Пояснение уровня доверия — текстом: читается скринридером и доступно с клавиатуры. */}
+          <span className="basis-full text-fg-muted">{trust.description}</span>
         </span>
       }
       footer={

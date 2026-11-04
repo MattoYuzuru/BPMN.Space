@@ -131,6 +131,12 @@ it('показывает уровень доверия, стоимость об�
     origin: 'agent',
     trust: 'agent',
   }
+  const pagesOnly: Source = {
+    ...scan,
+    id: 'pages-only',
+    title: 'Скан без предупреждения',
+    warning: null,
+  }
   renderPanel([
     {
       ...transcript,
@@ -144,14 +150,30 @@ it('показывает уровень доверия, стоимость об�
     },
     record,
     scan,
+    pagesOnly,
     agentNote,
   ])
   expect(screen.getAllByText('извлечено').length).toBeGreaterThan(0)
   expect(screen.getByText('$0,42')).toBeInTheDocument()
-  expect(screen.getByText(/2\s+страницы без текста/)).toBeInTheDocument()
+  // Если сервер уже написал предупреждение, страницы второй раз не перечисляются.
+  expect(screen.getByText('Часть страниц без текста')).toBeInTheDocument()
+  expect(screen.getAllByText(/2\s+страницы без текста/)).toHaveLength(1)
   // «Агент» — отдельная метка, уровень доверия «от агента» не дублируется.
   expect(screen.getByText('Агент')).toBeInTheDocument()
   expect(screen.queryByText('от агента')).toBeNull()
+})
+
+it('неизвестный уровень доверия не выдаётся за первоисточник', () => {
+  renderPanel([
+    {
+      ...rules,
+      id: 'future',
+      title: 'Материал нового типа',
+      trust: 'future' as Source['trust'],
+    },
+  ])
+  expect(screen.queryByText('первоисточник')).toBeNull()
+  expect(screen.queryByText('без уровня')).toBeNull()
 })
 
 it('сбой расшифровки виден и на записи, и на производном узле', () => {

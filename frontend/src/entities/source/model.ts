@@ -114,11 +114,16 @@ export function capabilityLabel(capability: string | null | undefined): string {
   return capabilityInfo(capability).label
 }
 
+/** Подпись, короткая метка, пояснение и тон бейджа для уровня доверия. */
+export interface SourceTrustInfo {
+  label: string
+  short: string
+  description: string
+  tone: BadgeTone
+}
+
 /** Уровни доверия (RFC-0006): что из материала можно цитировать в основаниях схемы. */
-export const SOURCE_TRUST: Record<
-  SourceTrust,
-  { label: string; short: string; description: string; tone: BadgeTone }
-> = {
+export const SOURCE_TRUST: Record<SourceTrust, SourceTrustInfo> = {
   primary: {
     label: 'Первоисточник',
     short: 'первоисточник',
@@ -157,8 +162,21 @@ export const SOURCE_TRUST: Record<
   },
 }
 
-export function sourceTrustInfo(trust: SourceTrust) {
-  return SOURCE_TRUST[trust] ?? SOURCE_TRUST.primary
+const UNKNOWN_TRUST: SourceTrustInfo = {
+  label: 'Уровень доверия неизвестен',
+  short: 'без уровня',
+  description: 'Сервер прислал уровень доверия, которого эта версия интерфейса ещё не знает.',
+  tone: 'neutral',
+}
+
+/** Известный уровень доверия или null: по нему дерево решает, показывать ли метку. */
+export function knownSourceTrust(trust: string): SourceTrustInfo | null {
+  return (SOURCE_TRUST as Record<string, SourceTrustInfo>)[trust] ?? null
+}
+
+/** Подпись уровня доверия; незнакомый уровень не выдаётся за первоисточник. */
+export function sourceTrustInfo(trust: string): SourceTrustInfo {
+  return knownSourceTrust(trust) ?? UNKNOWN_TRUST
 }
 
 /** Материал принёс внешний агент (RFC-0007): у узла своя метка в дереве. */

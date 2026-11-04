@@ -4,7 +4,7 @@ name: CI
 
 on:
   push:
-    branches: [main, chore/github-actions]
+    branches: [main]
   pull_request:
 
 # Новый запуск для той же ветки отменяет устаревший.

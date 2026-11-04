@@ -194,7 +194,7 @@ describe('возможности, доверие и дополнительные
   it('подписывает любую известную возможность, а незнакомую не показывает сырым кодом', () => {
     expect(capabilityLabel('speech_to_text')).toBe('Расшифровка')
     expect(capabilityLabel('ocr')).toBe('Распознанный текст')
-    expect(capabilityLabel('vision')).toBe('Описание изображения')
+    expect(capabilityLabel('vision')).toBe('Описание экрана')
     expect(capabilityInfo('video_understanding').processing).toBe('Смотрю видео')
     expect(capabilityLabel('brand_new_capability')).toBe('Материал от ИИ')
     expect(capabilityInfo(null).icon).toBe('sparkles')

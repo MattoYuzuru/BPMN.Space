@@ -36,14 +36,20 @@ export async function addTextSource(projectId: string, body: Schemas['SourceText
 export interface FileUpload {
   file: File
   title?: string
+  /** Профиль обработки записи (аудио/видео); для документов не нужен. */
+  mediaProfile?: Schemas['MediaProfile']
   onProgress?: (fraction: number) => void
 }
 
 /** Загрузить файл с ходом загрузки (без уведомлений — для составных сценариев). */
-export function uploadFileSource(projectId: string, { file, title, onProgress }: FileUpload) {
+export function uploadFileSource(
+  projectId: string,
+  { file, title, mediaProfile, onProgress }: FileUpload,
+) {
   const form = new FormData()
   form.append('file', file)
   if (title) form.append('title', title)
+  if (mediaProfile) form.append('media_profile', mediaProfile)
   return postForm<Source>(`/api/v1/projects/${projectId}/sources/file`, form, { onProgress })
 }
 

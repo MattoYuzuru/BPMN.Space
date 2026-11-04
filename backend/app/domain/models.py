@@ -163,6 +163,8 @@ class Quote:
 
 #: Провенанс ответа: его записал внешний агент владельца токена (RFC-0007), а не человек.
 ANSWER_VIA_AGENT = "agent"
+#: Ответ дан проверяющим по ссылке проверки (RFC-0007, шаг 3): без токена и без агента.
+ANSWER_VIA_REVIEW = "review"
 
 
 @dataclass(slots=True, kw_only=True)

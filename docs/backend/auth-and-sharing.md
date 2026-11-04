@@ -141,11 +141,17 @@ SSE прогона принимает токен и закрывается по�
 | `sources:write` | `POST /projects/{id}/sources/{text,file,sample}`, `PATCH /sources/{id}`; загрузка аудио или видео в `sources/file` — ещё и `runs:start` (запись расшифровывает платный провайдер) |
 | `sources:delete` | `DELETE /sources/{id}` |
 | `runs:start` | `POST /projects/{id}/runs`, `POST /runs/{id}/cancel`, `POST /runs/{id}/resume`, помощник (`/projects/{id}/assistant`, `/assistant/chat`), `POST /transcriptions` — платные вызовы на ключах вызывающего пользователя |
-| `questions:answer` | `POST /questions/{id}/{answer,ignore,reopen}`, `GET /shares/{token}/agent-prompt` (гостю по ссылке) |
+| `questions:answer` | `POST /questions/{id}/{answer,ignore,reopen}`; `ignore`/`reopen` токену проверки недоступны |
 | любой действующий токен | `GET /auth/me`, `GET /auth/session` |
 
 Нехватка права — `403` с названием нужного права, например «Токену не хватает права
 «sources:write» (добавлять и изменять источники)…».
+
+**Ответ по ссылке без аккаунта.** Гость с reviewer-ссылкой отвечает на вопрос области через
+`POST /shares/{token}/questions/{question_id}/answer`: запрос `{"text": "…"}`, ответ — вопрос
+с `answer.via=review`, `answer.via_name` (проверка: проект + короткий id ссылки) и
+`answer.share_link_id`. Вне области — `404`; по ссылкам viewer/editor — `403`. Промпт
+`GET /shares/{token}/agent-prompt` доступен только reviewer-ссылке (viewer/editor — `403`).
 
 **Токен проверки.** Токен, выданный по ссылке `reviewer`
 (`POST /shares/{token}/agent-token`), сужен её областью: видит только проект ссылки, читает
@@ -158,8 +164,8 @@ SSE прогона принимает токен и закрывается по�
 **Журнал активности агента.** `GET /api/v1/projects/{id}/agent-activity` (право
 `projects:read`, только участникам проекта — не по ссылке проверки) отдаёт события из уже
 сохранённых данных: `source_added` — источник `origin=agent` с названием токена из `derivation`,
-`answer_added` — ответ с `answer.via=agent` (включая ответы по ссылке проверки, с
-`share_link_id`). Отдельной таблицы событий нет.
+`answer_added` — ответ с `answer.via=agent` или `answer.via=review` (ответ по ссылке проверки,
+с `share_link_id` и подписью проверки). Отдельной таблицы событий нет.
 
 **Что через токен нельзя** (`403` «Это действие недоступно по токену доступа…»): управлять
 токенами, ключами пользователя (`/me/credentials`, `/me/llm-credentials`), ссылками доступа и

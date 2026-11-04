@@ -115,14 +115,10 @@ async def ignore_question(
     user: OptionalUserDep,
 ) -> Question:
     """Принять допущение: вопрос `ignored`, допущение попадёт в схему и отчёт."""
+    # Проверяющий отвечает на вопросы области, но не принимает допущения за владельца:
+    # у ignore нет провенанса ссылки, и решение о процессе остаётся участникам проекта.
     await ensure_resource_access(
-        request,
-        container,
-        question_id,
-        user,
-        resource=ResourceKind.QUESTION,
-        write=True,
-        allow_reviewer=True,
+        request, container, question_id, user, resource=ResourceKind.QUESTION, write=True
     )
     await _ensure_question_in_review_scope(request, container, question_id)
     ignored = await container.questions.ignore(question_id)

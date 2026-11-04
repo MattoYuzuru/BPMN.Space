@@ -52,8 +52,9 @@ def upgrade() -> None:
         "project_share_links",
         ["share_link_id"],
         ["id"],
-        ondelete="SET NULL",
+        ondelete="CASCADE",
     )
+    op.create_index("ix_api_tokens_share_link_id", "api_tokens", ["share_link_id"])
     op.add_column(
         "api_tokens",
         sa.Column("lane_ids", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
@@ -72,6 +73,7 @@ def upgrade() -> None:
         ["id"],
         ondelete="SET NULL",
     )
+    op.create_index("ix_questions_answer_share_link_id", "questions", ["answer_share_link_id"])
 
 
 def downgrade() -> None:
@@ -82,8 +84,12 @@ def downgrade() -> None:
     op.drop_column("api_tokens", "share_link_id")
     op.drop_column("project_share_links", "lane_ids")
     # Откат роли: ссылки проверки становятся ссылками просмотра, чтобы CHECK не упал на данных.
-    # Область проверки при этом теряется — это осознанное ограничение downgrade.
-    op.execute("UPDATE project_share_links SET role = 'viewer' WHERE role = 'reviewer'")
+    # Важно не расширить доступ: без revoked_at бывшая проверка (область-дорожки) стала бы
+    # ссылкой просмотра на весь проект. Поэтому гасим такие ссылки, а не понижаем молча.
+    op.execute(
+        "UPDATE project_share_links SET role = 'viewer', "
+        "revoked_at = COALESCE(revoked_at, now()) WHERE role = 'reviewer'"
+    )
     op.drop_constraint("ck_project_share_links_role", "project_share_links", type_="check")
     op.create_check_constraint(
         "ck_project_share_links_role", "project_share_links", "role IN ('viewer', 'editor')"

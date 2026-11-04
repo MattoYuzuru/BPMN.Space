@@ -1230,6 +1230,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/shares/{token}/questions/{question_id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer Shared Question
+         * @description Ответить на вопрос области по ссылке проверки (гостю тоже).
+         *
+         *     Ссылка и есть удостоверение проверяющего: отдельный аккаунт не нужен. Ответ получает
+         *     провенанс `via=review`, название проверки (проект + короткий id ссылки) и
+         *     `share_link_id`. Область ограничена дорожками ссылки; другие права ссылка не даёт.
+         */
+        post: operations["answer_shared_question"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/shares/{token}/versions/{version_id}/xml": {
         parameters: {
             query?: never;
@@ -1551,7 +1575,7 @@ export interface components {
             text: string;
             /**
              * Via
-             * @description `agent` — ответ записал внешний агент владельца токена (MCP, RFC-0007); null — человек в интерфейсе
+             * @description `agent` — ответ записал внешний агент владельца токена (MCP, RFC-0007); `review` — проверяющий ответил по ссылке проверки; null — человек в интерфейсе
              */
             via?: string | null;
             /**
@@ -8300,6 +8324,87 @@ export interface operations {
             };
             /** @description Не найдено */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    answer_shared_question: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionAnswerCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Question"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Конфликт состояния */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -437,4 +437,11 @@ async def ensure_resource(
 ) -> ProjectRole:
     """Доступ к объекту через проект-владелец: неизвестный объект и чужой проект — `404`."""
     project_id = await identity.container.access.resource_project_id(resource, resource_id)
-    return await ensure_project(identity, project_id, write=write, allow_reviewer=allow_reviewer)
+    role = await ensure_project(identity, project_id, write=write, allow_reviewer=allow_reviewer)
+    if role is ProjectRole.REVIEWER and resource is ResourceKind.RUN:
+        # Прогон содержит вопросы и этапы всего проекта: проверяющему он раскрыл бы чужие
+        # дорожки. Ссылка проверки даёт схему, вопросы области и ответы.
+        raise ForbiddenError(
+            "Ссылка проверки не даёт доступа к прогонам: доступны схема, вопросы области и ответы"
+        )
+    return role

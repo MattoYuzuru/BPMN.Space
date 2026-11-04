@@ -74,13 +74,22 @@ async def list_projects(  # noqa: PLR0917 - FastAPI binds each query parameter i
         only_ids=token_project_ids(request),
     )
     roles = await project_roles(request, container, [view.project.id for view in page.items], user)
-    return ProjectPage(
-        items=[
-            Project.of(view, roles.get(view.project.id, ProjectRole.VIEWER)) for view in page.items
-        ],
-        next_cursor=page.next_cursor,
-        total=page.total,
-    )
+    lane_scope = review_lane_ids(request)
+    items = []
+    for view in page.items:
+        card = Project.of(view, roles.get(view.project.id, ProjectRole.VIEWER))
+        if lane_scope is not None:
+            # Карточка проверки считает только вопросы области (и только бизнес-вопросы).
+            opened, resolved = await container.review.scoped_counts(view.project.id, lane_scope)
+            card = card.model_copy(
+                update={
+                    "counts": card.counts.model_copy(
+                        update={"questions_open": opened, "questions_resolved": resolved}
+                    )
+                }
+            )
+        items.append(card)
+    return ProjectPage(items=items, next_cursor=page.next_cursor, total=page.total)
 
 
 @router.post(

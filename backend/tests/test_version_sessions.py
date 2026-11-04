@@ -9,8 +9,11 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import select, text
 
+from app.config import Settings
 from app.domain.models import (
     Project,
     Quote,
@@ -25,10 +28,11 @@ from app.infra.bpmn_tools import MockBpmnTools
 from app.infra.db_models import DiagramVersionRow
 from app.infra.repositories.base import Repositories
 from app.infra.repositories.memory import InMemoryStore
+from app.infra.version_maintenance import maintain
 from app.services.common import Runtime
 from app.services.errors import InvalidInputError, NotFoundError, StaleVersionError
 from app.services.versions import VersionService, add_version
-from tests.test_persistence import sql_test_store
+from tests.test_persistence import MIGRATIONS_DIR, sql_test_store
 
 ALICE = "alice@example.com"
 BOB = "bob@example.com"
@@ -292,3 +296,87 @@ async def test_sql_shares_unchanged_trace_and_report() -> None:
     assert all(r.trace == {} and r.report == {} for r in rows[1:])
     assert rows[0].trace
     assert rows[3].lint_count == rows[0].lint_count
+
+
+async def _inherited_setup(state: Setup) -> None:
+    await state.start()
+    for n in range(1, 4):
+        state.clock.advance(700)
+        await state.edit(n)
+
+
+def _downgrade_to_0014(connection) -> None:
+    config = Config()
+    config.set_main_option("script_location", str(MIGRATIONS_DIR))
+    config.attributes["connection"] = connection
+    command.downgrade(config, "0014_user_llm_credentials")
+
+
+async def test_downgrade_materializes_inherited_trace_and_report() -> None:
+    """Старый код читает trace/report из строки: после отката `{}` дал бы KeyError."""
+    async with sql_test_store() as (store, sessions):
+        state = Setup(store.repositories())
+        await _inherited_setup(state)
+        async with sessions.begin() as session:
+            owner = (
+                await session.execute(
+                    text("SELECT trace, report FROM diagram_versions WHERE number = 1")
+                )
+            ).one()
+            await (await session.connection()).run_sync(_downgrade_to_0014)
+            rows = (
+                await session.execute(
+                    text("SELECT number, trace, report FROM diagram_versions ORDER BY number")
+                )
+            ).all()
+    assert owner.trace
+    assert owner.report["xsd_valid"] in {True, False}
+    assert len(rows) == 4
+    for row in rows[1:]:
+        assert row.trace == owner.trace
+        assert "xsd_valid" in row.report
+
+
+async def test_restore_maintenance_materializes_inherited_metadata() -> None:
+    async with sql_test_store() as (store, sessions):
+        state = Setup(store.repositories())
+        await _inherited_setup(state)
+        repository = store.repositories().versions
+        assert await repository.materialize_inherited_batch(state.project_id, limit=2) == 2
+        assert await repository.materialize_inherited_batch(state.project_id, limit=2) == 1
+        assert await repository.materialize_inherited_batch(state.project_id, limit=2) == 0
+        async with sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(DiagramVersionRow)
+                    .where(DiagramVersionRow.project_id == state.project_id)
+                    .order_by(DiagramVersionRow.number)
+                )
+            ).all()
+        assert not any(r.trace_inherited or r.report_inherited for r in rows)
+        assert all(r.trace == rows[0].trace and "xsd_valid" in r.report for r in rows)
+        # Чтение через новый код по-прежнему отдаёт те же цитаты.
+        first = await repository.by_number(state.project_id, 1)
+        assert (await state.head()).trace == first.trace  # type: ignore[union-attr]
+
+
+async def test_materialize_metadata_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    async with sql_test_store() as (store, sessions):
+        state = Setup(store.repositories())
+        await _inherited_setup(state)
+        monkeypatch.setattr(
+            "app.infra.version_maintenance.Settings",
+            lambda: Settings(database_url="postgresql+asyncpg://x/x"),
+        )
+        monkeypatch.setattr(
+            "app.infra.version_maintenance.create_async_engine", lambda _url: sessions.kw["bind"]
+        )
+        await maintain(restore=False, materialize=True, batch_size=1)
+        async with sessions() as session:
+            left = await session.scalar(
+                text(
+                    "SELECT count(*) FROM diagram_versions "
+                    "WHERE trace_inherited OR report_inherited"
+                )
+            )
+        assert left == 0

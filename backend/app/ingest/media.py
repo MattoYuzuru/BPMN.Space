@@ -56,6 +56,14 @@ def format_timecode(seconds: float) -> str:
 class MediaProbe:
     duration_sec: float
     has_audio: bool
+    has_video: bool = False
+
+
+@dataclass(slots=True)
+class MediaJob:
+    """Что обработка записи узнала по пути: дорожки из ffprobe (None — без ffmpeg)."""
+
+    probe: MediaProbe | None = None
 
 
 class FfmpegRunner:
@@ -108,7 +116,7 @@ class FfmpegRunner:
                 "-print_format",
                 "json",
                 "-show_entries",
-                "format=duration:stream=codec_type",
+                "format=duration:stream=codec_type:stream_disposition=attached_pic",
                 *INPUT_GUARD,
                 str(source),
             ],
@@ -121,7 +129,13 @@ class FfmpegRunner:
         except (ValueError, TypeError, AttributeError):
             raise MediaError("Не удалось определить длительность записи") from None
         has_audio = any(item.get("codec_type") == "audio" for item in streams)
-        return MediaProbe(duration_sec=duration, has_audio=has_audio)
+        # Обложка mp3/m4a — тоже видеопоток, но с attached_pic: это не видео.
+        has_video = any(
+            item.get("codec_type") == "video"
+            and not (item.get("disposition") or {}).get("attached_pic")
+            for item in streams
+        )
+        return MediaProbe(duration_sec=duration, has_audio=has_audio, has_video=has_video)
 
     async def segment(self, source: Path, out_dir: Path, *, segment_sec: int) -> list[Path]:
         """Звук → mono 16 кГц opus сегментами по `segment_sec`; пути по порядку записи."""
@@ -201,7 +215,11 @@ class MediaTranscriber:
         max_concurrent_jobs: int = 1,
         raw_fallback: bool = False,
         attempts: int = 2,
+        provider: str = "mock",
+        model: str | None = None,
     ) -> None:
+        self.provider = provider  # для `derivation` производной расшифровки (RFC-0006)
+        self.model = model
         self._stt = stt
         self._runner = runner
         self._segment_sec = segment_sec
@@ -217,14 +235,31 @@ class MediaTranscriber:
     def segment_timeout(self, duration_sec: float) -> float:
         return self._timeout_base + self._timeout_per_audio * max(duration_sec, 0.0)
 
-    async def transcribe(self, source: Path) -> Transcript:
-        """Расшифровка файла записи; `MediaError` / `NoSpeechError` при неудаче."""
+    def params(self) -> dict[str, object]:
+        """Параметры сегментации для `derivation.params` производной расшифровки."""
+        return {
+            "segment_sec": self._segment_sec,
+            "block_sec": _BLOCK_SEC,
+            "audio": "opus mono 16 kHz",
+            "ffmpeg": self._runner.available,
+        }
+
+    async def transcribe(self, source: Path, *, job: MediaJob | None = None) -> Transcript:
+        """Расшифровка файла записи; `MediaError` / `NoSpeechError` при неудаче.
+
+        ffprobe, ffmpeg и STT идут одной задачей под общим семафором (`max_concurrent_jobs`).
+        `job.probe` получает дорожки записи, как только ffprobe их прочитал, — и при сбое
+        расшифровки тоже.
+        """
         if self._semaphore is None:
             self._semaphore = asyncio.Semaphore(self._jobs)
         async with self._semaphore:
             if not self._runner.available:
                 return await self._without_ffmpeg(source)
-            return await self._with_ffmpeg(source)
+            probe = await self._runner.probe(source)
+            if job is not None:
+                job.probe = probe
+            return await self._with_ffmpeg(source, probe)
 
     async def _without_ffmpeg(self, source: Path) -> Transcript:
         """Без ffmpeg работает только mock-STT на небольшом файле, чтобы демо не ломалось."""
@@ -236,8 +271,7 @@ class MediaTranscriber:
         data = await asyncio.to_thread(source.read_bytes)
         return await self._stt.transcribe(data, mime=None)
 
-    async def _with_ffmpeg(self, source: Path) -> Transcript:
-        probe = await self._runner.probe(source)
+    async def _with_ffmpeg(self, source: Path, probe: MediaProbe) -> Transcript:
         if not probe.has_audio:
             raise MediaError("В файле нет звуковой дорожки")
         if probe.duration_sec > self._max_duration:

@@ -202,7 +202,11 @@ export function WorkspaceView({
                   side="left"
                   icon="file-text"
                   label="Источники"
-                  count={project.sources.filter((source) => source.kind !== 'answer').length}
+                  count={
+                    project.sources.filter(
+                      (source) => source.kind !== 'answer' && !source.parent_id,
+                    ).length
+                  }
                   onExpand={() => sourcesRef.current?.expand()}
                 />
               ) : (

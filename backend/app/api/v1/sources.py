@@ -16,10 +16,13 @@ from fastapi import (
 )
 
 from app.api.access import (
+    ApiScope,
     ResourceKind,
     ensure_project_access,
     ensure_resource_access,
     require_account,
+    require_scope,
+    require_token_scope,
 )
 from app.api.auth import OptionalUserDep
 from app.api.deps import ContainerDep
@@ -38,6 +41,7 @@ router = APIRouter(tags=["sources"])
 
 @router.post(
     "/projects/{project_id}/sources/text",
+    dependencies=[require_scope(ApiScope.SOURCES_WRITE)],
     status_code=status.HTTP_201_CREATED,
     responses=errors(401, 403, 404, 410, 422),
 )
@@ -69,7 +73,7 @@ async def create_text_source(
 @router.post(
     "/projects/{project_id}/sources/file",
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(limit_expensive)],
+    dependencies=[require_scope(ApiScope.SOURCES_WRITE), Depends(limit_expensive)],
     responses=errors(401, 403, 404, 410, 413, 415, 422, 429),
 )
 async def create_file_source(  # noqa: PLR0917 - multipart form fields are separate parameters
@@ -92,10 +96,14 @@ async def create_file_source(  # noqa: PLR0917 - multipart form fields are separ
     """Документ или запись. `.txt`/`.md`/`.csv` готовы сразу; `.docx`/`.xlsx`/`.pptx`/`.pdf` и
     аудио/видео приходят в `processing` и становятся `ready` или `failed` в фоне — обновляйте
     проект, пока есть `processing`. Страницы PDF без текста дают `ready` с `warning`.
+    Запись возвращается как исходный файл без текста; её расшифровка — отдельный источник
+    `origin=derived` с `parent_id` записи (RFC-0006).
     Записи пишутся на диск потоком (лимит `MAX_MEDIA_BYTES`), документы — `MAX_UPLOAD_BYTES`."""
     await ensure_project_access(request, container, project_id, user, write=True)
     file_name = file.filename or "document.txt"
     if is_media(file_name):
+        # Запись расшифровывает платный провайдер: по токену нужно ещё и право запусков.
+        require_token_scope(request, ApiScope.RUNS_START)
         source = await container.sources.create_media(
             project_id, file_name=file_name, mime=file.content_type, read=file.read, title=title
         )
@@ -114,7 +122,7 @@ async def create_file_source(  # noqa: PLR0917 - multipart form fields are separ
 @router.post(
     "/projects/{project_id}/sources/sample",
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(limit_expensive)],
+    dependencies=[require_scope(ApiScope.SOURCES_WRITE), Depends(limit_expensive)],
     responses=errors(401, 403, 404, 410, 422, 429),
 )
 async def create_sample_source(  # noqa: PLR0917 - FastAPI binds each parameter independently
@@ -140,7 +148,11 @@ async def create_sample_source(  # noqa: PLR0917 - FastAPI binds each parameter 
     return Source.model_validate(source)
 
 
-@router.patch("/sources/{source_id}", responses=errors(401, 403, 404, 410, 422))
+@router.patch(
+    "/sources/{source_id}",
+    dependencies=[require_scope(ApiScope.SOURCES_WRITE)],
+    responses=errors(401, 403, 404, 410, 422),
+)
 async def update_source(
     source_id: UUID,
     body: SourceUpdate,
@@ -148,7 +160,10 @@ async def update_source(
     container: ContainerDep,
     user: OptionalUserDep,
 ) -> Source:
-    """Поправить название или текст, включить или выключить источник."""
+    """Поправить название или текст, включить или выключить источник.
+
+    Правка текста производного источника ставит `edited_by_human=true`; у записи с
+    расшифровкой своего текста нет (422). Выключение записи выключает и её производные."""
     await ensure_resource_access(
         request, container, source_id, user, resource=ResourceKind.SOURCE, write=True
     )
@@ -164,8 +179,9 @@ async def update_source(
 
 @router.delete(
     "/sources/{source_id}",
+    dependencies=[require_scope(ApiScope.SOURCES_DELETE)],
     status_code=status.HTTP_204_NO_CONTENT,
-    responses=errors(401, 403, 404, 410, 422),
+    responses=errors(401, 403, 404, 409, 410, 422),
 )
 async def delete_source(
     source_id: UUID,
@@ -173,7 +189,9 @@ async def delete_source(
     container: ContainerDep,
     user: OptionalUserDep,
 ) -> Response:
-    """Удалить источник. Удаление ответа возвращает отвеченный вопрос в `open`."""
+    """Удалить источник вместе с производными (`parent_id`). Удаление ответа возвращает
+    отвеченный вопрос в `open`. Производный источник, который ещё `processing`, удалить
+    нельзя (409): запись удаляется целиком или после окончания обработки."""
     await ensure_resource_access(
         request, container, source_id, user, resource=ResourceKind.SOURCE, write=True
     )
@@ -184,7 +202,7 @@ async def delete_source(
 @router.post(
     "/transcriptions",
     tags=["transcriptions"],
-    dependencies=[Depends(limit_expensive)],
+    dependencies=[require_scope(ApiScope.RUNS_START), Depends(limit_expensive)],
     responses={
         **errors(401, 413, 415, 422, 429),
         422: {

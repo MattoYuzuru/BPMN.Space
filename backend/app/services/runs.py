@@ -65,12 +65,15 @@ from app.llm.base import (
     run_deadline,
     track_usage,
 )
+from app.llm.capabilities import RunProfile
 from app.llm.client import PROVIDER_MOCK, redact_secrets
 from app.services.common import Runtime, get_project, get_run
 from app.services.errors import ConflictError, NotFoundError, ServiceError, StaleVersionError
 from app.services.model_resolver import (
     ModelResolver,
     ResolvedModel,
+    pipeline_budget,
+    pipeline_limits,
     pipeline_model,
     pipeline_provider,
 )
@@ -140,8 +143,7 @@ def _source_snapshot(
     return sorted(
         (str(s.id), s.kind.value, s.title, s.content, s.created_at.isoformat())
         for s in sources
-        if not isinstance(s, Source)
-        or (s.active and s.status is SourceStatus.READY and s.content.strip())
+        if not isinstance(s, Source) or s.feeds_model
     )
 
 
@@ -228,9 +230,10 @@ class RunService:
         replace_manual: bool = False,
         credential_id: UUID | None = None,
         model: str | None = None,
+        profile: RunProfile | None = None,
     ) -> Run:
         resolved = await self._resolver.resolve(
-            created_by, credential_id=credential_id, model=model
+            created_by, credential_id=credential_id, model=model, profile=profile
         )
         try:
             async with self._start_slot(project_id), self._repos.atomic() as repos:
@@ -240,13 +243,8 @@ class RunService:
                 if await repos.runs.active_for_project(project_id):
                     raise ConflictError("По проекту уже идёт прогон — дождитесь его завершения")
                 sources = await repos.sources.list_by_project(project_id)
-                usable = [
-                    s
-                    for s in sources
-                    if s.active
-                    and s.status is SourceStatus.READY
-                    and s.kind is not SourceKind.ANSWER
-                ]
+                # Запись без расшифровки текста не даёт: нужен источник, который читает модель.
+                usable = [s for s in sources if s.feeds_model and s.kind is not SourceKind.ANSWER]
                 if not usable:
                     raise ConflictError("Добавьте хотя бы один источник с текстом")
                 head = await repos.versions.latest(project_id)
@@ -273,6 +271,11 @@ class RunService:
                             "credential_id": str(resolved.credential_id)
                             if resolved.credential_id
                             else None,
+                            # Проверенный профиль (без ключей) и рассчитанные из модели
+                            # пределы: восстановление после рестарта идёт с теми же
+                            # бюджетом, `max_tokens` и отправляемым уровнем.
+                            "profile": resolved.profile.to_json(),
+                            "limits": pipeline_limits(resolved.pipeline),
                         }
                     },
                 )
@@ -460,7 +463,11 @@ class RunService:
         raw_id = execution.get("credential_id")
         try:
             resolved = await self._resolver.restore(
-                run.created_by, UUID(raw_id) if raw_id else None, run.model
+                run.created_by,
+                UUID(raw_id) if raw_id else None,
+                run.model,
+                RunProfile.from_json(execution.get("profile")),
+                execution.get("limits"),
             )
         except ServiceError as error:
             raise PipelineError(
@@ -547,11 +554,25 @@ class RunService:
         provider = execution.get("provider")
         if provider and provider != pipeline_provider(pipeline):
             raise PipelineError("Провайдер модели изменился после запуска; создайте новый прогон")
+        recorded = execution.get("limits")
+        current = pipeline_limits(pipeline)
+        # Записанное при запуске сравнивается с тем, что реально уйдёт провайдеру сейчас:
+        # восстановленный пайплайн берёт запись, только если возможности модели ей не
+        # противоречат (`LlmPipeline.restored`). Иначе прогон останавливается, а не идёт молча
+        # с другим бюджетом, `max_tokens` или уровнем.
+        if isinstance(recorded, dict) and current is not None:
+            changed = [key for key, value in current.items() if recorded.get(key) != value]
+            if changed:
+                raise PipelineError(
+                    "Пределы модели изменились после запуска ("
+                    + ", ".join(sorted(changed))
+                    + "); создайте новый прогон"
+                )
 
     async def _perform(self, run: Run, stage: RunStage, state: _RunState) -> None:
         match stage:
             case RunStage.READING_SOURCES:
-                state.context = await self._context(run.project_id)
+                state.context = await self._context(run.project_id, self._budget(state))
                 execution = (run.ir or {}).get("execution", {})
                 expected = execution.get("base_version_id")
                 self._check_recovered_input(run, state.context, execution, state)
@@ -631,7 +652,22 @@ class RunService:
             raise PipelineError("Контекст прогона не собран")
         return state.context
 
-    async def _context(self, project_id: UUID) -> RunContext:
+    def _budget(self, state: _RunState) -> int:
+        """Бюджет источников из окна модели прогона; без него — настройка сервера."""
+        return pipeline_budget(state.pipeline) or self._context_budget
+
+    def _sources_budget(self, budget_chars: int | None, versions: list[Version]) -> int:
+        """Бюджет источников за вычетом текущей схемы: она идёт в запрос графа рядом с ними.
+
+        XML длиннее канонического графа, поэтому вычет с запасом. Ниже настройки сервера
+        бюджет не опускается: та заведомо меньше окна любой модели.
+        """
+        budget = budget_chars or self._context_budget
+        if budget <= self._context_budget or not versions:
+            return budget
+        return max(budget - len(versions[0].xml or ""), self._context_budget)
+
+    async def _context(self, project_id: UUID, budget_chars: int | None = None) -> RunContext:
         async with self._repos.atomic() as repos:
             await repos.projects.lock(project_id)
             project = await get_project(repos, project_id)
@@ -661,7 +697,7 @@ class RunService:
                 sources=await repos.sources.list_by_project(project_id),
                 questions=await repos.questions.list_by_project(project_id),
                 versions=versions,
-                budget_chars=self._context_budget,
+                budget_chars=self._sources_budget(budget_chars, versions),
             )
             base = (
                 versions[0]
@@ -691,7 +727,7 @@ class RunService:
                     id=s.id, kind=s.kind, title=s.title, content=s.content, created_at=s.created_at
                 )
                 for s in sources
-                if s.active and s.status is SourceStatus.READY and s.content.strip()
+                if s.feeds_model
             ]
             snapshot = (
                 context.evidence_sources
@@ -823,15 +859,16 @@ class RunService:
                 source = sources.get(citation.source_id)
                 if (
                     source is None
-                    or not source.active
-                    or source.status is not SourceStatus.READY
+                    or not source.feeds_model
                     or not quote_in_source(citation.quote, source.content)
                 ):
                     raise PipelineError(
                         "Источник изменился во время сборки; "
                         "повторите её, чтобы обновить доказательства"
                     )
-            graph_questions = await self._graph_questions(repos, staged, state.draft)
+            graph_questions = await self._graph_questions(
+                repos, staged, state.draft, self._budget(state)
+            )
             version = await add_version(
                 repos,
                 self._rt,
@@ -863,7 +900,7 @@ class RunService:
         await self._publish(run, RunEventKind.VERSION, version)
 
     async def _graph_questions(
-        self, repos: Repositories, run: Run, draft: DiagramDraft
+        self, repos: Repositories, run: Run, draft: DiagramDraft, budget_chars: int | None = None
     ) -> list[Question]:
         questions = await repos.questions.list_by_project(run.project_id)
         for question in questions:
@@ -898,7 +935,7 @@ class RunService:
                 sources=await repos.sources.list_by_project(run.project_id),
                 questions=questions,
                 versions=await repos.versions.list_by_project(run.project_id, include_xml=False),
-                budget_chars=self._context_budget,
+                budget_chars=budget_chars or self._context_budget,
             )
             outcome = reconcile(
                 questions,

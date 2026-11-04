@@ -2,16 +2,25 @@
 
 Правила API 2026-10: `temperature`/`top_p`/`top_k` не отправляются (400); рассуждение у Opus и
 Sonnet 5.5 отключить нельзя — параметр `thinking` не передаётся, глубину задаёт
-`output_config.effort`; prefill ассистента запрещён. Большие `max_tokens` обязаны идти потоком,
-поэтому всегда `messages.stream(...).get_final_message()`. Верхнеуровневый `cache_control`
-кэширует стабильную часть запроса: порции источников повторяют один префикс (system + схема).
+`output_config.effort` на каждый запрос (профиль прогона → явный `LLM_ANTHROPIC_EFFORT` →
+умолчание модели из каталога); prefill ассистента запрещён. Большие `max_tokens` (до 128 тыс.
+у моделей 5.5) обязаны идти потоком, поэтому всегда `messages.stream(...).get_final_message()`.
+Верхнеуровневый `cache_control` кэширует стабильную часть запроса: порции источников повторяют
+один префикс (system + схема).
 Повторы выполняет приложение (`max_retries=0` у SDK): так они не удваиваются и учитывают срок.
 """
 
 import anthropic
 import httpx2
 
-from app.llm.base import OutputTruncatedError, record_usage
+from app.llm.base import (
+    CONTEXT_OVERFLOW_MESSAGE,
+    ContextOverflowError,
+    OutputTruncatedError,
+    is_context_overflow,
+    record_usage,
+)
+from app.llm.capabilities import capabilities_for, from_anthropic_model, remember, wire_effort
 from app.llm.client import (
     NETWORK_MESSAGE,
     RETRYABLE_HTTP,
@@ -31,8 +40,6 @@ _JSON_ONLY = (
     "\n\nОтветь одним JSON-объектом без markdown-обёртки и без текста вне JSON. "
     "Формат и поля — строго по схеме выше."
 )
-# У Haiku параметр effort не поддерживается.
-_NO_EFFORT = ("claude-haiku",)
 _CHAT_MAX_TOKENS = 4096
 _HTTP_ERROR = 400
 
@@ -70,7 +77,13 @@ class AnthropicClient:
         await self._sdk.close()
 
     def build_request(
-        self, system: str, user: str, *, json_mode: bool, max_tokens: int
+        self,
+        system: str,
+        user: str,
+        *,
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None = None,
     ) -> dict[str, object]:
         request: dict[str, object] = {
             "model": self._config.model,
@@ -79,12 +92,31 @@ class AnthropicClient:
             "messages": [{"role": "user", "content": user}],
             "cache_control": {"type": "ephemeral"},
         }
-        if not self._config.model.startswith(_NO_EFFORT):
-            request["output_config"] = {"effort": self._config.effort}
+        level = self.effort_for(effort)
+        if level is not None:
+            request["output_config"] = {"effort": level}
         return request
 
-    async def complete(self, system: str, user: str, *, json_mode: bool, max_tokens: int) -> str:
-        request = self.build_request(system, user, json_mode=json_mode, max_tokens=max_tokens)
+    def effort_for(self, requested: str | None) -> str | None:
+        """Уровень запроса: от пайплайна — как есть (он уже проверен и записан в прогоне);
+        без него — умолчание сервера, затем модели; `None` — не отправлять."""
+        if requested is not None:
+            return requested
+        caps = capabilities_for("anthropic", self._config.model)
+        return wire_effort("anthropic", caps, None, server_default=self._config.effort)
+
+    async def complete(
+        self,
+        system: str,
+        user: str,
+        *,
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> str:
+        request = self.build_request(
+            system, user, json_mode=json_mode, max_tokens=max_tokens, effort=effort
+        )
 
         async def once(attempt_timeout: float) -> anthropic.types.Message:
             try:
@@ -135,7 +167,15 @@ class AnthropicClient:
             if isinstance(mapped, TransientLlmError):
                 raise RuntimeError(mapped.message) from None
             raise mapped from None
-        return [ModelInfo(id=item.id, label=item.display_name or item.id) for item in page.data]
+        models: list[ModelInfo] = []
+        for item in page.data:
+            # Окно, максимум ответа и уровни effort из Models API уточняют каталог.
+            caps = from_anthropic_model(item)
+            remember("anthropic", item.id, caps)
+            models.append(
+                ModelInfo(id=item.id, label=item.display_name or item.id, capabilities=caps)
+            )
+        return models
 
 
 def _map_status(error: anthropic.APIStatusError) -> TransientLlmError | RuntimeError:
@@ -146,4 +186,7 @@ def _map_status(error: anthropic.APIStatusError) -> TransientLlmError | RuntimeE
         return TransientLlmError(
             f"HTTP {status}", f"Сервис модели вернул HTTP {status}", retry_after=_retry_after(error)
         )
+    # Текст ошибки только проверяется на признак переполнения и в сообщение не попадает.
+    if is_context_overflow(status, str(getattr(error, "message", "") or "")):
+        return ContextOverflowError(CONTEXT_OVERFLOW_MESSAGE)
     return RuntimeError(f"Сервис модели вернул HTTP {status}")

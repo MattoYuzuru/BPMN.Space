@@ -15,6 +15,7 @@ from typing import Any
 from uuid import UUID
 
 from app.domain.access import ProjectScope
+from app.domain.api_tokens import ApiToken
 from app.domain.credentials import LlmCredential
 from app.domain.models import (
     LlmCall,
@@ -40,6 +41,7 @@ from app.domain.onboarding import (
 )
 from app.domain.questions import normalize
 from app.domain.runs import ACTIVE_STATUSES
+from app.domain.sources import descendants
 from app.infra.repositories.base import PageKey, ProjectStats, Repositories
 
 
@@ -54,6 +56,7 @@ class InMemoryStore:
     project_owners: dict[UUID, UUID] = field(default_factory=dict[UUID, UUID])
     public_projects: set[UUID] = field(default_factory=set[UUID])
     llm_credentials: dict[UUID, LlmCredential] = field(default_factory=dict[UUID, LlmCredential])
+    api_tokens: dict[UUID, ApiToken] = field(default_factory=dict[UUID, ApiToken])
     onboarding: dict[UUID, UserOnboarding] = field(default_factory=dict[UUID, UserOnboarding])
     onboarding_items: dict[tuple[UUID, ChecklistItem], CompletedItem] = field(
         default_factory=dict[tuple[UUID, ChecklistItem], CompletedItem]
@@ -86,6 +89,7 @@ class InMemoryStore:
             llm_calls=InMemoryLlmCallRepository(self),
             onboarding=InMemoryOnboardingRepository(self),
             llm_credentials=InMemoryLlmCredentialRepository(self),
+            api_tokens=InMemoryApiTokenRepository(self),
         )
 
 
@@ -132,7 +136,7 @@ class InMemoryProjectRepository:
                 None,
             )
             result[project_id] = ProjectStats(
-                sources=len(sources),
+                sources=sum(1 for s in sources if s.parent_id is None),
                 has_material=any(s.active and s.status is not SourceStatus.FAILED for s in sources),
                 questions_open=sum(1 for q in questions if q.status is QuestionStatus.OPEN),
                 questions_resolved=sum(1 for q in questions if q.status is QuestionStatus.RESOLVED),
@@ -203,10 +207,13 @@ class InMemoryProjectRepository:
         owner_id: UUID | None = None,
         scope_to_user: bool = False,
         scope: ProjectScope = ProjectScope.ALL,
+        only_ids: frozenset[UUID] | None = None,
     ) -> list[Project]:
         items = sorted(self._matching(query), key=_sort_key, reverse=True)
         if scope_to_user:
             items = self._visible(items, owner_id, scope)
+        if only_ids is not None:
+            items = [p for p in items if p.id in only_ids]
         if after is not None:
             items = [p for p in items if _sort_key(p) < after]
         return [copy.deepcopy(p) for p in items[:limit]]
@@ -218,10 +225,13 @@ class InMemoryProjectRepository:
         owner_id: UUID | None = None,
         scope_to_user: bool = False,
         scope: ProjectScope = ProjectScope.ALL,
+        only_ids: frozenset[UUID] | None = None,
     ) -> int:
         items = self._matching(query)
         if scope_to_user:
             items = self._visible(items, owner_id, scope)
+        if only_ids is not None:
+            items = [p for p in items if p.id in only_ids]
         return len(items)
 
 
@@ -252,6 +262,9 @@ class InMemorySourceRepository:
             "warning",
             "unreadable_pages",
             "duration_sec",
+            "derivation",
+            "edited_by_human",
+            "media",
         }
         if unknown:
             raise ValueError(f"Поля источника нельзя менять точечно: {sorted(unknown)}")
@@ -259,7 +272,7 @@ class InMemorySourceRepository:
         if stored is None or (only_status is not None and stored.status is not only_status):
             return False
         for name, value in changes.items():
-            setattr(stored, name, value)
+            setattr(stored, name, copy.deepcopy(value))
         return True
 
     async def lock_by_project(self, project_id: UUID) -> list[Source]:
@@ -273,6 +286,9 @@ class InMemorySourceRepository:
         return len(stuck)
 
     async def delete(self, source_id: UUID) -> None:
+        # Как ON DELETE CASCADE в PostgreSQL: вместе с источником удаляются производные.
+        for child in descendants(self._items.values(), source_id):
+            self._items.pop(child.id, None)
         self._items.pop(source_id, None)
 
     async def list_by_project(self, project_id: UUID) -> list[Source]:
@@ -486,6 +502,46 @@ class InMemoryLlmCredentialRepository:
         if item is not None:
             item.last_used_at = at
             item.last_error = error[:500] if error else None
+
+
+class InMemoryApiTokenRepository:
+    def __init__(self, store: InMemoryStore) -> None:
+        self._items = store.api_tokens
+
+    async def list_by_user(self, user_id: UUID) -> list[ApiToken]:
+        own = [t for t in self._items.values() if t.user_id == user_id and t.revoked_at is None]
+        own.sort(key=lambda t: (t.created_at, str(t.id)), reverse=True)
+        return [copy.deepcopy(t) for t in own]
+
+    async def get(self, token_id: UUID) -> ApiToken | None:
+        item = self._items.get(token_id)
+        return copy.deepcopy(item) if item else None
+
+    async def by_hash(self, token_hash: str) -> ApiToken | None:
+        item = next((t for t in self._items.values() if t.token_hash == token_hash), None)
+        return copy.deepcopy(item) if item else None
+
+    async def add_within_limit(self, token: ApiToken, *, max_active: int) -> bool:
+        # Между await нет переключений: подсчёт и вставка атомарны сами.
+        active = sum(
+            1
+            for t in self._items.values()
+            if t.user_id == token.user_id and t.is_active(token.created_at)
+        )
+        if active >= max_active:
+            return False
+        self._items[token.id] = copy.deepcopy(token)
+        return True
+
+    async def revoke(self, token_id: UUID, at: datetime) -> None:
+        item = self._items.get(token_id)
+        if item is not None and item.revoked_at is None:
+            item.revoked_at = at
+
+    async def touch(self, token_id: UUID, at: datetime, *, older_than: datetime) -> None:
+        item = self._items.get(token_id)
+        if item is not None and (item.last_used_at is None or item.last_used_at < older_than):
+            item.last_used_at = at
 
 
 class InMemoryOnboardingRepository:

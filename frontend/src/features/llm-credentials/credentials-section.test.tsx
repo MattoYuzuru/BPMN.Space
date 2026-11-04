@@ -35,6 +35,27 @@ function mount() {
   return { user }
 }
 
+const OPUS_CAPS = {
+  known: true,
+  context_tokens: 1_000_000,
+  max_output_tokens: 128_000,
+  vision: true,
+  pdf_input: true,
+  tools: true,
+  effort_levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+  effort_default: 'medium',
+  accepts_temperature: false,
+  prices: {
+    input: 4,
+    output: 20,
+    cache_read: 0.2,
+    cache_write: 5,
+    currency: 'USD',
+    checked_on: '2026-10-06',
+    note: null,
+  },
+}
+
 afterEach(() => vi.unstubAllGlobals())
 
 describe('Модели и ключи', () => {
@@ -80,8 +101,8 @@ describe('Модели и ключи', () => {
       'GET /api/v1/me/llm-credentials/c1/models': {
         body: {
           items: [
-            { id: 'claude-opus-5-5', label: 'Claude Opus 5.5' },
-            { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
+            { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', capabilities: OPUS_CAPS },
+            { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', capabilities: OPUS_CAPS },
           ],
         },
       },
@@ -104,6 +125,11 @@ describe('Модели и ключи', () => {
     )
     expect(post?.body).toMatchObject({ provider: 'anthropic', api_key: SECRET })
     await screen.findByText('Выберите модель')
+    // Возможности модели по умолчанию видны сразу под выбором (пробелы нормализуются).
+    expect(
+      await screen.findByText(/Окно 1 млн токенов · ответ до 128 тыс\. токенов/),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/\$4 \/ \$20 за 1 млн токенов/)).toBeInTheDocument()
     const select = await screen.findByRole('combobox', { name: 'Модель по умолчанию' })
     select.focus()
     await user.keyboard('{Enter}')

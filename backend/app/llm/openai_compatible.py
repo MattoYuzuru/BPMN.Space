@@ -10,7 +10,14 @@ from typing import Any
 
 import httpx
 
-from app.llm.base import OutputTruncatedError, record_usage
+from app.llm.base import (
+    CONTEXT_OVERFLOW_MESSAGE,
+    ContextOverflowError,
+    OutputTruncatedError,
+    is_context_overflow,
+    record_usage,
+)
+from app.llm.capabilities import ModelCapabilities, capabilities_for, is_deepseek
 from app.llm.client import (
     NETWORK_MESSAGE,
     RETRYABLE_HTTP,
@@ -30,6 +37,7 @@ from app.llm.pinned_transport import Resolver, pinned_transport
 
 _CHAT_MAX_TOKENS = 4096
 _HTTP_ERROR = 400
+_ERROR_SNIFF_BYTES = 4096
 
 
 def _retry_after(response: httpx.Response) -> float | None:
@@ -48,6 +56,7 @@ class OpenAICompatibleClient:
     # Имя параметра лимита ответа: у новых моделей OpenAI оно другое.
     token_param = "max_tokens"  # noqa: S105 — имя поля API, не секрет
     default_base_url: str | None = None
+    provider = "openai_compatible"
 
     def __init__(
         self,
@@ -91,7 +100,13 @@ class OpenAICompatibleClient:
         await self._http.aclose()
 
     def build_body(
-        self, system: str, user: str, *, json_mode: bool, max_tokens: int
+        self,
+        system: str,
+        user: str,
+        *,
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None = None,
     ) -> dict[str, Any]:
         config = self._config
         body: dict[str, Any] = {
@@ -107,9 +122,28 @@ class OpenAICompatibleClient:
             body["response_format"] = {"type": "json_object"}
         if json_mode and config.json_temperature is not None and self.accepts_temperature():
             body["temperature"] = config.json_temperature
-        if config.thinking is not None:
-            body["thinking"] = {"type": "enabled" if config.thinking else "disabled"}
+        thinking = self.thinking_for(effort)
+        if thinking is not None:
+            body["thinking"] = {"type": "enabled" if thinking else "disabled"}
+        self.apply_effort(body, effort)
         return body
+
+    def capabilities(self) -> ModelCapabilities:
+        return capabilities_for(self.provider, self._config.model, base_url=self._base_url)
+
+    def thinking_for(self, effort: str | None) -> bool | None:
+        """`thinking` DeepSeek: только для `api.deepseek.com`, а не по имени модели.
+
+        `low` выключает рассуждение, `high` и выше включают, `medium` и отсутствие уровня
+        оставляют настройку сервера (`DEEPSEEK_THINKING_ENABLED` у legacy-провайдера): профиль
+        «обычно» не выключает то, что включил оператор.
+        """
+        if effort is None or effort == "medium" or not is_deepseek(self._base_url):
+            return self._config.thinking
+        return effort != "low"
+
+    def apply_effort(self, body: dict[str, Any], effort: str | None) -> None:
+        """Совместимые серверы, кроме DeepSeek, уровень не принимают: поле не отправляется."""
 
     def accepts_temperature(self) -> bool:
         return True
@@ -120,9 +154,17 @@ class OpenAICompatibleClient:
             "Content-Type": "application/json",
         }
 
-    async def complete(self, system: str, user: str, *, json_mode: bool, max_tokens: int) -> str:
+    async def complete(
+        self,
+        system: str,
+        user: str,
+        *,
+        json_mode: bool,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> str:
         limit = max_tokens if json_mode else min(max_tokens, _CHAT_MAX_TOKENS)
-        body = self.build_body(system, user, json_mode=json_mode, max_tokens=limit)
+        body = self.build_body(system, user, json_mode=json_mode, max_tokens=limit, effort=effort)
         raw = await self._post("/chat/completions", body)
         try:
             payload = json.loads(raw)
@@ -179,6 +221,20 @@ class OpenAICompatibleClient:
             chunks.append(chunk)
         return b"".join(chunks)
 
+    @staticmethod
+    async def _overflow(response: httpx.Response) -> bool:
+        """Признак «вход длиннее окна» в начале тела ошибки; само тело никуда не уходит."""
+        if response.status_code not in {400, 413}:
+            return False
+        head = b""
+        async for chunk in response.aiter_bytes():
+            head += chunk
+            if len(head) >= _ERROR_SNIFF_BYTES:
+                break
+        return is_context_overflow(
+            response.status_code, head[:_ERROR_SNIFF_BYTES].decode("utf-8", "replace")
+        )
+
     async def _post(self, path: str, body: dict[str, Any]) -> bytes:
         return await self._request("POST", path, body, timeout_sec=self._config.timeout_sec)
 
@@ -216,6 +272,8 @@ class OpenAICompatibleClient:
                             retry_after=_retry_after(response),
                         )
                     if status >= _HTTP_ERROR:
+                        if await self._overflow(response):
+                            raise ContextOverflowError(CONTEXT_OVERFLOW_MESSAGE)
                         raise RuntimeError(f"Сервис модели вернул HTTP {status}")
                     return await self._read_capped(response)
             except UnsafeBaseUrlError as error:

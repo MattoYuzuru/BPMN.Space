@@ -21,6 +21,254 @@
         "title": "Answer",
         "type": "object"
       },
+      "ApiScope": {
+        "description": "Право токена. Пользователь в cookie-сессии имеет все права своей роли, как раньше.",
+        "enum": [
+          "projects:read",
+          "projects:write",
+          "sources:write",
+          "sources:delete",
+          "runs:start",
+          "questions:answer"
+        ],
+        "title": "ApiScope",
+        "type": "string"
+      },
+      "ApiToken": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expired": {
+            "description": "Срок истёк: токен больше не принимается",
+            "title": "Expired",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "С точностью до минуты",
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null — все проекты пользователя",
+            "title": "Project Ids"
+          },
+          "scopes": {
+            "items": {
+              "$ref": "#/components/schemas/ApiScope"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "token_prefix": {
+            "description": "`bps_` и первые символы секрета — чтобы узнать токен",
+            "title": "Token Prefix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "token_prefix",
+          "scopes",
+          "project_ids",
+          "expires_at",
+          "created_at",
+          "last_used_at",
+          "expired"
+        ],
+        "title": "ApiToken",
+        "type": "object"
+      },
+      "ApiTokenCreate": {
+        "properties": {
+          "expires_in_days": {
+            "default": 30,
+            "description": "Срок действия в днях; бессрочных токенов нет",
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Expires In Days",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "project_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null — все проекты пользователя, включая созданные позже",
+            "title": "Project Ids"
+          },
+          "scopes": {
+            "description": "По умолчанию — чтение проектов и ответы на вопросы",
+            "items": {
+              "$ref": "#/components/schemas/ApiScope"
+            },
+            "minItems": 1,
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ApiTokenCreate",
+        "type": "object"
+      },
+      "ApiTokenCreated": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expired": {
+            "description": "Срок истёк: токен больше не принимается",
+            "title": "Expired",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "С точностью до минуты",
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null — все проекты пользователя",
+            "title": "Project Ids"
+          },
+          "scopes": {
+            "items": {
+              "$ref": "#/components/schemas/ApiScope"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "secret": {
+            "description": "Секрет `bps_…`: показывается один раз, в БД хранится только SHA-256",
+            "title": "Secret",
+            "type": "string"
+          },
+          "token_prefix": {
+            "description": "`bps_` и первые символы секрета — чтобы узнать токен",
+            "title": "Token Prefix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "token_prefix",
+          "scopes",
+          "project_ids",
+          "expires_at",
+          "created_at",
+          "last_used_at",
+          "expired",
+          "secret"
+        ],
+        "title": "ApiTokenCreated",
+        "type": "object"
+      },
+      "ApiTokenList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ApiToken"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ApiTokenList",
+        "type": "object"
+      },
       "AssistantRequest": {
         "properties": {
           "credential_id": {
@@ -786,6 +1034,9 @@
       },
       "LlmModel": {
         "properties": {
+          "capabilities": {
+            "$ref": "#/components/schemas/LlmModelCapabilities"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -797,9 +1048,117 @@
         },
         "required": [
           "id",
-          "label"
+          "label",
+          "capabilities"
         ],
         "title": "LlmModel",
+        "type": "object"
+      },
+      "LlmModelCapabilities": {
+        "description": "Возможности модели: справочник сервера, уточнённый списком моделей провайдера.",
+        "properties": {
+          "accepts_temperature": {
+            "title": "Accepts Temperature",
+            "type": "boolean"
+          },
+          "context_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Окно контекста; null — неизвестно",
+            "title": "Context Tokens"
+          },
+          "effort_default": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Уровень, который сервер отправит, если в профиле прогона его нет",
+            "title": "Effort Default"
+          },
+          "effort_levels": {
+            "description": "Уровни глубины, которые модель принимает; пусто — модель без рассуждения",
+            "items": {
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "type": "string"
+            },
+            "title": "Effort Levels",
+            "type": "array"
+          },
+          "known": {
+            "description": "false — модель неизвестна, показаны осторожные умолчания",
+            "title": "Known",
+            "type": "boolean"
+          },
+          "max_output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Максимум ответа; null — неизвестно",
+            "title": "Max Output Tokens"
+          },
+          "pdf_input": {
+            "title": "Pdf Input",
+            "type": "boolean"
+          },
+          "prices": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LlmModelPrices"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tools": {
+            "title": "Tools",
+            "type": "boolean"
+          },
+          "vision": {
+            "title": "Vision",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "known",
+          "context_tokens",
+          "max_output_tokens",
+          "vision",
+          "pdf_input",
+          "tools",
+          "effort_levels",
+          "effort_default",
+          "accepts_temperature"
+        ],
+        "title": "LlmModelCapabilities",
         "type": "object"
       },
       "LlmModelList": {
@@ -816,6 +1175,76 @@
           "items"
         ],
         "title": "LlmModelList",
+        "type": "object"
+      },
+      "LlmModelPrices": {
+        "description": "Цены провайдера в долларах за 1 млн токенов на дату проверки (ориентир, не счёт).",
+        "properties": {
+          "cache_read": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Чтение кеша промпта",
+            "title": "Cache Read"
+          },
+          "cache_write": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Запись кеша промпта (TTL 5 минут)",
+            "title": "Cache Write"
+          },
+          "checked_on": {
+            "description": "Когда цены сверены с прайсом провайдера",
+            "format": "date",
+            "title": "Checked On",
+            "type": "string"
+          },
+          "currency": {
+            "const": "USD",
+            "default": "USD",
+            "title": "Currency",
+            "type": "string"
+          },
+          "input": {
+            "title": "Input",
+            "type": "number"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Оговорка: например, порог длины промпта",
+            "title": "Note"
+          },
+          "output": {
+            "title": "Output",
+            "type": "number"
+          }
+        },
+        "required": [
+          "input",
+          "output",
+          "cache_read",
+          "cache_write",
+          "checked_on"
+        ],
+        "title": "LlmModelPrices",
         "type": "object"
       },
       "LocalAssistantRequest": {
@@ -883,6 +1312,35 @@
           "project_title"
         ],
         "title": "LocalAssistantRequest",
+        "type": "object"
+      },
+      "MediaInfo": {
+        "description": "Дорожки записи по `ffprobe`; `null` — неизвестно (сервер без ffmpeg).",
+        "properties": {
+          "has_audio": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has Audio"
+          },
+          "has_video": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has Video"
+          }
+        },
+        "title": "MediaInfo",
         "type": "object"
       },
       "OnboardingEvent": {
@@ -1618,6 +2076,17 @@
             "description": "Модель, на которой выполнен прогон",
             "title": "Model"
           },
+          "profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunProfile"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Проверенный профиль прогона; null — прогон до RFC-0005"
+          },
           "progress": {
             "maximum": 1.0,
             "minimum": 0.0,
@@ -1756,6 +2225,17 @@
             "description": "Модель; требует `credential_id`",
             "title": "Model"
           },
+          "profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunProfile"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Профиль прогона: effort и смысловая сверка"
+          },
           "replace_manual": {
             "default": false,
             "description": "Осознанно пересобрать из источников вместо manual; требует актуальный base_version_id",
@@ -1847,6 +2327,44 @@
         ],
         "title": "RunMode",
         "type": "string"
+      },
+      "RunProfile": {
+        "description": "Профиль прогона (RFC-0005). Пусто — умолчания сервера и модели.",
+        "properties": {
+          "effort": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Глубина работы модели: low, medium, high, xhigh, max. Уровень, которого модель не поддерживает, — 422; у модели без рассуждения поле игнорируется",
+            "title": "Effort"
+          },
+          "semantic_review": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Смысловая сверка схемы; null — настройка сервера",
+            "title": "Semantic Review"
+          }
+        },
+        "title": "RunProfile",
+        "type": "object"
       },
       "RunQuestionEvent": {
         "properties": {
@@ -2260,6 +2778,17 @@
             "title": "Created At",
             "type": "string"
           },
+          "derivation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceDerivation"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Для `origin=derived`: возможность, провайдер, модель"
+          },
           "duration_sec": {
             "anyOf": [
               {
@@ -2271,6 +2800,12 @@
             ],
             "description": "Длительность голосовой заметки",
             "title": "Duration Sec"
+          },
+          "edited_by_human": {
+            "default": false,
+            "description": "Текст производного источника поправил человек",
+            "title": "Edited By Human",
+            "type": "boolean"
           },
           "error": {
             "anyOf": [
@@ -2303,6 +2838,17 @@
           "kind": {
             "$ref": "#/components/schemas/SourceKind"
           },
+          "media": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MediaInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Для записи: есть ли звук и видео. Текст записи — в потомке"
+          },
           "mime": {
             "anyOf": [
               {
@@ -2313,6 +2859,24 @@
               }
             ],
             "title": "Mime"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/SourceOrigin",
+            "default": "user",
+            "description": "`user` — загрузил человек, `derived` — получен из `parent_id`, `agent` — внешний агент, `answer` — ответ на вопрос"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Исходный источник того же проекта; дерево строится по этому полю. Удаление родителя удаляет производные",
+            "title": "Parent Id"
           },
           "project_id": {
             "format": "uuid",
@@ -2350,6 +2914,11 @@
             "title": "Title",
             "type": "string"
           },
+          "trust": {
+            "$ref": "#/components/schemas/SourceTrust",
+            "default": "primary",
+            "description": "Уровень доверия: `summary` не идёт в контекст модели и в основания"
+          },
           "unreadable_pages": {
             "description": "Номера страниц PDF без текстового слоя (сканы): их текст не извлечён",
             "items": {
@@ -2384,6 +2953,63 @@
         "title": "Source",
         "type": "object"
       },
+      "SourceDerivation": {
+        "description": "Как получен производный источник (RFC-0006).",
+        "properties": {
+          "capability": {
+            "description": "Возможность: `speech_to_text`, `ocr`, `vision`…",
+            "title": "Capability",
+            "type": "string"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Стоимость, если провайдер её сообщил",
+            "title": "Cost Usd"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Модель провайдера, если известна",
+            "title": "Model"
+          },
+          "params": {
+            "additionalProperties": true,
+            "description": "Параметры обработки (сегменты, язык…)",
+            "title": "Params",
+            "type": "object"
+          },
+          "provider": {
+            "description": "Реализация, которая ответила: `deepgram`, `mock`…",
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability",
+          "provider",
+          "created_at"
+        ],
+        "title": "SourceDerivation",
+        "type": "object"
+      },
       "SourceKind": {
         "enum": [
           "text",
@@ -2392,6 +3018,17 @@
           "answer"
         ],
         "title": "SourceKind",
+        "type": "string"
+      },
+      "SourceOrigin": {
+        "description": "Откуда источник (RFC-0006): загрузил человек, получен из другого, принёс агент, ответ.",
+        "enum": [
+          "user",
+          "derived",
+          "agent",
+          "answer"
+        ],
+        "title": "SourceOrigin",
         "type": "string"
       },
       "SourceStatus": {
@@ -2404,7 +3041,8 @@
         "type": "string"
       },
       "SourceTextCreate": {
-        "description": "Текст или проверенная аналитиком расшифровка голоса (после `POST /transcriptions`).",
+        "additionalProperties": false,
+        "description": "Текст или проверенная аналитиком расшифровка голоса (после `POST /transcriptions`).\n\nЛишние поля отклоняются: `parent_id`, `origin`, `trust` вручную не задаются — производные\nисточники создаёт только сервер.",
         "properties": {
           "content": {
             "minLength": 1,
@@ -2450,6 +3088,19 @@
         ],
         "title": "SourceTextCreate",
         "type": "object"
+      },
+      "SourceTrust": {
+        "description": "Уровень доверия (RFC-0006): что из источника можно цитировать в основаниях IR.\n\n`summary` — только навигация: в контекст модели и в основания не идёт.",
+        "enum": [
+          "primary",
+          "extracted",
+          "observed",
+          "external",
+          "agent",
+          "summary"
+        ],
+        "title": "SourceTrust",
+        "type": "string"
       },
       "SourceUpdate": {
         "properties": {
@@ -3704,6 +4355,230 @@
         "tags": [
           "projects",
           "examples"
+        ]
+      }
+    },
+    "/api/v1/me/api-tokens": {
+      "get": {
+        "description": "Неотозванные токены пользователя (и истёкшие), новые первыми; секретов в списке нет.",
+        "operationId": "list_api_tokens",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiTokenList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Сервис или помощник не настроен"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "List Api Tokens",
+        "tags": [
+          "api-tokens"
+        ]
+      },
+      "post": {
+        "description": "Выпустить токен. Ответ содержит секрет `bps_…` — единственный раз.\n\nПроекты из `project_ids` должны быть доступны пользователю (любая роль), иначе `404`.",
+        "operationId": "create_api_token",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiTokenCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiTokenCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Конфликт состояния"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Сервис или помощник не настроен"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Create Api Token",
+        "tags": [
+          "api-tokens"
+        ]
+      }
+    },
+    "/api/v1/me/api-tokens/{token_id}": {
+      "delete": {
+        "description": "Отозвать токен: следующий запрос с ним получит `401`.",
+        "operationId": "revoke_api_token",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Token Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Требуется вход в аккаунт"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Недостаточно прав для операции"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Не найдено"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Некорректные данные"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Revoke Api Token",
+        "tags": [
+          "api-tokens"
         ]
       }
     },
@@ -6129,7 +7004,7 @@
     },
     "/api/v1/projects/{project_id}/sources/file": {
       "post": {
-        "description": "Документ или запись. `.txt`/`.md`/`.csv` готовы сразу; `.docx`/`.xlsx`/`.pptx`/`.pdf` и\nаудио/видео приходят в `processing` и становятся `ready` или `failed` в фоне — обновляйте\nпроект, пока есть `processing`. Страницы PDF без текста дают `ready` с `warning`.\nЗаписи пишутся на диск потоком (лимит `MAX_MEDIA_BYTES`), документы — `MAX_UPLOAD_BYTES`.",
+        "description": "Документ или запись. `.txt`/`.md`/`.csv` готовы сразу; `.docx`/`.xlsx`/`.pptx`/`.pdf` и\nаудио/видео приходят в `processing` и становятся `ready` или `failed` в фоне — обновляйте\nпроект, пока есть `processing`. Страницы PDF без текста дают `ready` с `warning`.\nЗапись возвращается как исходный файл без текста; её расшифровка — отдельный источник\n`origin=derived` с `parent_id` записи (RFC-0006).\nЗаписи пишутся на диск потоком (лимит `MAX_MEDIA_BYTES`), документы — `MAX_UPLOAD_BYTES`.",
         "operationId": "create_file_source",
         "parameters": [
           {
@@ -7613,7 +8488,7 @@
     },
     "/api/v1/sources/{source_id}": {
       "delete": {
-        "description": "Удалить источник. Удаление ответа возвращает отвеченный вопрос в `open`.",
+        "description": "Удалить источник вместе с производными (`parent_id`). Удаление ответа возвращает\nотвеченный вопрос в `open`. Производный источник, который ещё `processing`, удалить\nнельзя (409): запись удаляется целиком или после окончания обработки.",
         "operationId": "delete_source",
         "parameters": [
           {
@@ -7661,6 +8536,16 @@
             },
             "description": "Не найдено"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Конфликт состояния"
+          },
           "410": {
             "content": {
               "application/json": {
@@ -7693,7 +8578,7 @@
         ]
       },
       "patch": {
-        "description": "Поправить название или текст, включить или выключить источник.",
+        "description": "Поправить название или текст, включить или выключить источник.\n\nПравка текста производного источника ставит `edited_by_human=true`; у записи с\nрасшифровкой своего текста нет (422). Выключение записи выключает и её производные.",
         "operationId": "update_source",
         "parameters": [
           {

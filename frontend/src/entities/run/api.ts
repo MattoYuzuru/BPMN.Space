@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { choiceRequest, getModelChoice } from '@/entities/llm-credential'
+import { cachedModelCapabilities, choiceRequest, getModelChoice } from '@/entities/llm-credential'
 import { type ProjectDetail, patchProjectInLists, projectKeys } from '@/entities/project'
 import { useCurrentUser } from '@/entities/session'
 import { ApiError, api, errorMessage, unwrap } from '@/shared/api/client'
@@ -13,7 +13,7 @@ import { useRunStore } from './store'
 type RunOptions = Partial<
   Pick<
     components['schemas']['RunCreate'],
-    'base_version_id' | 'replace_manual' | 'credential_id' | 'model'
+    'base_version_id' | 'replace_manual' | 'credential_id' | 'model' | 'profile'
   >
 >
 
@@ -50,9 +50,12 @@ export function useStartRun(projectId: string) {
   const track = useRunStore((state) => state.track)
   const user = useCurrentUser()
   return useMutation({
-    // Выбранные пользователем ключ и модель идут в каждый запуск; не выбраны — решает сервер.
+    // Выбранные пользователем ключ, модель и уровень идут в каждый запуск (анализ и сборка);
+    // не выбраны — решает сервер.
     mutationFn: (input: StartRunInput) => {
-      const choice = choiceRequest(getModelChoice(user?.id))
+      const picked = getModelChoice(user?.id)
+      const caps = picked && cachedModelCapabilities(client, picked.credentialId, picked.model)
+      const choice = choiceRequest(picked, caps || undefined)
       return typeof input === 'string'
         ? startRun(projectId, input, choice)
         : startRun(projectId, input.mode, { ...choice, ...input })

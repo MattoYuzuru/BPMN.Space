@@ -3,8 +3,13 @@ import { useState } from 'react'
 import {
   ACCEPTED_FILES,
   ACCEPTED_FILES_HINT,
-  SOURCE_KIND,
+  buildSourceTree,
+  derivationLabel,
+  isDerived,
+  isMediaFile,
   type Source,
+  type SourceNode,
+  sourceKindOf,
   sourceMeta,
   useAddSampleSource,
   useDeleteSource,
@@ -16,6 +21,7 @@ import { cn } from '@/shared/lib/cn'
 import { listItem } from '@/shared/lib/motion'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
 import {
+  Badge,
   Button,
   ConfirmDialog,
   DropdownMenu,
@@ -41,7 +47,8 @@ export function SourcesPanel({ onCollapse }: { onCollapse: () => void }) {
   const setDialog = useWorkspaceUi((state) => state.setDialog)
   const { uploads, upload } = useFileUploads(project.id)
   const [dragging, setDragging] = useState(false)
-  const sources = project.sources.filter((source) => source.kind !== 'answer')
+  // Дерево материалов (RFC-0006): исходные файлы и вложенные производные узлы.
+  const tree = buildSourceTree(project.sources.filter((source) => source.kind !== 'answer'))
   const answers = project.sources.filter((source) => source.kind === 'answer')
 
   return (
@@ -60,7 +67,7 @@ export function SourcesPanel({ onCollapse }: { onCollapse: () => void }) {
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border pr-1.5 pl-4">
         <h2 className="type-subheading text-fg">Источники</h2>
         <span className="type-caption text-fg-subtle" data-numeric>
-          {sources.length}
+          {tree.length}
         </span>
         <div className="ml-auto flex items-center gap-0.5">
           {canEdit && <AddSourceMenu projectId={project.id} onPick={setDialog} onFiles={upload} />}
@@ -77,15 +84,15 @@ export function SourcesPanel({ onCollapse }: { onCollapse: () => void }) {
         <div className="flex flex-col gap-4 p-2 pb-4">
           <ul className="flex flex-col gap-0.5">
             <AnimatePresence initial={false}>
-              {sources.map((source) => (
+              {tree.map((node) => (
                 <m.li
-                  key={source.id}
+                  key={node.source.id}
                   variants={listItem}
                   initial="initial"
                   animate="animate"
                   exit="exit"
                 >
-                  <SourceRow source={source} />
+                  <SourceBranch node={node} />
                 </m.li>
               ))}
               {uploads.map((item) => (
@@ -209,14 +216,44 @@ function AddSourceMenu({
   )
 }
 
-function SourceRow({ source }: { source: Source }) {
+/** Исходный материал и вложенные производные узлы (расшифровка и т. п.) с отступом и линией. */
+function SourceBranch({ node }: { node: SourceNode }) {
+  return (
+    <>
+      <SourceRow source={node.source} derivedCount={node.children.length} />
+      {node.children.length > 0 && (
+        <ul
+          aria-label={`Получено из «${node.source.title}»`}
+          className="ml-5 flex flex-col gap-0.5 border-l border-border pl-1.5"
+        >
+          {node.children.map((child) => (
+            <li key={child.source.id}>
+              <SourceBranch node={child} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  )
+}
+
+function processingLabel(source: Source): string {
+  if (source.derivation?.capability === 'speech_to_text') return 'Расшифровываю запись'
+  if (isMediaFile(source.file_name)) return 'Обрабатываю запись'
+  return 'Разбираю документ'
+}
+
+function SourceRow({ source, derivedCount }: { source: Source; derivedCount: number }) {
   const { project, canEdit, openSource } = useWorkspace()
   const update = useUpdateSource(project.id)
   const remove = useDeleteSource(project.id)
   const [confirm, setConfirm] = useState(false)
-  const kind = SOURCE_KIND[source.kind]
+  const kind = sourceKindOf(source)
+  const derived = isDerived(source)
+  const producer = derivationLabel(source)
   const processing = source.status === 'processing'
   const failed = source.status === 'failed'
+  const warned = source.status === 'ready' && Boolean(source.warning)
 
   return (
     <div
@@ -244,22 +281,40 @@ function SourceRow({ source }: { source: Source }) {
       >
         <span className="truncate type-ui text-fg">{source.title}</span>
         <span
-          className="flex items-center gap-1.5 truncate type-caption text-fg-subtle"
+          className="flex min-w-0 items-center gap-1.5 truncate type-caption text-fg-subtle"
           data-numeric
         >
+          {derived && (
+            <Badge tone="accent" icon="sparkles" className="shrink-0">
+              ИИ
+            </Badge>
+          )}
           {processing ? (
-            'Разбираю документ'
+            processingLabel(source)
           ) : failed ? (
-            <span className="text-danger-fg">{source.error ?? 'Не удалось разобрать'}</span>
+            <span className="truncate text-danger-fg">
+              {source.error ?? 'Не удалось разобрать'}
+            </span>
+          ) : warned ? (
+            <span className="flex min-w-0 items-center gap-1 text-amber-fg">
+              <Icon name="alert-triangle" size={14} />
+              <span className="truncate">{source.warning}</span>
+            </span>
           ) : (
             <>
-              <span>{kind.label}</span>
+              <span>{producer ?? kind.label}</span>
               <span aria-hidden="true" className="h-3 w-px bg-border-strong" />
               <span>{sourceMeta(source)}</span>
+              {source.edited_by_human && (
+                <>
+                  <span aria-hidden="true" className="h-3 w-px bg-border-strong" />
+                  <span>изменено человеком</span>
+                </>
+              )}
             </>
           )}
         </span>
-        {processing && <Progress label="Разбор документа" className="mt-1.5" />}
+        {processing && <Progress label={processingLabel(source)} className="mt-1.5" />}
       </a>
       <div className="relative z-10 flex items-center gap-0.5">
         <DropdownMenu>
@@ -276,7 +331,7 @@ function SourceRow({ source }: { source: Source }) {
             <DropdownMenuItem icon="eye" onSelect={() => openSource(source.id)}>
               Открыть
             </DropdownMenuItem>
-            {canEdit && (
+            {canEdit && !(derived && processing) && (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem icon="trash" tone="danger" onSelect={() => setConfirm(true)}>
@@ -301,7 +356,11 @@ function SourceRow({ source }: { source: Source }) {
         open={confirm}
         onOpenChange={setConfirm}
         title={`Удалить «${source.title}»?`}
-        description="Вопросы, решённые по этому источнику, при следующем анализе могут вернуться в открытые."
+        description={
+          derivedCount > 0
+            ? 'Вместе с ним удалятся полученные из него материалы. Вопросы, решённые по ним, при следующем анализе могут вернуться в открытые.'
+            : 'Вопросы, решённые по этому источнику, при следующем анализе могут вернуться в открытые.'
+        }
         confirmLabel="Удалить"
         tone="danger"
         onConfirm={() => remove.mutate(source.id)}

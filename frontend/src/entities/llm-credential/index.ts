@@ -1,4 +1,5 @@
 export {
+  cachedModelCapabilities,
   llmCredentialKeys,
   llmCredentialsQueryOptions,
   llmModelsQueryOptions,
@@ -10,13 +11,21 @@ export {
 } from './api'
 export { getModelChoice, useModelChoiceStore } from './choice'
 export {
+  capabilitySummary,
   choiceLabel,
   choiceRequest,
+  EFFORTS,
+  type Effort,
+  effectiveEffort,
+  effortLabel,
+  effortOptions,
+  isEffort,
   keyMask,
   LABEL_SEPARATOR,
   type LlmCredential,
   type LlmModel,
   type LlmProvider,
+  type ModelCapabilities,
   type ModelChoice,
   modelLabel,
   PROVIDERS,

@@ -146,6 +146,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/api-tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Api Tokens
+         * @description Неотозванные токены пользователя (и истёкшие), новые первыми; секретов в списке нет.
+         */
+        get: operations["list_api_tokens"];
+        put?: never;
+        /**
+         * Create Api Token
+         * @description Выпустить токен. Ответ содержит секрет `bps_…` — единственный раз.
+         *
+         *     Проекты из `project_ids` должны быть доступны пользователю (любая роль), иначе `404`.
+         */
+        post: operations["create_api_token"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/api-tokens/{token_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke Api Token
+         * @description Отозвать токен: следующий запрос с ним получит `401`.
+         */
+        delete: operations["revoke_api_token"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/llm-credentials": {
         parameters: {
             query?: never;
@@ -614,6 +660,8 @@ export interface paths {
          * @description Документ или запись. `.txt`/`.md`/`.csv` готовы сразу; `.docx`/`.xlsx`/`.pptx`/`.pdf` и
          *     аудио/видео приходят в `processing` и становятся `ready` или `failed` в фоне — обновляйте
          *     проект, пока есть `processing`. Страницы PDF без текста дают `ready` с `warning`.
+         *     Запись возвращается как исходный файл без текста; её расшифровка — отдельный источник
+         *     `origin=derived` с `parent_id` записи (RFC-0006).
          *     Записи пишутся на диск потоком (лимит `MAX_MEDIA_BYTES`), документы — `MAX_UPLOAD_BYTES`.
          */
         post: operations["create_file_source"];
@@ -926,7 +974,9 @@ export interface paths {
         post?: never;
         /**
          * Delete Source
-         * @description Удалить источник. Удаление ответа возвращает отвеченный вопрос в `open`.
+         * @description Удалить источник вместе с производными (`parent_id`). Удаление ответа возвращает
+         *     отвеченный вопрос в `open`. Производный источник, который ещё `processing`, удалить
+         *     нельзя (409): запись удаляется целиком или после окончания обработки.
          */
         delete: operations["delete_source"];
         options?: never;
@@ -934,6 +984,9 @@ export interface paths {
         /**
          * Update Source
          * @description Поправить название или текст, включить или выключить источник.
+         *
+         *     Правка текста производного источника ставит `edited_by_human=true`; у записи с
+         *     расшифровкой своего текста нет (422). Выключение записи выключает и её производные.
          */
         patch: operations["update_source"];
         trace?: never;
@@ -1026,6 +1079,127 @@ export interface components {
             source_id: string;
             /** Text */
             text: string;
+        };
+        /**
+         * ApiScope
+         * @description Право токена. Пользователь в cookie-сессии имеет все права своей роли, как раньше.
+         * @enum {string}
+         */
+        ApiScope: "projects:read" | "projects:write" | "sources:write" | "sources:delete" | "runs:start" | "questions:answer";
+        /** ApiToken */
+        ApiToken: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expired
+             * @description Срок истёк: токен больше не принимается
+             */
+            expired: boolean;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Last Used At
+             * @description С точностью до минуты
+             */
+            last_used_at: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Project Ids
+             * @description null — все проекты пользователя
+             */
+            project_ids: string[] | null;
+            /** Scopes */
+            scopes: components["schemas"]["ApiScope"][];
+            /**
+             * Token Prefix
+             * @description `bps_` и первые символы секрета — чтобы узнать токен
+             */
+            token_prefix: string;
+        };
+        /** ApiTokenCreate */
+        ApiTokenCreate: {
+            /**
+             * Expires In Days
+             * @description Срок действия в днях; бессрочных токенов нет
+             * @default 30
+             */
+            expires_in_days: number;
+            /** Name */
+            name: string;
+            /**
+             * Project Ids
+             * @description null — все проекты пользователя, включая созданные позже
+             */
+            project_ids?: string[] | null;
+            /**
+             * Scopes
+             * @description По умолчанию — чтение проектов и ответы на вопросы
+             */
+            scopes?: components["schemas"]["ApiScope"][];
+        };
+        /** ApiTokenCreated */
+        ApiTokenCreated: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expired
+             * @description Срок истёк: токен больше не принимается
+             */
+            expired: boolean;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Last Used At
+             * @description С точностью до минуты
+             */
+            last_used_at: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Project Ids
+             * @description null — все проекты пользователя
+             */
+            project_ids: string[] | null;
+            /** Scopes */
+            scopes: components["schemas"]["ApiScope"][];
+            /**
+             * Secret
+             * @description Секрет `bps_…`: показывается один раз, в БД хранится только SHA-256
+             */
+            secret: string;
+            /**
+             * Token Prefix
+             * @description `bps_` и первые символы секрета — чтобы узнать токен
+             */
+            token_prefix: string;
+        };
+        /** ApiTokenList */
+        ApiTokenList: {
+            /** Items */
+            items: components["schemas"]["ApiToken"][];
         };
         /** AssistantRequest */
         AssistantRequest: {
@@ -1349,15 +1523,93 @@ export interface components {
         };
         /** LlmModel */
         LlmModel: {
+            capabilities: components["schemas"]["LlmModelCapabilities"];
             /** Id */
             id: string;
             /** Label */
             label: string;
         };
+        /**
+         * LlmModelCapabilities
+         * @description Возможности модели: справочник сервера, уточнённый списком моделей провайдера.
+         */
+        LlmModelCapabilities: {
+            /** Accepts Temperature */
+            accepts_temperature: boolean;
+            /**
+             * Context Tokens
+             * @description Окно контекста; null — неизвестно
+             */
+            context_tokens: number | null;
+            /**
+             * Effort Default
+             * @description Уровень, который сервер отправит, если в профиле прогона его нет
+             */
+            effort_default: ("low" | "medium" | "high" | "xhigh" | "max") | null;
+            /**
+             * Effort Levels
+             * @description Уровни глубины, которые модель принимает; пусто — модель без рассуждения
+             */
+            effort_levels: ("low" | "medium" | "high" | "xhigh" | "max")[];
+            /**
+             * Known
+             * @description false — модель неизвестна, показаны осторожные умолчания
+             */
+            known: boolean;
+            /**
+             * Max Output Tokens
+             * @description Максимум ответа; null — неизвестно
+             */
+            max_output_tokens: number | null;
+            /** Pdf Input */
+            pdf_input: boolean;
+            prices?: components["schemas"]["LlmModelPrices"] | null;
+            /** Tools */
+            tools: boolean;
+            /** Vision */
+            vision: boolean;
+        };
         /** LlmModelList */
         LlmModelList: {
             /** Items */
             items: components["schemas"]["LlmModel"][];
+        };
+        /**
+         * LlmModelPrices
+         * @description Цены провайдера в долларах за 1 млн токенов на дату проверки (ориентир, не счёт).
+         */
+        LlmModelPrices: {
+            /**
+             * Cache Read
+             * @description Чтение кеша промпта
+             */
+            cache_read: number | null;
+            /**
+             * Cache Write
+             * @description Запись кеша промпта (TTL 5 минут)
+             */
+            cache_write: number | null;
+            /**
+             * Checked On
+             * Format: date
+             * @description Когда цены сверены с прайсом провайдера
+             */
+            checked_on: string;
+            /**
+             * Currency
+             * @default USD
+             * @constant
+             */
+            currency: "USD";
+            /** Input */
+            input: number;
+            /**
+             * Note
+             * @description Оговорка: например, порог длины промпта
+             */
+            note?: string | null;
+            /** Output */
+            output: number;
         };
         /** LocalAssistantRequest */
         LocalAssistantRequest: {
@@ -1384,6 +1636,16 @@ export interface components {
              * @default
              */
             source: string;
+        };
+        /**
+         * MediaInfo
+         * @description Дорожки записи по `ffprobe`; `null` — неизвестно (сервер без ffmpeg).
+         */
+        MediaInfo: {
+            /** Has Audio */
+            has_audio?: boolean | null;
+            /** Has Video */
+            has_video?: boolean | null;
         };
         /** OnboardingEvent */
         OnboardingEvent: {
@@ -1704,6 +1966,8 @@ export interface components {
              * @description Модель, на которой выполнен прогон
              */
             model?: string | null;
+            /** @description Проверенный профиль прогона; null — прогон до RFC-0005 */
+            profile?: components["schemas"]["RunProfile"] | null;
             /** Progress */
             progress: number;
             /**
@@ -1761,6 +2025,8 @@ export interface components {
              * @description Модель; требует `credential_id`
              */
             model?: string | null;
+            /** @description Профиль прогона: effort и смысловая сверка */
+            profile?: components["schemas"]["RunProfile"] | null;
             /**
              * Replace Manual
              * @description Осознанно пересобрать из источников вместо manual; требует актуальный base_version_id
@@ -1800,6 +2066,22 @@ export interface components {
          * @enum {string}
          */
         RunMode: "analyze" | "build";
+        /**
+         * RunProfile
+         * @description Профиль прогона (RFC-0005). Пусто — умолчания сервера и модели.
+         */
+        RunProfile: {
+            /**
+             * Effort
+             * @description Глубина работы модели: low, medium, high, xhigh, max. Уровень, которого модель не поддерживает, — 422; у модели без рассуждения поле игнорируется
+             */
+            effort?: ("low" | "medium" | "high" | "xhigh" | "max") | null;
+            /**
+             * Semantic Review
+             * @description Смысловая сверка схемы; null — настройка сервера
+             */
+            semantic_review?: boolean | null;
+        };
         /** RunQuestionEvent */
         RunQuestionEvent: {
             data: components["schemas"]["QuestionEventData"];
@@ -2005,11 +2287,19 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** @description Для `origin=derived`: возможность, провайдер, модель */
+            derivation?: components["schemas"]["SourceDerivation"] | null;
             /**
              * Duration Sec
              * @description Длительность голосовой заметки
              */
             duration_sec?: number | null;
+            /**
+             * Edited By Human
+             * @description Текст производного источника поправил человек
+             * @default false
+             */
+            edited_by_human: boolean;
             /**
              * Error
              * @description Причина для `status=failed`
@@ -2023,8 +2313,20 @@ export interface components {
              */
             id: string;
             kind: components["schemas"]["SourceKind"];
+            /** @description Для записи: есть ли звук и видео. Текст записи — в потомке */
+            media?: components["schemas"]["MediaInfo"] | null;
             /** Mime */
             mime?: string | null;
+            /**
+             * @description `user` — загрузил человек, `derived` — получен из `parent_id`, `agent` — внешний агент, `answer` — ответ на вопрос
+             * @default user
+             */
+            origin: components["schemas"]["SourceOrigin"];
+            /**
+             * Parent Id
+             * @description Исходный источник того же проекта; дерево строится по этому полю. Удаление родителя удаляет производные
+             */
+            parent_id?: string | null;
             /**
              * Project Id
              * Format: uuid
@@ -2041,6 +2343,11 @@ export interface components {
             /** Title */
             title: string;
             /**
+             * @description Уровень доверия: `summary` не идёт в контекст модели и в основания
+             * @default primary
+             */
+            trust: components["schemas"]["SourceTrust"];
+            /**
              * Unreadable Pages
              * @description Номера страниц PDF без текстового слоя (сканы): их текст не извлечён
              */
@@ -2052,10 +2359,54 @@ export interface components {
             warning?: string | null;
         };
         /**
+         * SourceDerivation
+         * @description Как получен производный источник (RFC-0006).
+         */
+        SourceDerivation: {
+            /**
+             * Capability
+             * @description Возможность: `speech_to_text`, `ocr`, `vision`…
+             */
+            capability: string;
+            /**
+             * Cost Usd
+             * @description Стоимость, если провайдер её сообщил
+             */
+            cost_usd?: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Model
+             * @description Модель провайдера, если известна
+             */
+            model?: string | null;
+            /**
+             * Params
+             * @description Параметры обработки (сегменты, язык…)
+             */
+            params?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Provider
+             * @description Реализация, которая ответила: `deepgram`, `mock`…
+             */
+            provider: string;
+        };
+        /**
          * SourceKind
          * @enum {string}
          */
         SourceKind: "text" | "voice" | "file" | "answer";
+        /**
+         * SourceOrigin
+         * @description Откуда источник (RFC-0006): загрузил человек, получен из другого, принёс агент, ответ.
+         * @enum {string}
+         */
+        SourceOrigin: "user" | "derived" | "agent" | "answer";
         /**
          * SourceStatus
          * @enum {string}
@@ -2064,6 +2415,9 @@ export interface components {
         /**
          * SourceTextCreate
          * @description Текст или проверенная аналитиком расшифровка голоса (после `POST /transcriptions`).
+         *
+         *     Лишние поля отклоняются: `parent_id`, `origin`, `trust` вручную не задаются — производные
+         *     источники создаёт только сервер.
          */
         SourceTextCreate: {
             /** Content */
@@ -2079,6 +2433,14 @@ export interface components {
             /** Title */
             title?: string | null;
         };
+        /**
+         * SourceTrust
+         * @description Уровень доверия (RFC-0006): что из источника можно цитировать в основаниях IR.
+         *
+         *     `summary` — только навигация: в контекст модели и в основания не идёт.
+         * @enum {string}
+         */
+        SourceTrust: "primary" | "extracted" | "observed" | "external" | "agent" | "summary";
         /** SourceUpdate */
         SourceUpdate: {
             /** Active */
@@ -2799,6 +3161,187 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Example"][];
+                };
+            };
+        };
+    };
+    list_api_tokens: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiTokenList"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Сервис или помощник не настроен */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_api_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiTokenCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiTokenCreated"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Конфликт состояния */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Сервис или помощник не настроен */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    revoke_api_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -5711,6 +6254,15 @@ export interface operations {
             };
             /** @description Не найдено */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Конфликт состояния */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -1,7 +1,8 @@
 """Сборщик контекста прогона (RFC §5.2): что видит модель за один прогон.
 
-В контекст идут активные разобранные источники (с id для цитат), вопросы с ответами
-и допущениями и текущая схема, если аналитик её правил.
+В контекст идут активные разобранные источники с текстом (с id для цитат), кроме кратких
+содержаний (`trust=summary`, RFC-0006): запись без своего текста представлена расшифровкой,
+и цитаты ссылаются на неё. Плюс вопросы с ответами и допущениями и текущая схема.
 
 Сборщик оставляет ограниченный предварительный контекст для mock и старых потребителей,
 а полный снимок — в evidence_sources. OpenAI-совместимая структура подготавливает все
@@ -22,10 +23,14 @@ from app.domain.models import (
     Project,
     Question,
     Source,
+    SourceKind,
+    SourceOrigin,
     SourceStatus,
+    SourceTrust,
     Version,
     VersionOrigin,
 )
+from app.domain.sources import derivation_to_json
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,23 +58,50 @@ def _digest(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
+def _lineage(source: Source) -> list[Any] | None:
+    """Поля дерева материалов (RFC-0006) для снимка или None, если они как у старых строк.
+
+    Источник со значениями по умолчанию (как после миграции 0016) даёт тот же кортеж, что и до
+    неё: хеш прогона, запущенного до обновления, совпадает, и восстановление после рестарта
+    (ADR-0008) не отклоняет его как «источники изменились».
+    """
+    legacy_origin = SourceOrigin.ANSWER if source.kind is SourceKind.ANSWER else SourceOrigin.USER
+    if (
+        source.origin is legacy_origin
+        and source.parent_id is None
+        and source.derivation is None
+        and source.trust is SourceTrust.PRIMARY
+        and not source.edited_by_human
+    ):
+        return None
+    derivation = derivation_to_json(source.derivation)
+    return [
+        source.origin.value,
+        str(source.parent_id),
+        source.trust.value,
+        source.edited_by_human,
+        _digest(json.dumps(derivation, sort_keys=True, ensure_ascii=False)) if derivation else None,
+    ]
+
+
 def source_snapshot_hash(sources: Sequence[Source]) -> str:
     """Снимок всех источников, включая inactive/processing; текст в аудит не копируется."""
-    values = sorted(
-        [
-            (
-                str(s.id),
-                s.kind.value,
-                s.title,
-                s.status.value,
-                s.active,
-                _digest(s.content),
-                str(s.question_id),
-                s.created_at.isoformat(),
-            )
-            for s in sources
-        ]
-    )
+    values: list[tuple[Any, ...]] = []
+    for s in sources:
+        value: tuple[Any, ...] = (
+            str(s.id),
+            s.kind.value,
+            s.title,
+            s.status.value,
+            s.active,
+            _digest(s.content),
+            str(s.question_id),
+            s.created_at.isoformat(),
+        )
+        lineage = _lineage(s)
+        values.append(value if lineage is None else (*value, lineage))
+    # id уникален: порядок задаёт первый элемент, как и прежний sorted() по кортежам.
+    values.sort(key=lambda item: item[0])
     return _digest(json.dumps(values, ensure_ascii=False))
 
 
@@ -153,16 +185,24 @@ def build_run_context(
             id=s.id, kind=s.kind, title=s.title, content=s.content, created_at=s.created_at
         )
         for s in sources
-        if s.active and s.status is SourceStatus.READY and s.content.strip()
+        if s.feeds_model
     ]
     fitted, warnings = fit_sources(usable, budget_chars=budget_chars)
-    unreadable = [
-        s for s in sources if s.active and s.status is SourceStatus.READY and s.unreadable_pages
-    ]
+    unreadable = [s for s in sources if s.feeds_model and s.unreadable_pages]
     for s in sources:
-        if s.active and s.status is SourceStatus.READY and s.content.strip() and s.warning:
+        if s.feeds_model and s.warning:
             warnings.append(f"Источник «{s.title[:80]}» прочитан не полностью: {s.warning}")
-    unavailable = [s for s in sources if s.active and s.status is not SourceStatus.READY]
+    # Запись с активными производными представлена ими: её сбой уже виден на расшифровке, не
+    # считаем дважды. Если все производные выключены, сбой записи остаётся в полноте контекста.
+    parents = {s.parent_id for s in sources if s.parent_id is not None and s.active}
+    unavailable = [
+        s
+        for s in sources
+        if s.active
+        and s.status is not SourceStatus.READY
+        and s.id not in parents
+        and s.trust is not SourceTrust.SUMMARY
+    ]
     if unavailable:
         warnings.append(
             f"Активных источников без готового текста: {len(unavailable)}. Их содержимое ещё не "

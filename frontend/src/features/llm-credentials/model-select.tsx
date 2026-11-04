@@ -1,8 +1,17 @@
 import { useEffect } from 'react'
-import { type LlmCredential, modelLabel, useLlmModels } from '@/entities/llm-credential'
+import {
+  capabilitySummary,
+  LABEL_SEPARATOR,
+  type LlmCredential,
+  modelLabel,
+  useLlmModels,
+} from '@/entities/llm-credential'
 import { Field, Select, Skeleton } from '@/shared/ui'
 
-/** Выбор модели из списка, который вернул провайдер; текущая модель остаётся, даже если её нет в списке. */
+/**
+ * Выбор модели из списка, который вернул провайдер; текущая модель остаётся, даже если её нет
+ * в списке. Под полем — краткие возможности выбранной модели (окно, ответ, уровни, цены с датой).
+ */
 export function ModelSelect({
   credential,
   value,
@@ -21,6 +30,8 @@ export function ModelSelect({
     label: modelLabel(id),
   }))
   const first = options[0]?.value
+  const caps = models.data?.find((item) => item.id === value)?.capabilities
+  const summary = caps ? capabilitySummary(caps).join(LABEL_SEPARATOR) : ''
   useEffect(() => {
     if (!value && first) onChange(first)
   }, [value, first, onChange])
@@ -35,6 +46,7 @@ export function ModelSelect({
   return (
     <Field
       label={label}
+      hint={summary ? capitalize(summary) : undefined}
       error={models.isError ? 'Не удалось получить список моделей. Проверьте ключ.' : undefined}
     >
       <Select
@@ -45,4 +57,8 @@ export function ModelSelect({
       />
     </Field>
   )
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1)
 }

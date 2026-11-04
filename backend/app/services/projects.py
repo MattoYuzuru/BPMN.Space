@@ -135,8 +135,12 @@ class ProjectService:
         owner_id: UUID | None = None,
         scope_to_user: bool = False,
         scope: ProjectScope = ProjectScope.ALL,
+        only_ids: frozenset[UUID] | None = None,
     ) -> ProjectPage:
-        """Курсорная страница; счётчики карточек считает БД агрегатами, без N+1."""
+        """Курсорная страница; счётчики карточек считает БД агрегатами, без N+1.
+
+        `only_ids` сужает выдачу до проектов токена доступа (RFC-0007); None — без сужения.
+        """
         limit = min(max(limit, 1), MAX_PAGE)
         try:
             after = Cursor.decode(cursor).key() if cursor else None
@@ -150,6 +154,7 @@ class ProjectService:
             owner_id=owner_id,
             scope_to_user=scope_to_user,
             scope=scope,
+            only_ids=only_ids,
         )
         has_more = len(projects) > limit
         projects = projects[:limit]
@@ -158,7 +163,11 @@ class ProjectService:
             items=await self._views(projects),
             next_cursor=Cursor(last.updated_at, last.id).encode() if has_more and last else None,
             total=await self._repos.projects.count(
-                query=query, owner_id=owner_id, scope_to_user=scope_to_user, scope=scope
+                query=query,
+                owner_id=owner_id,
+                scope_to_user=scope_to_user,
+                scope=scope,
+                only_ids=only_ids,
             ),
         )
 

@@ -7,6 +7,7 @@
 
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from uuid import UUID
 
 from pydantic import SecretStr
@@ -19,6 +20,7 @@ from app.domain.credentials import (
 )
 from app.infra.crypto import CredentialCipher, CredentialCipherError
 from app.infra.repositories.base import Repositories
+from app.llm.capabilities import capabilities_for, nearest_effort
 from app.llm.client import (
     PROVIDER_ANTHROPIC,
     PROVIDER_COMPATIBLE,
@@ -43,6 +45,8 @@ PROVIDER_LABELS = {
 _MIN_KEY_CHARS = 8
 _MAX_KEY_CHARS = 512
 DEFAULT_ANTHROPIC_MODEL = "claude-opus-5-5"
+# Сколько секунд помнить ошибку списка моделей (неверный или отозванный ключ).
+MODELS_ERROR_CACHE_SEC = 60.0
 
 
 class LlmCredentialService:
@@ -56,7 +60,9 @@ class LlmCredentialService:
         allowed_private_hosts: tuple[str, ...] = (),
         models_cache_sec: float = 300.0,
         monotonic: Callable[[], float] = time.monotonic,
+        anthropic_effort: str | None = None,
     ) -> None:
+        self._anthropic_effort = anthropic_effort
         self._repos = repos
         self._cipher = cipher
         self._client_factory = client_factory
@@ -65,6 +71,7 @@ class LlmCredentialService:
         self._cache_sec = models_cache_sec
         self._monotonic = monotonic
         self._models: dict[UUID, tuple[float, list[ModelInfo]]] = {}
+        self._model_errors: dict[UUID, tuple[float, str]] = {}
 
     @property
     def storage_available(self) -> bool:
@@ -156,7 +163,7 @@ class LlmCredentialService:
     async def _fetch_models(self, config: LlmConfig) -> list[ModelInfo]:
         client = self._client_factory(config)
         try:
-            return await client.list_models()
+            return self._describe(config, await client.list_models())
         except LlmAuthError as error:
             raise InvalidInputError(str(error)) from None
         except RuntimeError as error:
@@ -165,6 +172,23 @@ class LlmCredentialService:
             ) from None
         finally:
             await client.aclose()
+
+    def _describe(self, config: LlmConfig, models: list[ModelInfo]) -> list[ModelInfo]:
+        """Каждой модели — возможности: от провайдера, иначе из справочника или умолчания.
+
+        `effort_default` — тот уровень, который сервер реально отправит без профиля: у Anthropic
+        явный `LLM_ANTHROPIC_EFFORT` главнее умолчания модели.
+        """
+        described: list[ModelInfo] = []
+        for item in models:
+            caps = item.capabilities or capabilities_for(
+                config.provider, item.id, base_url=config.base_url
+            )
+            if config.provider == PROVIDER_ANTHROPIC and self._anthropic_effort:
+                level = nearest_effort(self._anthropic_effort, caps.effort_levels)
+                caps = replace(caps, effort_default=level)  # type: ignore[arg-type]
+            described.append(replace(item, capabilities=caps))
+        return described
 
     async def update(
         self,
@@ -198,6 +222,7 @@ class LlmCredentialService:
         await self._own(user_id, credential_id)
         await self._repo.delete(credential_id)
         self._models.pop(credential_id, None)
+        self._model_errors.pop(credential_id, None)
 
     async def models(self, user_id: UUID, credential_id: UUID) -> list[ModelInfo]:
         credential = await self._own(user_id, credential_id)
@@ -205,6 +230,11 @@ class LlmCredentialService:
         now = self._monotonic()
         if cached is not None and now - cached[0] < self._cache_sec:
             return cached[1]
+        # Неработающий ключ: шапка проекта спрашивает список при каждом показе, поэтому ошибка
+        # помнится недолго — без нового запроса к провайдеру и новой записи `last_error`.
+        failed = self._model_errors.get(credential_id)
+        if failed is not None and now - failed[0] < min(self._cache_sec, MODELS_ERROR_CACHE_SEC):
+            raise InvalidInputError(failed[1])
         api_key = self._decrypt(credential)
         config = LlmConfig(
             provider=credential.provider,
@@ -215,8 +245,10 @@ class LlmCredentialService:
         try:
             models = await self._fetch_models(config)
         except InvalidInputError as error:
+            self._model_errors[credential_id] = (now, error.message)
             await self._repo.mark_used(credential_id, self._rt.clock(), error.message)
             raise
+        self._model_errors.pop(credential_id, None)
         self._models[credential_id] = (now, models)
         return models
 

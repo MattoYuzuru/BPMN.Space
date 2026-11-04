@@ -22,7 +22,7 @@ from app.infra.seed import build_seed
 from app.infra.storage import InMemoryFileStorage, LocalFileStorage
 from app.infra.tasks import AsyncioTaskSpawner
 from app.ingest.context import configure_llm_limits
-from app.ingest.deepgram import DeepgramSpeechToText
+from app.ingest.deepgram import DEEPGRAM_MODEL, DeepgramSpeechToText
 from app.ingest.media import FfmpegRunner, MediaTranscriber
 from app.ingest.parsers import LocalDocumentParser
 from app.ingest.stt import MockSpeechToText, SpeechToText
@@ -31,6 +31,7 @@ from app.llm.factory import build_client, build_pipeline, call_knobs
 from app.llm.mock import MockPipeline
 from app.llm.pipeline import LlmPipeline
 from app.services.access import AccessService
+from app.services.api_tokens import ApiTokenService
 from app.services.assistant import AssistantService
 from app.services.catalog import ExampleService, TranscriptionService
 from app.services.collaboration import RealtimeHub
@@ -122,6 +123,8 @@ def build_media_transcriber(settings: Settings, stt: SpeechToText) -> MediaTrans
         timeout_per_audio_sec=settings.stt_segment_timeout_per_audio_sec,
         max_concurrent_jobs=settings.media_max_concurrent_jobs,
         raw_fallback=settings.stt_provider.lower() == "mock",
+        provider=settings.stt_provider.lower(),
+        model=DEEPGRAM_MODEL if settings.stt_provider.lower() == "deepgram" else None,
     )
 
 
@@ -141,6 +144,7 @@ class Container:
     transcriptions: TranscriptionService
     assistant: AssistantService
     llm_credentials: LlmCredentialService
+    api_tokens: ApiTokenService
     access: AccessService
     sharing: SharingService
     onboarding: OnboardingService
@@ -215,6 +219,7 @@ def build_container(
         factory=user_pipeline,
         runtime=runtime,
         production=settings.is_production,
+        server_max_effort=settings.llm_server_max_effort,
     )
 
     stt = build_stt(settings)
@@ -292,7 +297,9 @@ def build_container(
             runtime=runtime,
             allowed_private_hosts=tuple(settings.llm_allowed_private_hosts),
             models_cache_sec=settings.llm_models_cache_sec,
+            anthropic_effort=settings.anthropic_effort_default(),
         ),
+        api_tokens=ApiTokenService(repos, runtime=runtime),
         access=access,
         sharing=SharingService(access, runtime=runtime),
         onboarding=onboarding,

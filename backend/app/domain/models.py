@@ -27,6 +27,29 @@ class SourceKind(StrEnum):
     ANSWER = "answer"
 
 
+class SourceOrigin(StrEnum):
+    """Откуда источник (RFC-0006): загрузил человек, получен из другого, принёс агент, ответ."""
+
+    USER = "user"
+    DERIVED = "derived"
+    AGENT = "agent"
+    ANSWER = "answer"
+
+
+class SourceTrust(StrEnum):
+    """Уровень доверия (RFC-0006): что из источника можно цитировать в основаниях IR.
+
+    `summary` — только навигация: в контекст модели и в основания не идёт.
+    """
+
+    PRIMARY = "primary"
+    EXTRACTED = "extracted"
+    OBSERVED = "observed"
+    EXTERNAL = "external"
+    AGENT = "agent"
+    SUMMARY = "summary"
+
+
 class SourceStatus(StrEnum):
     PROCESSING = "processing"
     READY = "ready"
@@ -111,6 +134,26 @@ class Project:
 
 
 @dataclass(slots=True, kw_only=True)
+class SourceDerivation:
+    """Как получен производный источник: возможность, провайдер, модель, параметры, стоимость."""
+
+    capability: str
+    provider: str
+    created_at: datetime
+    model: str | None = None
+    params: dict[str, Any] = field(default_factory=dict[str, Any])
+    cost_usd: float | None = None  # None — стоимость неизвестна
+
+
+@dataclass(slots=True, kw_only=True)
+class MediaInfo:
+    """Что `ffprobe` узнал о записи; без ffmpeg (mock) дорожки неизвестны."""
+
+    has_audio: bool | None = None
+    has_video: bool | None = None
+
+
+@dataclass(slots=True, kw_only=True)
 class Source:
     id: UUID
     project_id: UUID
@@ -131,6 +174,32 @@ class Source:
     unreadable_pages: list[int] = field(default_factory=list[int])
     file_key: str | None = None  # внутреннее: ключ файла в хранилище (infra/storage)
     digest: str | None = None  # внутреннее: кэш дайджеста источника для контекстного окна
+    # Дерево материалов (RFC-0006): происхождение, родитель того же проекта и доверие.
+    origin: SourceOrigin = SourceOrigin.USER
+    parent_id: UUID | None = None
+    derivation: SourceDerivation | None = None
+    trust: SourceTrust = SourceTrust.PRIMARY
+    edited_by_human: bool = False  # текст производного источника правил человек
+    media: MediaInfo | None = None  # для записи: дорожки звука и видео
+
+    def __post_init__(self) -> None:
+        # Ответ на вопрос всегда `origin=answer`: так же заполняет и миграция 0016.
+        if self.kind is SourceKind.ANSWER and self.origin is SourceOrigin.USER:
+            self.origin = SourceOrigin.ANSWER
+
+    @property
+    def feeds_model(self) -> bool:
+        """Идёт ли текст в контекст прогона: активный, готовый, с текстом и не краткое содержание.
+
+        Родитель-запись без текста не идёт: её текст лежит в производной расшифровке, и
+        цитаты оснований ссылаются на неё.
+        """
+        return (
+            self.active
+            and self.status is SourceStatus.READY
+            and bool(self.content.strip())
+            and self.trust is not SourceTrust.SUMMARY
+        )
 
 
 @dataclass(slots=True, kw_only=True)

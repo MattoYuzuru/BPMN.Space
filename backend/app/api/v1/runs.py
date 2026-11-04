@@ -9,10 +9,12 @@ from fastapi import APIRouter, Depends, Header, Request, status
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from app.api.access import (
+    ApiScope,
     ResourceKind,
     ensure_project_access,
     ensure_resource_access,
     has_stream_project_access,
+    require_scope,
 )
 from app.api.auth import OptionalUserDep, OptionalUserStreamDep
 from app.api.deps import ContainerDep
@@ -43,7 +45,7 @@ ACCESS_RECHECK_SEC = 30
 @router.post(
     "/projects/{project_id}/runs",
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(limit_expensive)],
+    dependencies=[require_scope(ApiScope.RUNS_START), Depends(limit_expensive)],
     responses=errors(401, 403, 404, 409, 410, 422, 429),
 )
 async def start_run(
@@ -64,13 +66,18 @@ async def start_run(
             replace_manual=body.replace_manual,
             credential_id=body.credential_id,
             model=body.model,
+            profile=body.profile.to_domain() if body.profile else None,
             created_by=user.id if user else None,
             actor_email=user.email if user else None,
         )
     )
 
 
-@router.get("/runs/{run_id}", responses=errors(401, 404, 410, 422))
+@router.get(
+    "/runs/{run_id}",
+    dependencies=[require_scope(ApiScope.PROJECTS_READ)],
+    responses=errors(401, 404, 410, 422),
+)
 async def get_run(
     run_id: UUID,
     request: Request,
@@ -83,7 +90,11 @@ async def get_run(
     return Run.of(await container.runs.get(run_id))
 
 
-@router.post("/runs/{run_id}/cancel", responses=errors(401, 403, 404, 410, 422))
+@router.post(
+    "/runs/{run_id}/cancel",
+    dependencies=[require_scope(ApiScope.RUNS_START)],
+    responses=errors(401, 403, 404, 410, 422),
+)
 async def cancel_run(
     run_id: UUID,
     request: Request,
@@ -120,6 +131,7 @@ def _event_data(event: DomainRunEvent) -> ApiModel:
 
 @router.get(
     "/runs/{run_id}/events",
+    dependencies=[require_scope(ApiScope.PROJECTS_READ)],
     response_class=EventSourceResponse,
     responses={
         200: {

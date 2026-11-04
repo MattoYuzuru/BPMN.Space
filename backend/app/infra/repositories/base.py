@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from app.domain.access import ProjectMember, ProjectRole, ProjectScope, ResourceKind, ShareLink
+from app.domain.api_tokens import ApiToken
 from app.domain.credentials import LlmCredential
 from app.domain.models import (
     LlmCall,
@@ -111,6 +112,7 @@ class ProjectRepository(Protocol):
         owner_id: UUID | None = None,
         scope_to_user: bool = False,
         scope: ProjectScope = ProjectScope.ALL,
+        only_ids: frozenset[UUID] | None = None,
     ) -> list[Project]:
         """Проекты по убыванию (`updated_at`, `id`), строго после ключа `after`.
 
@@ -125,6 +127,7 @@ class ProjectRepository(Protocol):
         owner_id: UUID | None = None,
         scope_to_user: bool = False,
         scope: ProjectScope = ProjectScope.ALL,
+        only_ids: frozenset[UUID] | None = None,
     ) -> int: ...
 
 
@@ -353,6 +356,26 @@ class LlmCredentialRepository(Protocol):
         ...
 
 
+class ApiTokenRepository(Protocol):
+    async def list_by_user(self, user_id: UUID) -> list[ApiToken]:
+        """Неотозванные токены пользователя (в том числе истёкшие), новые первыми."""
+        ...
+
+    async def get(self, token_id: UUID) -> ApiToken | None: ...
+    async def by_hash(self, token_hash: str) -> ApiToken | None: ...
+    async def add_within_limit(self, token: ApiToken, *, max_active: int) -> bool:
+        """Атомарно: вставить, если действующих (на `token.created_at`) меньше `max_active`."""
+        ...
+
+    async def revoke(self, token_id: UUID, at: datetime) -> None:
+        """Отметить отзыв; повторный отзыв не меняет первую отметку."""
+        ...
+
+    async def touch(self, token_id: UUID, at: datetime, *, older_than: datetime) -> None:
+        """`last_used_at = at`, только если прежняя отметка раньше `older_than` или пуста."""
+        ...
+
+
 @dataclass(frozen=True, slots=True)
 class Repositories:
     projects: ProjectRepository
@@ -367,6 +390,8 @@ class Repositories:
     onboarding: OnboardingRepository | None = None
     # None, если хранилище не умеет ключи моделей; SQL и in-memory его дают.
     llm_credentials: LlmCredentialRepository | None = None
+    # None, если хранилище не умеет токены доступа; SQL и in-memory его дают.
+    api_tokens: ApiTokenRepository | None = None
     # Открывает транзакцию PostgreSQL; None — репозитории и так атомарны (in-memory).
     transaction: Callable[[], AbstractAsyncContextManager["Repositories"]] | None = None
 

@@ -414,10 +414,10 @@ async def test_anthropic_request_omits_forbidden_sampling_and_thinking() -> None
     assert "JSON" in system
 
 
-async def test_anthropic_chat_is_plain_and_haiku_has_no_effort() -> None:
+async def test_anthropic_chat_is_plain_and_old_haiku_has_no_effort() -> None:
     sdk = _Sdk(_message("привет"))
     client = AnthropicClient(
-        _config(provider="anthropic", model="claude-haiku-5-5", base_url=None),
+        _config(provider="anthropic", model="claude-haiku-4-5", base_url=None),
         sdk=sdk,  # type: ignore[arg-type]
     )
     await client.complete("S", "u", json_mode=False, max_tokens=16_000)
@@ -425,6 +425,30 @@ async def test_anthropic_chat_is_plain_and_haiku_has_no_effort() -> None:
     assert call["max_tokens"] == 4096
     assert "output_config" not in call
     assert call["system"][0]["text"] == "S"
+
+
+async def test_anthropic_effort_per_request_over_server_and_model_defaults() -> None:
+    """Профиль прогона → явный LLM_ANTHROPIC_EFFORT → умолчание модели из каталога."""
+    sdk = _Sdk(_message("{}"), _message("{}"), _message("{}"), _message("{}"))
+    haiku = AnthropicClient(
+        _config(provider="anthropic", model="claude-haiku-5-5", base_url=None, effort=None),
+        sdk=sdk,  # type: ignore[arg-type]
+    )
+    await haiku.complete("S", "u", json_mode=True, max_tokens=128_000)
+    await haiku.complete("S", "u", json_mode=True, max_tokens=128_000, effort="max")
+    sonnet = AnthropicClient(
+        _config(provider="anthropic", model="claude-sonnet-5-5", base_url=None, effort=None),
+        sdk=sdk,  # type: ignore[arg-type]
+    )
+    await sonnet.complete("S", "u", json_mode=True, max_tokens=128_000)
+    server = AnthropicClient(
+        _config(provider="anthropic", model="claude-sonnet-5-5", base_url=None, effort="low"),
+        sdk=sdk,  # type: ignore[arg-type]
+    )
+    await server.complete("S", "u", json_mode=True, max_tokens=128_000, effort="xhigh")
+    efforts = [call["output_config"]["effort"] for call in sdk.calls]
+    assert efforts == ["medium", "max", "high", "xhigh"]
+    assert sdk.calls[0]["max_tokens"] == 128_000
 
 
 async def test_anthropic_usage_counts_cache_and_stop_reasons() -> None:

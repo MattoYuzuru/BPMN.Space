@@ -5,7 +5,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
 
-from app.api.access import ResourceKind, ensure_project_access, ensure_resource_access
+from app.api.access import (
+    ApiScope,
+    ResourceKind,
+    ensure_project_access,
+    ensure_resource_access,
+    require_scope,
+)
 from app.api.auth import OptionalUserDep
 from app.api.deps import ContainerDep
 from app.api.schemas.common import errors
@@ -16,7 +22,11 @@ from app.domain.onboarding import ChecklistItem
 router = APIRouter(tags=["questions"])
 
 
-@router.get("/projects/{project_id}/questions", responses=errors(401, 404, 410, 422))
+@router.get(
+    "/projects/{project_id}/questions",
+    dependencies=[require_scope(ApiScope.PROJECTS_READ)],
+    responses=errors(401, 404, 410, 422),
+)
 async def list_questions(
     project_id: UUID,
     request: Request,
@@ -29,7 +39,11 @@ async def list_questions(
     return [Question.model_validate(q) for q in questions]
 
 
-@router.post("/questions/{question_id}/answer", responses=errors(401, 403, 404, 409, 410, 422))
+@router.post(
+    "/questions/{question_id}/answer",
+    dependencies=[require_scope(ApiScope.QUESTIONS_ANSWER)],
+    responses=errors(401, 403, 404, 409, 410, 422),
+)
 async def answer_question(
     question_id: UUID,
     body: QuestionAnswerCreate,
@@ -47,7 +61,11 @@ async def answer_question(
     return Question.model_validate(answered)
 
 
-@router.post("/questions/{question_id}/ignore", responses=errors(401, 403, 404, 409, 410, 422))
+@router.post(
+    "/questions/{question_id}/ignore",
+    dependencies=[require_scope(ApiScope.QUESTIONS_ANSWER)],
+    responses=errors(401, 403, 404, 409, 410, 422),
+)
 async def ignore_question(
     question_id: UUID,
     request: Request,
@@ -63,7 +81,11 @@ async def ignore_question(
     return Question.model_validate(ignored)
 
 
-@router.post("/questions/{question_id}/reopen", responses=errors(401, 403, 404, 409, 410, 422))
+@router.post(
+    "/questions/{question_id}/reopen",
+    dependencies=[require_scope(ApiScope.QUESTIONS_ANSWER)],
+    responses=errors(401, 403, 404, 409, 410, 422),
+)
 async def reopen_question(
     question_id: UUID,
     request: Request,

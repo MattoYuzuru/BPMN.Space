@@ -3,7 +3,7 @@
 from typing import cast
 from uuid import UUID
 
-from app.domain.models import QuestionStatus, SourceStatus
+from app.domain.models import QuestionStatus
 from app.infra.repositories.base import Repositories
 from app.llm.pipeline import LlmPipeline
 from app.services.common import get_project
@@ -34,7 +34,8 @@ class AssistantService:
         sources: list[dict[str, str]] = []
         budget = 24_000
         for source in source_items:
-            if not source.active or source.status is not SourceStatus.READY or budget <= 0:
+            # Та же выборка, что у прогона: запись без текста и краткие содержания не идут.
+            if not source.feeds_model or budget <= 0:
                 continue
             content = source.content[:budget]
             budget -= len(content)

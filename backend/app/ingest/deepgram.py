@@ -8,6 +8,8 @@ from urllib.request import Request, urlopen
 
 from app.ingest.stt import NoSpeechError, TimedText, Transcript
 
+DEEPGRAM_MODEL = "nova-3"
+
 
 class DeepgramSpeechToText:
     def __init__(self, api_key: str, *, timeout_sec: float = 120) -> None:
@@ -19,7 +21,12 @@ class DeepgramSpeechToText:
 
     def _transcribe_sync(self, data: bytes, mime: str | None) -> Transcript:
         query = urlencode(
-            {"model": "nova-3", "language": "ru", "smart_format": "true", "utterances": "true"}
+            {
+                "model": DEEPGRAM_MODEL,
+                "language": "ru",
+                "smart_format": "true",
+                "utterances": "true",
+            }
         )
         request = Request(
             f"https://api.deepgram.com/v1/listen?{query}",

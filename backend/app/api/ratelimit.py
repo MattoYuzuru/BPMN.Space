@@ -4,8 +4,10 @@
 инфраструктуры. Лимиты щедрые и задаются в `config.py`: цель — остановить скрипты и подбор
 пароля, а не ограничить обычную работу. При перезапуске счётчики обнуляются.
 
-Три корзины: весь API на IP, вход и регистрация на IP, «дорогие» вызовы на аккаунт и на IP
-(прогоны, помощник, расшифровка, загрузка файла — за ними платные провайдеры).
+Три корзины: весь API на IP (и на токен доступа), вход и регистрация на IP, «дорогие» вызовы
+на аккаунт и на IP (прогоны, помощник, расшифровка, загрузка файла — за ними платные
+провайдеры). Запросы по токену доступа (RFC-0007) считаются и в общем лимите на токен, и в
+«дорогом» лимите аккаунта владельца: агент не получает отдельного бюджета на платные вызовы.
 """
 
 import math
@@ -19,6 +21,8 @@ from fastapi.responses import JSONResponse, Response
 
 from app.api.auth import OptionalUserDep
 from app.config import Settings
+from app.domain.api_tokens import hash_secret, looks_like_secret
+from app.services.api_tokens import bearer_secret
 
 WINDOW_SEC = 60.0
 _MAX_KEYS = 50_000  # потолок числа ключей: защита памяти от перебора адресов
@@ -70,6 +74,8 @@ class RateLimits:
     auth: SlidingWindowLimiter
     expensive: SlidingWindowLimiter
     expensive_ip: SlidingWindowLimiter
+    # Отдельная таблица для токенов доступа: перебор мусорных Bearer не вытесняет ключи IP.
+    api_token: SlidingWindowLimiter
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "RateLimits":
@@ -79,6 +85,7 @@ class RateLimits:
             auth=SlidingWindowLimiter(settings.rate_limit_auth_per_min),
             expensive=SlidingWindowLimiter(settings.rate_limit_expensive_per_min),
             expensive_ip=SlidingWindowLimiter(settings.rate_limit_expensive_ip_per_min),
+            api_token=SlidingWindowLimiter(settings.rate_limit_api_per_min),
         )
 
 
@@ -118,6 +125,11 @@ def install_rate_limits(app: FastAPI, settings: Settings) -> None:
                 if retry is not None:
                     return too_many_requests(retry)
             retry = limits.api.check(ip)
+            secret = bearer_secret(request) if retry is None else None
+            # Считаем только строки формата `bps_…`: остальные отклонит аутентификация, а их
+            # перебор уже ограничен лимитом на IP. Ключ — хеш секрета, без запроса к БД.
+            if secret and looks_like_secret(secret):
+                retry = limits.api_token.check(hash_secret(secret))
             if retry is not None:
                 return too_many_requests(retry)
         return await call_next(request)

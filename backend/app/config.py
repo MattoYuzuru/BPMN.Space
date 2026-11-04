@@ -11,6 +11,10 @@ from app.domain.concurrency import adaptive_deadline
 
 logger = logging.getLogger(__name__)
 _MB = 1024 * 1024
+# Переменные, у которых «задано явно» меняет поведение (RFC-0005): пустое значение — не задано.
+_UNSET_WHEN_EMPTY = frozenset(
+    {"llm_json_max_tokens", "llm_anthropic_effort", "llm_server_max_effort"}
+)
 # Квитанции удаления доступны 30 дней; содержимое проектов удаляется сразу.
 DELETED_PROJECT_NOTICE_DAYS = 30
 
@@ -57,10 +61,14 @@ class Settings(BaseSettings):
     run_deadline_per_1k_chars_sec: float = Field(default=4.0, ge=0)
     # Жёсткий потолок адаптивного срока (по умолчанию 2 часа); 0 — потолка нет.
     run_deadline_max_sec: float = Field(default=7200.0, ge=0)
-    # Анализ: бюджет одного запроса целиком, включая schema; полные источники идут порциями.
-    # Построение: бюджет оснований после порционного извлечения; переполнение — явный отказ.
-    # Для моделей с большим контекстом увеличьте значение: документ пройдёт без извлечения.
+    # Бюджет источников прогона (RFC-0005) считается из окна выбранной модели:
+    # (окно − ответ − накладные) × знаков на токен × запас. Эта переменная — нижняя граница и
+    # бюджет моделей с неизвестным окном (совместимые провайдеры, mock). Что не помещается в
+    # бюджет, идёт порциями; поместившийся проект — без порционного извлечения.
     llm_context_budget_chars: int = 120_000
+    # Потолок бюджета, рассчитанного из окна (знаки; 0 — без потолка). Нужен, если лимиты
+    # аккаунта провайдера (входные токены в минуту) не пропускают запрос на всё окно.
+    llm_context_budget_max_chars: int = Field(default=0, ge=0)
     # Размер порции текста при извлечении оснований и смысловой сверке (символы).
     llm_chunk_chars: int = Field(default=24_000, ge=1_000)
     # Сколько независимых запросов порций к модели одновременно (анализ, извлечение, сверка).
@@ -127,16 +135,28 @@ class Settings(BaseSettings):
     llm_timeout_sec: float = 120.0
     llm_json_mode: bool = True
     llm_semantic_review: bool = True
-    # Настраивается под ограничения провайдера; незавершённый length-ответ не применяется.
+    # Лимит JSON-ответа. У модели из справочника по умолчанию берётся её максимум (у Claude
+    # 5.5 — 128 тыс., потоком); явно заданная переменная становится потолком. У модели с
+    # неизвестным максимумом — само значение. Незавершённый length-ответ не применяется.
     llm_json_max_tokens: int = Field(default=16384, ge=256, le=131_072)
+    # Лимит ответа порций: извлечение оснований, смысловая сверка, проверка вопросов пакетами.
+    # Провайдер резервирует лимит выходных токенов в минуту по `max_tokens`, поэтому параллельные
+    # порции не получают полный максимум модели. Обрезанная порция делится, а не теряется.
+    llm_chunk_max_tokens: int = Field(default=16384, ge=256, le=131_072)
     # Температура для JSON-ответов (анализ, сборка). Дефолт провайдера (DeepSeek — 1.0)
     # даёт редкие ответы не по схеме; 0.0 — рекомендация DeepSeek для структурированного вывода.
     llm_json_temperature: float | None = 0.0
     llm_max_retries: int = 3
     llm_retry_base_sec: float = 1.0
     llm_retry_max_sec: float = 30.0
-    # Глубина рассуждения Anthropic (`output_config.effort`): low | medium | high.
+    # Глубина рассуждения Anthropic (`output_config.effort`) по умолчанию для всех моделей:
+    # low | medium | high | xhigh | max. Не задана — умолчание модели из справочника (Opus 5.5 —
+    # medium, Sonnet 5.5 — high). Уровень из профиля прогона главнее.
     llm_anthropic_effort: str = "medium"
+    # Предельный уровень effort для модели сервера (ключ оператора), который может попросить
+    # любой пользователь: low | medium | high | xhigh | max. Не задан — уровень сервера по
+    # умолчанию (`LLM_ANTHROPIC_EFFORT`, иначе умолчание модели). Свой ключ не ограничивается.
+    llm_server_max_effort: str | None = None
     # Ключи моделей пользователей (ADR-0011): Fernet-ключи через запятую; первый шифрует,
     # все расшифровывают (ротация). Сгенерировать: `make credentials-key`. В production без
     # него пользовательские ключи не принимаются; в dev берётся временный ключ процесса.
@@ -182,12 +202,37 @@ class Settings(BaseSettings):
             return None
         return value
 
+    @field_validator("llm_anthropic_effort", "llm_server_max_effort")
+    @classmethod
+    def _effort_level(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        level = value.strip().lower()
+        if level not in {"low", "medium", "high", "xhigh", "max"}:
+            raise ValueError("Уровень effort: low | medium | high | xhigh | max")
+        return level
+
     @field_validator("llm_allowed_private_hosts", mode="before")
     @classmethod
     def _split_hosts(cls, value: object) -> object:
         if isinstance(value, str):
             return [part.strip().lower() for part in value.split(",") if part.strip()]
         return value
+
+    @model_validator(mode="before")
+    @classmethod
+    def _unset_when_empty(cls, data: object) -> object:
+        """Пустые `LLM_JSON_MAX_TOKENS=` и `LLM_ANTHROPIC_EFFORT=` (так их передаёт compose) —
+        «не задано»: тогда действуют пределы и умолчания модели, а не потолок оператора."""
+        if isinstance(data, dict):
+            for key in list(data):
+                if (
+                    str(key).lower() in _UNSET_WHEN_EMPTY
+                    and isinstance(data[key], str)
+                    and not data[key].strip()
+                ):
+                    data.pop(key)
+        return data
 
     @model_validator(mode="after")
     def _resolve_defaults(self) -> "Settings":
@@ -265,8 +310,19 @@ class Settings(BaseSettings):
         return self.is_production
 
     def context_budget_chars(self) -> int:
-        """Бюджет контекста; для моделей с большим окном увеличьте `LLM_CONTEXT_BUDGET_CHARS`."""
+        """Нижняя граница бюджета и бюджет моделей с неизвестным окном (см. `llm/factory.py`)."""
         return self.llm_context_budget_chars
+
+    @property
+    def json_max_tokens_explicit(self) -> bool:
+        """`LLM_JSON_MAX_TOKENS` задан явно: тогда он потолок и для моделей из справочника."""
+        return "llm_json_max_tokens" in self.model_fields_set
+
+    def anthropic_effort_default(self) -> str | None:
+        """`LLM_ANTHROPIC_EFFORT`, только если задан явно; иначе — умолчание модели."""
+        if "llm_anthropic_effort" not in self.model_fields_set:
+            return None
+        return self.llm_anthropic_effort
 
     def run_deadline(self, total_chars: int = 0) -> float | None:
         """Срок прогона: `run_deadline_sec` — нижняя граница, плюс время на объём источников.

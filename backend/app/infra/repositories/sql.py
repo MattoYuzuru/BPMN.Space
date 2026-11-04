@@ -39,6 +39,7 @@ from app.domain.models import (
     Version,
     VersionDiff,
     VersionOrigin,
+    VersionSummary,
 )
 from app.domain.questions import normalize
 from app.domain.runs import ACTIVE_STATUSES
@@ -155,8 +156,14 @@ def _run(row: RunRow) -> Run:
     )
 
 
-def _version(row: DiagramVersionRow, xml: str) -> Version:
-    report_json = row.report
+def _version(
+    row: DiagramVersionRow,
+    xml: str,
+    trace_json: Mapping[str, Any] | None = None,
+    report_json: Mapping[str, Any] | None = None,
+) -> Version:
+    """`trace_json`/`report_json` — разрешённые значения версий с общими метаданными."""
+    report_json = row.report if report_json is None else report_json
     report = Report(
         xsd_valid=report_json["xsd_valid"],
         lint=[
@@ -179,7 +186,7 @@ def _version(row: DiagramVersionRow, xml: str) -> Version:
     )
     trace = {
         element_id: Quote(source_id=UUID(value["source_id"]), quote=value["quote"])
-        for element_id, value in row.trace.items()
+        for element_id, value in (row.trace if trace_json is None else trace_json).items()
     }
     return Version(
         id=row.id,
@@ -194,6 +201,31 @@ def _version(row: DiagramVersionRow, xml: str) -> Version:
         lanes=list(row.lanes),
         run_id=row.run_id,
         actor_email=row.actor_email,
+        label=row.label,
+        checkpoint=row.checkpoint,
+        session_started_at=row.session_started_at,
+        updated_at=row.updated_at,
+        saved_count=row.saved_count,
+    )
+
+
+def _summary(row: DiagramVersionRow) -> VersionSummary:
+    return VersionSummary(
+        id=row.id,
+        project_id=row.project_id,
+        number=row.number,
+        origin=VersionOrigin(row.origin),
+        created_at=row.created_at,
+        diff=VersionDiff(**row.diff),
+        lint_count=row.lint_count,
+        assumption_count=row.assumption_count,
+        run_id=row.run_id,
+        actor_email=row.actor_email,
+        label=row.label,
+        checkpoint=row.checkpoint,
+        session_started_at=row.session_started_at or row.created_at,
+        updated_at=row.updated_at or row.created_at,
+        saved_count=row.saved_count,
     )
 
 
@@ -677,13 +709,112 @@ class SqlVersionRepository:
             lanes=item.lanes,
             run_id=item.run_id,
             actor_email=item.actor_email,
+            label=item.label,
+            checkpoint=item.checkpoint,
+            session_started_at=item.session_started_at,
+            updated_at=item.updated_at,
+            saved_count=item.saved_count,
+            lint_count=len(item.report.lint),
+            assumption_count=len(item.report.assumptions),
         )
 
     async def add(self, version: Version) -> None:
         async with self.sessions.begin() as session:
             row = self._row(version)
             await self._pack_row(session, row)
+            await self._share_metadata(session, row)
             session.add(row)
+
+    async def replace(self, old_id: UUID, version: Version) -> None:
+        async with self.sessions.begin() as session:
+            await session.execute(delete(DiagramVersionRow).where(DiagramVersionRow.id == old_id))
+            row = self._row(version)
+            await self._pack_row(session, row)
+            await self._share_metadata(session, row)
+            session.add(row)
+
+    async def has_dependants(self, version_id: UUID) -> bool:
+        async with self.sessions() as session:
+            based = await session.scalar(
+                select(DiagramVersionRow.id)
+                .where(DiagramVersionRow.base_version_id == version_id)
+                .limit(1)
+            )
+            if based is not None:
+                return True
+            run = await session.scalar(
+                select(RunRow.id).where(RunRow.version_id == version_id).limit(1)
+            )
+            return run is not None
+
+    async def mark_checkpoint(self, version_id: UUID, label: str | None) -> Version | None:
+        async with self.sessions.begin() as session:
+            row = await session.get(DiagramVersionRow, version_id)
+            if row is None:
+                return None
+            row.checkpoint = True
+            if label is not None:
+                row.label = label or None
+            await session.flush()
+            return await self._load(session, row)
+
+    @staticmethod
+    async def _metadata(
+        session: AsyncSession, row: DiagramVersionRow
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Цитаты и отчёт версии; общие с прошлой версией читаются у ближайшего владельца."""
+        trace, report = row.trace, row.report
+        for inherited, column, name in (
+            (row.trace_inherited, DiagramVersionRow.trace, "trace"),
+            (row.report_inherited, DiagramVersionRow.report, "report"),
+        ):
+            if not inherited:
+                continue
+            flag = (
+                DiagramVersionRow.trace_inherited
+                if name == "trace"
+                else DiagramVersionRow.report_inherited
+            )
+            owner = await session.scalar(
+                select(column)
+                .where(
+                    DiagramVersionRow.project_id == row.project_id,
+                    DiagramVersionRow.number < row.number,
+                    flag.is_(False),
+                )
+                .order_by(DiagramVersionRow.number.desc())
+                .limit(1)
+            )
+            if name == "trace":
+                trace = owner or {}
+            else:
+                report = owner or {"xsd_valid": False, "lint": [], "assumptions": []}
+        return trace, report
+
+    async def _load(self, session: AsyncSession, row: DiagramVersionRow) -> Version:
+        trace, report = await self._metadata(session, row)
+        return _version(row, await self._xml(session, row), trace, report)
+
+    async def _share_metadata(self, session: AsyncSession, row: DiagramVersionRow) -> None:
+        """Ручная правка с теми же цитатами/отчётом, что у прошлой версии, их не копирует.
+
+        Замер и обоснование — ADR-0010: JSONB метаданных весит в разы больше сжатой дельты XML.
+        """
+        if row.origin != VersionOrigin.MANUAL.value or row.number <= 1:
+            return
+        previous = await session.scalar(
+            select(DiagramVersionRow).where(
+                DiagramVersionRow.project_id == row.project_id,
+                DiagramVersionRow.number == row.number - 1,
+            )
+        )
+        if previous is None:
+            return
+        trace, report = await self._metadata(session, previous)
+        if row.trace == trace:
+            row.trace, row.trace_inherited = {}, True
+        if row.report == report:
+            row.report, row.report_inherited = {}, True
 
     @staticmethod
     def _decode_chain(rows: list[DiagramVersionRow], target: DiagramVersionRow) -> str:
@@ -809,7 +940,37 @@ class SqlVersionRepository:
     async def get(self, version_id: UUID) -> Version | None:
         async with self.sessions() as session:
             row = await session.get(DiagramVersionRow, version_id)
-            return _version(row, await self._xml(session, row)) if row else None
+            return await self._load(session, row) if row else None
+
+    async def by_number(self, project_id: UUID, number: int) -> Version | None:
+        async with self.sessions() as session:
+            row = await session.scalar(
+                select(DiagramVersionRow).where(
+                    DiagramVersionRow.project_id == project_id,
+                    DiagramVersionRow.number == number,
+                )
+            )
+            return await self._load(session, row) if row else None
+
+    async def list_page(
+        self, project_id: UUID, *, limit: int, before: int | None = None
+    ) -> list[VersionSummary]:
+        async with self.sessions() as session:
+            query = (
+                select(DiagramVersionRow)
+                .options(
+                    defer(DiagramVersionRow.bpmn_xml, raiseload=True),
+                    defer(DiagramVersionRow.packed_xml, raiseload=True),
+                    defer(DiagramVersionRow.trace, raiseload=True),
+                    defer(DiagramVersionRow.report, raiseload=True),
+                )
+                .where(DiagramVersionRow.project_id == project_id)
+                .order_by(DiagramVersionRow.number.desc())
+                .limit(limit)
+            )
+            if before is not None:
+                query = query.where(DiagramVersionRow.number < before)
+            return [_summary(row) for row in (await session.scalars(query)).all()]
 
     async def list_by_project(self, project_id: UUID, *, include_xml: bool = True) -> list[Version]:
         async with self.sessions() as session:
@@ -830,8 +991,23 @@ class SqlVersionRepository:
                     .order_by(DiagramVersionRow.number.desc())
                 )
             ).all()
+            # Строки от новых к старым: общие метаданные берём у ближайшей старшей строки-владельца.
+            shared: dict[UUID, tuple[dict[str, Any], dict[str, Any]]] = {}
+            trace_owner: dict[str, Any] = {}
+            report_owner: dict[str, Any] = {}
+            for row in reversed(rows):
+                if not row.trace_inherited:
+                    trace_owner = row.trace
+                if not row.report_inherited:
+                    report_owner = row.report
+                shared[row.id] = (trace_owner, report_owner)
             return [
-                _version(row, await self._xml(session, row) if include_xml else "") for row in rows
+                _version(
+                    row,
+                    await self._xml(session, row) if include_xml else "",
+                    *shared[row.id],
+                )
+                for row in rows
             ]
 
     async def latest(self, project_id: UUID) -> Version | None:
@@ -842,7 +1018,7 @@ class SqlVersionRepository:
                 .order_by(DiagramVersionRow.number.desc())
                 .limit(1)
             )
-            return _version(row, await self._xml(session, row)) if row else None
+            return await self._load(session, row) if row else None
 
 
 class SqlLlmCallRepository:

@@ -58,7 +58,11 @@ def build_version(
     created_at: datetime,
     run_id: UUID | None = None,
     actor_email: str | None = None,
+    xsd_checked: bool = False,
+    session_started_at: datetime | None = None,
+    saved_count: int = 1,
 ) -> Version:
+    """`xsd_checked`: вызывающий уже прогнал XSD; повторная проверка (самая дорогая) не нужна."""
     document = parse_bpmn(xml)
     previous = parse_bpmn(previous_xml) if previous_xml is not None else None
     present = document.all_element_ids
@@ -71,7 +75,7 @@ def build_version(
         xml=xml,
         diff=diff_documents(previous, document),
         report=Report(
-            xsd_valid=xsd_valid and not xsd_errors(xml),
+            xsd_valid=xsd_valid and (xsd_checked or not xsd_errors(xml)),
             lint=lint,
             assumptions=assumption_marks(questions, document),
         ),
@@ -79,4 +83,7 @@ def build_version(
         lanes=[lane.name for lane in document.lanes if lane.name],
         run_id=run_id,
         actor_email=actor_email,
+        session_started_at=session_started_at or created_at,
+        updated_at=created_at,
+        saved_count=saved_count,
     )

@@ -615,11 +615,31 @@ export interface paths {
         };
         /**
          * List Versions
-         * @description Версии без XML, последняя — первой.
+         * @description Страница истории без XML, цитат и отчёта: новые первыми, дальше — по `next_before`.
          */
         get: operations["list_versions"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/versions/{version_id}/checkpoint": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Checkpoint Version
+         * @description Закрепить версию как контрольную точку: автосохранения в неё больше не вливаются.
+         */
+        post: operations["checkpoint_version"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1042,6 +1062,14 @@ export interface components {
         ChecklistUpdate: {
             /** Hidden */
             hidden: boolean;
+        };
+        /** CheckpointRequest */
+        CheckpointRequest: {
+            /**
+             * Label
+             * @description Имя контрольной точки; пустое — без имени
+             */
+            label?: string | null;
         };
         /** CollaborationTicket */
         CollaborationTicket: {
@@ -1989,10 +2017,22 @@ export interface components {
              */
             actor_email?: string | null;
             /**
+             * Assumption Count
+             * @description Элементов на допущениях
+             */
+            assumption_count: number;
+            /**
+             * Checkpoint
+             * @description Версия закреплена и не принимает автосохранения
+             */
+            checkpoint: boolean;
+            /**
              * Created At
              * Format: date-time
+             * @description Начало сессии правок (для сборки — момент сборки)
              */
             created_at: string;
+            /** @description Сравнение с предыдущей версией */
             diff: components["schemas"]["VersionDiff"];
             /**
              * Id
@@ -2000,10 +2040,20 @@ export interface components {
              */
             id: string;
             /**
+             * Label
+             * @description Имя контрольной точки
+             */
+            label?: string | null;
+            /**
              * Lanes
              * @description Названия дорожек
              */
             lanes: string[];
+            /**
+             * Lint Count
+             * @description Замечаний bpmnlint
+             */
+            lint_count: number;
             /** Number */
             number: number;
             origin: components["schemas"]["VersionOrigin"];
@@ -2016,12 +2066,29 @@ export interface components {
             /** Run Id */
             run_id?: string | null;
             /**
+             * Saved Count
+             * @description Сколько автосохранений влито в версию
+             */
+            saved_count: number;
+            /**
+             * Session Started At
+             * Format: date-time
+             * @description Начало сессии правок
+             */
+            session_started_at: string;
+            /**
              * Trace
              * @description Трассировка: id элемента схемы → цитата
              */
             trace: {
                 [key: string]: components["schemas"]["Quote"];
             };
+            /**
+             * Updated At
+             * Format: date-time
+             * @description Последнее автосохранение, влитое в версию
+             */
+            updated_at: string;
         };
         /** VersionDetail */
         VersionDetail: {
@@ -2031,10 +2098,22 @@ export interface components {
              */
             actor_email?: string | null;
             /**
+             * Assumption Count
+             * @description Элементов на допущениях
+             */
+            assumption_count: number;
+            /**
+             * Checkpoint
+             * @description Версия закреплена и не принимает автосохранения
+             */
+            checkpoint: boolean;
+            /**
              * Created At
              * Format: date-time
+             * @description Начало сессии правок (для сборки — момент сборки)
              */
             created_at: string;
+            /** @description Сравнение с предыдущей версией */
             diff: components["schemas"]["VersionDiff"];
             /**
              * Id
@@ -2042,10 +2121,20 @@ export interface components {
              */
             id: string;
             /**
+             * Label
+             * @description Имя контрольной точки
+             */
+            label?: string | null;
+            /**
              * Lanes
              * @description Названия дорожек
              */
             lanes: string[];
+            /**
+             * Lint Count
+             * @description Замечаний bpmnlint
+             */
+            lint_count: number;
             /** Number */
             number: number;
             origin: components["schemas"]["VersionOrigin"];
@@ -2058,12 +2147,29 @@ export interface components {
             /** Run Id */
             run_id?: string | null;
             /**
+             * Saved Count
+             * @description Сколько автосохранений влито в версию
+             */
+            saved_count: number;
+            /**
+             * Session Started At
+             * Format: date-time
+             * @description Начало сессии правок
+             */
+            session_started_at: string;
+            /**
              * Trace
              * @description Трассировка: id элемента схемы → цитата
              */
             trace: {
                 [key: string]: components["schemas"]["Quote"];
             };
+            /**
+             * Updated At
+             * Format: date-time
+             * @description Последнее автосохранение, влитое в версию
+             */
+            updated_at: string;
             /**
              * Xml
              * @description BPMN 2.0 XML с координатами (DI)
@@ -2091,6 +2197,19 @@ export interface components {
          * @enum {string}
          */
         VersionOrigin: "generated" | "manual";
+        /** VersionPage */
+        VersionPage: {
+            /**
+             * Items
+             * @description Версии по убыванию номера
+             */
+            items: components["schemas"]["VersionSummary"][];
+            /**
+             * Next Before
+             * @description Значение `before` для следующей страницы; null — конец истории
+             */
+            next_before?: number | null;
+        };
         /** VersionReport */
         VersionReport: {
             /** Assumptions */
@@ -2099,6 +2218,77 @@ export interface components {
             lint: components["schemas"]["LintIssue"][];
             /** Xsd Valid */
             xsd_valid: boolean;
+        };
+        /**
+         * VersionSummary
+         * @description Строка истории: без XML, цитат и полного отчёта проверки.
+         */
+        VersionSummary: {
+            /**
+             * Actor Email
+             * @description Автор версии; null для старых записей
+             */
+            actor_email?: string | null;
+            /**
+             * Assumption Count
+             * @description Элементов на допущениях
+             */
+            assumption_count: number;
+            /**
+             * Checkpoint
+             * @description Версия закреплена и не принимает автосохранения
+             */
+            checkpoint: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Начало сессии правок (для сборки — момент сборки)
+             */
+            created_at: string;
+            /** @description Сравнение с предыдущей версией */
+            diff: components["schemas"]["VersionDiff"];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Label
+             * @description Имя контрольной точки
+             */
+            label?: string | null;
+            /**
+             * Lint Count
+             * @description Замечаний bpmnlint
+             */
+            lint_count: number;
+            /** Number */
+            number: number;
+            origin: components["schemas"]["VersionOrigin"];
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Run Id */
+            run_id?: string | null;
+            /**
+             * Saved Count
+             * @description Сколько автосохранений влито в версию
+             */
+            saved_count: number;
+            /**
+             * Session Started At
+             * Format: date-time
+             * @description Начало сессии правок
+             */
+            session_started_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             * @description Последнее автосохранение, влитое в версию
+             */
+            updated_at: string;
         };
         /** Body_auth:session.login */
         login: {
@@ -4202,7 +4392,11 @@ export interface operations {
     };
     list_versions: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                /** @description Только номера меньше этого */
+                before?: number | null;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -4217,11 +4411,83 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Version"][];
+                    "application/json": components["schemas"]["VersionPage"];
                 };
             };
             /** @description Требуется вход в аккаунт */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Не найдено */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ссылка истекла либо автор удалил проект */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoneErrorResponse"];
+                };
+            };
+            /** @description Некорректные данные */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    checkpoint_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckpointRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Version"];
+                };
+            };
+            /** @description Требуется вход в аккаунт */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Недостаточно прав для операции */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

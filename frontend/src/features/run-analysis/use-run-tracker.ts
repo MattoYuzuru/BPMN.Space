@@ -11,6 +11,7 @@ import {
   type RunEvent,
   useRunStore,
 } from '@/entities/run'
+import { forgetRun, rememberedRunId } from '@/entities/run/last-run'
 import { needsLogin, sessionQueryOptions } from '@/entities/session'
 import { cacheVersion, type VersionSummary, versionLabel } from '@/entities/version'
 import { emitOnboardingSignal } from '@/shared/lib/onboarding-signals'
@@ -35,6 +36,29 @@ const FINISH_REFETCH_MS = 4000
 export function useRunTracker(projectId: string, activeRun: Run | null | undefined) {
   const client = useQueryClient()
   const track = useRunStore((state) => state.track)
+  const restored = useRunStore((state) => Boolean(state.views[projectId]))
+
+  // После перезагрузки сервер может не отдать active_run (запись ещё не в проекте): берём
+  // последний прогон этой вкладки и восстанавливаем карточку хода, включая ожидание.
+  useEffect(() => {
+    if (activeRun || restored) return
+    const runId = rememberedRunId(projectId)
+    if (!runId) return
+    let cancelled = false
+    void fetchRun(runId)
+      .then((run) => {
+        if (cancelled || useRunStore.getState().views[projectId]) return
+        if (run.status === 'succeeded' || run.status === 'failed' || run.status === 'cancelled') {
+          forgetRun(projectId)
+          return
+        }
+        track(run)
+      })
+      .catch(() => forgetRun(projectId))
+    return () => {
+      cancelled = true
+    }
+  }, [activeRun, projectId, restored, track])
   const apply = useRunStore((state) => state.apply)
   const observe = useRunStore((state) => state.observe)
   const unfinishedRunId = useRunStore((state) => {

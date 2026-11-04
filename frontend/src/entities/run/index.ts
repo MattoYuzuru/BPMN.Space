@@ -16,6 +16,7 @@ export {
   estimateIncomplete,
   estimateTokensText,
 } from './estimate'
+export { forgetRun, rememberedRunId, rememberRun } from './last-run'
 export {
   formatSummary,
   initialRunView,

@@ -7,20 +7,42 @@ from fastapi import APIRouter, Query, Request
 
 from app.api.access import (
     ApiScope,
+    ProjectRole,
     ResourceKind,
     ensure_project_access,
     ensure_resource_access,
     require_scope,
     require_token_scope,
+    review_lane_ids,
 )
 from app.api.auth import OptionalUserDep
 from app.api.deps import ContainerDep
 from app.api.schemas.common import errors
 from app.api.schemas.questions import Question, QuestionActionRequest, QuestionAnswerCreate
-from app.domain.models import QuestionActionKind, QuestionCategory, QuestionStatus
+from app.domain.models import (
+    ANSWER_VIA_AGENT,
+    QuestionActionKind,
+    QuestionCategory,
+    QuestionStatus,
+)
 from app.domain.onboarding import ChecklistItem
+from app.services.api_tokens import current_api_token
+from app.services.errors import NotFoundError
 
 router = APIRouter(tags=["questions"])
+
+
+async def _ensure_question_in_review_scope(
+    request: Request, container: ContainerDep, question_id: UUID
+) -> None:
+    """Вопрос вне области проверки неотличим от чужого: `404`, без раскрытия текста."""
+    lanes = review_lane_ids(request)
+    if lanes is None:
+        return
+    project_id = await container.access.resource_project_id(ResourceKind.QUESTION, question_id)
+    question = await container.questions.get(question_id)
+    if not await container.review.question_in_scope(project_id, question, lanes):
+        raise NotFoundError("Вопрос не найден")
 
 
 @router.get(
@@ -37,8 +59,11 @@ async def list_questions(  # noqa: PLR0917 — сигнатура FastAPI-энд
     category: Annotated[QuestionCategory | None, Query()] = None,
 ) -> list[Question]:
     """Вопросы проекта: `category=technical` — отдельная вкладка технических вопросов."""
-    await ensure_project_access(request, container, project_id, user, write=False)
+    role = await ensure_project_access(request, container, project_id, user, write=False)
     questions = await container.questions.list(project_id, status=status, category=category)
+    lanes = review_lane_ids(request)
+    if lanes is not None and role is ProjectRole.REVIEWER:
+        questions = await container.review.filter_questions(project_id, questions, lanes)
     return [Question.model_validate(q) for q in questions]
 
 
@@ -57,9 +82,23 @@ async def answer_question(
     """Ответ создаёт источник `kind=answer`; вопрос становится `answered`.
     Следующий прогон подтвердит ответ (`resolved`) или вернёт вопрос (`open`)."""
     await ensure_resource_access(
-        request, container, question_id, user, resource=ResourceKind.QUESTION, write=True
+        request,
+        container,
+        question_id,
+        user,
+        resource=ResourceKind.QUESTION,
+        write=True,
+        allow_reviewer=True,
     )
-    answered = await container.questions.answer(question_id, text=body.text)
+    await _ensure_question_in_review_scope(request, container, question_id)
+    token = current_api_token(request)
+    answered = await container.questions.answer(
+        question_id,
+        text=body.text,
+        via=ANSWER_VIA_AGENT if token is not None else None,
+        via_name=token.name if token is not None else None,
+        share_link_id=token.share_link_id if token is not None else None,
+    )
     await container.onboarding.record(user.id if user else None, ChecklistItem.QUESTION_ANSWERED)
     return Question.model_validate(answered)
 
@@ -76,9 +115,12 @@ async def ignore_question(
     user: OptionalUserDep,
 ) -> Question:
     """Принять допущение: вопрос `ignored`, допущение попадёт в схему и отчёт."""
+    # Проверяющий отвечает на вопросы области, но не принимает допущения за владельца:
+    # у ignore нет провенанса ссылки, и решение о процессе остаётся участникам проекта.
     await ensure_resource_access(
         request, container, question_id, user, resource=ResourceKind.QUESTION, write=True
     )
+    await _ensure_question_in_review_scope(request, container, question_id)
     ignored = await container.questions.ignore(question_id)
     await container.onboarding.record(user.id if user else None, ChecklistItem.ASSUMPTION_ACCEPTED)
     return Question.model_validate(ignored)

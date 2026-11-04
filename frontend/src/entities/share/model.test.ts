@@ -4,10 +4,13 @@ import {
   defaultExpiryDays,
   expiryForRole,
   expiryOptions,
+  linkScopeText,
   linkState,
+  SHARE_ROLES,
   type SharedProject,
   type ShareLink,
   sharePageState,
+  shareTokenFromPath,
   shareUrl,
 } from './model'
 
@@ -22,6 +25,14 @@ const link = (patch: Partial<ShareLink> = {}): ShareLink => ({
 })
 
 describe('сроки доступа', () => {
+  it('все три роли: переключатель и одинаковые сроки', () => {
+    expect(SHARE_ROLES).toEqual(['viewer', 'editor', 'reviewer'])
+    const reviewer = expiryOptions('reviewer').map((option) => Number(option.value))
+    expect(reviewer).toEqual([7, 30, 365, 0])
+    expect(defaultExpiryDays('reviewer')).toBe(30)
+    expect(expiryForRole('reviewer', 365)).toBe(365)
+  })
+
   it('просмотр и редактирование предлагают одинаковые варианты', () => {
     const editor = expiryOptions('editor').map((option) => Number(option.value))
     const viewer = expiryOptions('viewer').map((option) => Number(option.value))
@@ -52,6 +63,20 @@ describe('shareUrl', () => {
     expect(shareUrl('https://arch.example', '/share/abc')).toBe('https://arch.example/share/abc')
     expect(shareUrl('https://arch.example/', '/share/abc')).toBe('https://arch.example/share/abc')
   })
+
+  it('достаёт секрет из одноразового пути — с query и без', () => {
+    expect(shareTokenFromPath('/share/abc')).toBe('abc')
+    expect(shareTokenFromPath('/share/abc?from=mail')).toBe('abc')
+    expect(shareTokenFromPath('')).toBe('')
+  })
+})
+
+describe('область проверки', () => {
+  it('пустой список дорожек — весь проект, непустой — выбранные дорожки', () => {
+    expect(linkScopeText(undefined)).toBe('Весь проект')
+    expect(linkScopeText([])).toBe('Весь проект')
+    expect(linkScopeText(['Lane_1', 'Lane_2'])).toBe('Выбранные дорожки (2)')
+  })
 })
 
 describe('состояние и список ссылок', () => {
@@ -73,7 +98,7 @@ describe('состояние и список ссылок', () => {
 })
 
 describe('sharePageState', () => {
-  const shared = (role: 'viewer' | 'editor') =>
+  const shared = (role: 'viewer' | 'editor' | 'reviewer') =>
     ({ role, editor_requires_account: role === 'editor', detail: { id: 'p1' } }) as SharedProject
   const failure = (status: number) => ({
     status: 'error' as const,
@@ -87,6 +112,11 @@ describe('sharePageState', () => {
   it('ссылка на просмотр открывается и гостю, и вошедшему', () => {
     const result = sharePageState({ status: 'success', data: shared('viewer') })
     expect(result.kind).toBe('viewer')
+  })
+
+  it('ссылка проверки — отдельное состояние, не приглашение редактора', () => {
+    const result = sharePageState({ status: 'success', data: shared('reviewer') })
+    expect(result.kind).toBe('review')
   })
 
   it('приглашение редактора: вошедший получает карточку принятия, гость — вход (401)', () => {

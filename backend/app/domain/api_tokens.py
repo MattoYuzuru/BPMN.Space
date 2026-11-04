@@ -80,6 +80,13 @@ class ApiToken:
     created_at: datetime
     last_used_at: datetime | None = None
     revoked_at: datetime | None = None
+    # Токен проверки (RFC-0007 шаг 3): выдан по ссылке reviewer и живёт ровно её область.
+    # Ссылка проверяется при каждом запросе: отзыв или истечение ссылки отзывает доступ.
+    share_link_id: UUID | None = None
+    lane_ids: tuple[str, ...] | None = None
+
+    def is_review(self) -> bool:
+        return self.share_link_id is not None
 
     def is_expired(self, now: datetime) -> bool:
         return self.expires_at <= now

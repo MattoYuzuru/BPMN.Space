@@ -163,6 +163,8 @@ class Quote:
 
 #: Провенанс ответа: его записал внешний агент владельца токена (RFC-0007), а не человек.
 ANSWER_VIA_AGENT = "agent"
+#: Ответ дан проверяющим по ссылке проверки (RFC-0007, шаг 3): без токена и без агента.
+ANSWER_VIA_REVIEW = "review"
 
 
 @dataclass(slots=True, kw_only=True)
@@ -173,6 +175,8 @@ class Answer:
     # Сервер не может проверить, читал ли человек ответ перед отправкой, и не делает вид, что может.
     via: str | None = None
     via_name: str | None = None
+    # Ответ дан по ссылке проверки (RFC-0007, шаг 3): id ссылки, если токен агента выдан ею.
+    share_link_id: UUID | None = None
 
 
 @dataclass(slots=True, kw_only=True)

@@ -14,7 +14,13 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.context import Context
 from mcp.server.mcpserver.exceptions import ResourceNotFoundError
 
-from app.mcp.auth import as_tool_error, begin_operation, ensure_project, resource_policy
+from app.mcp.auth import (
+    as_tool_error,
+    begin_operation,
+    ensure_project,
+    resource_policy,
+    review_scope,
+)
 from app.mcp.diagram import latest_version
 from app.mcp.serializers import question_view, uuid_or_404
 from app.services.errors import NotFoundError, ServiceError
@@ -69,6 +75,9 @@ def register_resources(server: MCPServer) -> None:
         try:
             await ensure_project(identity, pid, write=False)
             questions = await identity.container.questions.list(pid, status=None)
+            scope = review_scope(identity)
+            if scope is not None:
+                questions = await identity.container.review.filter_questions(pid, questions, scope)
         except NotFoundError as error:
             raise ResourceNotFoundError(error.message) from None
         except ServiceError as error:

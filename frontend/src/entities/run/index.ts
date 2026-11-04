@@ -18,8 +18,14 @@ export {
 } from './estimate'
 export { forgetRun, rememberedRunId, rememberRun } from './last-run'
 export {
+  AGENT_MODE,
+  AGENT_STEP_PRESETS,
+  agentSteps,
+  DEFAULT_AGENT_MAX_STEPS,
   formatSummary,
   initialRunView,
+  isAgentRun,
+  PIPELINE_MODE,
   RUN_MODE_LABEL,
   type Run,
   type RunBudget,
@@ -28,6 +34,8 @@ export {
   type RunEvent,
   type RunEventType,
   type RunMode,
+  type RunProfile,
+  type RunProfileMode,
   type RunStage,
   type RunSummary,
   type RunView,

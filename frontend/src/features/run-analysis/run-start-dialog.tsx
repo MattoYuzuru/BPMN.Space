@@ -10,6 +10,8 @@ import {
   useModelChoiceStore,
 } from '@/entities/llm-credential'
 import {
+  AGENT_STEP_PRESETS,
+  DEFAULT_AGENT_MAX_STEPS,
   estimateCallsText,
   estimateCost,
   estimateCurrency,
@@ -19,12 +21,14 @@ import {
   RUN_MODE_LABEL,
   type RunBudget,
   type RunMode,
+  type RunProfileMode,
   useRunEstimate,
   useStartRun,
 } from '@/entities/run'
 import { useCurrentUser } from '@/entities/session'
 import { ModelPicker } from '@/features/model-picker/model-picker'
-import { errorMessage } from '@/shared/api/client'
+import { AgentModeHint } from '@/features/onboarding/agent-mode-hint'
+import { ApiError, errorMessage } from '@/shared/api/client'
 import { cn } from '@/shared/lib/cn'
 import { formatDate, formatMoneyRange, formatNumberRange } from '@/shared/lib/format'
 import { parseMoneyInput, parseTokensInput } from '@/shared/lib/number-input'
@@ -42,6 +46,7 @@ import {
   Input,
   SegmentedControl,
   Skeleton,
+  Tag,
 } from '@/shared/ui'
 
 export interface RunStartDialogProps {
@@ -58,6 +63,14 @@ interface BudgetFields {
 }
 
 const EMPTY_BUDGET: BudgetFields = { cost: '', tokens: '' }
+
+/** «Лимит шагов»: целое 1–200; иначе — понятная ошибка, а не молчаливое обрезание. */
+export function parseAgentSteps(value: string): number | null {
+  const trimmed = value.trim()
+  if (!/^\d+$/.test(trimmed)) return null
+  const steps = Number.parseInt(trimmed, 10)
+  return steps >= 1 && steps <= 200 ? steps : null
+}
 
 export interface ParsedBudget {
   budget: RunBudget | null
@@ -116,6 +129,20 @@ export function RunStartDialog({
 
   const [mode, setMode] = useState<RunMode>(initialMode)
   const [fields, setFields] = useState<BudgetFields>(EMPTY_BUDGET)
+  const [profileMode, setProfileMode] = useState<RunProfileMode>('pipeline')
+  const [steps, setSteps] = useState(String(DEFAULT_AGENT_MAX_STEPS))
+  const maxSteps = parseAgentSteps(steps)
+  // Сервер не отдаёт LLM_AGENT_MODE: правду узнаём из оценка/запуска (422). Блокируем только
+  // явно неподходящую выбранную модель; без своего ключа возможен операторский ключ сервера.
+  const modelBlocksAgent = Boolean(resolved && capabilities && capabilities.tools === false)
+  const agentReason = modelBlocksAgent
+    ? 'Эта модель не поддерживает инструменты, поэтому агентный режим недоступен. Выберите другую модель.'
+    : !resolved
+      ? 'Без своего ключа сервер возьмёт модель оператора: режим доступен, если она умеет инструменты. Сервер проверит при запуске.'
+      : capabilities === undefined
+        ? 'Возможности модели ещё загружаются — сервер проверит режим при запуске.'
+        : null
+  const canUseAgent = !modelBlocksAgent
   const parsedBudget = useMemo(() => parseBudgetFields(fields), [fields])
   const budget = parsedBudget.budget
   const estimate = useRunEstimate(projectId)
@@ -126,10 +153,22 @@ export function RunStartDialog({
     if (open) setMode(initialMode)
   }, [open, initialMode])
 
-  // Новый диалог — чистое поле бюджета: старый бюджет не должен незаметно применяться.
+  // Новый диалог — чистое поле бюджета и без старых ошибок прошлого запуска/оценки.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: сброс только в момент открытия
   useEffect(() => {
-    if (open) setFields(EMPTY_BUDGET)
+    if (!open) return
+    setFields(EMPTY_BUDGET)
+    setProfileMode('pipeline')
+    setSteps(String(DEFAULT_AGENT_MAX_STEPS))
+    start.reset()
+    estimate.reset()
   }, [open])
+
+  // Агентный режим недоступен — возвращаемся к конвейеру, объяснение уже под переключателем.
+  useEffect(() => {
+    if (!open || canUseAgent || profileMode === 'pipeline') return
+    setProfileMode('pipeline')
+  }, [open, canUseAgent, profileMode])
 
   const request = useMemo(
     () => ({
@@ -138,21 +177,45 @@ export function RunStartDialog({
       profile: {
         ...(effort ? { effort } : {}),
         ...(budget ? { budget } : {}),
+        mode: profileMode,
+        ...(profileMode === 'agent' && maxSteps ? { max_steps: maxSteps } : {}),
       },
     }),
-    [mode, resolved, effort, budget],
+    [mode, resolved, effort, budget, profileMode, maxSteps],
   )
 
   // Оценка — POST, поэтому запускаем её эффектом на смену профиля, с короткой паузой.
+  // Неверный лимит шагов не должен уходить на сервер «без лимита»: ждём исправления поля.
   useEffect(() => {
-    if (!open) return
+    if (!open || (profileMode === 'agent' && maxSteps === null)) return
     const timer = window.setTimeout(() => estimate.mutate(request), ESTIMATE_DEBOUNCE_MS)
     return () => window.clearTimeout(timer)
-  }, [open, request, estimate.mutate])
+  }, [open, request, estimate.mutate, profileMode, maxSteps])
 
+  const agentMode = profileMode === 'agent'
+  const stepsInvalid = agentMode && maxSteps === null
+  const startError =
+    start.error instanceof ApiError
+      ? { status: start.error.status, message: errorMessage(start.error) }
+      : start.error
+        ? { status: 0, message: errorMessage(start.error) }
+        : null
+  const agentRejection =
+    startError !== null &&
+    agentMode &&
+    startError.status === 422 &&
+    /agent|агент|LLM_AGENT|инструмент/i.test(startError.message)
   const submit = () => {
     if (!parsedBudget.valid) return
-    start.mutate({ mode, budget }, { onSuccess: () => onOpenChange(false) })
+    start.mutate(
+      {
+        mode,
+        budget,
+        agentMode,
+        ...(agentMode ? { maxSteps } : { maxSteps: null }),
+      },
+      { onSuccess: () => onOpenChange(false) },
+    )
   }
 
   const labels = RUN_MODE_LABEL[mode]
@@ -171,7 +234,7 @@ export function RunStartDialog({
               variant="primary"
               leadingIcon={mode === 'build' ? 'diagram' : 'sparkles'}
               loading={start.isPending}
-              disabled={!parsedBudget.valid}
+              disabled={stepsInvalid || !parsedBudget.valid}
               onClick={submit}
               {...tourAnchor(TOUR_ANCHORS.runStartConfirm)}
             >
@@ -204,6 +267,90 @@ export function RunStartDialog({
               </span>
             )}
           </Card>
+
+          <div
+            className="flex flex-col gap-3"
+            {...tourAnchor(TOUR_ANCHORS.runAgent)}
+            data-testid="run-agent"
+          >
+            <div className="flex flex-col gap-1">
+              <span className="type-label text-fg">Режим работы</span>
+              <span className="type-caption text-fg-muted">
+                Конвейер идёт по этапам и дешевле. Агентный — модель сама читает источники
+                инструментами, гибче на сложных материалах, но дороже; шаги и бюджет ограничены.
+              </span>
+            </div>
+            <SegmentedControl<RunProfileMode>
+              aria-label="Режим работы"
+              aria-describedby={agentReason ? 'agent-mode-reason' : undefined}
+              value={profileMode}
+              onValueChange={setProfileMode}
+              options={[
+                { value: 'pipeline', label: 'Конвейер', icon: 'route', disabled: false },
+                {
+                  value: 'agent',
+                  label: 'Агентный',
+                  icon: 'bolt',
+                  disabled: !canUseAgent,
+                },
+              ]}
+            />
+            {agentReason && (
+              <span id="agent-mode-reason" className="type-caption text-fg-muted">
+                {agentReason}
+              </span>
+            )}
+            <AgentModeHint enabled={canUseAgent} />
+            {profileMode === 'agent' && (
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap items-end gap-2">
+                  <Field
+                    label="Лимит шагов"
+                    hint="Ходов агента; не больше серверного потолка"
+                    error={stepsInvalid ? 'Введите целое число от 1 до 200' : undefined}
+                    className="w-36"
+                  >
+                    <Input
+                      inputMode="numeric"
+                      value={steps}
+                      placeholder="12"
+                      onChange={(event) => setSteps(event.target.value)}
+                    />
+                  </Field>
+                  <div className="flex flex-wrap gap-1">
+                    {AGENT_STEP_PRESETS.map((preset) => (
+                      <Button
+                        key={preset}
+                        size="sm"
+                        variant={maxSteps === preset ? 'secondary' : 'ghost'}
+                        onClick={() => setSteps(String(preset))}
+                      >
+                        {preset}
+                      </Button>
+                    ))}
+                  </div>
+                  <Tag icon="bolt">агент</Tag>
+                </div>
+                <span className="type-caption text-fg-muted">
+                  Достигнутый лимит — мягкая остановка «ждёт вашего действия», как при исчерпанном
+                  бюджете: можно поднять шаги или продолжить.
+                </span>
+              </div>
+            )}
+            {startError && agentMode && (
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-md bg-danger-subtle px-3 py-2.5 type-caption text-danger-fg"
+              >
+                <Icon name="alert-circle" size={14} className="mt-0.5 shrink-0" />
+                <span>
+                  {agentRejection
+                    ? `Сервер не разрешил агентный режим: ${startError.message} Выберите конвейер или другую модель.`
+                    : `Прогон не запущен: ${startError.message}`}
+                </span>
+              </div>
+            )}
+          </div>
 
           <div
             className="flex flex-col gap-3"
@@ -255,6 +402,7 @@ export function RunStartDialog({
               state={estimate}
               budget={budget}
               mode={mode}
+              agentMode={agentMode}
               onRetry={() => estimate.mutate(request)}
             />
           </div>
@@ -276,11 +424,13 @@ function EstimateBlock({
   state,
   budget,
   mode,
+  agentMode,
   onRetry,
 }: {
   state: ReturnType<typeof useRunEstimate>
   budget: RunBudget | null
   mode: RunMode
+  agentMode: boolean
   onRetry: () => void
 }) {
   if (state.isPending && !state.data) {
@@ -293,12 +443,22 @@ function EstimateBlock({
     )
   }
   if (state.isError) {
+    const rejection = errorMessage(state.error)
+    const agentRejected =
+      agentMode &&
+      state.error instanceof ApiError &&
+      state.error.status === 422 &&
+      /agent|агент|LLM_AGENT|инструмент/i.test(rejection)
     return (
       <Card variant="sunken" padding="sm" className="flex items-start gap-2">
         <Icon name="alert-circle" size={16} className="mt-0.5 shrink-0 text-danger-fg" />
         <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <p className="type-ui text-danger-fg">Оценку получить не удалось</p>
-          <p className="type-caption text-fg-muted">{errorMessage(state.error)}</p>
+          <p className="type-ui text-danger-fg">
+            {agentRejected ? 'Сервер не разрешил агентный режим' : 'Оценку получить не удалось'}
+          </p>
+          <p className="type-caption text-fg-muted">
+            {agentRejected ? `${rejection} Выберите конвейер или другой ключ/модель.` : rejection}
+          </p>
           <Button size="sm" variant="secondary" leadingIcon="refresh" onClick={onRetry}>
             Повторить
           </Button>

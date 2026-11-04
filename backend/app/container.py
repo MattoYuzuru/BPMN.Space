@@ -28,6 +28,7 @@ from app.ingest.frames import FrameExtractor
 from app.ingest.media import FfmpegRunner, MediaTranscriber
 from app.ingest.parsers import LocalDocumentParser
 from app.ingest.stt import MockSpeechToText, SpeechToText
+from app.llm.agent import AgentLimits
 from app.llm.client import LlmClient, LlmConfig
 from app.llm.factory import build_client, build_pipeline, call_knobs
 from app.llm.mock import MockPipeline
@@ -49,6 +50,7 @@ from app.services.model_resolver import ModelResolver
 from app.services.onboarding import OnboardingService
 from app.services.projects import ProjectService
 from app.services.questions import QuestionService
+from app.services.review import ReviewerService
 from app.services.runs import RunService
 from app.services.samples import SampleService
 from app.services.sharing import SharingService
@@ -179,6 +181,7 @@ class Container:
     api_tokens: ApiTokenService
     access: AccessService
     sharing: SharingService
+    review: ReviewerService
     onboarding: OnboardingService
     samples: SampleService
     realtime: RealtimeHub
@@ -259,6 +262,8 @@ def build_container(
         runtime=runtime,
         production=settings.is_production,
         server_max_effort=settings.llm_server_max_effort,
+        agent_enabled=settings.llm_agent_mode,
+        agent_max_steps=settings.llm_agent_max_steps,
     )
 
     def adapter_client(base_url: str, user_supplied: bool, timeout_sec: float) -> httpx.AsyncClient:
@@ -376,11 +381,18 @@ def build_container(
         progress=onboarding,
         broadcast=realtime.publish,
         technical=technical_questions,
+        agent_limits=AgentLimits(
+            max_steps=settings.llm_agent_max_steps,
+            read_max_chars=settings.llm_agent_read_max_chars,
+            search_limit=settings.llm_agent_search_limit,
+            search_snippet_chars=settings.llm_agent_search_snippet_chars,
+        ),
     )
     # Вопросу нужен прогон для действий «повторить» и «поднять бюджет» (циклической
     # зависимости нет: RunService получает сервис вопросов параметром).
     technical_questions.bind_run_actions(runs)
 
+    api_tokens = ApiTokenService(repos, runtime=runtime)
     return Container(
         settings=settings,
         repos=repos,
@@ -420,9 +432,10 @@ def build_container(
             adapter_client_factory=adapter_client_factory,
             anthropic_effort=settings.anthropic_effort_default(),
         ),
-        api_tokens=ApiTokenService(repos, runtime=runtime),
+        api_tokens=api_tokens,
         access=access,
         sharing=SharingService(access, runtime=runtime),
+        review=ReviewerService(repos, api_tokens=api_tokens, runtime=runtime),
         onboarding=onboarding,
         samples=SampleService(sources, samples=SAMPLES),
         realtime=realtime,

@@ -12,6 +12,8 @@ import { toast } from '@/shared/ui'
 export type Project = Schemas['Project']
 export type ProjectDetail = Schemas['ProjectDetail']
 export type ProjectPage = Schemas['ProjectPage']
+export type AgentActivity = Schemas['AgentActivity']
+export type AgentActivityEvent = Schemas['AgentActivityEvent']
 type ProjectScope = Schemas['ProjectScope']
 
 /** Размер страницы списка проектов: две-три «высоты экрана» карточек на широком мониторе. */
@@ -68,6 +70,24 @@ export function projectQueryOptions(projectId: string) {
       ),
     // Опрос только пока есть источники в обработке; остальное обновляют SSE и фокус окна.
     refetchInterval: (query) => (hasProcessingSources(query.state.data) ? 1500 : false),
+  })
+}
+
+/**
+ * Журнал активности агента в проекте (RFC-0007): материалы `origin=agent` и ответы с
+ * `answer.via=agent`. События собираются сервером из уже сохранённых данных; доступ — участникам.
+ */
+export function agentActivityQueryOptions(projectId: string) {
+  return queryOptions({
+    queryKey: [...projectKeys.detail(projectId), 'agent-activity'] as const,
+    queryFn: async ({ signal }): Promise<AgentActivity> =>
+      unwrap(
+        await api.GET('/api/v1/projects/{project_id}/agent-activity', {
+          params: { path: { project_id: projectId } },
+          signal,
+        }),
+      ),
+    staleTime: 15_000,
   })
 }
 

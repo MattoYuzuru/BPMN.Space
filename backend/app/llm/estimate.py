@@ -124,6 +124,9 @@ class EstimateInput:
     effort: str | None = None
     # Калибровка `count_tokens` по образцу текста; `None` — значение справочника.
     chars_per_token: float | None = None
+    # Агентный режим RFC-0004: один этап «агентные ходы» вместо этапов конвейера.
+    agent_mode: bool = False
+    agent_max_steps: int = 24
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,19 +195,32 @@ def estimate_run(inputs: EstimateInput) -> RunEstimate:
     effort_factor = EFFORT_OUTPUT_FACTOR.get(effort, 1.0)
 
     stages: list[StageEstimate] = []
-    stages.append(
-        _analysis_stage(
-            inputs,
-            total_tokens=total_tokens,
-            overhead=overhead,
-            fits=fits,
-            chunk_count=chunk_count,
-            effort_factor=effort_factor,
-            chars_per_token=chars_per_token,
-            prices=prices,
+    if inputs.agent_mode:
+        # Диапазон агентного прогона: от «прочитал оглавление и сдал» до лимита ходов.
+        stages.append(
+            _agent_stage(
+                inputs,
+                overhead=overhead,
+                total_tokens=total_tokens,
+                effort_factor=effort_factor,
+                chars_per_token=chars_per_token,
+                prices=prices,
+            )
         )
-    )
-    if inputs.mode is RunMode.BUILD:
+    else:
+        stages.append(
+            _analysis_stage(
+                inputs,
+                total_tokens=total_tokens,
+                overhead=overhead,
+                fits=fits,
+                chunk_count=chunk_count,
+                effort_factor=effort_factor,
+                chars_per_token=chars_per_token,
+                prices=prices,
+            )
+        )
+    if not inputs.agent_mode and inputs.mode is RunMode.BUILD:
         if not fits:
             stages.append(
                 _evidence_stage(
@@ -259,6 +275,11 @@ def estimate_run(inputs: EstimateInput) -> RunEstimate:
     notes = [
         "Оценка приблизительная: число запросов и длина ответов зависят от материалов и модели"
     ]
+    if inputs.agent_mode:
+        notes.append(
+            "Агентный режим: число ходов и объём чтения выбирает модель; верхняя граница "
+            "консервативная — лимит ходов, рост истории и максимальный ответ модели на каждом ходу"
+        )
     if inputs.questions:
         notes.append(f"Вопросов в проекте: {inputs.questions}; ответы и допущения идут в контекст")
     cost: CostRange | None = None
@@ -377,6 +398,49 @@ def _duration(calls: int, tokens_in: int, tokens_out: int) -> float:
         calls * CALL_BASE_SEC
         + tokens_in / PREFILL_TOKENS_PER_SEC
         + tokens_out / OUTPUT_TOKENS_PER_SEC
+    )
+
+
+def _agent_stage(
+    inputs: EstimateInput,
+    *,
+    overhead: int,
+    total_tokens: int,
+    effort_factor: float,
+    chars_per_token: float,
+    prices: ModelPrices | None,
+) -> StageEstimate:
+    """Агентные ходы (RFC-0004): от «оглавление и submit» до исчерпания лимита ходов.
+
+    Точное число ходов решает модель. Нижняя граница — два хода (оглавление и submit),
+    верхняя — `agent_max_steps`. В отличие от одного запроса конвейера, история агентного
+    цикла растёт: каждый следующий ход несёт предыдущие результаты инструментов и ответы
+    модели (аргументы `submit` — тоже выход). Поэтому верхняя граница входа одного хода —
+    весь бюджет источников плюс один ответ модели сверх него, а верхняя граница ответа —
+    максимальный ответ модели на каждом ходу. Оценка заведомо консервативна и честно
+    помечена приблизительной в `notes`.
+    """
+    steps = max(inputs.agent_max_steps, 2)
+    calls = IntRange(min=2, max=steps)
+    index_tokens = math.ceil(2_000 / chars_per_token)
+    budget_tokens = max(math.ceil(inputs.budget_chars / chars_per_token), 1)
+    history_tokens = min(total_tokens, budget_tokens) + inputs.json_max_tokens
+    per_call_in = IntRange(
+        min=overhead + index_tokens,
+        max=overhead + history_tokens + index_tokens,
+    )
+    # Выход этапа уже учитывает число ходов (cap × calls.max), вход — ниже через `_stage_tokens`.
+    tokens_out = _output_range(
+        per_call_in, calls, cap=inputs.json_max_tokens, effort_factor=effort_factor
+    )
+    tokens_in = _stage_tokens(per_call_in, calls)
+    return StageEstimate(
+        stage="agent",
+        label="Агентные ходы",
+        calls=calls,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        cost=_stage_cost(prices, tokens_in=tokens_in, tokens_out=tokens_out),
     )
 
 

@@ -22,6 +22,10 @@ export type StartRunInput =
   | ({ mode: RunMode } & RunOptions & {
         /** Бюджет в долларах и/или токенах: уходит в `RunCreate.profile.budget`. */
         budget?: components['schemas']['RunBudget'] | null
+        /** Режим RFC-0004: true — агентный, false — конвейер; не задан — серверное умолчание. */
+        agentMode?: boolean
+        /** Лимит ходов агента; уходит только с `agentMode=true`. */
+        maxSteps?: number | null
       })
 
 /** Запустить прогон (без кэша и уведомлений — для составных сценариев). */
@@ -108,17 +112,24 @@ export function useStartRun(projectId: string) {
       const caps = picked && cachedModelCapabilities(client, picked.credentialId, picked.model)
       const choice = choiceRequest(picked, caps || undefined)
       if (typeof input === 'string') return startRun(projectId, input, choice)
-      const { budget, profile: inputProfile, ...rest } = input
-      // Объектный вход (диалог оценки, перестройка) тоже обязан нести выбранный ключ и модель.
+      const { budget, agentMode, maxSteps, profile: inputProfile, ...rest } = input
+      const modeProfile =
+        agentMode === undefined
+          ? {}
+          : agentMode
+            ? { mode: 'agent' as const, ...(maxSteps ? { max_steps: maxSteps } : {}) }
+            : { mode: 'pipeline' as const }
       const profile = {
         ...(choice.profile ?? {}),
         ...(inputProfile ?? {}),
+        ...modeProfile,
         ...(budget ? { budget } : {}),
       }
+      const hasProfile = Object.keys(profile).length > 0
       return startRun(projectId, rest.mode, {
         ...choice,
         ...rest,
-        ...(Object.keys(profile).length > 0 ? { profile } : {}),
+        ...(hasProfile ? { profile } : {}),
       })
     },
     onSuccess: (run) => {

@@ -25,6 +25,7 @@ import {
   Input,
   Tooltip,
 } from '@/shared/ui'
+import { AgentActivityButton } from '@/widgets/agent-activity/agent-activity'
 import { AppHeader } from '@/widgets/app-header/app-header'
 import { SummaryChips } from '@/widgets/run-progress/summary-chips'
 import { useWorkspace, useWorkspaceUi } from '@/widgets/workspace/model'
@@ -236,6 +237,7 @@ function HeaderActions({ running }: { running: boolean }) {
         </>
       )}
       {canShare && <ShareProjectButton projectId={project.id} />}
+      <AgentActivityButton projectId={project.id} />
       <PresenceIndicator projectId={project.id} />
       <span aria-hidden="true" className="mx-1 h-5 w-px bg-border" />
       {canEdit && runDialog && (

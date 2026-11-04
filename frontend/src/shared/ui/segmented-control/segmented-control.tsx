@@ -21,6 +21,8 @@ export interface SegmentedControlProps<T extends string = string> {
   size?: 'sm' | 'md'
   /** Только иконки, подписи — в подсказках. */
   iconOnly?: boolean
+  /** Пояснение к выбранному режиму (почему вариант недоступен и т.п.). */
+  'aria-describedby'?: string
   className?: string
 }
 
@@ -36,6 +38,7 @@ export function SegmentedControl<T extends string>({
   iconOnly = false,
   className,
   'aria-label': ariaLabel,
+  'aria-describedby': ariaDescribedBy,
 }: SegmentedControlProps<T>) {
   const ref = useRef<HTMLDivElement>(null)
   const indicator = useActiveIndicator(ref, '[role="radio"][aria-checked="true"]')
@@ -47,6 +50,7 @@ export function SegmentedControl<T extends string>({
       orientation="horizontal"
       loop
       aria-label={ariaLabel}
+      aria-describedby={ariaDescribedBy}
       className={cn(
         'relative inline-flex w-fit shrink-0 items-center rounded-md border border-border bg-bg-subtle p-0.5',
         className,

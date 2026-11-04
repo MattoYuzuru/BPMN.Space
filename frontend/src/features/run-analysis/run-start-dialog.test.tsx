@@ -41,10 +41,61 @@ const run = {
   started_at: '2026-11-04T10:00:00Z',
 }
 
-function mount() {
+const capabilities = (tools: boolean) => ({
+  accepts_temperature: true,
+  context_tokens: 200_000,
+  effort_default: 'medium' as const,
+  effort_levels: ['low', 'medium', 'high'] as ('low' | 'medium' | 'high')[],
+  known: true,
+  max_output_tokens: 32_000,
+  pdf_input: true,
+  prices: {
+    input: 4,
+    output: 20,
+    cache_read: 0.2,
+    cache_write: 5,
+    checked_on: '2026-10-06',
+  },
+  tools,
+  vision: true,
+})
+
+const credential = {
+  id: 'c1',
+  label: 'Рабочий',
+  provider: 'anthropic',
+  is_default: true,
+  default_model: 'claude-opus-5-5',
+  base_url: null,
+  key_hint: 'abcd',
+  created_at: '2026-11-01T10:00:00Z',
+  last_error: null,
+  last_used_at: null,
+}
+
+function mount(
+  overrides: Record<string, Parameters<typeof stubApi>[0][string]> = {},
+  opts: { tools?: boolean } = {},
+) {
   const calls = stubApi({
+    'GET /api/v1/auth/session': {
+      body: { auth_enabled: true, user: { id: 'u1', email: 'u@example.com' } },
+    },
+    'GET /api/v1/me/llm-credentials': { body: { items: [credential] } },
+    'GET /api/v1/me/llm-credentials/c1/models': {
+      body: {
+        items: [
+          {
+            id: 'claude-opus-5-5',
+            label: 'Claude Opus 5.5',
+            capabilities: capabilities(opts.tools ?? true),
+          },
+        ],
+      },
+    },
     'POST /api/v1/projects/p1/runs/estimate': { body: estimate },
     'POST /api/v1/projects/p1/runs': { status: 202, body: run },
+    ...overrides,
   })
   const onOpenChange = vi.fn()
   const rendered = renderUi(
@@ -121,6 +172,172 @@ describe('диалог запуска с оценкой', () => {
     expect(screen.getByRole('button', { name: 'Построить схему' })).toBeInTheDocument()
   })
 
+  it('агентный режим недоступен для модели без инструментов', async () => {
+    mount({}, { tools: false })
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Агентный/ })).toBeDisabled())
+    expect(await screen.findByText(/не поддерживает инструменты/)).toBeInTheDocument()
+  })
+
+  it('агентный режим уходит в оценку и в запуск с лимитом шагов', async () => {
+    const { user, calls } = mount()
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Агентный/ })).toBeEnabled())
+    await user.click(screen.getByRole('radio', { name: /Агентный/ }))
+    const steps = screen.getByLabelText(/Лимит шагов/)
+    await user.clear(steps)
+    await user.type(steps, '16')
+    expect(screen.getByText(/агент сам читает|Агентный — модель сама/)).toBeInTheDocument()
+    await waitFor(() =>
+      expect(
+        estimateCalls(calls).some(
+          (call) =>
+            (call.body as { profile?: { mode?: string; max_steps?: number } }).profile?.mode ===
+              'agent' &&
+            (call.body as { profile?: { max_steps?: number } }).profile?.max_steps === 16,
+        ),
+      ).toBe(true),
+    )
+    await user.click(screen.getByRole('button', { name: 'Запустить анализ' }))
+    await waitFor(() =>
+      expect(calls.some((call) => call.method === 'POST' && call.path.endsWith('/runs'))).toBe(
+        true,
+      ),
+    )
+    expect(
+      calls.find((call) => call.method === 'POST' && call.path.endsWith('/runs'))?.body,
+    ).toMatchObject({
+      mode: 'analyze',
+      profile: { mode: 'agent', max_steps: 16 },
+    })
+  })
+
+  it('неверный лимит шагов выключает запуск', async () => {
+    const { user } = mount()
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Агентный/ })).toBeEnabled())
+    await user.click(screen.getByRole('radio', { name: /Агентный/ }))
+    const steps = screen.getByLabelText(/Лимит шагов/)
+    await user.clear(steps)
+    await user.type(steps, '0')
+    expect(screen.getByRole('button', { name: 'Запустить анализ' })).toBeDisabled()
+    expect(screen.getByText(/целое число от 1 до 200/)).toBeInTheDocument()
+  })
+
+  it('отказ сервера 422 объясняет причину агентного режима', async () => {
+    const { user } = mount({
+      'POST /api/v1/projects/p1/runs': {
+        status: 422,
+        body: { detail: 'Агентный режим выключен: LLM_AGENT_MODE' },
+      },
+    })
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Агентный/ })).toBeEnabled())
+    await user.click(screen.getByRole('radio', { name: /Агентный/ }))
+    await user.click(screen.getByRole('button', { name: 'Запустить анализ' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/не разрешил агентный режим/)
+    expect(screen.getByRole('alert')).toHaveTextContent(/LLM_AGENT_MODE/)
+  })
+
+  it('без своего ключа агентный режим не блокируется: сервер решит сам', async () => {
+    window.localStorage.clear()
+    stubApi({
+      'POST /api/v1/projects/p1/runs/estimate': { body: estimate },
+      'POST /api/v1/projects/p1/runs': { status: 202, body: run },
+    })
+    renderUi(
+      <QueryClientProvider client={new QueryClient()}>
+        <RunStartDialog projectId="p1" mode="analyze" open onOpenChange={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    const agent = screen.getByRole('radio', { name: /Агентный/ })
+    expect(agent).toBeEnabled()
+    expect(screen.getByText(/модель оператора/)).toBeInTheDocument()
+    expect(screen.getByRole('radiogroup', { name: 'Режим работы' })).toHaveAccessibleDescription(
+      /модель оператора/,
+    )
+    expect(screen.getByText(/Агентный режим — модель сама читает/)).toBeInTheDocument()
+    expect(screen.queryByText(/Новое:/)).toBeNull()
+  })
+
+  it('старый 422 не виден при повторном открытии диалога', async () => {
+    const client = new QueryClient()
+    const onOpenChange = vi.fn()
+    stubApi({
+      'GET /api/v1/auth/session': {
+        body: { auth_enabled: true, user: { id: 'u1', email: 'u@example.com' } },
+      },
+      'GET /api/v1/me/llm-credentials': { body: { items: [credential] } },
+      'GET /api/v1/me/llm-credentials/c1/models': {
+        body: {
+          items: [
+            {
+              id: 'claude-opus-5-5',
+              label: 'Claude Opus 5.5',
+              capabilities: capabilities(true),
+            },
+          ],
+        },
+      },
+      'POST /api/v1/projects/p1/runs/estimate': { body: estimate },
+      'POST /api/v1/projects/p1/runs': {
+        status: 422,
+        body: { detail: 'Агентный режим выключен: LLM_AGENT_MODE' },
+      },
+    })
+    const view = renderUi(
+      <QueryClientProvider client={client}>
+        <RunStartDialog projectId="p1" mode="analyze" open onOpenChange={onOpenChange} />
+      </QueryClientProvider>,
+    )
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Агентный/ })).toBeEnabled())
+    await view.user.click(screen.getByRole('radio', { name: /Агентный/ }))
+    await view.user.click(screen.getByRole('button', { name: 'Запустить анализ' }))
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <RunStartDialog projectId="p1" mode="analyze" open={false} onOpenChange={onOpenChange} />
+      </QueryClientProvider>,
+    )
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <RunStartDialog projectId="p1" mode="analyze" open onOpenChange={onOpenChange} />
+      </QueryClientProvider>,
+    )
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+  })
+
+  it('422 не про агента не выдают за отказ агентного режима', async () => {
+    const { user } = mount({
+      'POST /api/v1/projects/p1/runs': {
+        status: 422,
+        body: { detail: 'Уровень глубины не поддерживается этой моделью' },
+      },
+    })
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Агентный/ })).toBeEnabled())
+    await user.click(screen.getByRole('radio', { name: /Агентный/ }))
+    await user.click(screen.getByRole('button', { name: 'Запустить анализ' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/Прогон не запущен/)
+    expect(alert).not.toHaveTextContent(/не разрешил агентный режим/)
+  })
+
+  it('неверный лимит шагов не отправляет оценку без max_steps', async () => {
+    const { user, calls } = mount()
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Агентный/ })).toBeEnabled())
+    await user.click(screen.getByRole('radio', { name: /Агентный/ }))
+    const steps = screen.getByLabelText(/Лимит шагов/)
+    await user.clear(steps)
+    await user.type(steps, '0')
+    const attempts = estimateCalls(calls).length
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    const agentWithoutSteps = estimateCalls(calls)
+      .slice(attempts)
+      .filter((call) => {
+        const profile = (call.body as { profile?: { mode?: string; max_steps?: number } }).profile
+        return profile?.mode === 'agent' && !profile.max_steps
+      })
+    expect(agentWithoutSteps).toEqual([])
+    expect(screen.getByRole('button', { name: 'Запустить анализ' })).toBeDisabled()
+  })
+
   it('ошибку оценки объясняет и предлагает повторить', async () => {
     stubApi({
       'POST /api/v1/projects/p1/runs/estimate': {
@@ -145,15 +362,16 @@ describe('разбор бюджета в диалоге', () => {
     await screen.findByText(/\$1,8–3,2/)
     await user.type(screen.getByLabelText(/В долларах/), '1 000,50')
     await user.type(screen.getByLabelText(/В токенах/), '100 000')
-    await waitFor(() =>
-      expect(
-        estimateCalls(calls).some(
-          (call) =>
-            JSON.stringify((call.body as { profile?: unknown }).profile) ===
-            JSON.stringify({ budget: { cost_usd: 1000.5, tokens: 100000 } }),
-        ),
-      ).toBe(true),
-    )
+    await waitFor(() => {
+      const withBudget = estimateCalls(calls).find(
+        (call) => (call.body as { profile?: { budget?: unknown } }).profile?.budget !== undefined,
+      )
+      expect(withBudget).toBeTruthy()
+      if (!withBudget) return
+      expect((withBudget.body as { profile?: unknown }).profile).toMatchObject({
+        budget: { cost_usd: 1000.5, tokens: 100000 },
+      })
+    })
     await user.click(screen.getByRole('button', { name: 'Запустить анализ' }))
     await waitFor(() =>
       expect(calls.some((call) => call.method === 'POST' && call.path.endsWith('/runs'))).toBe(

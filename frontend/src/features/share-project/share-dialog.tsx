@@ -1,5 +1,6 @@
 import { type UseQueryResult, useQuery } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
+import { projectQueryOptions } from '@/entities/project'
 import {
   activeLinks,
   type ProjectMember,
@@ -61,9 +62,33 @@ function ShareDialogBody({ projectId }: { projectId: string }) {
   const form = useShareForm()
   const create = useCreateShareLink(projectId)
   const [created, setCreated] = useState<ShareLinkCreated | null>(null)
+  // Адрес ссылки сервер отдаёт один раз; пока окно открыто, его можно скопировать и из списка.
+  const [createdUrls, setCreatedUrls] = useState<Record<string, string>>({})
+  // Дорожки нужны только проверке: у просмотра и редактирования области нет.
+  const project = useQuery({
+    ...projectQueryOptions(projectId),
+    enabled: form.role === 'reviewer' && !created,
+  })
+  const lanes = project.data?.lanes ?? []
+  const selectedLanes = form.scope === 'selected' ? form.lanes : []
 
   const submit = () =>
-    create.mutate({ role: form.role, days: form.days }, { onSuccess: (link) => setCreated(link) })
+    create.mutate(
+      {
+        role: form.role,
+        days: form.days,
+        laneIds: form.role === 'reviewer' ? selectedLanes : undefined,
+      },
+      {
+        onSuccess: (link) => {
+          setCreated(link)
+          setCreatedUrls((current) => ({
+            ...current,
+            [link.id]: fullShareUrl(link.url_path),
+          }))
+        },
+      },
+    )
 
   return (
     <div className="flex flex-col gap-5">
@@ -72,26 +97,40 @@ function ShareDialogBody({ projectId }: { projectId: string }) {
           url={fullShareUrl(created.url_path)}
           access={created.role}
           expiresAt={created.expires_at}
+          laneIds={created.lane_ids}
           onAnother={() => setCreated(null)}
         />
       ) : (
         <ShareCreateForm
           role={form.role}
           days={form.days}
+          scope={form.scope}
+          lanes={lanes}
+          selectedLanes={selectedLanes}
           onRoleChange={form.setRole}
           onDaysChange={form.setDays}
+          onScopeChange={form.setScope}
+          onLanesChange={form.setLanes}
           onCreate={submit}
           pending={create.isPending}
+          lanesLoading={form.role === 'reviewer' && (project.isPending || project.isFetching)}
+          lanesError={form.role === 'reviewer' && project.isError}
         />
       )}
       <Divider />
-      <AccessLists projectId={projectId} />
+      <AccessLists projectId={projectId} createdUrls={createdUrls} />
     </div>
   )
 }
 
 /** Действующие ссылки и участники — две вкладки со счётчиками. */
-function AccessLists({ projectId }: { projectId: string }) {
+function AccessLists({
+  projectId,
+  createdUrls,
+}: {
+  projectId: string
+  createdUrls: Record<string, string>
+}) {
   const links = useQuery(shareLinksQueryOptions(projectId))
   const members = useQuery(projectMembersQueryOptions(projectId))
   const active = activeLinks(links.data ?? [])
@@ -107,7 +146,7 @@ function AccessLists({ projectId }: { projectId: string }) {
         </TabsTrigger>
       </TabsList>
       <TabsContent value="links" className="pt-2">
-        <LinksList projectId={projectId} query={links} active={active} />
+        <LinksList projectId={projectId} query={links} active={active} createdUrls={createdUrls} />
       </TabsContent>
       <TabsContent value="members" className="pt-2">
         <MembersList projectId={projectId} query={members} />
@@ -142,10 +181,12 @@ function LinksList({
   projectId,
   query,
   active,
+  createdUrls,
 }: {
   projectId: string
   query: UseQueryResult<ShareLink[]>
   active: ShareLink[]
+  createdUrls: Record<string, string>
 }) {
   const revoke = useRevokeShareLink(projectId)
   if (query.isPending) return <ListSkeleton />
@@ -156,7 +197,12 @@ function LinksList({
   return (
     <ul aria-label="Действующие ссылки" className="flex flex-col divide-y divide-border">
       {active.map((link) => (
-        <ShareLinkRow key={link.id} link={link} onRevoke={() => revoke.mutate(link.id)} />
+        <ShareLinkRow
+          key={link.id}
+          link={link}
+          copyUrl={createdUrls[link.id]}
+          onRevoke={() => revoke.mutate(link.id)}
+        />
       ))}
     </ul>
   )

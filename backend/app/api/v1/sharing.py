@@ -10,8 +10,13 @@ from app.api.deps import ContainerDep
 from app.api.responses import bpmn_attachment
 from app.api.schemas.common import errors
 from app.api.schemas.projects import ProjectDetail as ProjectDetailSchema
+from app.api.schemas.questions import Question, QuestionAnswerCreate
 from app.api.schemas.sharing import (
+    AgentPrompt,
+    AgentTokenIssued,
     ProjectMemberRead,
+    ReviewQuestionRecap,
+    ReviewScope,
     ShareAccepted,
     SharedProject,
     ShareLinkCreate,
@@ -20,6 +25,7 @@ from app.api.schemas.sharing import (
     ShareRole,
 )
 from app.container import Container
+from app.domain.models import ANSWER_VIA_REVIEW
 from app.domain.onboarding import ChecklistItem
 from app.services.auth import UserRow
 from app.services.errors import ForbiddenError, NotFoundError, UnauthorizedError
@@ -120,11 +126,15 @@ async def create_share_link(
     )
     if user is None:  # без аккаунтов владельца нет, ссылки недоступны
         raise UnauthorizedError("Войдите в аккаунт")
+    lane_ids: tuple[str, ...] = ()
+    if body.role is ShareRole.REVIEWER and body.lane_ids:
+        lane_ids = await container.review.validate_lane_ids(project_id, body.lane_ids)
     created = await container.sharing.create_link(
         project_id,
         role=body.role.value,
         expires_in_days=body.expires_in_days,
         created_by=user.id,
+        lane_ids=lane_ids,
     )
     await container.onboarding.record(user.id, ChecklistItem.PROJECT_SHARED)
     return ShareLinkCreated(
@@ -133,6 +143,7 @@ async def create_share_link(
         url_path=f"/share/{created.token}",
         created_at=created.link.created_at,
         expires_at=created.link.expires_at,
+        lane_ids=list(created.link.lane_ids),
     )
 
 
@@ -155,6 +166,7 @@ async def list_share_links(
             created_at=link.created_at,
             expires_at=link.expires_at,
             revoked_at=link.revoked_at,
+            lane_ids=list(link.lane_ids),
         )
         for link in await container.sharing.list_links(project_id)
     ]
@@ -183,18 +195,31 @@ async def read_shared_project(
     container: ContainerDep,
     user: OptionalUserDep,
 ) -> SharedProject:
-    """Открыть проект по ссылке. Ссылка на чтение работает без входа (гостям тоже)."""
+    """Открыть проект по ссылке. Ссылка на чтение и проверку работает без входа (гостям тоже).
+
+    У ссылки проверки (reviewer) вопросы и счётчики сужены до области-дорожек: остальное —
+    чтение схемы и оснований; менять проект такая ссылка не даёт.
+    """
     link = await get_active_share_link(container, token)
     role = ShareRole(link.role)
     if role is ShareRole.EDITOR and user is None:
         raise UnauthorizedError("Войдите или зарегистрируйтесь, чтобы открыть проект редактором")
     detail = await container.projects.detail(link.project_id)
+    if role is ShareRole.REVIEWER:
+        detail = await container.review.filter_detail(link.project_id, detail, link.lane_ids)
+        project_role = ProjectRole.REVIEWER
+    else:
+        project_role = ProjectRole.EDITOR if role is ShareRole.EDITOR else ProjectRole.VIEWER
+    lane_names = await container.review.lane_names(link.project_id, link.lane_ids)
     return SharedProject(
         role=role,
         editor_requires_account=role is ShareRole.EDITOR,
-        detail=ProjectDetailSchema.of_detail(
-            detail, ProjectRole.EDITOR if role is ShareRole.EDITOR else ProjectRole.VIEWER
+        scope=ReviewScope(
+            lane_ids=list(link.lane_ids),
+            lanes=list(lane_names),
+            whole_project=not link.lane_ids,
         ),
+        detail=ProjectDetailSchema.of_detail(detail, project_role),
     )
 
 
@@ -235,7 +260,146 @@ async def accept_share_link(
     user: OptionalUserDep,
 ) -> ShareAccepted:
     link = await get_active_share_link(container, token)
+    if ShareRole(link.role) is ShareRole.REVIEWER:
+        raise ForbiddenError(
+            "Ссылка проверки не добавляет проект в профиль: откройте её и подключите агента"
+        )
     if user is None:
         raise UnauthorizedError("Войдите или зарегистрируйтесь, чтобы добавить проект в профиль")
     await container.sharing.accept_invite(link.project_id, user.id, link.role, link_id=link.id)
     return ShareAccepted(project_id=link.project_id, role=ShareRole(link.role))
+
+
+@router.get(
+    "/shares/{token}/questions",
+    response_model=list[Question],
+    responses=errors(401, 403, 404, 410, 422),
+)
+async def read_shared_questions(
+    token: str,
+    container: ContainerDep,
+    user: OptionalUserDep,
+) -> list[Question]:
+    """Вопросы по ссылке: у проверки — только область-дорожки, у просмотра — все.
+
+    Технические вопросы запуска проверяющему не показываются: они решаются действием.
+    """
+    link = await get_active_share_link(container, token)
+    role = ShareRole(link.role)
+    if role is ShareRole.EDITOR and user is None:
+        raise UnauthorizedError("Войдите, чтобы открыть ссылку редактора")
+    questions = await container.questions.list(link.project_id, status=None)
+    if role is ShareRole.REVIEWER:
+        questions = await container.review.filter_questions(
+            link.project_id, questions, link.lane_ids
+        )
+    return [Question.model_validate(question) for question in questions]
+
+
+@router.post(
+    "/shares/{token}/questions/{question_id}/answer",
+    response_model=Question,
+    responses=errors(401, 403, 404, 409, 410, 422),
+)
+async def answer_shared_question(
+    token: str,
+    question_id: UUID,
+    body: QuestionAnswerCreate,
+    container: ContainerDep,
+) -> Question:
+    """Ответить на вопрос области по ссылке проверки (гостю тоже).
+
+    Ссылка и есть удостоверение проверяющего: отдельный аккаунт не нужен. Ответ получает
+    провенанс `via=review`, название проверки (проект + короткий id ссылки) и
+    `share_link_id`. Область ограничена дорожками ссылки; другие права ссылка не даёт.
+    """
+    link = await get_active_share_link(container, token)
+    if ShareRole(link.role) is not ShareRole.REVIEWER:
+        raise ForbiddenError("Отвечать на вопросы по ссылке может только проверяющий")
+    question = await container.questions.get(question_id)
+    if question.project_id != link.project_id:
+        raise NotFoundError("Вопрос не найден")
+    if not await container.review.question_in_scope(link.project_id, question, link.lane_ids):
+        raise NotFoundError("Вопрос не найден")
+    label = await container.review.review_label(link)
+    answered = await container.questions.answer(
+        question_id,
+        text=body.text,
+        via=ANSWER_VIA_REVIEW,
+        via_name=label,
+        share_link_id=link.id,
+    )
+    return Question.model_validate(answered)
+
+
+@router.get(
+    "/shares/{token}/agent-prompt",
+    response_model=AgentPrompt,
+    responses=errors(401, 404, 410, 422),
+)
+async def read_agent_prompt(
+    token: str,
+    container: ContainerDep,
+) -> AgentPrompt:
+    """Готовый текст «проверь дорожку» для агента коллеги.
+
+    Без секрета ссылки: промпт можно вставить в своего агента без аккаунта и без токена.
+    """
+    link = await get_active_share_link(container, token)
+    role = ShareRole(link.role)
+    if role is not ShareRole.REVIEWER:
+        # Промпт предлагает токен агента и ответы на вопросы области — это сценарий
+        # проверки; у ссылок просмотра и приглашения редактора его нет.
+        raise ForbiddenError("Готовый промпт для агента доступен только по ссылке проверки")
+    prompt = await container.review.agent_prompt(link)
+    return AgentPrompt(
+        text=prompt.text,
+        lane_ids=list(prompt.lane_ids),
+        lanes=list(prompt.lane_names),
+        questions_recap=[
+            ReviewQuestionRecap.model_validate(item) for item in prompt.questions_recap
+        ],
+        whole_project=prompt.whole_project,
+    )
+
+
+@router.post(
+    "/shares/{token}/agent-token",
+    status_code=status.HTTP_201_CREATED,
+    response_model=AgentTokenIssued,
+    responses=errors(401, 403, 404, 409, 410, 422),
+)
+async def issue_agent_token(
+    token: str,
+    request: Request,
+    container: ContainerDep,
+    user: OptionalUserDep,
+) -> AgentTokenIssued:
+    """Выпустить токен агента для вошедшего получателя ссылки проверки.
+
+    Токен: права `projects:read` и `questions:answer`, только проект ссылки, срок — срок
+    ссылки. Секрет показывается один раз. Отзыв или истечение ссылки закрывают токен
+    мгновенно: ссылка проверяется при каждом запросе токена.
+    """
+    link = await get_active_share_link(container, token)
+    if user is None:
+        raise UnauthorizedError(
+            "Войдите или зарегистрируйтесь, чтобы получить токен агента по ссылке проверки"
+        )
+    issued = await container.review.create_agent_token(link, user.id)
+    base = str(request.base_url).rstrip("/")
+    mcp_url = f"{base}/mcp"  # MCP-сервер бэкенда (RFC-0007); в Docker проксирует Caddy
+    return AgentTokenIssued(
+        token_id=issued.token.id,
+        secret=issued.secret,
+        name=issued.token.name,
+        project_id=link.project_id,
+        lane_ids=list(issued.token.lane_ids or ()),
+        scopes=[scope.value for scope in issued.token.scopes],
+        expires_at=issued.token.expires_at,
+        mcp_url=mcp_url,
+        command=(
+            "claude mcp add --transport http bpmn-space "
+            f'{mcp_url} --header "Authorization: Bearer {issued.secret}"'
+        ),
+    )

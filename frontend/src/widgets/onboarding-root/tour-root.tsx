@@ -11,7 +11,7 @@ import { isTechnical, sortQuestions } from '@/entities/question'
 import { useRunStore, useRunView, useStartRun } from '@/entities/run'
 import { useCurrentUser } from '@/entities/session'
 import { useCreateProjectDialog } from '@/features/create-project/model'
-import { TourHost, useTourStore } from '@/features/onboarding/tour'
+import { MAIN_TOUR_ID, TourHost, useTourStore } from '@/features/onboarding/tour'
 import type { TourContext, TourUi } from '@/features/onboarding/tour/context'
 import { CHAPTERS, COPY, FIRST_PROJECT_TITLE } from '@/features/onboarding/tour/copy'
 import { createTourPersistence } from '@/features/onboarding/tour/create-persistence'
@@ -74,8 +74,9 @@ export default function TourRoot({ state }: { state: OnboardingState }) {
   const userId = useCurrentUser()?.id
   const update = useUpdateTour()
   const restart = useRestartTour()
-  const tourActive = useTourStore((s) => s.status === 'active')
-  const stepKey = useTourStore((s) => s.stepKey)
+  // Агентский тур живёт в том же сторе с другим tourId: основной не должен на него реагировать.
+  const tourActive = useTourStore((s) => s.status === 'active' && s.tourId === MAIN_TOUR_ID)
+  const stepKey = useTourStore((s) => (s.tourId === MAIN_TOUR_ID ? s.stepKey : null))
   const session = useTourSession()
 
   const serverProjectId = state.tour?.project_id ?? null

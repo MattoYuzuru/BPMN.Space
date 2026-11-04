@@ -11,6 +11,7 @@ from app.llm.base import record_usage
 from app.llm.client import ModelInfo
 from app.llm.multimodal import MediaAttachment
 from app.llm.pipeline import LlmPipeline
+from app.llm.tools import ConversationMessage, ToolDefinition, ToolTurn
 
 
 class ScriptedClient:
@@ -83,6 +84,19 @@ class ScriptedClient:
         return await self.complete(
             system, user, json_mode=json_mode, max_tokens=max_tokens, effort=effort
         )
+
+    async def complete_with_tools(
+        self,
+        system: str,
+        messages: Sequence[ConversationMessage],
+        tools: Sequence[ToolDefinition],
+        *,
+        max_tokens: int,
+        effort: str | None = None,
+    ) -> ToolTurn:
+        """Записанный клиент обычного конвейера агентные ходы не поддерживает."""
+        del system, messages, tools, max_tokens, effort
+        raise RuntimeError("Записанный клиент конвейера не отвечает на агентные ходы")
 
     async def count_tokens(self, system: str, user: str) -> int:
         return max((len(system) + len(user)) // 2, 1)

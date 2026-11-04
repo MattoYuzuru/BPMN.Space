@@ -24,6 +24,7 @@ import { OnboardingSection } from './onboarding'
 import { OverlaysSection } from './overlays'
 import { RunSection } from './run'
 import { SharingSection } from './sharing'
+import { WaveFourSection } from './wave-four'
 import { WaveThreeSection } from './wave-three'
 import { WaveTwoSection } from './wave-two'
 
@@ -62,6 +63,7 @@ const NAV = [
       ['run', 'Прогон и стоимость'],
       ['wave2', 'Волна 2: оценка и инструменты'],
       ['wave3', 'Волна 3: плеер и записи'],
+      ['wave4', 'Волна 4: агентный режим'],
       ['account', 'Аккаунт и доступ'],
       ['sharing', 'Общий доступ'],
       ['onboarding', 'Обучение'],
@@ -214,6 +216,7 @@ export function StyleguidePage() {
           <RunSection />
           <WaveTwoSection />
           <WaveThreeSection />
+          <WaveFourSection />
           <AccountSection />
           <SharingSection />
           <OnboardingSection />

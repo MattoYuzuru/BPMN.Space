@@ -16,7 +16,7 @@ import {
 } from '../anchor'
 import { createTourController, nextVisibleStep, resolveView, stepCounter } from './machine'
 import { persistQuietly } from './persistence'
-import { startTour, stopTour, useTourStore } from './store'
+import { MAIN_TOUR_ID, startTour, stopTour, useTourStore } from './store'
 import type { RouteTarget, StepAction, TourEndReason, TourPersistence, TourStep } from './types'
 
 export interface TourHostProps<Ctx> {
@@ -32,6 +32,8 @@ export interface TourHostProps<Ctx> {
   onEnd?: (reason: TourEndReason) => void
   /** При монтировании восстановить шаг из `persistence.load()`, если тур на сервере активен. */
   restore?: boolean
+  /** Чей это хост: основной серверный тур или клиентский (агентский). По умолчанию основной. */
+  tourId?: string
 }
 
 /** Минимум роутера, который нужен туру; без роутера (тесты, витрина) тур к маршрутам не привязан. */
@@ -109,9 +111,11 @@ export default function TourHost<Ctx>({
   anchorTimeoutMs = ANCHOR_TIMEOUT_MS,
   onEnd,
   restore = true,
+  tourId = MAIN_TOUR_ID,
 }: TourHostProps<Ctx>) {
   const router = useRouter({ warn: false }) as unknown as RouterLike | undefined
   const status = useTourStore((s) => s.status)
+  const owner = useTourStore((s) => s.tourId)
   const stepKey = useTourStore((s) => s.stepKey)
   const page = useTourStore((s) => s.page)
   const paused = useTourStore((s) => s.paused)
@@ -120,7 +124,8 @@ export default function TourHost<Ctx>({
   const seen = useTourStore((s) => s.seen)
   const enteredAt = useTourStore((s) => s.enteredAt)
   const readPages = useTourStore((s) => s.readPages)
-  const active = status === 'active'
+  // Активен только свой тур: чужой stepKey не должен ни показаться, ни погасить этот хост.
+  const active = status === 'active' && owner === tourId
 
   const stepsRef = useRef(steps)
   stepsRef.current = steps
@@ -153,8 +158,8 @@ export default function TourHost<Ctx>({
   // Неизвестный ключ шага (опечатка в startTour): тур не показываем и останавливаем.
   const unknownStep = active && stepKey !== null && !steps.some((item) => item.key === stepKey)
   useEffect(() => {
-    if (unknownStep) stopTour()
-  }, [unknownStep])
+    if (unknownStep) stopTour(tourId)
+  }, [unknownStep, tourId])
 
   // Восстановление шага с сервера при загрузке любой вкладки приложения.
   useEffect(() => {
@@ -165,14 +170,14 @@ export default function TourHost<Ctx>({
       .then(({ status: remote, step: key }) => {
         if (cancelled || useTourStore.getState().status === 'active') return
         if (remote === 'active' && key && stepsRef.current.some((item) => item.key === key)) {
-          startTour(key, { restored: true })
+          startTour(key, { restored: true, tourId })
         }
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [restore])
+  }, [restore, tourId])
 
   // Начало тура и вход в шаг — в фоне на сервер (восстановленный шаг повторно не пишем).
   useEffect(() => {

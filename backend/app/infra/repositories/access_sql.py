@@ -41,6 +41,7 @@ def _link(row: ProjectShareLinkRow) -> ShareLink:
         created_at=row.created_at,
         expires_at=row.expires_at,
         revoked_at=row.revoked_at,
+        lane_ids=tuple(row.lane_ids or ()),
     )
 
 
@@ -134,6 +135,7 @@ class SqlAccessRepository:
                     created_by=link.created_by,
                     created_at=link.created_at,
                     expires_at=link.expires_at,
+                    lane_ids=list(link.lane_ids),
                 )
             )
 

@@ -26,8 +26,8 @@ export interface SharePageProps {
 
 /**
  * Публичная страница `/share/<токен>`. Ответ сервера по ссылке превращается в одно из состояний
- * (`sharePageState`): просмотр, приглашение, вход, «недействительна», «срок истёк». Токен живёт
- * только в адресе страницы и в пути запроса к API.
+ * (`sharePageState`): просмотр, проверка, приглашение, вход, «недействительна», «срок истёк».
+ * Токен живёт только в адресе страницы и в пути запроса к API.
  */
 export function SharePage({ token, search, onSearchChange }: SharePageProps) {
   const session = useSession()
@@ -36,7 +36,9 @@ export function SharePage({ token, search, onSearchChange }: SharePageProps) {
   const state = sharePageState({ status: query.status, data: query.data, error: query.error })
   const saveViewerAccess = useAcceptInvite(token)
   const detail =
-    state.kind === 'viewer' || state.kind === 'invite' ? state.shared.detail : undefined
+    state.kind === 'viewer' || state.kind === 'review' || state.kind === 'invite'
+      ? state.shared.detail
+      : undefined
   // Проект уже доступен вошедшему (владелец или редактор) — принимать нечего, можно открыть.
   const access = useProjectAccess(detail?.id, signedIn)
   const hasAccess = access.data === 'owner' || access.data === 'editor'
@@ -70,7 +72,7 @@ export function SharePage({ token, search, onSearchChange }: SharePageProps) {
       <ShareStateScreen kind="failed" error={state.error} onRetry={() => void query.refetch()} />
     )
   }
-  if (state.kind === 'viewer') {
+  if (state.kind === 'viewer' || state.kind === 'review') {
     return (
       <SharedWorkspace
         token={token}

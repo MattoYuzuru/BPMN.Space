@@ -1,9 +1,9 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import { useTourStore } from './store'
+import { MAIN_TOUR_ID, useTourStore } from './store'
 import type { TourHostProps } from './tour-host'
 
 export { createTourController, resolveView } from './machine'
-export { startTour, stopTour, useTourStore } from './store'
+export { MAIN_TOUR_ID, startTour, stopTour, useTourStore } from './store'
 export type { TourHostProps } from './tour-host'
 export type {
   CoachPage,
@@ -30,9 +30,11 @@ const LazyTourHost = lazy(() => import('./tour-host'))
  */
 export function TourHost<Ctx>({
   enabled = false,
+  tourId = MAIN_TOUR_ID,
   ...props
-}: TourHostProps<Ctx> & { enabled?: boolean }) {
-  const running = useTourStore((state) => state.status === 'active')
+}: TourHostProps<Ctx> & { enabled?: boolean; tourId?: string }) {
+  // Чужой тур (например, клиентский агентский) не должен монтировать этот хост.
+  const running = useTourStore((state) => state.status === 'active' && state.tourId === tourId)
   // После конца тура хост живёт ещё чуть-чуть: затемнение гаснет плавно, а не обрывается.
   const [lingering, setLingering] = useState(false)
   const wasRunning = useRef(false)
@@ -51,7 +53,7 @@ export function TourHost<Ctx>({
   const Host = LazyTourHost as unknown as (props: TourHostProps<Ctx>) => React.JSX.Element
   return (
     <Suspense fallback={null}>
-      <Host {...props} />
+      <Host {...props} tourId={tourId} />
     </Suspense>
   )
 }

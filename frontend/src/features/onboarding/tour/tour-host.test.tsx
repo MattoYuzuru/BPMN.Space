@@ -51,6 +51,17 @@ const steps: TourStep<null>[] = [
   },
 ]
 
+const agentSteps: TourStep<null>[] = [
+  {
+    key: 'agent.one',
+    chapter: 'agent',
+    title: 'Агентский шаг',
+    kind: 'story',
+    anchor: 'a1',
+    pages: [{ text: 'Текст агентского шага.' }],
+  },
+]
+
 function makePersistence(
   remote: { status: 'pending' | 'active'; step: string | null } = { status: 'pending', step: null },
 ) {
@@ -464,5 +475,57 @@ describe('TourHost и маршруты', () => {
     await screen.findByRole('dialog', { name: 'Шаг на экране A' })
     expect(router.state.location.pathname).toBe('/a')
     expect(useTourStore.getState().paused).toBe(false)
+  })
+})
+
+describe('два тура одновременно', () => {
+  it('агентский тур не гасит основной и не пишет в его сохранение', async () => {
+    const mainPersistence = makePersistence()
+    const agentPersistence = makePersistence()
+    renderUi(
+      <>
+        <Page />
+        <TourHost
+          steps={steps}
+          context={null}
+          persistence={mainPersistence}
+          tourId="main"
+          anchorTimeoutMs={120}
+          restore={false}
+        />
+        <TourHost
+          steps={agentSteps}
+          context={null}
+          persistence={agentPersistence}
+          tourId="agent"
+          anchorTimeoutMs={120}
+          restore={false}
+        />
+      </>,
+    )
+
+    act(() => startTour('one'))
+    await screen.findByRole('dialog', { name: 'Первый шаг' })
+    expect(mainPersistence.saveStep).toHaveBeenCalledWith('one')
+
+    // Агентский тур перехватывает стор, но не должен завершать основной и писать в его сервер.
+    act(() => startTour('agent.one', { tourId: 'agent' }))
+    const agentCard = await screen.findByRole('dialog', { name: 'Агентский шаг' })
+    expect(agentCard).toHaveTextContent('Текст агентского шага.')
+    expect(useTourStore.getState().tourId).toBe('agent')
+    expect(agentPersistence.saveStep).toHaveBeenCalledWith('agent.one')
+    expect(mainPersistence.saveStep).not.toHaveBeenCalledWith('agent.one')
+    expect(mainPersistence.setStatus).toHaveBeenCalledTimes(1)
+    expect(mainPersistence.setStatus).toHaveBeenCalledWith('active')
+
+    // Конец агентского тура не завершает сохранённый основной: он остаётся active на сервере.
+    act(() => stopTour('agent'))
+    expect(useTourStore.getState().status).toBe('idle')
+    expect(agentPersistence.setStatus).not.toHaveBeenCalledWith('completed')
+    expect(mainPersistence.setStatus).toHaveBeenCalledTimes(1)
+
+    // Основной тур можно продолжить с сохранённого шага, и его хост жив.
+    act(() => startTour('one'))
+    expect(await screen.findByRole('dialog', { name: 'Первый шаг' })).toBeInTheDocument()
   })
 })

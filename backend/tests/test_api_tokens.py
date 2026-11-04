@@ -299,6 +299,7 @@ EXPECTED_POLICIES: dict[tuple[str, str], str] = {
     ("DELETE", "/api/v1/sources/{source_id}"): "sources:delete",
     ("POST", "/api/v1/transcriptions"): "runs:start",
     ("GET", "/api/v1/projects/{project_id}/questions"): "projects:read",
+    ("GET", "/api/v1/projects/{project_id}/agent-activity"): "projects:read",
     ("POST", "/api/v1/questions/{question_id}/answer"): "questions:answer",
     ("POST", "/api/v1/questions/{question_id}/actions"): "questions:answer",
     ("POST", "/api/v1/questions/{question_id}/ignore"): "questions:answer",
@@ -391,13 +392,16 @@ def _calls(dependant: Any) -> list[Any]:
     return found
 
 
-# Маршруты без пользователя: публичные данные или вход по паролю.
+# Маршруты без пользователя: публичные данные, вход по паролю или вход по секрету ссылки.
 PUBLIC_ROUTES = {
     ("GET", "/api/v1/examples"),
     ("GET", "/api/v1/samples"),
     ("GET", "/api/v1/auth/csrf"),
     ("POST", "/api/v1/auth/session/login"),
     ("POST", "/api/v1/auth/register"),
+    # Гость по ссылке проверки: её секрет и есть удостоверение (RFC-0007, шаг 3).
+    ("GET", "/api/v1/shares/{token}/agent-prompt"),
+    ("POST", "/api/v1/shares/{token}/questions/{question_id}/answer"),
     ("GET", "/health"),
 }
 # Маршруты FastAPI Users, которые читают cookie своей зависимостью, а не `optional_user`.

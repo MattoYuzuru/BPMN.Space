@@ -9,9 +9,11 @@ from app.api.access import (
     ApiScope,
     ProjectRole,
     ensure_project_access,
+    is_review_token,
     project_roles,
     require_account,
     require_scope,
+    review_lane_ids,
     token_project_ids,
 )
 from app.api.auth import OptionalUserDep
@@ -26,8 +28,10 @@ from app.api.schemas.projects import (
     ProjectPage,
     ProjectUpdate,
 )
+from app.api.schemas.sharing import AgentActivity, AgentActivityEvent
 from app.domain.access import ProjectScope
 from app.domain.onboarding import ChecklistItem
+from app.services.errors import ForbiddenError
 
 router = APIRouter(tags=["projects"])
 
@@ -53,25 +57,39 @@ async def list_projects(  # noqa: PLR0917 - FastAPI binds each query parameter i
         ),
     ] = ProjectScope.ALL,
 ) -> ProjectPage:
-    """Проекты: сначала недавно изменённые. Курсорная пагинация. Гостям — 401."""
-    owner_id = require_account(request, user)
+    """Проекты: сначала недавно изменённые. Курсорная пагинация. Гостям — 401.
+
+    Токен проверки не даёт членства: его проект виден отдельной карточкой с ролью reviewer,
+    без общего списка чужих проектов владельца.
+    """
+    review = is_review_token(request)
+    owner_id = None if review else require_account(request, user)
     page = await container.projects.list(
         cursor=cursor,
         limit=limit,
         query=q,
         owner_id=owner_id,
-        scope_to_user=request.app.state.auth_enabled,
+        scope_to_user=request.app.state.auth_enabled and not review,
         scope=scope,
         only_ids=token_project_ids(request),
     )
     roles = await project_roles(request, container, [view.project.id for view in page.items], user)
-    return ProjectPage(
-        items=[
-            Project.of(view, roles.get(view.project.id, ProjectRole.VIEWER)) for view in page.items
-        ],
-        next_cursor=page.next_cursor,
-        total=page.total,
-    )
+    lane_scope = review_lane_ids(request)
+    items = []
+    for view in page.items:
+        card = Project.of(view, roles.get(view.project.id, ProjectRole.VIEWER))
+        if lane_scope is not None:
+            # Карточка проверки считает только вопросы области (и только бизнес-вопросы).
+            opened, resolved = await container.review.scoped_counts(view.project.id, lane_scope)
+            card = card.model_copy(
+                update={
+                    "counts": card.counts.model_copy(
+                        update={"questions_open": opened, "questions_resolved": resolved}
+                    )
+                }
+            )
+        items.append(card)
+    return ProjectPage(items=items, next_cursor=page.next_cursor, total=page.total)
 
 
 @router.post(
@@ -124,9 +142,55 @@ async def get_project(
     container: ContainerDep,
     user: OptionalUserDep,
 ) -> ProjectDetail:
-    """Проект целиком: источники, вопросы, последняя версия (без XML), активный прогон."""
+    """Проект целиком: источники, вопросы, последняя версия (без XML), активный прогон.
+
+    По токену проверки вопросы и счётчики сужены до области-дорожек ссылки (RFC-0007).
+    """
     role = await ensure_project_access(request, container, project_id, user, write=False)
-    return ProjectDetail.of_detail(await container.projects.detail(project_id), role)
+    detail = await container.projects.detail(project_id)
+    lanes = review_lane_ids(request)
+    if lanes is not None:
+        detail = await container.review.filter_detail(project_id, detail, lanes)
+    return ProjectDetail.of_detail(detail, role)
+
+
+@router.get(
+    "/projects/{project_id}/agent-activity",
+    dependencies=[require_scope(ApiScope.PROJECTS_READ)],
+    responses=errors(401, 403, 404, 410, 422),
+)
+async def project_agent_activity(
+    project_id: UUID,
+    request: Request,
+    container: ContainerDep,
+    user: OptionalUserDep,
+) -> AgentActivity:
+    """Журнал активности агента в проекте (v1): добавленные материалы и ответы.
+
+    Собирается из существующих данных (`sources.origin=agent`, `questions.answer.via=agent`),
+    без отдельной таблицы событий. Доступен участникам проекта, но не по ссылке проверки.
+    """
+    role = await ensure_project_access(request, container, project_id, user, write=False)
+    if role is ProjectRole.REVIEWER:
+        raise ForbiddenError("Журнал активности агента доступен участникам проекта")
+    events = await container.review.agent_activity(project_id)
+    return AgentActivity(
+        items=[
+            AgentActivityEvent(
+                kind=event.kind,
+                at=event.at,
+                token_name=event.token_name,
+                title=event.title,
+                detail=event.detail,
+                share_link_id=event.share_link_id,
+                source_id=event.source_id,
+                question_id=event.question_id,
+                question_code=event.question_code,
+            )
+            for event in events
+        ],
+        total=len(events),
+    )
 
 
 @router.patch(

@@ -115,6 +115,7 @@ def question_view(question: Question) -> dict[str, Any]:
                 "source_id": str(answer.source_id),
                 "via": answer.via,
                 "via_name": answer.via_name,
+                "share_link_id": str(answer.share_link_id) if answer.share_link_id else None,
             }
             if answer is not None
             else None

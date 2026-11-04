@@ -8,7 +8,18 @@ from enum import Enum
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import CursorResult, and_, case, delete, func, or_, select, tuple_, update
+from sqlalchemy import (
+    CursorResult,
+    and_,
+    case,
+    delete,
+    func,
+    or_,
+    select,
+    text,
+    tuple_,
+    update,
+)
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import defer
@@ -49,6 +60,8 @@ from app.domain.models import (
 from app.domain.questions import actions_from_json, actions_to_json, normalize
 from app.domain.runs import ACTIVE_STATUSES
 from app.domain.sources import (
+    FTS_INDEXED_CHARS,
+    SourceSearchHit,
     derivation_from_json,
     derivation_to_json,
     media_from_json,
@@ -139,6 +152,7 @@ def _question(row: QuestionRow) -> Question:
             text=row.answer_text or "",
             via=row.answer_via,
             via_name=row.answer_via_name,
+            share_link_id=row.answer_share_link_id,
         )
         if row.answer_source_id
         else None
@@ -671,6 +685,70 @@ class SqlSourceRepository:
             ).all()
             return [_source(row) for row in rows]
 
+    async def search(self, project_id: UUID, query: str, *, limit: int) -> list[SourceSearchHit]:
+        """FTS `russian` по названию и тексту источников; индекс — миграция 0024.
+
+        Запрос повторяет выражение индекса
+        `to_tsvector('russian', left(title || ' ' || content, 100000))` буквально: иначе
+        планировщик не сопоставит условие с индексом. `left(…, 100000)` ограничивает
+        индексируемую длину: tsvector PostgreSQL не принимает больше 1 МБ, а текст источника
+        бывает до миллиона знаков. Хвост длинного документа через поиск не находится — его
+        читают `read_source` по оглавлению.
+
+        Навигационные производные (`frames`, `media_feed`) и краткие содержания исключены так
+        же, как в `Source.feeds_model`: иначе выдача заполняется дублями расшифровки, а
+        `read_source` по ним отвечает «нет текста». `ts_headline` отдаёт фрагмент вокруг
+        совпадения без подсветки — полный текст источника через поиск не отдаётся.
+        """
+        phrase = query.strip()
+        if not phrase or limit <= 0:
+            return []
+        statement = text(
+            """
+            SELECT id, title,
+                   ts_headline('russian', left(content, :indexed_chars),
+                               plainto_tsquery('russian', :query),
+                               'MaxWords=60, MinWords=20, MaxFragments=1') AS snippet,
+                   ts_rank_cd(to_tsvector('russian',
+                                          left(title || ' ' || content, :indexed_chars)),
+                              plainto_tsquery('russian', :query)) AS rank
+            FROM sources
+            WHERE project_id = :project_id
+              AND active
+              AND status = 'ready'
+              AND trust <> 'summary'
+              AND length(btrim(content)) > 0
+              AND coalesce(derivation->>'capability', '') NOT IN ('frames', 'media_feed')
+              AND to_tsvector('russian',
+                              left(title || ' ' || content, :indexed_chars))
+                  @@ plainto_tsquery('russian', :query)
+            ORDER BY rank DESC, created_at
+            LIMIT :limit
+            """
+        )
+        async with self.sessions() as session:
+            rows = (
+                await session.execute(
+                    statement,
+                    {
+                        "project_id": project_id,
+                        "query": phrase,
+                        "limit": min(limit, 20),
+                        "indexed_chars": FTS_INDEXED_CHARS,
+                    },
+                )
+            ).all()
+        return [
+            SourceSearchHit(
+                source_id=row.id,
+                title=row.title,
+                # Подсветка `ts_headline` по умолчанию — `<b>`: модели нужен текст, не HTML.
+                snippet=(row.snippet or "").replace("<b>", "").replace("</b>", ""),
+                rank=float(row.rank or 0.0),
+            )
+            for row in rows
+        ]
+
 
 class SqlQuestionRepository:
     def __init__(self, sessions: SessionFactory) -> None:
@@ -696,6 +774,7 @@ class SqlQuestionRepository:
             answer_text=item.answer.text if item.answer else None,
             answer_via=item.answer.via if item.answer else None,
             answer_via_name=item.answer.via_name if item.answer else None,
+            answer_share_link_id=item.answer.share_link_id if item.answer else None,
             run_id=item.run_id,
             category=item.category.value,
             actions=actions_to_json(item.actions),
@@ -740,6 +819,7 @@ class SqlQuestionRepository:
                 answer_text=question.answer.text if question.answer else None,
                 answer_via=question.answer.via if question.answer else None,
                 answer_via_name=question.answer.via_name if question.answer else None,
+                answer_share_link_id=question.answer.share_link_id if question.answer else None,
                 updated_at=question.updated_at,
             )
         )

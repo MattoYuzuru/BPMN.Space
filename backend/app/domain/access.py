@@ -11,6 +11,17 @@ class ProjectRole(StrEnum):
     OWNER = "owner"
     EDITOR = "editor"
     VIEWER = "viewer"
+    # Псевдо-роль доступа по ссылке проверки (RFC-0007, шаг 3): не членство в проекте,
+    # а ограниченное чтение и ответы на вопросы своей области. В БД роли участников её нет.
+    REVIEWER = "reviewer"
+
+
+class ShareRole(StrEnum):
+    """Роль ссылки доступа: чтение, приглашение редактора или проверка коллеги."""
+
+    VIEWER = "viewer"
+    EDITOR = "editor"
+    REVIEWER = "reviewer"
 
 
 class ProjectScope(StrEnum):
@@ -33,7 +44,11 @@ class ResourceKind(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class ShareLink:
-    """Ссылка доступа. Сырой токен не хранится — только его SHA-256."""
+    """Ссылка доступа. Сырой токен не хранится — только его SHA-256.
+
+    У ссылки проверки (role=reviewer) есть область — выбранные дорожки (`lane_ids`): читать
+    и отвечать можно только по ним. Пустая область — весь проект.
+    """
 
     id: UUID
     project_id: UUID
@@ -43,6 +58,10 @@ class ShareLink:
     created_at: datetime
     expires_at: datetime | None
     revoked_at: datetime | None = None
+    lane_ids: tuple[str, ...] = ()
+
+    def is_review(self) -> bool:
+        return self.role == ShareRole.REVIEWER.value
 
 
 @dataclass(frozen=True, slots=True)

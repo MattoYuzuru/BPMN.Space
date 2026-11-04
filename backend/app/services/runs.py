@@ -25,8 +25,11 @@ from app.domain.bpmn.document import BpmnFormatError
 from app.domain.bpmn.importer import preserve_geometry
 from app.domain.bpmn.xsd import xsd_errors
 from app.domain.models import (
+    QUESTION_ACTION_LABELS,
     LlmCall,
     Question,
+    QuestionAction,
+    QuestionActionKind,
     QuestionKind,
     QuestionStatus,
     Quote,
@@ -56,11 +59,13 @@ from app.domain.runs import (
     stage_label,
     stages_for,
 )
+from app.domain.sources import SourceSearchHit
 from app.infra.bpmn_tools import BpmnTools, BpmnToolsError
 from app.infra.events import RunEventBus
 from app.infra.repositories.base import ActiveRunConflictError, Repositories
 from app.infra.tasks import TaskSpawner
 from app.ingest.context import build_run_context, describe_context, source_snapshot_hash
+from app.llm.agent import AGENT_PROMPT_VERSION, AgentLimits, AgentRunner, AgentTurn
 from app.llm.base import (
     DEADLINE_MESSAGE,
     BudgetReachedError,
@@ -72,9 +77,20 @@ from app.llm.base import (
     track_run_usage,
     track_usage,
 )
-from app.llm.capabilities import Budget, ModelCapabilities, RunProfile, merge_budget
+from app.llm.capabilities import AGENT_MODE, Budget, ModelCapabilities, RunProfile, merge_budget
 from app.llm.client import PROVIDER_MOCK, redact_secrets
 from app.llm.estimate import cost_of_usage
+from app.llm.pipeline import verified_quote
+from app.services.agent_run import (
+    AgentSubmission,
+    build_agent_input,
+    check_submitted_graph,
+    effective_limits,
+    recorded_state,
+    recorded_steps,
+    restore_submission,
+    started_record,
+)
 from app.services.common import Runtime, get_project, get_run
 from app.services.errors import (
     ConflictError,
@@ -151,6 +167,13 @@ class _RunState:
     draft: DiagramDraft | None = None
     xml: str | None = None
     pipeline: ProcessPipeline | None = None
+    # Агентный режим RFC-0004: профиль прогона и принятый submit.
+    profile: RunProfile | None = None
+    agent: AgentSubmission | None = None
+
+    @property
+    def agent_mode(self) -> bool:
+        return self.profile is not None and self.profile.mode == AGENT_MODE
 
     def model(self) -> ProcessPipeline:
         if self.pipeline is None:
@@ -208,6 +231,7 @@ class RunService:
         progress: ProgressRecorder | None = None,
         broadcast: RealtimePublisher | None = None,
         technical: TechnicalQuestionService | None = None,
+        agent_limits: AgentLimits | None = None,
     ) -> None:
         self._repos = repos
         if resolver is None:
@@ -228,6 +252,8 @@ class RunService:
         self._broadcast = broadcast
         # Технические вопросы: бюджет, а позже квоты и ключи инструментов (RFC-0006).
         self._technical = technical or TechnicalQuestionService(repos, runtime=runtime)
+        # Лимиты агентного режима RFC-0004: ходы, объём чтения, выдача поиска.
+        self._agent = agent_limits or AgentLimits()
         self._limit = asyncio.Semaphore(max(max_concurrent, 1))
         self._cancel_requested: set[UUID] = set()
         # Этот lock ускоряет конфликт внутри процесса; уникальный индекс защищает между процессами.
@@ -388,6 +414,14 @@ class RunService:
                     question.status = QuestionStatus.OBSOLETE
                     question.updated_at = now
                     await repos.questions.update(question)
+            # Продолжение после действия пользователя — новая попытка исполнения: израсходованные
+            # ходы агентного режима не блокируют её сразу же (бюджет токенов и денег по-прежнему
+            # считается по журналу вызовов). Иначе «поднять бюджет» после лимита ходов
+            # останавливало бы прогон на первом же проверенном шаге.
+            execution = dict((current.ir or {}).get("execution", {}))
+            if isinstance(execution.get("agent"), dict):
+                execution.pop("agent", None)
+                current.ir = {**(current.ir or {}), "execution": execution}
             current.status = RunStatus.QUEUED
             current.stage = None
             current.progress = 0.0
@@ -689,7 +723,7 @@ class RunService:
     ) -> None:
         run.status = RunStatus.RUNNING
         await self._repos.runs.update(run)
-        state = _RunState(pipeline=pipeline)
+        state = _RunState(pipeline=pipeline, profile=profile)
         budget = profile.budget if profile is not None else None
         # Накопитель токенов за весь прогон и бюджет: проверка перед каждым запросом к модели
         # (RFC-0005, шаг 5). Потраченное до продолжения после `waiting` входит в счёт.
@@ -748,9 +782,6 @@ class RunService:
         бюджет» и «открыть настройки». Событие `done` не отправляется: поток SSE остаётся
         открытым, пока пользователь не продолжит прогон или не отменит его.
         """
-        stage_name = (
-            stage_label(run.status, run.stage) if run.stage is not None else "вызовы модели"
-        )
         run.status = RunStatus.WAITING
         run.error = None
         run.finished_at = None
@@ -760,13 +791,28 @@ class RunService:
         limit = f" ({budget.describe()})" if budget is not None else ""
         # Дублей не создаём: прошлые вопросы этого исполнения становятся неактуальными.
         await self._obsolete_run_questions(run)
+        if budget is not None:
+            stage_name = (
+                stage_label(run.status, run.stage) if run.stage is not None else "вызовы модели"
+            )
+            text = (
+                f"Бюджет прогона{limit} исчерпан на этапе «{stage_name}». Поднимите бюджет "
+                "в профиле прогона и продолжите или остановите прогон."
+            )
+        else:
+            # Лимит ходов агентного режима (RFC-0004): текст ошибки уже называет границу.
+            text = (
+                f"{error.message}. Продолжите с новым запасом ходов или создайте прогон "
+                "с большим лимитом в профиле."
+            )
+        actions = _step_limit_actions() if budget is None else None
         question = await self._technical.create(
             run.project_id,
             TechnicalQuestionKind.BUDGET_REACHED,
-            f"Бюджет прогона{limit} исчерпан на этапе «{stage_name}». "
-            "Поднимите бюджет в профиле прогона и продолжите или остановите прогон.",
+            text,
             run_id=run.id,
             blocking=True,
+            actions=actions,
         )
         await self._publish(run, RunEventKind.QUESTION, question)
         if run.stage is not None:
@@ -815,7 +861,9 @@ class RunService:
                     + "); создайте новый прогон"
                 )
 
-    async def _perform(self, run: Run, stage: RunStage, state: _RunState) -> None:
+    async def _perform(  # noqa: PLR0912 — диспетчер этапов пайплайна и агентного режима
+        self, run: Run, stage: RunStage, state: _RunState
+    ) -> None:
         match stage:
             case RunStage.READING_SOURCES:
                 state.context = await self._context(run.project_id, self._budget(state))
@@ -836,14 +884,17 @@ class RunService:
                 run.warnings = list(dict.fromkeys([*run.warnings, *state.context.warnings]))
                 await self._repos.runs.update(run)
             case RunStage.EXTRACTING:
-                context = self._require(state)
-                state.analysis = await self._model_call(
-                    run,
-                    stage="analyze",
-                    request={"context": describe_context(context)},
-                    call=lambda: state.model().analyze(context),
-                    capabilities=pipeline_capabilities(state.model()),
-                )
+                if state.agent_mode:
+                    await self._run_agent(run, state)
+                else:
+                    context = self._require(state)
+                    state.analysis = await self._model_call(
+                        run,
+                        stage="analyze",
+                        request={"context": describe_context(context)},
+                        call=lambda: state.model().analyze(context),
+                        capabilities=pipeline_capabilities(state.model()),
+                    )
                 run.analysis = _json_data(state.analysis)
                 await self._repos.runs.update(run)
             case RunStage.RECONCILING:
@@ -861,35 +912,32 @@ class RunService:
                     ],
                 )
                 state.context = context
-                state.draft = await self._model_call(
-                    run,
-                    stage="structure",
-                    request={
-                        "context": describe_context(context),
-                        "analysis": _json_data(state.analysis),
-                    },
-                    call=lambda: state.model().structure(context, state.analysis),
-                    capabilities=pipeline_capabilities(state.model()),
-                )
+                if state.agent is not None:
+                    # Черновик уже принят submit, но между submit и структурой прошла сверка
+                    # вопросов: перепроверяем IR по актуальным основаниям и вопросам, чтобы
+                    # не опубликовать устаревшую схему. Запрос к модели не нужен.
+                    if state.agent.draft is None:
+                        raise PipelineError("Агентный submit не содержит IR схемы")
+                    state.draft = await check_submitted_graph(
+                        state.agent.draft.ir,
+                        context,
+                        self._verify_quote,
+                        lint=self._tools.lint,
+                    )
+                else:
+                    state.draft = await self._model_call(
+                        run,
+                        stage="structure",
+                        request={
+                            "context": describe_context(context),
+                            "analysis": _json_data(state.analysis),
+                        },
+                        call=lambda: state.model().structure(context, state.analysis),
+                        capabilities=pipeline_capabilities(state.model()),
+                    )
                 if state.draft is None:
                     raise PipelineError("Пайплайн не вернул BPMN-черновик")
-                execution = (run.ir or {}).get("execution", {})
-                run.ir = {
-                    "graph": state.draft.ir,
-                    "execution": execution,
-                    "manual_overrides": state.draft.manual_overrides,
-                    "conflicts": state.draft.conflicts,
-                }
-                if getattr(state.model(), "uses_complete_evidence", False):
-                    run.warnings = [
-                        w
-                        for w in run.warnings
-                        if not w.startswith(
-                            ("В контекст модели не поместились", "Из-за лимита контекста модели")
-                        )
-                    ]
-                run.warnings.extend(state.draft.warnings)
-                await self._repos.runs.update(run)
+                await self._apply_draft(run, state)
             case RunStage.VALIDATING:
                 draft = state.draft
                 if draft is None:
@@ -900,6 +948,173 @@ class RunService:
                 state.xml = draft.xml
             case RunStage.LAYOUT:
                 await self._layout(run, state)
+
+    async def _run_agent(self, run: Run, state: _RunState) -> None:
+        """Агентный режим RFC-0004: модель читает источники инструментами до принятого submit.
+
+        Восстановление после рестарта (ADR-0008): уже принятый submit перепроверяется по текущим
+        материалам и публикуется без повторной оплаты; незавершённый цикл продолжается с
+        сохранённым счётчиком ходов. Бюджет (ходы, токены, деньги) общий с конвейером:
+        `BudgetReachedError` переводит прогон в `waiting` с техническим вопросом.
+        """
+        context = self._require(state)
+        pipeline = state.model()
+        client = getattr(pipeline, "client", None)
+        capabilities = pipeline_capabilities(pipeline)
+        # Восстановленный прогон проверяет флаг и возможности заново: оператор мог выключить
+        # LLM_AGENT_MODE, а модель — потерять инструменты (Models API/каталог изменились).
+        if not getattr(self._resolver, "agent_enabled", True):
+            raise PipelineError(
+                "Агентный режим выключен администратором (LLM_AGENT_MODE). Включите его и "
+                "повторите прогон или создайте новый в режиме конвейера"
+            )
+        if client is None or not capabilities.tools:
+            raise PipelineError(
+                "Модель прогона не поддерживает инструменты: агентный режим недоступен"
+            )
+        limits = effective_limits(
+            state.profile,
+            server_steps=self._agent.max_steps,
+            read_max_chars=self._agent.read_max_chars,
+            search_limit=self._agent.search_limit,
+            snippet_chars=self._agent.search_snippet_chars,
+        )
+
+        def verify(sources: list[ContextSource], source_id: object, quote: object):
+            return verified_quote(sources, source_id, quote)
+
+        lint = self._tools.lint
+        recorded = recorded_state(run)
+        submission = await restore_submission(recorded, context, verify, lint=lint)
+        if submission is None:
+            sources = await self._repos.sources.list_by_project(run.project_id)
+            task = build_agent_input(
+                run,
+                context,
+                sources,
+                limits=limits,
+                steps_spent=recorded_steps(recorded),
+                profile=state.profile,
+            )
+            runner = AgentRunner(
+                client,
+                task,
+                verify_quote=verify,
+                search=lambda query, limit: self._search_sources(run.project_id, query, limit),
+                check_graph=lambda data: check_submitted_graph(data, context, verify, lint=lint),
+                on_turn=lambda turn: self._agent_turn(run, turn),
+                max_tokens=_pipeline_json_max_tokens(pipeline),
+                effort=getattr(pipeline, "effort", None),
+                capabilities=capabilities,
+            )
+            try:
+                outcome = await runner.run()
+            except (BudgetReachedError, PipelineError, asyncio.CancelledError):
+                raise
+            except RuntimeError as error:
+                await self._resolver.mark(_credential_id(run), redact_secrets(str(error)))
+                raise PipelineError(str(error)) from error
+            submission = AgentSubmission(
+                analysis=outcome.analysis,
+                draft=outcome.draft,
+                steps=outcome.steps,
+                journal=outcome.journal,
+                warnings=outcome.warnings,
+            )
+            await self._save_agent_state(run, submission.record())
+            run.warnings = list(dict.fromkeys([*run.warnings, *submission.warnings]))
+        state.agent = submission
+        state.analysis = submission.analysis
+        if submission.draft is not None:
+            state.draft = submission.draft
+
+    async def _agent_turn(self, run: Run, turn: AgentTurn) -> None:
+        """Журнал одного хода: `llm_calls` с хешами инструментов, без текстов источников.
+
+        Стоимость считается по ценам модели на момент вызова; начатое состояние агента
+        сохраняется в `ir.execution.agent`, чтобы рестарт не оплачивал ходы заново.
+        """
+        await self._resolver.mark(_credential_id(run), None)
+        await self._repos.llm_calls.add(
+            LlmCall(
+                id=self._rt.new_id(),
+                run_id=run.id,
+                stage="agent",
+                request={
+                    "step": turn.index,
+                    "prompt_version": AGENT_PROMPT_VERSION,
+                    "tools": [dict(item) for item in turn.journal],
+                },
+                response={
+                    "ok": turn.ok,
+                    "tool_names": list(turn.tool_names),
+                    "error": turn.error,
+                },
+                tokens_in=turn.usage.tokens_in if turn.usage.requests else None,
+                tokens_out=turn.usage.tokens_out if turn.usage.requests else None,
+                cache_read_tokens=turn.usage.cache_read_tokens if turn.usage.requests else None,
+                cache_write_tokens=turn.usage.cache_write_tokens if turn.usage.requests else None,
+                cost_usd=turn.cost_usd,
+                price_checked_on=turn.price_checked_on,
+                model=run.model,
+                latency_ms=turn.latency_ms,
+            )
+        )
+        previous = recorded_state(run) or {}
+        journal = [dict(item) for item in previous.get("tools") or [] if isinstance(item, dict)]
+        journal.extend(dict(item) for item in turn.journal)
+        await self._save_agent_state(run, started_record(turn.index, journal))
+        await self._publish_cost(run)
+
+    async def _save_agent_state(self, run: Run, agent: dict[str, Any]) -> None:
+        """Пишет состояние агента в `ir.execution.agent`, не теряя остальные поля исполнения."""
+        execution = dict((run.ir or {}).get("execution", {}))
+        execution["agent"] = agent
+        run.ir = {**(run.ir or {}), "execution": execution}
+        await self._repos.runs.update(run)
+
+    async def _search_sources(
+        self, project_id: UUID, query: str, limit: int
+    ) -> list[SourceSearchHit]:
+        """Полнотекстовый поиск по источникам проекта (PostgreSQL FTS `russian`).
+
+        Раннер запрашивает запас выдачи и сам отсекает источники вне снимка прогона, поэтому
+        лимит здесь — верхняя граница, а не точное число результатов.
+        """
+        phrase = query.strip()
+        if not phrase:
+            return []
+        return await self._repos.sources.search(project_id, phrase, limit=max(limit, 1))
+
+    @staticmethod
+    def _verify_quote(
+        sources: list[ContextSource], source_id: object, quote: object
+    ) -> tuple[UUID | None, str | None]:
+        """Проверка дословной цитаты: та же функция, что у конвейера и агентного submit."""
+        return verified_quote(sources, source_id, quote)
+
+    async def _apply_draft(self, run: Run, state: _RunState) -> None:
+        """Переносит проверенный черновик в `run.ir`; общий путь конвейера и агента."""
+        draft = state.draft
+        if draft is None:
+            raise PipelineError("Пайплайн не вернул BPMN-черновик")
+        execution = (run.ir or {}).get("execution", {})
+        run.ir = {
+            "graph": draft.ir,
+            "execution": execution,
+            "manual_overrides": draft.manual_overrides,
+            "conflicts": draft.conflicts,
+        }
+        if getattr(state.model(), "uses_complete_evidence", False):
+            run.warnings = [
+                w
+                for w in run.warnings
+                if not w.startswith(
+                    ("В контекст модели не поместились", "Из-за лимита контекста модели")
+                )
+            ]
+        run.warnings.extend(draft.warnings)
+        await self._repos.runs.update(run)
 
     @staticmethod
     def _require(state: _RunState) -> RunContext:
@@ -1366,6 +1581,54 @@ class RunService:
         except Exception:
             # Realtime is a best-effort projection; it must never fail or stop the durable run.
             logger.exception("Прогон %s: не удалось разослать realtime-событие", run.id)
+
+
+def _step_limit_actions() -> list[QuestionAction]:
+    """Действия технического вопроса, когда исчерпан лимит ходов, а не бюджет.
+
+    «Поднять бюджет» здесь бессмысленно: граница — число ходов в профиле. Поэтому предлагаем
+    продолжить с новым запасом ходов (действие `continue_without` перезапускает попытку с
+    полным лимитом из профиля) или открыть настройки и создать прогон с большим лимитом.
+    """
+    return [
+        QuestionAction(
+            kind=QuestionActionKind.CONTINUE_WITHOUT,
+            label="Продолжить с новым запасом ходов",
+        ),
+        QuestionAction(
+            kind=QuestionActionKind.OPEN_SETTINGS,
+            label=QUESTION_ACTION_LABELS[QuestionActionKind.OPEN_SETTINGS],
+        ),
+    ]
+
+
+def _pipeline_json_max_tokens(pipeline: object) -> int:
+    """Лимит ответа модели прогона; у адаптеров без свойства — осторожное умолчание."""
+    value = getattr(pipeline, "json_max_tokens", None)
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 8192
+
+
+def _check_budget_increase(current: Budget | None, new: Budget) -> None:
+    """Бюджет можно только поднять: границы не понижаются, хотя бы одна растёт.
+
+    Так действие «поднять бюджет» не позволяет незаметно урезать бюджет прогона, который
+    пользователь уже поставил на модель сервера.
+    """
+    if current is None:
+        return
+    raised = False
+    for name, label in (("tokens", "токены"), ("cost_usd", "стоимость")):
+        old = getattr(current, name)
+        value = getattr(new, name)
+        if value is None:
+            continue
+        if old is not None and value < old:
+            raise InvalidInputError(
+                f"Бюджет можно только поднять: {label} {value:g} меньше текущего {old:g}"
+            )
+        raised = raised or old is None or value > old
+    if not raised:
+        raise InvalidInputError("Новый бюджет должен быть больше текущего хотя бы по одной границе")
 
 
 def _budget_exhausted(budget: Budget | None, spent: tuple[int, float | None]) -> bool:

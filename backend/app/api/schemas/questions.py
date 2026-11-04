@@ -24,10 +24,14 @@ class Answer(ApiModel):
     via: str | None = Field(
         default=None,
         description="`agent` — ответ записал внешний агент владельца токена (MCP, RFC-0007); "
-        "null — человек в интерфейсе",
+        "`review` — проверяющий ответил по ссылке проверки; null — человек в интерфейсе",
     )
     via_name: str | None = Field(
         default=None, description="Название токена доступа, которым ответил агент"
+    )
+    share_link_id: UUID | None = Field(
+        default=None,
+        description="Ответ дан по ссылке проверки (RFC-0007, шаг 3): id ссылки",
     )
 
 

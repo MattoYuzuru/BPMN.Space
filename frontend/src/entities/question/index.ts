@@ -1,5 +1,7 @@
 export { upsertQuestion, useQuestionAction, useQuestionTechnicalAction } from './api'
 export {
+  type Answer,
+  answerViaLabel,
   countByGroup,
   isTechnical,
   QUESTION_ACTION,

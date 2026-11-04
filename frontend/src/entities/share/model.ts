@@ -7,13 +7,28 @@ export type ShareLinkCreated = Schemas['ShareLinkCreated']
 export type ProjectMember = Schemas['ProjectMemberRead']
 export type SharedProject = Schemas['SharedProject']
 
-/** Роль в ссылке: подпись и значок. «Просмотр» — только чтение, «Редактирование» — приглашение. */
+/**
+ * Роль в ссылке: подпись и значок. «Просмотр» — только чтение, «Редактирование» — приглашение,
+ * «Проверка» — область-дорожки, вопросы области и подключение агента (RFC-0007, шаг 3).
+ */
 export const SHARE_ROLE: Record<ShareRole, { label: string; icon: IconName }> = {
   viewer: { label: 'Просмотр', icon: 'eye' },
   editor: { label: 'Редактирование', icon: 'pencil' },
+  reviewer: { label: 'Проверка', icon: 'users' },
 }
 
-export const SHARE_ROLES: ShareRole[] = ['viewer', 'editor']
+/** Роли в порядке переключателя: просмотр, редактирование, проверка. */
+export const SHARE_ROLES: ShareRole[] = ['viewer', 'editor', 'reviewer']
+
+/** Область проверки словами: пустой список дорожек — весь проект. */
+export function linkScopeText(laneIds: readonly string[] | undefined): string {
+  return laneIds?.length ? `Выбранные дорожки (${laneIds.length})` : 'Весь проект'
+}
+
+/** Секрет ссылки из одноразового `url_path` (`/share/<токен>`): им подписываются запросы промпта. */
+export function shareTokenFromPath(urlPath: string): string {
+  return urlPath.split(/[?#]/)[0]?.split('/').filter(Boolean).pop() ?? ''
+}
 
 export interface ExpiryOption {
   /** Число дней строкой — так его отдаёт Select. */
@@ -74,6 +89,8 @@ export type SharePageState =
   | { kind: 'loading' }
   /** Ссылка на просмотр: проект открыт только для чтения. */
   | { kind: 'viewer'; shared: SharedProject }
+  /** Ссылка проверки: чтение схемы, вопросы области, промпт и токен агента. */
+  | { kind: 'review'; shared: SharedProject }
   /** Приглашение редактора, посетитель вошёл: можно принять. */
   | { kind: 'invite'; shared: SharedProject }
   /** Приглашение редактора, посетитель гость: сначала войти. */
@@ -101,5 +118,6 @@ export function sharePageState(result: {
     return { kind: 'failed', error }
   }
   const shared = result.data as SharedProject
+  if (shared.role === 'reviewer') return { kind: 'review', shared }
   return shared.role === 'editor' ? { kind: 'invite', shared } : { kind: 'viewer', shared }
 }

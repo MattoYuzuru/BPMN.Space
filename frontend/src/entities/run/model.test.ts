@@ -1,7 +1,9 @@
 import type { Question } from '@/entities/question'
 import {
+  agentSteps,
   formatSummary,
   initialRunView,
+  isAgentRun,
   type Run,
   type RunCost,
   type RunEvent,
@@ -266,5 +268,79 @@ describe('стоимость, бюджет и ожидание прогона', 
     ])
     expect(finished.status).toBe('succeeded')
     expect(finished.cost?.cost_usd).toBe(2.71)
+  })
+})
+
+describe('агентный режим RFC-0004', () => {
+  const agentCost = {
+    tokens_in: 1000,
+    tokens_out: 500,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    calls: 5,
+    cost_usd: 1.2,
+    complete: true,
+    currency: 'USD' as const,
+    by_stage: [
+      {
+        stage: 'agent',
+        label: 'Агентное чтение',
+        calls: 3,
+        tokens_in: 800,
+        tokens_out: 400,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        cost_usd: 1,
+      },
+      {
+        stage: 'structure',
+        label: 'Сборка схемы',
+        calls: 2,
+        tokens_in: 200,
+        tokens_out: 100,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        cost_usd: 0.2,
+      },
+    ],
+  }
+
+  it('берёт режим и лимит шагов из профиля прогона', () => {
+    const view = initialRunView(
+      {
+        ...run,
+        status: 'running',
+        profile: { mode: 'agent', max_steps: 12, budget: { tokens: 50_000 } },
+        cost: agentCost,
+      },
+      Date.now(),
+    )
+    expect(view.profileMode).toBe('agent')
+    expect(view.maxSteps).toBe(12)
+    expect(isAgentRun(view)).toBe(true)
+    expect(agentSteps(view.cost)).toBe(3)
+  })
+
+  it('конвейерный прогон и done без профиля остаются pipeline', () => {
+    const view = initialRunView(run, Date.now())
+    expect(view.profileMode).toBe('pipeline')
+    expect(isAgentRun(view)).toBe(false)
+    expect(agentSteps(null)).toBe(0)
+    const done = play([
+      {
+        type: 'done',
+        id: 1,
+        data: {
+          run: {
+            ...run,
+            status: 'succeeded',
+            finished_at: '2026-10-02T10:01:00Z',
+            profile: { mode: 'agent', max_steps: 6 },
+          },
+        },
+      },
+    ])
+    expect(done.profileMode).toBe('agent')
+    expect(done.maxSteps).toBe(6)
   })
 })

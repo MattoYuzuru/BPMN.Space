@@ -16,7 +16,7 @@ from uuid import UUID
 from app.config import Settings
 from app.domain.models import RunMode, Source
 from app.infra.repositories.base import Repositories
-from app.llm.capabilities import ModelCapabilities, RunProfile
+from app.llm.capabilities import AGENT_MODE, ModelCapabilities, RunProfile
 from app.llm.estimate import EstimateInput, RunEstimate, estimate_run
 from app.services.common import Runtime, get_project
 from app.services.errors import InvalidInputError
@@ -99,6 +99,10 @@ class EstimateService:
                     capabilities=capabilities,
                     effort=resolved.profile.effort,
                     chars_per_token=chars_per_token,
+                    agent_mode=resolved.profile.mode == AGENT_MODE,
+                    agent_max_steps=(
+                        resolved.profile.max_steps or self._settings.llm_agent_max_steps
+                    ),
                 )
             )
         finally:

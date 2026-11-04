@@ -16,7 +16,7 @@ from uuid import UUID
 
 from app.domain.access import ProjectScope
 from app.domain.api_tokens import ApiToken
-from app.domain.credentials import LlmCredential
+from app.domain.credentials import MAX_ERROR_CHARS, Credential
 from app.domain.models import (
     LlmCall,
     LlmCallTotals,
@@ -56,7 +56,7 @@ class InMemoryStore:
     llm_calls: dict[UUID, LlmCall] = field(default_factory=dict[UUID, LlmCall])
     project_owners: dict[UUID, UUID] = field(default_factory=dict[UUID, UUID])
     public_projects: set[UUID] = field(default_factory=set[UUID])
-    llm_credentials: dict[UUID, LlmCredential] = field(default_factory=dict[UUID, LlmCredential])
+    credentials: dict[UUID, Credential] = field(default_factory=dict[UUID, Credential])
     api_tokens: dict[UUID, ApiToken] = field(default_factory=dict[UUID, ApiToken])
     onboarding: dict[UUID, UserOnboarding] = field(default_factory=dict[UUID, UserOnboarding])
     onboarding_items: dict[tuple[UUID, ChecklistItem], CompletedItem] = field(
@@ -89,7 +89,7 @@ class InMemoryStore:
             versions=InMemoryVersionRepository(self),
             llm_calls=InMemoryLlmCallRepository(self),
             onboarding=InMemoryOnboardingRepository(self),
-            llm_credentials=InMemoryLlmCredentialRepository(self),
+            credentials=InMemoryCredentialRepository(self),
             api_tokens=InMemoryApiTokenRepository(self),
         )
 
@@ -467,23 +467,25 @@ class InMemoryLlmCallRepository:
         return LlmCallTotals.of_stages(stages)
 
 
-class InMemoryLlmCredentialRepository:
+class InMemoryCredentialRepository:
     def __init__(self, store: InMemoryStore) -> None:
-        self._items = store.llm_credentials
+        self._items = store.credentials
 
-    async def list_by_user(self, user_id: UUID) -> list[LlmCredential]:
+    async def list_by_user(self, user_id: UUID) -> list[Credential]:
         own = [item for item in self._items.values() if item.user_id == user_id]
-        own.sort(key=lambda item: (not item.is_default, item.created_at, str(item.id)))
+        own.sort(
+            key=lambda item: (not item.is_default, item.priority, item.created_at, str(item.id))
+        )
         return [copy.deepcopy(item) for item in own]
 
-    async def get(self, credential_id: UUID) -> LlmCredential | None:
+    async def get(self, credential_id: UUID) -> Credential | None:
         item = self._items.get(credential_id)
         return copy.deepcopy(item) if item else None
 
     async def count(self, user_id: UUID) -> int:
         return sum(1 for item in self._items.values() if item.user_id == user_id)
 
-    async def save(self, credential: LlmCredential) -> None:
+    async def save(self, credential: Credential) -> None:
         if credential.is_default:
             for item in self._items.values():
                 if item.user_id == credential.user_id and item.id != credential.id:
@@ -498,7 +500,11 @@ class InMemoryLlmCredentialRepository:
         default_model: str | None = None,
         is_default: bool | None = None,
         clear_default_model: bool = False,
-    ) -> LlmCredential | None:
+        priority: int | None = None,
+        enabled: bool | None = None,
+        monthly_limit: dict[str, float] | None = None,
+        clear_monthly_limit: bool = False,
+    ) -> Credential | None:
         item = self._items.get(credential_id)
         if item is None:
             return None
@@ -514,16 +520,54 @@ class InMemoryLlmCredentialRepository:
             item.default_model = None
         if is_default is not None:
             item.is_default = is_default
+        if priority is not None:
+            item.priority = priority
+        if enabled is not None:
+            item.enabled = enabled
+        if monthly_limit is not None:
+            item.monthly_limit = dict(monthly_limit)
+        elif clear_monthly_limit:
+            item.monthly_limit = None
         return copy.deepcopy(item)
 
     async def delete(self, credential_id: UUID) -> bool:
         return self._items.pop(credential_id, None) is not None
 
-    async def mark_used(self, credential_id: UUID, at: datetime, error: str | None) -> None:
+    async def mark_used(
+        self,
+        credential_id: UUID,
+        at: datetime,
+        error: str | None,
+        *,
+        error_code: str | None = None,
+    ) -> None:
         item = self._items.get(credential_id)
         if item is not None:
             item.last_used_at = at
-            item.last_error = error[:500] if error else None
+            item.last_error = error[:MAX_ERROR_CHARS] if error else None
+            item.last_error_code = error_code
+            if error is None:
+                item.exhausted_until = None
+
+    async def mark_failure(
+        self,
+        credential_id: UUID,
+        at: datetime,
+        *,
+        error: str,
+        error_code: str,
+        exhausted_until: datetime | None = None,
+        disable: bool = False,
+    ) -> None:
+        item = self._items.get(credential_id)
+        if item is None:
+            return
+        item.last_used_at = at
+        item.last_error = error[:MAX_ERROR_CHARS]
+        item.last_error_code = error_code
+        item.exhausted_until = exhausted_until
+        if disable:
+            item.enabled = False
 
 
 class InMemoryApiTokenRepository:

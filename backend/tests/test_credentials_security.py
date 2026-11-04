@@ -13,7 +13,7 @@ from pydantic import SecretStr
 
 from app.domain.credentials import LlmCredential
 from app.infra.crypto import CredentialCipher, CredentialCipherError
-from app.infra.repositories.memory import InMemoryLlmCredentialRepository, InMemoryStore
+from app.infra.repositories.memory import InMemoryCredentialRepository, InMemoryStore
 from app.llm.client import LlmConfig
 from app.llm.net_guard import UnsafeBaseUrlError, ensure_public_host, normalize_base_url
 from app.llm.openai_compatible import OpenAICompatibleClient
@@ -241,7 +241,7 @@ async def test_chunked_response_without_length_is_aborted_mid_stream() -> None:
 
 
 async def test_update_does_not_overwrite_concurrent_mark_used() -> None:
-    repo = InMemoryLlmCredentialRepository(InMemoryStore())
+    repo = InMemoryCredentialRepository(InMemoryStore())
     user_id, credential_id = uuid4(), uuid4()
     await repo.save(
         LlmCredential(

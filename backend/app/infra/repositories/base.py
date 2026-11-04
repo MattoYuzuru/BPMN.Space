@@ -9,7 +9,7 @@ from uuid import UUID
 
 from app.domain.access import ProjectMember, ProjectRole, ProjectScope, ResourceKind, ShareLink
 from app.domain.api_tokens import ApiToken
-from app.domain.credentials import LlmCredential
+from app.domain.credentials import Credential
 from app.domain.models import (
     LlmCall,
     LlmCallTotals,
@@ -336,14 +336,16 @@ class OnboardingRepository(Protocol):
         ...
 
 
-class LlmCredentialRepository(Protocol):
-    async def list_by_user(self, user_id: UUID) -> list[LlmCredential]:
-        """Ключи пользователя: по умолчанию первым, затем по времени создания."""
+class CredentialRepository(Protocol):
+    """Ключи пользователя по типам задач (RFC-0006): LLM, распознавание, OCR и остальные."""
+
+    async def list_by_user(self, user_id: UUID) -> list[Credential]:
+        """Ключи пользователя: по умолчанию первым, затем по приоритету и времени создания."""
         ...
 
-    async def get(self, credential_id: UUID) -> LlmCredential | None: ...
+    async def get(self, credential_id: UUID) -> Credential | None: ...
     async def count(self, user_id: UUID) -> int: ...
-    async def save(self, credential: LlmCredential) -> None:
+    async def save(self, credential: Credential) -> None:
         """Создаёт или обновляет; `is_default=True` снимает флаг с остальных ключей владельца."""
         ...
 
@@ -355,13 +357,40 @@ class LlmCredentialRepository(Protocol):
         default_model: str | None = None,
         is_default: bool | None = None,
         clear_default_model: bool = False,
-    ) -> LlmCredential | None:
+        priority: int | None = None,
+        enabled: bool | None = None,
+        monthly_limit: dict[str, float] | None = None,
+        clear_monthly_limit: bool = False,
+    ) -> Credential | None:
         """Меняет только перечисленные колонки: параллельный `mark_used` не затирается."""
         ...
 
     async def delete(self, credential_id: UUID) -> bool: ...
-    async def mark_used(self, credential_id: UUID, at: datetime, error: str | None) -> None:
-        """Время последнего использования и текст последней ошибки (`None` — успех)."""
+    async def mark_used(
+        self,
+        credential_id: UUID,
+        at: datetime,
+        error: str | None,
+        *,
+        error_code: str | None = None,
+    ) -> None:
+        """Время использования и последняя ошибка (`None` — успех)."""
+        ...
+
+    async def mark_failure(
+        self,
+        credential_id: UUID,
+        at: datetime,
+        *,
+        error: str,
+        error_code: str,
+        exhausted_until: datetime | None = None,
+        disable: bool = False,
+    ) -> None:
+        """Отказ маршрутизации: класс ошибки, текст, при исчерпании квоты — пауза ключа.
+
+        `disable=True` — ключ недействителен, его нужно проверить и включить заново.
+        """
         ...
 
 
@@ -397,12 +426,17 @@ class Repositories:
     access: AccessRepository | None = None
     # None, если хранилище не умеет онбординг; обе реализации (SQL и in-memory) его дают.
     onboarding: OnboardingRepository | None = None
-    # None, если хранилище не умеет ключи моделей; SQL и in-memory его дают.
-    llm_credentials: LlmCredentialRepository | None = None
+    # None, если хранилище не умеет ключи пользователя; SQL и in-memory его дают.
+    credentials: CredentialRepository | None = None
     # None, если хранилище не умеет токены доступа; SQL и in-memory его дают.
     api_tokens: ApiTokenRepository | None = None
     # Открывает транзакцию PostgreSQL; None — репозитории и так атомарны (in-memory).
     transaction: Callable[[], AbstractAsyncContextManager["Repositories"]] | None = None
+
+    @property
+    def llm_credentials(self) -> CredentialRepository | None:
+        """Прежнее имя хранилища ключей (ADR-0011): ключ модели — частный случай (RFC-0006)."""
+        return self.credentials
 
     def atomic(self) -> AbstractAsyncContextManager["Repositories"]:
         """Единица работы: все вызовы через выданные репозитории — одна транзакция.

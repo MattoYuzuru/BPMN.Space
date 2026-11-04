@@ -78,7 +78,7 @@ jobs:
         working-directory: backend
         env:
           TEST_DATABASE_URL: postgresql+asyncpg://arkhitektor:local-dev-only@localhost:5432/arkhitektor
-        run: uv run pytest tests/test_persistence.py tests/test_auth_http.py tests/test_onboarding_http.py -rs
+        run: uv run pytest tests/test_persistence.py tests/test_auth_http.py tests/test_onboarding_http.py tests/test_api_tokens_http.py tests/test_credentials_pg.py tests/test_mcp.py -rs
 
   frontend-tests:
     name: frontend-tests

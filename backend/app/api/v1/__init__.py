@@ -6,6 +6,7 @@ from app.api.v1 import (
     api_tokens,
     assistant,
     collaboration,
+    credentials,
     llm_credentials,
     onboarding,
     presence,
@@ -29,6 +30,7 @@ for module in (
     sharing,
     onboarding,
     llm_credentials,
+    credentials,
     api_tokens,
     presence,
 ):

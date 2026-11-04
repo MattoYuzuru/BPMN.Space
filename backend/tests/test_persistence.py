@@ -26,7 +26,8 @@ from app.container import build_container
 from app.domain.analysis import AnalysisResult
 from app.domain.bpmn.compiler import compile_graph
 from app.domain.bpmn.ir import GraphIR
-from app.domain.credentials import LlmCredential
+from app.domain.capabilities import CredentialKind
+from app.domain.credentials import Credential
 from app.domain.models import (
     Answer,
     LlmCall,
@@ -1597,11 +1598,12 @@ async def test_interrupted_runs_recover_twice_then_stop(sql_store):
     assert "лимит" in saved.error
 
 
-async def test_llm_credentials_persist_encrypted_with_single_default_and_cascade(
+async def test_credentials_persist_encrypted_with_single_default_and_cascade(  # noqa: PLR0915
     sql_store,
 ) -> None:
+    """Обобщённые ключи (RFC-0006): шифртекст, типы задач, приоритет, один ключ по умолчанию."""
     store, sessions = sql_store
-    repo = store.repositories().llm_credentials
+    repo = store.repositories().credentials
     assert repo is not None
     user_id = uuid4()
     async with sessions.begin() as session:
@@ -1618,16 +1620,18 @@ async def test_llm_credentials_persist_encrypted_with_single_default_and_cascade
     secret = "sk-plaintext-secret-9999"  # noqa: S105
     now = datetime.now(UTC)
 
-    def credential(label: str, *, default: bool) -> LlmCredential:
-        return LlmCredential(
+    def credential(
+        label: str, *, default: bool, kinds: tuple[CredentialKind, ...] = (CredentialKind.LLM,)
+    ) -> Credential:
+        return Credential(
             id=uuid4(),
             user_id=user_id,
             provider="openai",
             label=label,
-            base_url=None,
+            kinds=kinds,
             encrypted_key=b"gAAAA-cipher-not-" + label.encode(),
             key_hint=secret[-4:],
-            default_model="gpt-4o",
+            default_model="gpt-4o" if CredentialKind.LLM in kinds else None,
             is_default=default,
             created_at=now,
         )
@@ -1639,23 +1643,54 @@ async def test_llm_credentials_persist_encrypted_with_single_default_and_cascade
     assert [item.label for item in items] == ["b", "a"]
     assert [item.is_default for item in items] == [True, False]
     assert await repo.count(user_id) == 2
+    # Модель сохраняет несколько типов задач одного ключа.
+    shared = credential(
+        "c", default=False, kinds=(CredentialKind.LLM, CredentialKind.SPEECH_TO_TEXT)
+    )
+    await repo.save(shared)
+    reloaded_shared = await repo.get(shared.id)
+    assert reloaded_shared is not None
+    assert reloaded_shared.kinds == (CredentialKind.LLM, CredentialKind.SPEECH_TO_TEXT)
+    await repo.delete(shared.id)
+
     await repo.mark_used(first.id, now, "x" * 600)
     reloaded = await repo.get(first.id)
     assert reloaded is not None
     assert reloaded.last_error == "x" * 500
     # Правка настроек меняет только свои колонки: отметка использования переживает её.
-    updated = await repo.update_fields(first.id, label="a2", is_default=True)
+    updated = await repo.update_fields(first.id, label="a2", is_default=True, priority=7)
     assert updated is not None
-    assert (updated.label, updated.is_default) == ("a2", True)
+    assert (updated.label, updated.is_default, updated.priority) == ("a2", True, 7)
     assert updated.last_error == "x" * 500
     assert updated.last_used_at == now
     assert [item.is_default for item in await repo.list_by_user(user_id)] == [True, False]
     cleared = await repo.update_fields(first.id, clear_default_model=True)
     assert cleared is not None
     assert cleared.default_model is None
+    # Отказ провайдера: класс, пауза квоты и выключение недействительного ключа.
+    await repo.mark_failure(
+        first.id,
+        now,
+        error="кончилась квота",
+        error_code="quota_exhausted",
+        exhausted_until=now + timedelta(hours=1),
+    )
+    failed = await repo.get(first.id)
+    assert failed is not None
+    assert failed.last_error_code == "quota_exhausted"
+    assert failed.exhausted_until is not None
+    await repo.mark_used(first.id, now, None)
+    recovered = await repo.get(first.id)
+    assert recovered is not None
+    assert recovered.last_error_code is None
+    assert recovered.exhausted_until is None
+    await repo.mark_failure(second.id, now, error="ключ отклонён", error_code="auth", disable=True)
+    disabled = await repo.get(second.id)
+    assert disabled is not None
+    assert disabled.enabled is False
     assert await repo.update_fields(uuid4(), label="x") is None
     async with sessions() as session:
-        raw = (await session.execute(text("SELECT encrypted_key FROM user_llm_credentials"))).all()
+        raw = (await session.execute(text("SELECT encrypted_key FROM user_credentials"))).all()
     assert all(secret.encode() not in bytes(row[0]) for row in raw)
     async with sessions.begin() as session:
         await session.execute(text("DELETE FROM users WHERE id = :id"), {"id": user_id})

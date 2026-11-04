@@ -2,13 +2,18 @@
 
 import asyncio
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from app.domain import questions as question_rules
+from app.domain.capabilities import (
+    CapabilityIncident,
+    CapabilityIncidentSink,
+    CapabilityOutcome,
+)
 from app.domain.models import (
     MediaInfo,
     Source,
@@ -26,6 +31,7 @@ from app.ingest.media import (
     MEDIA_EXTENSIONS,
     MediaError,
     MediaJob,
+    MediaRoutingError,
     MediaTranscriber,
     is_media,
 )
@@ -37,7 +43,7 @@ from app.ingest.parsers import (
     detect_format,
     is_slow,
 )
-from app.ingest.stt import NoSpeechError
+from app.ingest.stt import NoSpeechError, SpeechToText
 from app.services.common import Runtime, get_project, get_source, too_large, touch_project
 from app.services.errors import (
     ConflictError,
@@ -85,6 +91,8 @@ class SourceService:
         max_upload_bytes: int,
         parse_delay_sec: float,
         media: MediaTranscriber | None = None,
+        stt_for_user: Callable[[UUID | None], SpeechToText] | None = None,
+        incident_sink: CapabilityIncidentSink | None = None,
         max_media_bytes: int = 500 * 1024 * 1024,
     ) -> None:
         self._repos = repos
@@ -95,6 +103,10 @@ class SourceService:
         self._max_upload = max_upload_bytes
         self._parse_delay = parse_delay_sec
         self._media = media
+        # Ключи инициатора загрузки (RFC-0006); None — серверный провайдер.
+        self._stt_for_user = stt_for_user
+        # Мягкая стыковка с техническими вопросами волны 2B: приёмник необязателен.
+        self._incident_sink = incident_sink
         self._max_media = max_media_bytes
 
     def _clean_content(self, content: str) -> str:
@@ -322,36 +334,60 @@ class SourceService:
         return source
 
     async def _media_changes(
-        self, source: Source, transcript: Source | None
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        self,
+        source: Source,
+        transcript: Source | None,
+        *,
+        initiator_id: UUID | None,
+    ) -> tuple[dict[str, Any], dict[str, Any], CapabilityOutcome | None]:
         """Изменения записи и её расшифровки по итогу ffprobe/ffmpeg/STT.
 
         Сбой виден на обоих узлах с одной причиной; дорожки записи сохраняются, если ffprobe
-        успел их прочитать.
+        успел их прочитать. Обработка идёт на ключах инициатора загрузки (RFC-0006), серверный
+        провайдер — запасной путь. Структурный результат отказа маршрутизации возвращается третьим
+        элементом: из него волна технических вопросов сделает вопрос, а пока он виден в
+        `derivation.params.routing` и в понятном тексте ошибки.
         """
         job = MediaJob()
+        routing: CapabilityOutcome | None = None
 
         def failed(error: str) -> tuple[dict[str, Any], dict[str, Any]]:
             parent: dict[str, Any] = {"status": SourceStatus.FAILED, "error": error}
             if (probe := job.probe) is not None:
                 parent["media"] = MediaInfo(has_audio=probe.has_audio, has_video=probe.has_video)
                 parent["duration_sec"] = probe.duration_sec
-            return parent, {"status": SourceStatus.FAILED, "error": error}
+            child: dict[str, Any] = {"status": SourceStatus.FAILED, "error": error}
+            if routing is not None:
+                if routing.done and routing.remaining:
+                    parent["warning"] = (
+                        f"Обработано {routing.done}, не расшифровано {routing.remaining}"
+                    )
+                child["derivation"] = self._routing_derivation(transcript, routing)
+            return parent, child
 
         if self._media is None or not source.file_key:
-            return failed("Обработка аудио и видео не включена")
+            parent, child = failed("Обработка аудио и видео не включена")
+            return parent, child, routing
+        engine = self._stt_for_user(initiator_id) if self._stt_for_user is not None else None
         try:
             async with self._storage.local_file(source.file_key) as path:
-                result = await self._media.transcribe(path, job=job)
+                result = await self._media.transcribe(path, job=job, stt=engine)
+        except MediaRoutingError as error:
+            routing = error.outcome
+            parent, child = failed(str(error))
+            return parent, child, routing
         except MediaError as error:
-            return failed(str(error))
+            parent, child = failed(str(error))
+            return parent, child, routing
         except NoSpeechError:
-            return failed("В записи не найдено речи")
+            parent, child = failed("В записи не найдено речи")
+            return parent, child, routing
         if len(result.text) > self._max_text:
-            return failed(
+            parent, child = failed(
                 f"Расшифровка превышает лимит {self._max_text} символов. "
                 "Разделите запись на части и загрузите их отдельно"
             )
+            return parent, child, routing
         probe = job.probe
         media = MediaInfo(
             has_audio=probe.has_audio if probe else None,
@@ -372,15 +408,56 @@ class SourceService:
         if transcript is not None and transcript.derivation is not None:
             child["derivation"] = replace(
                 transcript.derivation,
+                provider=job.provider or transcript.derivation.provider,
+                model=job.model or transcript.derivation.model,
+                cost_usd=job.cost_usd
+                if job.cost_usd is not None
+                else transcript.derivation.cost_usd,
                 params={
                     **transcript.derivation.params,
                     "duration_sec": result.duration_sec,
+                    "minutes": round(result.duration_sec / 60, 2),
                     "language": result.language,
                 },
             )
-        return parent, child
+        return parent, child, routing
 
-    async def _process_media(self, source: Source) -> None:
+    @staticmethod
+    def _routing_derivation(
+        transcript: Source | None, routing: CapabilityOutcome
+    ) -> SourceDerivation | None:
+        """Производная расшифровки с причиной отказа — для настроек и технического вопроса."""
+        if transcript is None or transcript.derivation is None:
+            return None
+        return replace(
+            transcript.derivation,
+            provider=routing.provider or transcript.derivation.provider,
+            params={**transcript.derivation.params, "routing": routing.to_json()},
+        )
+
+    async def _report_incident(self, source: Source, routing: CapabilityOutcome) -> None:
+        """Мягкая стыковка с техническими вопросами (RFC-0006 шаг 2): приёмник необязателен."""
+        sink = self._incident_sink
+        if sink is None:
+            return
+        incident = CapabilityIncident(
+            project_id=source.project_id,
+            source_id=source.id,
+            capability=routing.capability,
+            status=routing.status,
+            reason=routing.reason,
+            message=routing.message or "Возможность недоступна",
+            done=routing.done,
+            remaining=routing.remaining,
+            alternatives=routing.alternatives,
+            derivation=routing.to_json(),
+        )
+        try:
+            await sink.report(incident)
+        except Exception:
+            logger.exception("Не удалось передать отказ инструмента в технические вопросы")
+
+    async def _process_media(self, source: Source, *, initiator_id: UUID | None = None) -> None:
         siblings = await self._repos.sources.list_by_project(source.project_id)
         transcript = next(
             (
@@ -399,8 +476,11 @@ class SourceService:
                 await repos.projects.lock(source.project_id)
                 await repos.sources.patch(source.id, parent, only_status=SourceStatus.PROCESSING)
             return
+        routing: CapabilityOutcome | None = None
         try:
-            parent, child = await self._media_changes(source, transcript)
+            parent, child, routing = await self._media_changes(
+                source, transcript, initiator_id=initiator_id
+            )
         except Exception:
             logger.exception("Не удалось расшифровать запись %s", source.id)
             error = "Не удалось расшифровать запись"
@@ -412,6 +492,8 @@ class SourceService:
             # Расшифровку нельзя удалить, пока она `processing` (см. `delete`); удалённая вместе
             # с записью не оживает: patch не найдёт строку.
             await repos.sources.patch(transcript.id, child, only_status=SourceStatus.PROCESSING)
+        if routing is not None:
+            await self._report_incident(source, routing)
 
     async def _parse_changes(self, *, file_name: str, data: bytes) -> dict[str, Any]:
         """Результат разбора как набор полей источника: `status`, `content`, `error`, `warning`."""
@@ -436,8 +518,12 @@ class SourceService:
             "unreadable_pages": list(parsed.unreadable_pages),
         }
 
-    async def process_file(self, source_id: UUID) -> None:
-        """Фоновый разбор документа.
+    async def process_file(self, source_id: UUID, *, initiator_id: UUID | None = None) -> None:
+        """Фоновый разбор документа; `initiator_id` — чьи ключи использовать для записи.
+
+        Ключи инициатора загрузки передаются аргументом, а не хранятся в источнике: после
+        рестарта сервера `processing`-источники завершаются сбоем (ADR-0012), поэтому
+        переживать рестарт ключам не нужно.
 
         Разбор запускается asyncio-задачей. Результат пишется точечным UPDATE только по
         полям разбора и только пока источник в `processing`: название и `active`, которые
@@ -449,7 +535,7 @@ class SourceService:
         if source is None or source.status is not SourceStatus.PROCESSING or not source.file_key:
             return
         if is_media(source.file_name or ""):
-            await self._process_media(source)
+            await self._process_media(source, initiator_id=initiator_id)
             return
         try:
             data = await self._storage.load(source.file_key)

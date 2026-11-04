@@ -69,9 +69,11 @@ test-backend: ## pytest с покрытием ≥80%
 	$(UV) pytest --cov --cov-report=term-missing:skip-covered
 
 test-postgres: ## SQL-репозитории и HTTP-тесты с авторизацией на временной схеме PostgreSQL
-	set -a; [ ! -f .env ] || . ./.env; set +a; docker compose up -d --wait db; \
-	TEST_DATABASE_URL="$${TEST_DATABASE_URL:-$${DATABASE_URL:-postgresql+asyncpg://arkhitektor:local-dev-only@localhost:5433/arkhitektor}}" \
-	$(UV) pytest tests/test_persistence.py tests/test_auth_http.py tests/test_onboarding_http.py
+# Свой DATABASE_URL из `.env` может смотреть в живой стенд — тесты берут только явный
+# TEST_DATABASE_URL (или локальную 5433), а compose/живую БД не трогают.
+	TEST_DATABASE_URL="$${TEST_DATABASE_URL:-postgresql+asyncpg://arkhitektor:local-dev-only@localhost:5433/arkhitektor}" \
+	$(UV) pytest tests/test_persistence.py tests/test_auth_http.py tests/test_onboarding_http.py \
+		tests/test_api_tokens_http.py tests/test_credentials_pg.py tests/test_mcp.py
 
 test-frontend: ## vitest
 	$(NPM_FRONT) test

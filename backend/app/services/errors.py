@@ -69,3 +69,26 @@ class UnauthorizedError(ServiceError):
 
 class UnavailableError(ServiceError):
     """503: нужная часть системы не подключена (например, нет PostgreSQL)."""
+
+
+class ToolUnavailableError(UnavailableError):
+    """503: возможность не выполнена — кончились рабочие ключи или провайдер не принял материал.
+
+    Несёт причину-класс и структурный прогресс (RFC-0006): что сделано, что осталось и какие
+    есть альтернативы. Текст провайдера в сообщение не входит.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason: str | None = None,
+        done: str | None = None,
+        remaining: str | None = None,
+        alternatives: tuple[str, ...] = (),
+    ) -> None:
+        super().__init__(message)
+        self.reason = reason
+        self.done = done
+        self.remaining = remaining
+        self.alternatives = alternatives

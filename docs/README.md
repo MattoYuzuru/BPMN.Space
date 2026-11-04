@@ -15,7 +15,7 @@
   - [Записи и производные источники: дерево материалов](backend/media-and-derived-sources.md)
   - [Runtime layout/lint: запуск и пределы Node-сервиса](../infra/bpmn-tools/README.md)
   - [Что ещё заглушено и что нужно для настоящей реализации](backend/mock.md)
-  - [Настройка LLM и распознавания речи](backend/подключение-провайдеров.md)
+  - [Подключение моделей, ключей и распознавания речи](backend/подключение-провайдеров.md)
   - [MCP-сервер для внешних агентов](backend/mcp.md)
 - [Frontend: принципы и устройство](frontend/README.md)
 - [Деплой на VM](deployment.md)

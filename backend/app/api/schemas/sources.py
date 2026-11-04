@@ -26,6 +26,14 @@ class Source(ApiModel):
         default=None, description="Для `kind=answer` — вопрос, на который это ответ"
     )
     error: str | None = Field(default=None, description="Причина для `status=failed`")
+    warning: str | None = Field(
+        default=None,
+        description="Для `status=ready`: источник прочитан не полностью (см. `unreadable_pages`)",
+    )
+    unreadable_pages: list[int] = Field(
+        default_factory=list[int],
+        description="Номера страниц PDF без текстового слоя (сканы): их текст не извлечён",
+    )
     created_at: datetime
 
 

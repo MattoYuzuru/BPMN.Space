@@ -94,3 +94,16 @@ it('подсвечивает выбранную цитату целиком, д�
   const target = document.querySelector('[data-testid="source-content"] [data-target="true"]')
   expect(target).toHaveTextContent(mark)
 })
+
+it('длинный документ показывается порциями, а предупреждение о чтении видно', async () => {
+  const long = `${'Инженер проверяет заявку. '.repeat(10_000)}КОНЕЦ`
+  const { user } = setup(long)
+  const body = screen.getByTestId('source-content')
+  expect(body.textContent?.length ?? 0).toBeLessThan(long.length)
+  expect(body.textContent).not.toContain('КОНЕЦ')
+  expect(screen.getByText(/Анализ использует весь текст/)).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Показать ещё' }))
+  await user.click(screen.getByRole('button', { name: 'Показать ещё' }))
+  expect(screen.getByTestId('source-content').textContent).toContain('КОНЕЦ')
+  expect(screen.queryByRole('button', { name: 'Показать ещё' })).not.toBeInTheDocument()
+})

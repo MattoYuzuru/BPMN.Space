@@ -51,6 +51,9 @@ class RunContext:
     # Полный доступный снимок знаний для порционной сверки, без обрезки fitted sources структуры.
     evidence_sources: list[ContextSource] | None = None
     analysis_budget_chars: int = 120_000
+    # Длинные документы: сколько запросов порций идёт одновременно и каков размер порции.
+    parallel_requests: int = 1
+    chunk_chars: int = 24_000
     source_snapshot_hash: str | None = None
     analysis_input_complete: bool = True
 

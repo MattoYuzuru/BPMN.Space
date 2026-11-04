@@ -46,7 +46,13 @@ from app.mcp.diagram import (
     parse_document_async,
     project_ir_summary,
 )
-from app.mcp.estimate import EstimateTicket, RunEstimate, RunEstimator, TicketSigner
+from app.mcp.estimate import (
+    EstimateTicket,
+    RedeemedEstimates,
+    RunEstimate,
+    RunEstimator,
+    TicketSigner,
+)
 from app.mcp.serializers import (
     project_card,
     project_detail,
@@ -59,7 +65,7 @@ from app.mcp.serializers import (
 )
 from app.services.common import utc_now
 from app.services.errors import InvalidInputError, ServiceError, StaleVersionError
-from app.services.runs import RunProfile
+from app.services.runs import Budget, RunProfile
 
 __all__ = ["MAX_READ_CHARS", "register_tools"]
 
@@ -68,8 +74,8 @@ MAX_READ_CHARS = 20_000
 #: Предел элементов в списке — как у REST-пагинации, но без курсоров: агенту хватает сводки.
 MAX_LIST = 100
 _EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
-_PROFILE_KEYS = frozenset({"effort", "semantic_review"})
-_BUDGET_KEYS = frozenset({"budget", "budget_tokens", "budget_cost_usd", "max_cost_usd"})
+_PROFILE_KEYS = frozenset({"effort", "semantic_review", "budget"})
+_BUDGET_FIELDS = frozenset({"tokens", "cost_usd"})
 _READ = ToolAnnotations(read_only_hint=True, open_world_hint=False)
 _READ_SAFE = ToolAnnotations(read_only_hint=True, destructive_hint=False, open_world_hint=False)
 _WRITE = ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=False)
@@ -92,21 +98,45 @@ def service_errors() -> Iterator[None]:
         raise as_tool_error(error) from None
 
 
+def _clean_budget(value: Any) -> dict[str, Any] | None:
+    """Бюджет агента: только ограничивающие положительные границы токенов и/или денег.
+
+    Настроек бюджета у пользователя пока нет, поэтому «повышать» нечего: агент может задать
+    лишь собственный лимит, который мягко останавливает прогон (RFC-0005, шаг 5). Прогон
+    переходит в `waiting` с техническим вопросом, а не молча тратит больше.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise InvalidInputError("budget: объект с полями tokens и/или cost_usd")
+    unknown = set(value) - _BUDGET_FIELDS
+    if unknown:
+        raise InvalidInputError(
+            "budget содержит неподдерживаемые поля: " + ", ".join(sorted(unknown))
+        )
+    tokens = value.get("tokens")
+    cost_usd = value.get("cost_usd")
+    if tokens is not None and (
+        not isinstance(tokens, int) or isinstance(tokens, bool) or tokens <= 0
+    ):
+        raise InvalidInputError("budget.tokens: целое число больше нуля")
+    if cost_usd is not None and (
+        not isinstance(cost_usd, (int, float)) or isinstance(cost_usd, bool) or cost_usd <= 0
+    ):
+        raise InvalidInputError("budget.cost_usd: число больше нуля")
+    if tokens is None and cost_usd is None:
+        raise InvalidInputError("Укажите бюджет в токенах и/или стоимость в долларах")
+    return {
+        "tokens": tokens,
+        "cost_usd": float(cost_usd) if cost_usd is not None else None,
+    }
+
+
 def _profile_json(profile: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Профиль из аргументов MCP: только разрешённые поля, бюджет агент не задаёт."""
+    """Профиль из аргументов MCP: effort, смысловая сверка и ограничивающий бюджет."""
     if profile is None:
         return None
-    keys = set(profile)
-    # TODO(2B): когда в RunProfile появится бюджет в деньгах/токенах (RFC-0005 шаг 5),
-    # сравнивать его здесь с сохранённым бюджетом владельца и отклонять превышение, а не
-    # запрещать поле целиком. Сейчас агент не задаёт бюджет вообще — его задаёт владелец.
-    budget = keys & _BUDGET_KEYS
-    if budget:
-        raise InvalidInputError(
-            "Бюджет прогона задаёт владелец токена в настройках; агент не может его поднять. "
-            "Уберите из профиля: " + ", ".join(sorted(budget))
-        )
-    unknown = keys - _PROFILE_KEYS
+    unknown = set(profile) - _PROFILE_KEYS
     if unknown:
         raise InvalidInputError(
             "Профиль содержит неподдерживаемые поля: " + ", ".join(sorted(unknown))
@@ -117,15 +147,32 @@ def _profile_json(profile: dict[str, Any] | None) -> dict[str, Any] | None:
     review = profile.get("semantic_review")
     if review is not None and not isinstance(review, bool):
         raise InvalidInputError("semantic_review: true или false")
-    cleaned = {key: profile[key] for key in _PROFILE_KEYS if profile.get(key) is not None}
+    cleaned: dict[str, Any] = {}
+    if effort is not None:
+        cleaned["effort"] = effort
+    if review is not None:
+        cleaned["semantic_review"] = review
+    budget = _clean_budget(profile.get("budget"))
+    if budget is not None:
+        cleaned["budget"] = budget
     return cleaned or None
 
 
 def _service_profile(profile: dict[str, Any] | None) -> RunProfile:
     payload = profile or {}
+    raw_budget = payload.get("budget")
+    budget = (
+        Budget(
+            tokens=raw_budget.get("tokens"),
+            cost_usd=raw_budget.get("cost_usd"),
+        )
+        if isinstance(raw_budget, dict)
+        else None
+    )
     return RunProfile(
         effort=payload.get("effort"),
         semantic_review=payload.get("semantic_review"),
+        budget=budget,
     )
 
 
@@ -148,6 +195,7 @@ def register_tools(  # noqa: PLR0915 — регистрация всех инс�
     container: Any,
     estimator: RunEstimator,
     signer: TicketSigner,
+    redeemed: RedeemedEstimates,
 ) -> None:
     """Зарегистрировать инструменты RFC-0007. Права — в `app.mcp.auth.TOOL_POLICIES`."""
 
@@ -356,7 +404,11 @@ def register_tools(  # noqa: PLR0915 — регистрация всех инс�
     @server.tool(
         name="update_source",
         title="Изменить источник",
-        description="Поправить название, текст или включить/выключить источник проекта.",
+        description=(
+            "Поправить название, текст или включить/выключить источник проекта. Текст через "
+            "MCP правится только у материалов, добавленных агентом (origin=agent): иначе "
+            "правка переписала бы материал человека без видимой пометки «через агента»."
+        ),
         annotations=_WRITE,
     )
     async def update_source(
@@ -372,6 +424,15 @@ def register_tools(  # noqa: PLR0915 — регистрация всех инс�
         with service_errors():
             sid = uuid_or_404(source_id, "source_id")
             await ensure_resource(identity, ResourceKind.SOURCE, sid, write=True)
+            if content is not None:
+                source = await container.sources.get(sid)
+                if source.origin is not SourceOrigin.AGENT:
+                    raise ToolError(
+                        "Через MCP можно править текст только материалов, добавленных агентом "
+                        "(origin=agent): иначе правка изменит источник человека без пометки "
+                        "«через агента». Название и включение/выключение менять можно; текст "
+                        "источника человека правится в интерфейсе"
+                    )
             fields: set[str] = set()
             if title is not None:
                 fields.add("title")
@@ -498,7 +559,12 @@ def register_tools(  # noqa: PLR0915 — регистрация всех инс�
         ] = "analyze",
         profile: Annotated[
             dict[str, Any] | None,
-            Field(description="Профиль прогона: effort (low…max), semantic_review (true/false)"),
+            Field(
+                description=(
+                    "Профиль прогона: effort (low…max), semantic_review (true/false) и "
+                    "budget {tokens?, cost_usd?} — ограничивающий лимит прогона"
+                )
+            ),
         ] = None,
     ) -> dict[str, Any]:
         identity = begin_tool(ctx, "estimate_run")
@@ -515,13 +581,13 @@ def register_tools(  # noqa: PLR0915 — регистрация всех инс�
                 profile=profile_json,
                 user_id=identity.user.id,
             )
-            # TODO(2B): перед выдачей тикета сравнить бюджет из профиля с пользовательским
-            # (когда появится в RunProfile) — агент не должен поднимать бюджет владельца.
             ticket, parsed = signer.issue(
                 project_id=pid,
                 user_id=identity.user.id,
                 mode=mode,
                 profile=profile_json,
+                model=estimate.model,
+                provider=estimate.provider,
             )
             return {
                 "project_id": str(pid),
@@ -568,9 +634,10 @@ def register_tools(  # noqa: PLR0915 — регистрация всех инс�
                     "project_id не совпадает с оценкой: запросите оценку заново"
                 )
             await ensure_project(identity, pid, write=True)
-            # TODO(2B): после появления бюджета в RunProfile (RFC-0005 шаг 5) проверить здесь
-            # бюджет из тикета против сохранённого бюджета владельца и отклонить превышение.
-            # Тикет подписан нами, поэтому профиль в нём — уже проверенный профиль оценки.
+            # Допуск одноразовый: повторный запуск по той же оценке отклоняется.
+            redeemed.redeem(claims.estimate_id)
+            # Профиль (включая бюджет) и модель берутся из подписанного тикета; бюджет агента
+            # только ограничивает прогон и мягко останавливает его на лимите (RFC-0005 шаг 5).
             run = await container.runs.start(
                 pid,
                 mode=claims.mode,
@@ -582,8 +649,10 @@ def register_tools(  # noqa: PLR0915 — регистрация всех инс�
                     else None
                 ),
                 profile=_service_profile(claims.profile),
+                expected_model=claims.model,
+                expected_provider=claims.provider,
             )
-            return {"run": run_view(run)}
+            return {"run": run_view(run), "budget": (claims.profile or {}).get("budget")}
 
     @server.tool(
         name="get_run",

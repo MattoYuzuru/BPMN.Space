@@ -28,7 +28,12 @@ from starlette.applications import Starlette
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.mcp.auth import McpAuthMiddleware
-from app.mcp.estimate import build_estimator, make_ticket_signer, ticket_ttl_seconds
+from app.mcp.estimate import (
+    RedeemedEstimates,
+    build_estimator,
+    make_ticket_signer,
+    ticket_ttl_seconds,
+)
 from app.mcp.prompts import register_prompts
 from app.mcp.resources import register_resources
 from app.mcp.tools import register_tools
@@ -45,7 +50,8 @@ INSTRUCTIONS = (
     "estimate_run → start_run → get_run/get_diagram. Материалы, добавленные через токен, "
     "помечаются «через агента»; ответы записываются от имени владельца токена. Файлы через "
     "MCP в v1 не передаются — их загружают через REST. Запуск прогона требует свежей оценки; "
-    "бюджет задаёт владелец токена, агент не может его поднять."
+    "агент может задать бюджет прогона — он только ограничивает траты (мягкая остановка на "
+    "лимите), а не повышает их."
 )
 
 
@@ -113,7 +119,11 @@ def _build_http_app(server: MCPServer, container: Any) -> tuple[McpAuthMiddlewar
         transport_security=security,
     )
     return McpAuthMiddleware(
-        http_app, container, expensive_limit=settings.mcp_expensive_per_min
+        http_app,
+        container,
+        expensive_limit=settings.mcp_expensive_per_min,
+        api_limit=settings.rate_limit_api_per_min,
+        rate_limit_enabled=settings.rate_limit_enabled,
     ), http_app
 
 
@@ -128,10 +138,12 @@ def build_mcp(container: Any) -> McpRuntime:
         instructions=INSTRUCTIONS,
     )
     estimator = build_estimator(container)
-    signer = make_ticket_signer(
-        settings.mcp_estimate_secret, ttl_sec=ticket_ttl_seconds(settings.mcp_estimate_ttl_sec)
+    ttl_sec = ticket_ttl_seconds(settings.mcp_estimate_ttl_sec)
+    signer = make_ticket_signer(settings.mcp_estimate_secret, ttl_sec=ttl_sec)
+    redeemed = RedeemedEstimates(ttl_sec=ttl_sec)
+    register_tools(
+        server, container=container, estimator=estimator, signer=signer, redeemed=redeemed
     )
-    register_tools(server, container=container, estimator=estimator, signer=signer)
     register_resources(server)
     register_prompts(server)
 

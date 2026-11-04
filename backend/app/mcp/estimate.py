@@ -20,10 +20,14 @@ import hashlib
 import hmac
 import json
 import secrets
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Protocol
 from uuid import UUID, uuid4
+
+from pydantic import SecretStr
 
 from app.domain.models import RunMode
 from app.services.errors import InvalidInputError, UnavailableError
@@ -33,9 +37,11 @@ if TYPE_CHECKING:
     from app.container import Container
 
 __all__ = [
+    "ESTIMATE_REUSED_MESSAGE",
     "ESTIMATE_UNAVAILABLE_MESSAGE",
     "EstimateTicket",
     "Range",
+    "RedeemedEstimates",
     "RunEstimate",
     "RunEstimator",
     "ServiceEstimator",
@@ -47,6 +53,10 @@ __all__ = [
 ESTIMATE_UNAVAILABLE_MESSAGE = (
     "Оценка стоимости прогона пока недоступна: сервер не подключил сервис оценки. "
     "Запуск без оценки не выполняется — запросите оценку позже"
+)
+ESTIMATE_REUSED_MESSAGE = (
+    "Эта оценка уже использована для запуска. Вызовите estimate_run снова: допуск на запуск "
+    "одноразовый"
 )
 ESTIMATE_EXPIRED_MESSAGE = (
     "Оценка устарела или не совпадает с запросом. Вызовите estimate_run снова и передайте "
@@ -226,7 +236,7 @@ class UnavailableEstimator:
 
 @dataclass(frozen=True, slots=True)
 class EstimateTicket:
-    """Разобранный допуск на запуск: что именно и кем было оценено."""
+    """Разобранный допуск на запуск: что именно, кем и на какой модели оценено."""
 
     estimate_id: UUID
     project_id: UUID
@@ -234,6 +244,10 @@ class EstimateTicket:
     mode: RunMode
     profile: dict[str, Any] | None
     expires_at: datetime
+    # Модель и провайдер из оценки: start_run сверяет их с фактическим выбором, чтобы
+    # оценка не разошлась с прогоном при смене ключа/модели по умолчанию.
+    model: str | None = None
+    provider: str | None = None
 
 
 def _canonical_profile(profile: dict[str, Any] | None) -> str:
@@ -267,6 +281,8 @@ class TicketSigner:
         user_id: UUID,
         mode: RunMode,
         profile: dict[str, Any] | None,
+        model: str | None = None,
+        provider: str | None = None,
     ) -> tuple[str, EstimateTicket]:
         now = datetime.now(UTC)
         claims = {
@@ -276,6 +292,8 @@ class TicketSigner:
             "uid": str(user_id),
             "mode": mode.value,
             "profile": json.loads(_canonical_profile(profile)) if profile is not None else None,
+            "model": model,
+            "provider": provider,
             "exp": int((now + timedelta(seconds=self._ttl)).timestamp()),
         }
         payload = _b64encode(json.dumps(claims, ensure_ascii=False, sort_keys=True).encode("utf-8"))
@@ -287,6 +305,8 @@ class TicketSigner:
             mode=mode,
             profile=claims["profile"],
             expires_at=datetime.fromtimestamp(claims["exp"], tz=UTC),
+            model=model,
+            provider=provider,
         )
         return ticket, parsed
 
@@ -295,7 +315,12 @@ class TicketSigner:
         try:
             payload, signature = ticket.split(_TICKET_SEPARATOR, 1)
             expected = self._sign(payload)
-            if not hmac.compare_digest(signature, expected):
+            try:
+                matches = hmac.compare_digest(signature, expected)
+            except TypeError as error:
+                # Подпись с не-ASCII символами не сравнивается побайтово: это не наш тикет.
+                raise InvalidInputError(ESTIMATE_EXPIRED_MESSAGE) from error
+            if not matches:
                 raise InvalidInputError(ESTIMATE_EXPIRED_MESSAGE)
             claims = json.loads(_b64decode(payload))
         except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -312,6 +337,8 @@ class TicketSigner:
             mode=RunMode(str(claims["mode"])),
             profile=claims.get("profile"),
             expires_at=expires_at,
+            model=str(claims["model"]) if claims.get("model") is not None else None,
+            provider=str(claims["provider"]) if claims.get("provider") is not None else None,
         )
 
     def verify(
@@ -339,6 +366,32 @@ class TicketSigner:
         return digest[:_HMAC_CHARS]
 
 
+@dataclass(slots=True)
+class RedeemedEstimates:
+    """Использованные допуски: один `estimate_token` — один запуск.
+
+    Хранится в памяти процесса (backend работает одним worker) и живёт TTL допустимого
+    тикета. После перезапуска история теряется — безопасность это не снижает, потому что
+    сама оценка живёт `MCP_ESTIMATE_TTL_SEC`, а секрет подписи по умолчанию эфемерный.
+    """
+
+    ttl_sec: int
+    clock: Callable[[], float] = time.monotonic
+    _redeemed: dict[UUID, float] = field(default_factory=dict[UUID, float])
+
+    def redeem(self, estimate_id: UUID) -> None:
+        now = self.clock()
+        horizon = now - self.ttl_sec
+        for key in [key for key, at in self._redeemed.items() if at <= horizon]:
+            del self._redeemed[key]
+        if estimate_id in self._redeemed:
+            raise InvalidInputError(ESTIMATE_REUSED_MESSAGE)
+        self._redeemed[estimate_id] = now
+
+    def used(self, estimate_id: UUID) -> bool:
+        return estimate_id in self._redeemed
+
+
 def build_estimator(container: Container) -> RunEstimator:
     """Оценка прогона: адаптер над `container.estimate` (волна 2A), иначе честный отказ.
 
@@ -351,8 +404,10 @@ def build_estimator(container: Container) -> RunEstimator:
     return ServiceEstimator(service)
 
 
-def make_ticket_signer(secret: str | None, *, ttl_sec: int) -> TicketSigner:
+def make_ticket_signer(secret: str | SecretStr | None, *, ttl_sec: int) -> TicketSigner:
     """Подписыватель допусков: явный секрет из настроек или эфемерный на процесс."""
+    if isinstance(secret, SecretStr):
+        secret = secret.get_secret_value()
     raw = secret.encode("utf-8") if secret else secrets.token_bytes(32)
     return TicketSigner(raw, ttl_sec=ttl_sec)
 

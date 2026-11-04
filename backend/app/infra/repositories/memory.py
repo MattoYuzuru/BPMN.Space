@@ -22,6 +22,7 @@ from app.domain.models import (
     LlmCallTotals,
     Project,
     Question,
+    QuestionCategory,
     QuestionStatus,
     Run,
     RunStatus,
@@ -139,8 +140,17 @@ class InMemoryProjectRepository:
             result[project_id] = ProjectStats(
                 sources=sum(1 for s in sources if s.parent_id is None),
                 has_material=any(s.active and s.status is not SourceStatus.FAILED for s in sources),
-                questions_open=sum(1 for q in questions if q.status is QuestionStatus.OPEN),
-                questions_resolved=sum(1 for q in questions if q.status is QuestionStatus.RESOLVED),
+                questions_open=sum(
+                    1
+                    for q in questions
+                    if q.status is QuestionStatus.OPEN and q.category is QuestionCategory.BUSINESS
+                ),
+                questions_resolved=sum(
+                    1
+                    for q in questions
+                    if q.status is QuestionStatus.RESOLVED
+                    and q.category is QuestionCategory.BUSINESS
+                ),
                 versions=len(versions),
                 lanes=tuple(latest.lanes) if latest else (),
                 active_run_mode=active.mode if active else None,

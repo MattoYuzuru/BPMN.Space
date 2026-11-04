@@ -96,6 +96,7 @@ def question_view(question: Question) -> dict[str, Any]:
         "project_id": str(question.project_id),
         "code": question.code,
         "kind": question.kind.value,
+        "category": question.category.value,
         "severity": question.severity.value,
         "status": question.status.value,
         "text": question.text,
@@ -103,6 +104,11 @@ def question_view(question: Question) -> dict[str, Any]:
         "about": _quote(question.about),
         "evidence": _quote(question.evidence),
         "element_ids": list(question.element_ids),
+        "actions": [
+            {"kind": action.kind.value, "label": action.label, "payload": dict(action.payload)}
+            for action in question.actions
+        ],
+        "blocking": question.blocking,
         "answer": (
             {
                 "text": answer.text,

@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     # --- MCP-сервер внешних агентов (RFC-0007, шаг 2) ---
     # Секрет HMAC-подписи `estimate_token` (допуск на запуск после оценки). Пусто — случайный
     # на процесс: после перезапуска старые оценки потребуют повторного `estimate_run`.
-    mcp_estimate_secret: str | None = None
+    mcp_estimate_secret: SecretStr | None = None
     # Срок жизни оценки прогона (секунды): `start_run` без свежей оценки отклоняется.
     mcp_estimate_ttl_sec: float = Field(default=900.0, gt=0, le=86_400)
     # Дорогие вызовы MCP (`start_run`) на токен в минуту: отдельная таблица, потому что

@@ -23,7 +23,9 @@ import httpx2
 import pytest
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
+from mcp.shared.exceptions import MCPError
 from mcp_types import CallToolResult
+from pydantic import SecretStr
 from sqlalchemy import update
 
 from app.config import Settings
@@ -33,6 +35,9 @@ from app.domain.models import (
     ANSWER_VIA_AGENT,
     Answer,
     Question,
+    QuestionAction,
+    QuestionActionKind,
+    QuestionCategory,
     QuestionKind,
     QuestionStatus,
     Run,
@@ -44,6 +49,7 @@ from app.domain.models import (
     SourceOrigin,
     SourceStatus,
     SourceTrust,
+    TechnicalQuestionKind,
 )
 from app.infra.db_models import ApiTokenRow
 from app.llm.estimate import (
@@ -58,6 +64,7 @@ from app.llm.estimate import (
 from app.llm.estimate import (
     StageEstimate as DomainStageEstimate,
 )
+from app.main import create_app
 from app.mcp import build_mcp
 from app.mcp.auth import (
     PROMPT_POLICIES,
@@ -67,16 +74,20 @@ from app.mcp.auth import (
     tool_policy,
 )
 from app.mcp.estimate import (
+    ESTIMATE_REUSED_MESSAGE,
     ESTIMATE_UNAVAILABLE_MESSAGE,
+    RedeemedEstimates,
     ServiceEstimator,
     TicketSigner,
     UnavailableEstimator,
     _from_domain,
     build_estimator,
+    make_ticket_signer,
 )
 from app.mcp.serializers import question_view, run_view, source_view
-from app.mcp.tools import MAX_READ_CHARS, _profile_json
+from app.mcp.tools import MAX_READ_CHARS, _profile_json, _service_profile
 from app.services.errors import ForbiddenError, InvalidInputError, UnavailableError
+from app.services.runs import Budget
 from tests.test_auth_http import (  # noqa: F401 — фикстура `stack` подключается импортом
     API,
     PASSWORD,
@@ -178,6 +189,13 @@ async def test_every_surface_declares_policy_and_unknown_is_closed() -> None:
     assert tools == set(TOOL_POLICIES)
     assert resources == set(RESOURCE_POLICIES)
     assert prompts == set(PROMPT_POLICIES)
+    listed = await runtime.server.list_prompts()
+    collect = next(prompt for prompt in listed if prompt.name == "collect_process_materials")
+    assert {argument.name for argument in collect.arguments or []} == {
+        "project",
+        "sources",
+        "goal",
+    }  # ctx внедряется SDK и не попадает в аргументы подсказки
     with pytest.raises(ForbiddenError):
         tool_policy("drop_database")
 
@@ -352,14 +370,129 @@ class _FakeContainer:
         self.estimate = estimate
 
 
-def test_agent_cannot_raise_budget_or_smuggle_profile_fields() -> None:
-    for budget in (
-        {"budget": {"cost_usd": 10}},
-        {"budget_cost_usd": 10},
-        {"max_cost_usd": 10},
+def test_agent_budget_is_accepted_as_limiting_cap() -> None:
+    assert _profile_json({"budget": {"tokens": 5_000}}) == {
+        "budget": {"tokens": 5_000, "cost_usd": None}
+    }
+    assert _profile_json({"budget": {"cost_usd": 2.5}}) == {
+        "budget": {"tokens": None, "cost_usd": 2.5}
+    }
+    profile = _service_profile(_profile_json({"budget": {"tokens": 1000, "cost_usd": 1.5}}))
+    assert profile.budget == Budget(tokens=1000, cost_usd=1.5)
+    for bad in (
+        {"budget": {}},
+        {"budget": {"tokens": 0}},
+        {"budget": {"tokens": -1}},
+        {"budget": {"tokens": True}},
+        {"budget": {"cost_usd": 0}},
+        {"budget": {"cost_usd": "1"}},
+        {"budget": {"limit": 5}},
+        {"budget": 10},
     ):
         with pytest.raises(InvalidInputError):
-            _profile_json(budget)
+            _profile_json(bad)
+
+
+def test_estimate_ticket_binds_model_and_one_time_use() -> None:
+    signer = TicketSigner(b"secret", ttl_sec=900)
+    ticket, issued = signer.issue(
+        project_id=uuid4(),
+        user_id=uuid4(),
+        mode=RunMode.BUILD,
+        profile={"budget": {"tokens": 1000}},
+        model="claude-opus-5",
+        provider="anthropic",
+    )
+    parsed = signer.decode(ticket)
+    assert parsed.estimate_id == issued.estimate_id
+    assert parsed.model == "claude-opus-5"
+    assert parsed.provider == "anthropic"
+    # Не-ASCII подпись — не наш тикет, а не TypeError в compare_digest.
+    with pytest.raises(InvalidInputError):
+        signer.decode(ticket[:-2] + "фф")
+
+    clock = [100.0]
+    redeemed = RedeemedEstimates(ttl_sec=10, clock=lambda: clock[0])
+    redeemed.redeem(parsed.estimate_id)
+    with pytest.raises(InvalidInputError) as caught:
+        redeemed.redeem(parsed.estimate_id)
+    assert caught.value.message == ESTIMATE_REUSED_MESSAGE
+    clock[0] += 11
+    redeemed.redeem(parsed.estimate_id)  # запись живёт TTL тикета и очищается
+
+
+def test_estimate_secret_is_secret_str_and_signs_tickets() -> None:
+    settings = Settings(mcp_estimate_secret=SecretStr("mcp-test-secret-0123456789abcdef"))
+    assert isinstance(settings.mcp_estimate_secret, SecretStr)
+    signer = make_ticket_signer(settings.mcp_estimate_secret, ttl_sec=60)
+    ticket, _ = signer.issue(
+        project_id=uuid4(), user_id=uuid4(), mode=RunMode.ANALYZE, profile=None
+    )
+    assert signer.decode(ticket).mode is RunMode.ANALYZE
+
+
+def test_question_view_includes_technical_fields() -> None:
+    question = Question(
+        id=uuid4(),
+        project_id=uuid4(),
+        code="QT-1",
+        kind=TechnicalQuestionKind.BUDGET_REACHED,
+        category=QuestionCategory.TECHNICAL,
+        severity=Severity.BLOCKER,
+        status=QuestionStatus.OPEN,
+        text="Бюджет достигнут",
+        assumption="Продолжить без ограничения",
+        created_at=datetime(2026, 11, 4, tzinfo=UTC),
+        updated_at=datetime(2026, 11, 4, tzinfo=UTC),
+        actions=[
+            QuestionAction(
+                kind=QuestionActionKind.RAISE_BUDGET,
+                label="Поднять бюджет",
+                payload={"run_id": "r1"},
+            )
+        ],
+        blocking=True,
+    )
+    view = question_view(question)
+    assert view["category"] == "technical"
+    assert view["blocking"] is True
+    assert view["actions"] == [
+        {"kind": "raise_budget", "label": "Поднять бюджет", "payload": {"run_id": "r1"}}
+    ]
+
+
+async def test_mcp_ip_rate_limit_rejects_after_limit() -> None:
+    settings = Settings(
+        database_url=None,
+        auth_enabled=False,
+        app_env="test",
+        mock_delay_scale=0,
+        seed_demo_data=False,
+        rate_limit_enabled=True,
+        rate_limit_api_per_min=1,
+        llm_provider="mock",
+        stt_provider="mock",
+    )
+    app = create_app(settings)
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=app), base_url="http://t"
+    ) as http:
+        first = await http.post("/mcp", json=INITIALIZE)
+        assert first.status_code == 401
+        second = await http.post("/mcp", json=INITIALIZE)
+        assert second.status_code == 429
+        assert "Retry-After" in second.headers
+
+
+def test_agent_profile_rejects_unknown_fields() -> None:
+    for wrong in (
+        {"budget_cost_usd": 10},
+        {"max_cost_usd": 10},
+        {"model": "claude-opus-5"},
+        {"credential_id": str(uuid4())},
+    ):
+        with pytest.raises(InvalidInputError):
+            _profile_json(wrong)
     assert _profile_json({"effort": "high", "semantic_review": True}) == {
         "effort": "high",
         "semantic_review": True,
@@ -544,10 +677,37 @@ async def test_mcp_agent_sources_are_marked_and_deletable_with_confirm(stack: St
             await _call(
                 session,
                 "update_source",
-                {"source_id": source["id"], "title": "Регламент (проверено агентом)"},
+                {
+                    "source_id": source["id"],
+                    "title": "Регламент (проверено агентом)",
+                    "content": "Уточнённый текст материала агента.",
+                },
             )
         )
         assert updated["source"]["title"] == "Регламент (проверено агентом)"
+        assert updated["source"]["origin"] == "agent"
+
+        # Текст источника человека через MCP не переписывается: иначе потерялась бы
+        # пометка авторства правки. Название менять можно.
+        human = await owner.post(
+            f"/projects/{project_id}/sources/text",
+            json={"content": "Материал, добавленный человеком.", "title": "Человеческий"},
+        )
+        assert human.status_code == 201, human.text
+        human_id = human.json()["id"]
+        blocked_content = await _call(
+            session,
+            "update_source",
+            {"source_id": human_id, "content": "Переписано агентом"},
+        )
+        assert blocked_content.is_error
+        assert "origin=agent" in _error(blocked_content)
+        renamed = _payload(
+            await _call(
+                session, "update_source", {"source_id": human_id, "title": "Новое название"}
+            )
+        )
+        assert renamed["source"]["title"] == "Новое название"
 
         denied = await _call(session, "delete_source", {"source_id": source["id"]})
         assert denied.is_error
@@ -557,9 +717,10 @@ async def test_mcp_agent_sources_are_marked_and_deletable_with_confirm(stack: St
             await _call(session, "delete_source", {"source_id": source["id"], "confirm": True})
         )
         assert deleted["deleted"] is True
-        assert (
-            _payload(await _call(session, "list_sources", {"project_id": project_id}))["total"] == 0
-        )
+        remaining = _payload(await _call(session, "list_sources", {"project_id": project_id}))
+        remaining_ids = {item["id"] for item in remaining["items"]}
+        assert source["id"] not in remaining_ids
+        assert human_id in remaining_ids
 
     # Пометка «через агента» видна и в REST-модели проекта владельца.
     assert (await owner.get(f"/projects/{UUID(project_id)}")).status_code == 200
@@ -812,7 +973,7 @@ async def test_mcp_estimate_returns_real_estimate_and_starts_run(stack: Stack) -
         assert "не совпадает" in _error(mismatch)
 
 
-async def test_mcp_estimate_rejects_empty_project_and_budget(stack: Stack) -> None:
+async def test_mcp_estimate_rejects_empty_project_and_bad_budget(stack: Stack) -> None:
     owner = await stack.user("mcp-estimate-guard@example.com")
     finished = await _finished_project(owner)
     project_id = finished["project"]
@@ -826,14 +987,94 @@ async def test_mcp_estimate_rejects_empty_project_and_budget(stack: Stack) -> No
         assert no_sources.is_error
         assert "источник" in _error(no_sources).lower()
 
-        # Бюджет агент задать не может (настройку бюджета добавит волна 2B).
-        budget = await _call(
+        # Кривой бюджет и неизвестные поля отклоняются понятной ошибкой.
+        bad_budget = await _call(
+            session,
+            "estimate_run",
+            {"project_id": project_id, "profile": {"budget": {"tokens": 0}}},
+        )
+        assert bad_budget.is_error
+        assert "budget.tokens" in _error(bad_budget)
+        flat_budget = await _call(
             session,
             "estimate_run",
             {"project_id": project_id, "profile": {"budget_cost_usd": 100}},
         )
-        assert budget.is_error
-        assert "Бюджет" in _error(budget)
+        assert flat_budget.is_error
+        assert "budget_cost_usd" in _error(flat_budget)
+
+
+async def test_estimate_token_is_one_time(stack: Stack) -> None:
+    owner = await stack.user("mcp-one-time@example.com")
+    finished = await _finished_project(owner)
+    project_id = finished["project"]
+    secret, _ = await _issue_token(owner, scopes=["projects:read", "runs:start"])
+    async with _mcp_server(stack) as connect:
+        session = await connect(secret)
+        estimated = _payload(
+            await _call(
+                session,
+                "estimate_run",
+                {"project_id": project_id, "kind": "analyze"},
+            )
+        )
+        started = _payload(
+            await _call(
+                session,
+                "start_run",
+                {"project_id": project_id, "estimate_token": estimated["estimate_token"]},
+            )
+        )
+        run_id = started["run"]["id"]
+        recorded = (await owner.get(f"/runs/{run_id}")).json()
+        assert recorded["profile"]["budget"] is None
+
+        reused = await _call(
+            session,
+            "start_run",
+            {"project_id": project_id, "estimate_token": estimated["estimate_token"]},
+        )
+        assert reused.is_error
+        assert "использована" in _error(reused)
+
+
+async def test_agent_budget_estimation_and_mock_limitation(stack: Stack) -> None:
+    owner = await stack.user("mcp-budget@example.com")
+    finished = await _finished_project(owner)
+    project_id = finished["project"]
+    secret, _ = await _issue_token(owner, scopes=["projects:read", "runs:start"])
+    async with _mcp_server(stack) as connect:
+        session = await connect(secret)
+        estimated = _payload(
+            await _call(
+                session,
+                "estimate_run",
+                {
+                    "project_id": project_id,
+                    "kind": "analyze",
+                    "profile": {"budget": {"tokens": 200_000}},
+                },
+            )
+        )
+        assert estimated["profile"]["budget"] == {"tokens": 200_000, "cost_usd": None}
+        assert estimated["estimate_token"]
+        # Mock-модель без цен не умеет учитывать бюджет: запуск честно отклоняется
+        # понятной ошибкой сервиса, а не идёт «мимо» лимита.
+        started = await _call(
+            session,
+            "start_run",
+            {"project_id": project_id, "estimate_token": estimated["estimate_token"]},
+        )
+        assert started.is_error
+        assert "Бюджет" in _error(started) or "бюджет" in _error(started)
+        # Неверный бюджет отвергается ещё до оценки.
+        bad = await _call(
+            session,
+            "estimate_run",
+            {"project_id": project_id, "profile": {"budget": {"tokens": 0}}},
+        )
+        assert bad.is_error
+        assert "budget.tokens" in _error(bad)
 
 
 async def test_mcp_viewer_can_estimate_but_not_start(stack: Stack) -> None:
@@ -936,3 +1177,73 @@ async def test_mcp_responses_do_not_leak_secrets(stack: Stack) -> None:
         runs = _payload(await _call(session, "get_run", {"run_id": finished["run"]}))
         assert "error" not in runs["run"]
         assert runs["run"]["status"] == "succeeded"
+
+
+async def test_mcp_prompts_require_projects_read(stack: Stack) -> None:
+    owner = await stack.user("mcp-prompt-rights@example.com")
+    arguments = {"project": "x", "sources": "y"}
+    denied_secret, _ = await _issue_token(owner, scopes=["questions:answer"])
+    async with _mcp_server(stack) as connect:
+        denied = await connect(denied_secret)
+        with pytest.raises(MCPError):  # ошибка прав: сервер не отдаёт содержимое подсказки
+            await denied.get_prompt("collect_process_materials", arguments)
+        allowed_secret, _ = await _issue_token(owner)
+        allowed = await connect(allowed_secret)
+        prompt = await allowed.get_prompt("collect_process_materials", arguments)
+        assert prompt.messages
+
+
+async def test_project_card_counts_only_business_questions(stack: Stack) -> None:
+    owner = await stack.user("mcp-counts@example.com")
+    created = await owner.post("/projects", json={"title": "Счётчики вопросов"})
+    assert created.status_code == 201, created.text
+    project_id = UUID(created.json()["id"])
+    before = next(
+        item
+        for item in (await owner.get("/projects")).json()["items"]
+        if item["id"] == str(project_id)
+    )
+    repos = stack.database.store.repositories()
+    now = datetime.now(UTC)
+    await repos.questions.add(
+        Question(
+            id=uuid4(),
+            project_id=project_id,
+            code="QT-1",
+            kind=TechnicalQuestionKind.BUDGET_REACHED,
+            category=QuestionCategory.TECHNICAL,
+            severity=Severity.BLOCKER,
+            status=QuestionStatus.OPEN,
+            text="Технический вопрос",
+            assumption="—",
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    after_technical = next(
+        item
+        for item in (await owner.get("/projects")).json()["items"]
+        if item["id"] == str(project_id)
+    )
+    assert after_technical["counts"]["questions_open"] == before["counts"]["questions_open"]
+    await repos.questions.add(
+        Question(
+            id=uuid4(),
+            project_id=project_id,
+            code="Q-1",
+            kind=QuestionKind.MISSING_ACTOR,
+            category=QuestionCategory.BUSINESS,
+            severity=Severity.MAJOR,
+            status=QuestionStatus.OPEN,
+            text="Бизнес-вопрос",
+            assumption="—",
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    after_business = next(
+        item
+        for item in (await owner.get("/projects")).json()["items"]
+        if item["id"] == str(project_id)
+    )
+    assert after_business["counts"]["questions_open"] == before["counts"]["questions_open"] + 1

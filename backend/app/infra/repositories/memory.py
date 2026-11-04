@@ -8,7 +8,7 @@ SQL-реализация (`sql.py`). Операции здесь не преры
 """
 
 import copy
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -21,6 +21,7 @@ from app.domain.models import (
     Question,
     QuestionStatus,
     Run,
+    RunStatus,
     Source,
     SourceKind,
     SourceStatus,
@@ -37,7 +38,7 @@ from app.domain.onboarding import (
 )
 from app.domain.questions import normalize
 from app.domain.runs import ACTIVE_STATUSES
-from app.infra.repositories.base import PageKey, Repositories
+from app.infra.repositories.base import PageKey, ProjectStats, Repositories
 
 
 @dataclass(slots=True)
@@ -105,6 +106,37 @@ class InMemoryProjectRepository:
     async def get(self, project_id: UUID) -> Project | None:
         item = self._items.get(project_id)
         return copy.deepcopy(item) if item else None
+
+    async def stats(self, project_ids: Sequence[UUID]) -> dict[UUID, ProjectStats]:
+        store = self._store
+        result: dict[UUID, ProjectStats] = {}
+        for project_id in project_ids:
+            sources = [
+                s
+                for s in store.sources.values()
+                if s.project_id == project_id and s.kind is not SourceKind.ANSWER
+            ]
+            questions = [q for q in store.questions.values() if q.project_id == project_id]
+            versions = [v for v in store.versions.values() if v.project_id == project_id]
+            latest = max(versions, key=lambda v: v.number, default=None)
+            active = next(
+                (
+                    r
+                    for r in store.runs.values()
+                    if r.project_id == project_id and r.status in ACTIVE_STATUSES
+                ),
+                None,
+            )
+            result[project_id] = ProjectStats(
+                sources=len(sources),
+                has_material=any(s.active and s.status is not SourceStatus.FAILED for s in sources),
+                questions_open=sum(1 for q in questions if q.status is QuestionStatus.OPEN),
+                questions_resolved=sum(1 for q in questions if q.status is QuestionStatus.RESOLVED),
+                versions=len(versions),
+                lanes=tuple(latest.lanes) if latest else (),
+                active_run_mode=active.mode if active else None,
+            )
+        return result
 
     async def update(self, project: Project) -> None:
         stored = self._items.get(project.id)
@@ -313,6 +345,14 @@ class InMemoryRunRepository:
             if run.project_id == project_id and run.status in ACTIVE_STATUSES:
                 return copy.deepcopy(run)
         return None
+
+    async def last_succeeded_id(self, project_id: UUID) -> UUID | None:
+        done = [
+            r
+            for r in self._items.values()
+            if r.project_id == project_id and r.status is RunStatus.SUCCEEDED
+        ]
+        return max(done, key=lambda r: (r.started_at, r.id)).id if done else None
 
 
 class InMemoryVersionRepository:

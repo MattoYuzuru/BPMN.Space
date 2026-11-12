@@ -163,9 +163,26 @@ _REGISTRY_SIZE = 256
 _registry: OrderedDict[tuple[str, str], ModelCapabilities] = OrderedDict()
 
 
-def remember(provider: str, model: str, capabilities: ModelCapabilities) -> None:
+def _registry_key(provider: str, model: str, base_url: str | None) -> tuple[str, str]:
+    """Совместимые серверы описывают модели сами (ADR-0013): кеш разделён по хосту адреса.
+
+    Иначе каталог одного сервера пользователя менял бы окно и уровни одноимённой модели
+    на чужом сервере.
+    """
+    if provider != "openai_compatible":
+        return (provider, model)
+    try:
+        host = (urlsplit(base_url or "").hostname or "").lower()
+    except ValueError:
+        host = ""
+    return (f"{provider}@{host}", model)
+
+
+def remember(
+    provider: str, model: str, capabilities: ModelCapabilities, *, base_url: str | None = None
+) -> None:
     """Запоминает описание модели от провайдера; прогоны и проверка профиля видят его же."""
-    key = (provider, model)
+    key = _registry_key(provider, model, base_url)
     _registry[key] = capabilities
     _registry.move_to_end(key)
     while len(_registry) > _REGISTRY_SIZE:
@@ -193,7 +210,7 @@ def capabilities_for(
 ) -> ModelCapabilities:
     """Возможности модели: уточнение провайдера → каталог → осторожные умолчания."""
     provider = "openai_compatible" if provider == "deepseek" else provider
-    remembered = _registry.get((provider, model))
+    remembered = _registry.get(_registry_key(provider, model, base_url))
     if remembered is not None:
         return remembered
     name = model.lower()

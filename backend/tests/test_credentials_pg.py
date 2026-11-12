@@ -21,6 +21,7 @@ from alembic import command
 from alembic.config import Config
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import inspect, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from tests.test_auth_http import API, Stack, stack  # noqa: F401 — фикстура подключается импортом
@@ -341,5 +342,85 @@ async def test_downgrade_0019_converts_waiting_runs_to_failed() -> None:
             assert "category" not in columns
             assert "actions" not in columns
             assert "blocking" not in columns
+    finally:
+        await _drop(admin, engine, schema)
+
+
+async def test_migration_0027_adds_wire_api_only_for_compatible_keys() -> None:
+    """ADR-0013: старые ключи остаются Chat (NULL), протокол — только у совместимого провайдера."""
+    admin, engine, config, schema, url = await _migration_config()
+    del url
+
+    def migrate(sync_connection: Any, action: str, revision: str) -> None:
+        config.attributes["connection"] = sync_connection
+        getattr(command, action)(config, revision)
+
+    insert = text(
+        "INSERT INTO user_credentials (id, user_id, kinds, provider, label, base_url, "
+        "encrypted_key, key_hint, created_at) VALUES (:id, :user, ARRAY['llm']::varchar[], "
+        ":provider, 'Ключ', :url, :key, '1234', now())"
+    )
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(migrate, "upgrade", "0026_agent_search_limit")
+            user_id = uuid4()
+            await connection.execute(
+                text(
+                    "INSERT INTO users (id, email, hashed_password, is_active, is_superuser, "
+                    "is_verified) VALUES (:id, 'wire@example.com', 'x', true, false, false)"
+                ),
+                {"id": user_id},
+            )
+            old_id = uuid4()
+            await connection.execute(
+                insert,
+                {
+                    "id": old_id,
+                    "user": user_id,
+                    "provider": "openai_compatible",
+                    "url": "https://api.deepseek.com",
+                    "key": b"ciphertext",
+                },
+            )
+            await connection.run_sync(migrate, "upgrade", "head")
+            wire = (
+                await connection.execute(
+                    text("SELECT wire_api FROM user_credentials WHERE id = :id"), {"id": old_id}
+                )
+            ).scalar_one()
+            assert wire is None
+            await connection.execute(
+                text("UPDATE user_credentials SET wire_api = 'responses' WHERE id = :id"),
+                {"id": old_id},
+            )
+        async with engine.begin() as connection:
+            fixed_id = uuid4()
+            await connection.execute(
+                insert,
+                {
+                    "id": fixed_id,
+                    "user": user_id,
+                    "provider": "openai",
+                    "url": None,
+                    "key": b"ciphertext",
+                },
+            )
+            with pytest.raises(IntegrityError):
+                async with connection.begin_nested():
+                    await connection.execute(
+                        text("UPDATE user_credentials SET wire_api = 'responses' WHERE id = :id"),
+                        {"id": fixed_id},
+                    )
+            with pytest.raises(IntegrityError):
+                async with connection.begin_nested():
+                    await connection.execute(
+                        text("UPDATE user_credentials SET wire_api = 'grpc' WHERE id = :id"),
+                        {"id": old_id},
+                    )
+            await connection.run_sync(migrate, "downgrade", "0026_agent_search_limit")
+            columns = await connection.run_sync(
+                lambda sync: {c["name"] for c in inspect(sync).get_columns("user_credentials")}
+            )
+            assert "wire_api" not in columns
     finally:
         await _drop(admin, engine, schema)

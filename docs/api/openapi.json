@@ -1089,6 +1089,22 @@
           "provider": {
             "title": "Provider",
             "type": "string"
+          },
+          "wire_api": {
+            "anyOf": [
+              {
+                "enum": [
+                  "chat_completions",
+                  "responses"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Протокол совместимого сервера: chat_completions или responses (ADR-0013); null — Chat Completions",
+            "title": "Wire Api"
           }
         },
         "required": [
@@ -1260,6 +1276,22 @@
             "maxLength": 32,
             "title": "Provider",
             "type": "string"
+          },
+          "wire_api": {
+            "anyOf": [
+              {
+                "enum": [
+                  "chat_completions",
+                  "responses"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Только для совместимого провайдера; не задан — chat_completions",
+            "title": "Wire Api"
           }
         },
         "required": [
@@ -1784,6 +1816,22 @@
             ],
             "title": "Provider",
             "type": "string"
+          },
+          "wire_api": {
+            "anyOf": [
+              {
+                "enum": [
+                  "chat_completions",
+                  "responses"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Протокол совместимого сервера: chat_completions или responses (ADR-0013); null — Chat Completions",
+            "title": "Wire Api"
           }
         },
         "required": [
@@ -1859,6 +1907,22 @@
             ],
             "title": "Provider",
             "type": "string"
+          },
+          "wire_api": {
+            "anyOf": [
+              {
+                "enum": [
+                  "chat_completions",
+                  "responses"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Только для совместимого провайдера; не задан — chat_completions",
+            "title": "Wire Api"
           }
         },
         "required": [

@@ -5,6 +5,7 @@
 """
 
 import json
+import re
 from collections.abc import Iterable, Sequence
 from typing import Any
 
@@ -42,6 +43,10 @@ _CHAT_MAX_TOKENS = 4096
 _HTTP_ERROR = 400
 _ERROR_SNIFF_BYTES = 4096
 _REFUSAL_FINISH_REASONS = frozenset({"content_filter"})
+_RESPONSES_ONLY = re.compile(r"use_responses_api|/v1/responses|responses api", re.IGNORECASE)
+RESPONSES_ONLY_MESSAGE = (
+    "Сервер модели принимает только Responses API: добавьте ключ заново с протоколом «Responses»"
+)
 
 
 def _retry_after(response: httpx.Response) -> float | None:
@@ -390,18 +395,25 @@ class OpenAICompatibleClient:
         return b"".join(chunks)
 
     @staticmethod
-    async def _overflow(response: httpx.Response) -> bool:
-        """Признак «вход длиннее окна» в начале тела ошибки; само тело никуда не уходит."""
-        if response.status_code not in {400, 413}:
-            return False
+    async def error_head(response: httpx.Response) -> str:
+        """Начало тела ошибки для распознавания причины; само тело никуда не уходит."""
         head = b""
         async for chunk in response.aiter_bytes():
             head += chunk
             if len(head) >= _ERROR_SNIFF_BYTES:
                 break
-        return is_context_overflow(
-            response.status_code, head[:_ERROR_SNIFF_BYTES].decode("utf-8", "replace")
-        )
+        return head[:_ERROR_SNIFF_BYTES].decode("utf-8", "replace")
+
+    async def http_error(self, response: httpx.Response) -> Exception:
+        """Ошибка по ответу 4xx/5xx без повтора: переполнение окна, чужой протокол, прочее."""
+        status = response.status_code
+        if status in {400, 413}:
+            if is_context_overflow(status, await self.error_head(response)):
+                return ContextOverflowError(CONTEXT_OVERFLOW_MESSAGE)
+        elif status in {404, 405, 501} and _RESPONSES_ONLY.search(await self.error_head(response)):
+            # Шлюз подписки (OpenAI Buffet) прямо называет нужный протокол.
+            return RuntimeError(RESPONSES_ONLY_MESSAGE)
+        return RuntimeError(f"Сервис модели вернул HTTP {status}")
 
     async def _post(self, path: str, body: dict[str, Any]) -> bytes:
         return await self._request("POST", path, body, timeout_sec=self._config.timeout_sec)
@@ -440,9 +452,7 @@ class OpenAICompatibleClient:
                             retry_after=_retry_after(response),
                         )
                     if status >= _HTTP_ERROR:
-                        if await self._overflow(response):
-                            raise ContextOverflowError(CONTEXT_OVERFLOW_MESSAGE)
-                        raise RuntimeError(f"Сервис модели вернул HTTP {status}")
+                        raise await self.http_error(response)
                     return await self._read_capped(response)
             except UnsafeBaseUrlError as error:
                 raise RuntimeError(str(error)) from None

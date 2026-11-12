@@ -3,6 +3,7 @@ import { formatDate, formatNumber } from '@/shared/lib/format'
 
 export type LlmCredential = Schemas['LlmCredential']
 export type LlmProvider = LlmCredential['provider']
+export type WireApi = NonNullable<LlmCredential['wire_api']>
 export type LlmModel = Schemas['LlmModel']
 export type ModelCapabilities = Schemas['LlmModelCapabilities']
 export type Effort = NonNullable<Schemas['RunProfile']['effort']>
@@ -81,6 +82,25 @@ export const PROVIDERS: { value: LlmProvider; label: string }[] = [
   { value: 'openai', label: 'OpenAI' },
   { value: 'openai_compatible', label: 'Совместимый с OpenAI' },
 ]
+
+/** Протокол совместимого сервера (ADR-0013): задаётся при добавлении ключа. */
+export const WIRE_APIS: { value: WireApi; label: string }[] = [
+  { value: 'chat_completions', label: 'Chat Completions' },
+  { value: 'responses', label: 'Responses' },
+]
+
+export const WIRE_API_HINT =
+  'Responses — для шлюзов подписки ChatGPT (OpenAI Buffet) и новых серверов OpenAI. Остальным — Chat Completions'
+
+/** Подпись протокола в списке ключей: видна только у совместимого ключа с Responses. */
+export function wireApiLabel(credential: {
+  provider: string
+  wire_api?: WireApi | null
+}): string | null {
+  return credential.provider === 'openai_compatible' && credential.wire_api === 'responses'
+    ? 'Responses API'
+    : null
+}
 
 /** Разделитель в подписях («модель · ключ») и точки маски ключа; символы заданы кодами. */
 export const LABEL_SEPARATOR = ' \u00B7 '

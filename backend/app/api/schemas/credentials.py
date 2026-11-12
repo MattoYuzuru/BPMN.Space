@@ -15,6 +15,7 @@ from app.services.credentials import (
     CredentialCheck as ServiceCheck,
 )
 
+WireApi = Literal["chat_completions", "responses"]
 CredentialKindLiteral = Literal[
     "llm", "speech_to_text", "ocr", "vision", "video", "web_search", "web_fetch", "tts"
 ]
@@ -44,6 +45,13 @@ class Credential(ApiModel):
     provider: str
     label: str
     base_url: str | None = Field(description="Только у совместимого провайдера")
+    wire_api: WireApi | None = Field(
+        default=None,
+        description=(
+            "Протокол совместимого сервера: chat_completions или responses (ADR-0013); "
+            "null — Chat Completions"
+        ),
+    )
     key_hint: str = Field(description="Последние 4 символа ключа; пусто у коротких ключей")
     default_model: str | None
     priority: int = Field(description="Меньше — раньше в переборе")
@@ -68,6 +76,7 @@ class Credential(ApiModel):
             provider=item.provider,
             label=item.label,
             base_url=item.base_url,
+            wire_api=item.wire_api,  # type: ignore[arg-type]
             key_hint=item.key_hint,
             default_model=item.default_model,
             priority=item.priority,
@@ -143,6 +152,9 @@ class CredentialCreate(ApiModel):
     label: str | None = Field(default=None, max_length=60)
     api_key: SecretStr = Field(description="Принимается один раз; сохраняется зашифрованным")
     base_url: str | None = Field(default=None, max_length=500)
+    wire_api: WireApi | None = Field(
+        default=None, description="Только для совместимого провайдера; не задан — chat_completions"
+    )
     default_model: str | None = Field(default=None, max_length=128)
     priority: int = Field(default=100, ge=0, le=1000)
     enabled: bool = True

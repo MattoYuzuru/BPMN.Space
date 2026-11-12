@@ -178,6 +178,62 @@ describe('Модели и ключи', () => {
     expect(submit).toBeEnabled()
   })
 
+  it('совместимому ключу выбирают протокол: Responses для шлюза подписки', async () => {
+    const buffet = {
+      ...saved,
+      id: 'c2',
+      provider: 'openai_compatible',
+      label: 'Buffet',
+      base_url: 'https://openai-buffet.keykomi.com/v1',
+      wire_api: 'responses',
+      default_model: 'gpt-6.1-sol',
+    }
+    const calls = stubApi({
+      'GET /api/v1/me/llm-credentials': { body: { items: [], storage_available: true } },
+      'POST /api/v1/me/llm-credentials': { status: 201, body: buffet },
+      'GET /api/v1/me/llm-credentials/c2/models': {
+        body: { items: [{ id: 'gpt-6.1-sol', label: 'GPT-6.1 Sol', capabilities: null }] },
+      },
+    })
+    const { user } = mount()
+    await user.click(await screen.findByRole('button', { name: 'Добавить ключ' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).queryByRole('combobox', { name: 'Протокол API' })).toBeNull()
+    await user.click(within(dialog).getByRole('radio', { name: 'Совместимый с OpenAI' }))
+    await user.type(within(dialog).getByLabelText('Адрес API'), buffet.base_url)
+    await user.type(within(dialog).getByLabelText('API-ключ'), 'sk-buffet-something-long')
+    const protocol = within(dialog).getByRole('combobox', { name: 'Протокол API' })
+    expect(protocol).toHaveTextContent('Chat Completions')
+    protocol.focus()
+    await user.keyboard('{Enter}')
+    await user.click(await screen.findByRole('option', { name: 'Responses' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Проверить и сохранить' }))
+    await waitFor(() =>
+      expect(
+        calls.find((call) => call.method === 'POST' && call.path.endsWith('llm-credentials'))?.body,
+      ).toMatchObject({
+        provider: 'openai_compatible',
+        base_url: buffet.base_url,
+        wire_api: 'responses',
+      }),
+    )
+  })
+
+  it('в списке видно, что совместимый ключ работает по Responses API', async () => {
+    stubApi({
+      'GET /api/v1/me/llm-credentials': {
+        body: {
+          items: [
+            { ...saved, provider: 'openai_compatible', label: 'Buffet', wire_api: 'responses' },
+          ],
+          storage_available: true,
+        },
+      },
+    })
+    mount()
+    expect(await screen.findByText('Responses API')).toBeInTheDocument()
+  })
+
   it('удаляет ключ после подтверждения', async () => {
     const calls = stubApi({
       'GET /api/v1/me/llm-credentials': { body: { items: [saved], storage_available: true } },

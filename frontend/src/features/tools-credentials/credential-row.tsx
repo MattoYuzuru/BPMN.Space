@@ -1,3 +1,4 @@
+import { wireApiLabel } from '@/entities/llm-credential'
 import {
   type Credential,
   credentialErrorLabel,
@@ -50,6 +51,7 @@ export function CredentialRow({
         </div>
         <div className="type-caption flex flex-wrap items-center gap-x-2 text-fg-muted">
           <span>{providerLabel(providers, credential.provider)}</span>
+          {wireApiLabel(credential) && <span>{wireApiLabel(credential)}</span>}
           <span className="font-mono">{credential.key_hint}</span>
           <span data-numeric>Приоритет {credential.priority}</span>
           {credential.last_used_at && (

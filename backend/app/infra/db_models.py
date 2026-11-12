@@ -405,6 +405,11 @@ class UserCredentialRow(Base):
             "('transient', 'quota_exhausted', 'auth', 'unsupported', 'fatal')",
             name="ck_user_credentials_last_error_code",
         ),
+        CheckConstraint(
+            "wire_api IS NULL OR (provider = 'openai_compatible' "
+            "AND wire_api IN ('chat_completions', 'responses'))",
+            name="ck_user_credentials_wire_api",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
@@ -418,6 +423,8 @@ class UserCredentialRow(Base):
     provider: Mapped[str] = mapped_column(String(32), nullable=False)
     label: Mapped[str] = mapped_column(String(60), nullable=False)
     base_url: Mapped[str | None] = mapped_column(String(500))
+    # ADR-0013: протокол совместимого сервера; NULL — Chat Completions.
+    wire_api: Mapped[str | None] = mapped_column(String(32))
     encrypted_key: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     key_hint: Mapped[str] = mapped_column(String(8), nullable=False)
     default_model: Mapped[str | None] = mapped_column(String(128))

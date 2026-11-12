@@ -6,6 +6,7 @@ import {
   providerLabel,
   useDeleteLlmCredential,
   useLlmCredentials,
+  wireApiLabel,
 } from '@/entities/llm-credential'
 import { formatRelative } from '@/shared/lib/format'
 import { TOUR_ANCHORS, tourAnchor } from '@/shared/lib/tour-anchors'
@@ -144,6 +145,7 @@ export function CredentialRow({
         </div>
         <div className="type-caption flex flex-wrap items-center gap-x-2 text-fg-muted">
           <span>{providerLabel(credential.provider)}</span>
+          {wireApiLabel(credential) && <span>{wireApiLabel(credential)}</span>}
           <span data-numeric>{keyMask(credential.key_hint)}</span>
           {credential.default_model && <span>{modelLabel(credential.default_model)}</span>}
           {credential.last_used_at && (

@@ -26,6 +26,12 @@ PROVIDER_COMPATIBLE = "openai_compatible"
 PROVIDER_MOCK = "mock"
 USER_PROVIDERS = (PROVIDER_ANTHROPIC, PROVIDER_OPENAI, PROVIDER_COMPATIBLE)
 
+# Протокол совместимого сервера (ADR-0013): свойство адреса, а не провайдера. Chat Completions —
+# DeepSeek, OpenRouter, vLLM; Responses — шлюзы подписки (OpenAI Buffet) и новые серверы OpenAI.
+WIRE_CHAT = "chat_completions"
+WIRE_RESPONSES = "responses"
+WIRE_APIS = (WIRE_CHAT, WIRE_RESPONSES)
+
 # Таймаут чтения: запрос уже ушёл и, вероятно, оплачен — повторяем не более одного раза.
 MAX_READ_TIMEOUT_RETRIES = 1
 _MAX_RETRY_AFTER_SEC = 30.0
@@ -87,6 +93,8 @@ class LlmConfig:
     model: str
     api_key: SecretStr = field(repr=False)
     base_url: str | None = None
+    # Только у совместимого провайдера; `None` — Chat Completions, как до ADR-0013.
+    wire_api: str | None = None
     timeout_sec: float = 120.0
     max_retries: int = 3
     retry_base_sec: float = 1.0

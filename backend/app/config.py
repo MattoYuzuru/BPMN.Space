@@ -2,7 +2,7 @@
 
 import logging
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -175,6 +175,8 @@ class Settings(BaseSettings):
     llm_provider: str = "mock"
     llm_api_key: SecretStr | None = None
     llm_base_url: str | None = None
+    # Протокол совместимого сервера оператора (ADR-0013): chat_completions | responses.
+    llm_wire_api: Literal["chat_completions", "responses"] = "chat_completions"
     llm_model: str | None = None
     llm_timeout_sec: float = 120.0
     llm_json_mode: bool = True

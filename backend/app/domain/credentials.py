@@ -41,6 +41,8 @@ class Credential:
     created_at: datetime
     kinds: tuple[CredentialKind, ...] = (CredentialKind.LLM,)
     base_url: str | None = None
+    # ADR-0013: протокол совместимого сервера (`chat_completions`/`responses`); `None` — Chat.
+    wire_api: str | None = None
     default_model: str | None = None
     is_default: bool = False
     priority: int = DEFAULT_PRIORITY

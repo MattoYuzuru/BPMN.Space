@@ -33,4 +33,8 @@ export {
   type ResolvedChoice,
   resolveChoice,
   SERVER_MODEL_LABEL,
+  WIRE_API_HINT,
+  WIRE_APIS,
+  type WireApi,
+  wireApiLabel,
 } from './model'

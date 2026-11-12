@@ -45,6 +45,8 @@ from app.llm.client import (
     PROVIDER_ANTHROPIC,
     PROVIDER_COMPATIBLE,
     USER_PROVIDERS,
+    WIRE_APIS,
+    WIRE_CHAT,
     LlmAuthError,
     LlmClient,
     LlmConfig,
@@ -219,6 +221,7 @@ class CredentialService:
         enabled: bool,
         monthly_limit: dict[str, float] | None,
         make_default: bool,
+        wire_api: str | None = None,
     ) -> Credential:
         """Проверяет и сохраняет ключ для одной или нескольких возможностей."""
         if not self._cipher.available:
@@ -240,6 +243,7 @@ class CredentialService:
         if not 0 <= priority <= MAX_PRIORITY:
             raise InvalidInputError(f"Приоритет — от 0 до {MAX_PRIORITY}: меньше — раньше")
         url = self._checked_base_url(provider, base_url)
+        wire = self._checked_wire_api(provider, wire_api)
         if await self._repo.count(user_id) >= MAX_CREDENTIALS_PER_USER:
             raise ConflictError("Достигнут лимит ключей: удалите ненужные")
         title = (label or "").strip()[:MAX_LABEL_CHARS] or self._default_label(provider)
@@ -251,6 +255,7 @@ class CredentialService:
                 model=model or "-",
                 api_key=SecretStr(secret),
                 base_url=url,
+                wire_api=wire,
             )
             models = await self._checked_models(config)
             model = model or self._pick_default(provider, models)
@@ -261,6 +266,7 @@ class CredentialService:
             provider=provider,
             label=title,
             base_url=url,
+            wire_api=wire,
             encrypted_key=self._cipher.encrypt(user_id, secret),
             key_hint=key_hint(secret),
             default_model=model,
@@ -322,6 +328,19 @@ class CredentialService:
             raise InvalidInputError(str(error)) from None
 
     @staticmethod
+    def _checked_wire_api(provider: str, wire_api: str | None) -> str | None:
+        """Протокол задаётся только у совместимого провайдера (ADR-0013); умолчание — Chat."""
+        if provider != PROVIDER_COMPATIBLE:
+            if wire_api is not None:
+                raise InvalidInputError("Протокол API выбирается только у совместимого провайдера")
+            return None
+        if wire_api is None:
+            return WIRE_CHAT
+        if wire_api not in WIRE_APIS:
+            raise InvalidInputError("Неизвестный протокол API: chat_completions или responses")
+        return wire_api
+
+    @staticmethod
     def _pick_default(provider: str, models: list[ModelInfo]) -> str | None:
         ids = [item.id for item in models]
         if provider == PROVIDER_ANTHROPIC and DEFAULT_ANTHROPIC_MODEL in ids:
@@ -338,6 +357,7 @@ class CredentialService:
         base_url: str | None,
         default_model: str | None,
         make_default: bool,
+        wire_api: str | None = None,
     ) -> Credential:
         """Совместимость `/me/llm-credentials` (ADR-0011): ключ только для моделей."""
         return await self.create(
@@ -352,6 +372,7 @@ class CredentialService:
             enabled=True,
             monthly_limit=None,
             make_default=make_default,
+            wire_api=wire_api,
         )
 
     async def _checked_models(self, config: LlmConfig) -> list[ModelInfo]:
@@ -430,6 +451,7 @@ class CredentialService:
                 model=credential.default_model or "-",
                 api_key=api_key,
                 base_url=credential.base_url,
+                wire_api=credential.wire_api,
             )
             models = await self._fetch_models(config)
             self._models[credential.id] = (self._monotonic(), models)
@@ -607,6 +629,7 @@ class CredentialService:
                     model=credential.default_model or "-",
                     api_key=api_key,
                     base_url=credential.base_url,
+                    wire_api=credential.wire_api,
                 )
             )
         except CapabilityError as error:

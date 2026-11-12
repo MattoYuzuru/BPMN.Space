@@ -76,6 +76,7 @@ def _server_pipeline(settings: Settings, transport: httpx.AsyncBaseTransport | N
         model=model,
         api_key=api_key,
         base_url=base_url,
+        wire_api=settings.llm_wire_api if provider == "openai_compatible" else None,
         thinking=thinking,  # type: ignore[arg-type]
         **{k: v for k, v in knobs.items()},  # type: ignore[arg-type]
     )

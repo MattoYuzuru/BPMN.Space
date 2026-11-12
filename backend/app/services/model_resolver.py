@@ -452,6 +452,7 @@ class ModelResolver:
             model=model,
             api_key=api_key,
             base_url=credential.base_url,
+            wire_api=credential.wire_api,
         )
         pipeline = self._factory(config, credential)
         return ResolvedModel(pipeline, credential.provider, model, credential.id, SOURCE_USER)

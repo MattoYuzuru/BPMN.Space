@@ -4,6 +4,7 @@
   Дополнено [RFC-0006](../rfc/0006-tools-connectors-and-derived-sources.md): таблица обобщена до
   `user_credentials` (несколько типов задач на один ключ, приоритет, маршрутизация), контракт
   `/me/llm-credentials` сохранён
+- Протокол совместимого сервера (Chat Completions или Responses) — [ADR-0013](0013-responses-wire-protocol.md)
 - Дата: 2026-11-04
 - Связано: RFC-0001 §5.1, [ADR-0001](0001-auth-and-project-sharing.md), [ADR-0008](0008-evidence-semantic-review-and-recovery.md)
 

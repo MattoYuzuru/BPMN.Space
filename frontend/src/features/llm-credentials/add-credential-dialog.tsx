@@ -5,14 +5,32 @@ import {
   PROVIDERS,
   useCreateLlmCredential,
   useUpdateLlmCredential,
+  WIRE_API_HINT,
+  WIRE_APIS,
+  type WireApi,
 } from '@/entities/llm-credential'
 import { errorMessage } from '@/shared/api/client'
-import { Button, Dialog, DialogContent, Field, Input, SegmentedControl, toast } from '@/shared/ui'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  Field,
+  Input,
+  SegmentedControl,
+  Select,
+  toast,
+} from '@/shared/ui'
 import { KeyField } from './key-field'
 import { ModelSelect } from './model-select'
 
 const FORM_ID = 'add-credential-form'
-const EMPTY = { provider: 'anthropic' as LlmProvider, label: '', baseUrl: '', apiKey: '' }
+const EMPTY = {
+  provider: 'anthropic' as LlmProvider,
+  label: '',
+  baseUrl: '',
+  wireApi: 'chat_completions' as WireApi,
+  apiKey: '',
+}
 
 /**
  * Добавление ключа в два шага: ключ (сервер проверяет его у провайдера) и модель по умолчанию из
@@ -53,6 +71,7 @@ export function AddCredentialDialog({
         api_key: form.apiKey.trim(),
         label: form.label.trim() || null,
         base_url: compatible ? form.baseUrl.trim() : null,
+        wire_api: compatible ? form.wireApi : null,
         is_default: false,
       },
       {
@@ -152,6 +171,18 @@ export function AddCredentialDialog({
                   leadingIcon="route"
                   value={form.baseUrl}
                   onChange={(event) => setForm({ ...form, baseUrl: event.target.value })}
+                />
+              </Field>
+            )}
+            {compatible && (
+              <Field label="Протокол API" hint={WIRE_API_HINT}>
+                <Select
+                  aria-label="Протокол API"
+                  value={form.wireApi}
+                  onValueChange={(value) =>
+                    setForm((current) => ({ ...current, wireApi: value as WireApi }))
+                  }
+                  options={WIRE_APIS}
                 />
               </Field>
             )}

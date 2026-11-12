@@ -453,3 +453,116 @@ async def test_recovery_rejects_changed_model_or_provider(stack: Stack) -> None:
 
 def test_error_text_never_contains_the_key(stack: Stack) -> None:
     assert KEY_A not in redact_secrets(f"boom {KEY_A}")
+
+
+# ---------- протокол Responses у совместимого провайдера (ADR-0013) ----------
+
+BUFFET = "https://buffet.test/v1"
+
+
+class ResponsesStack(Stack):
+    """Шлюз подписки: `/models` — каталог, `/responses` — ответ, Chat Completions — 501."""
+
+    def _provider(self, request: httpx.Request) -> httpx.Response:
+        token = request.headers.get("Authorization", "").removeprefix("Bearer ")
+        if token not in self.valid_keys:
+            return httpx.Response(401, json={"error": {"code": "access_denied"}})
+        if request.method == "GET":
+            return httpx.Response(200, json={"data": [{"id": "gpt-6.1-sol"}]})
+        if request.url.path.endswith("/responses"):
+            body = json.loads(request.content)
+            if "max_output_tokens" in body or "temperature" in body:
+                return httpx.Response(
+                    400,
+                    json={
+                        "error": {
+                            "message": "Unsupported by ChatGPT plan route: max_output_tokens",
+                            "code": "unsupported_parameter",
+                        }
+                    },
+                )
+            text = {"type": "output_text", "text": "Ответ через Responses"}
+            return httpx.Response(
+                200,
+                json={
+                    "status": "completed",
+                    "output": [{"type": "message", "role": "assistant", "content": [text]}],
+                    "usage": {"input_tokens": 10, "output_tokens": 3},
+                },
+            )
+        return httpx.Response(501, json={"error": {"code": "use_responses_api"}})
+
+
+@pytest.fixture
+def buffet() -> Iterator[Stack]:
+    s = ResponsesStack(_settings(llm_allowed_private_hosts=["buffet.test"]))
+    with TestClient(s.app):
+        yield s
+
+
+def _compatible(stack: Stack, **extra: Any) -> Any:
+    body = {"provider": "openai_compatible", "api_key": KEY_B, "base_url": BUFFET, **extra}
+    return _call(stack, "post", "/me/llm-credentials", json=body)
+
+
+def test_compatible_key_keeps_the_chosen_wire_protocol(buffet: Stack) -> None:
+    buffet.user = BOB
+    response = _compatible(buffet, wire_api="responses")
+    assert response.status_code == 201, response.text
+    created = response.json()
+    assert created["wire_api"] == "responses"
+    assert created["default_model"] == "gpt-6.1-sol"
+    stored = buffet.container.repos.llm_credentials._items[UUID(created["id"])]  # type: ignore[attr-defined]
+    assert stored.wire_api == "responses"
+    generic = _call(buffet, "get", "/me/credentials").json()["items"]
+    assert generic[0]["wire_api"] == "responses"
+    # Без явного выбора — Chat Completions, как до ADR-0013.
+    plain = _compatible(buffet, label="Чат").json()
+    assert plain["wire_api"] == "chat_completions"
+
+
+def test_wire_protocol_is_only_for_the_compatible_provider(buffet: Stack) -> None:
+    buffet.user = BOB
+    fixed = _call(
+        buffet,
+        "post",
+        "/me/llm-credentials",
+        json={"provider": "openai", "api_key": KEY_B, "wire_api": "responses"},
+    )
+    assert fixed.status_code == 422
+    assert "совместимого" in fixed.json()["detail"]
+    unknown = _compatible(buffet, wire_api="grpc")
+    assert unknown.status_code == 422
+    assert buffet.requests == []
+
+
+def test_assistant_runs_over_responses_on_a_subscription_gateway(buffet: Stack) -> None:
+    buffet.user = BOB
+    assert _compatible(buffet, wire_api="responses").status_code == 201
+    buffet.requests.clear()
+    response = _call(
+        buffet,
+        "post",
+        f"/projects/{DEMO_PROJECT_ID}/assistant",
+        json={"message": "Что здесь?", "diagram_xml": "<definitions/>"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"answer": "Ответ через Responses"}
+    posts = [r for r in buffet.requests if r.method == "POST"]
+    assert {str(r.url) for r in posts} == {f"{BUFFET}/responses"}
+    final = json.loads(posts[-1].content)
+    assert final["store"] is False
+    assert "max_output_tokens" not in final
+    assert final["model"] == "gpt-6.1-sol"
+
+
+def test_chat_key_on_a_responses_only_gateway_explains_the_fix(buffet: Stack) -> None:
+    buffet.user = BOB
+    assert _compatible(buffet).status_code == 201
+    response = _call(
+        buffet,
+        "post",
+        f"/projects/{DEMO_PROJECT_ID}/assistant",
+        json={"message": "Что здесь?", "diagram_xml": "<definitions/>"},
+    )
+    assert "Responses" in response.text

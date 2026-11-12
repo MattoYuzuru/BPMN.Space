@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { WIRE_API_HINT, WIRE_APIS, type WireApi } from '@/entities/llm-credential'
 import {
   availableProviders,
   CAPABILITY,
@@ -107,6 +108,7 @@ export function CredentialDialog({
   const [label, setLabel] = useState(credential?.label ?? '')
   const [apiKey, setApiKey] = useState('')
   const [baseUrl, setBaseUrl] = useState(credential?.base_url ?? '')
+  const [wireApi, setWireApi] = useState<WireApi>(credential?.wire_api ?? 'chat_completions')
   const [defaultModel, setDefaultModel] = useState(credential?.default_model ?? '')
   const [priority, setPriority] = useState(String(credential?.priority ?? 100))
   const [enabled, setEnabled] = useState(credential?.enabled ?? true)
@@ -181,6 +183,8 @@ export function CredentialDialog({
         api_key: apiKey.trim(),
         label: label.trim() || null,
         base_url: compatible ? baseUrl.trim() : null,
+        // Протокол важен только ключу модели: распознавание речи всегда идёт своим API.
+        wire_api: compatible && hasLlm ? wireApi : null,
         default_model: defaultModel.trim() || null,
         priority: priorityValue,
         enabled,
@@ -365,6 +369,16 @@ export function CredentialDialog({
                 leadingIcon="route"
                 value={baseUrl}
                 onChange={(event) => setBaseUrl(event.target.value)}
+              />
+            </Field>
+          )}
+          {!editing && compatible && hasLlm && (
+            <Field label="Протокол API" hint={WIRE_API_HINT}>
+              <Select
+                aria-label="Протокол API"
+                value={wireApi}
+                onValueChange={(value) => setWireApi(value as WireApi)}
+                options={WIRE_APIS}
               />
             </Field>
           )}

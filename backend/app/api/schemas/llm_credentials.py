@@ -11,6 +11,7 @@ from app.domain.credentials import LlmCredential as DomainCredential
 from app.llm.capabilities import ModelCapabilities
 
 Provider = Literal["anthropic", "openai", "openai_compatible"]
+WireApi = Literal["chat_completions", "responses"]
 
 
 class LlmCredential(ApiModel):
@@ -18,6 +19,13 @@ class LlmCredential(ApiModel):
     provider: Provider
     label: str
     base_url: str | None = Field(description="Только для совместимого провайдера")
+    wire_api: WireApi | None = Field(
+        default=None,
+        description=(
+            "Протокол совместимого сервера: chat_completions или responses (ADR-0013); "
+            "null — Chat Completions"
+        ),
+    )
     key_hint: str = Field(description="Последние 4 символа ключа; пусто у коротких ключей")
     default_model: str | None
     is_default: bool
@@ -42,6 +50,9 @@ class LlmCredentialCreate(ApiModel):
     label: str | None = Field(default=None, max_length=60)
     api_key: SecretStr = Field(description="Принимается один раз; сохраняется зашифрованным")
     base_url: str | None = Field(default=None, max_length=500)
+    wire_api: WireApi | None = Field(
+        default=None, description="Только для совместимого провайдера; не задан — chat_completions"
+    )
     default_model: str | None = Field(default=None, max_length=128)
     is_default: bool = False
 

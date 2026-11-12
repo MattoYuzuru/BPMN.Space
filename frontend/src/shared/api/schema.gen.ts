@@ -1939,6 +1939,11 @@ export interface components {
             priority: number;
             /** Provider */
             provider: string;
+            /**
+             * Wire Api
+             * @description Протокол совместимого сервера: chat_completions или responses (ADR-0013); null — Chat Completions
+             */
+            wire_api?: ("chat_completions" | "responses") | null;
         };
         /**
          * CredentialCheckResult
@@ -1992,6 +1997,11 @@ export interface components {
             priority: number;
             /** Provider */
             provider: string;
+            /**
+             * Wire Api
+             * @description Только для совместимого провайдера; не задан — chat_completions
+             */
+            wire_api?: ("chat_completions" | "responses") | null;
         };
         /** CredentialList */
         CredentialList: {
@@ -2210,6 +2220,11 @@ export interface components {
              * @enum {string}
              */
             provider: "anthropic" | "openai" | "openai_compatible";
+            /**
+             * Wire Api
+             * @description Протокол совместимого сервера: chat_completions или responses (ADR-0013); null — Chat Completions
+             */
+            wire_api?: ("chat_completions" | "responses") | null;
         };
         /** LlmCredentialCreate */
         LlmCredentialCreate: {
@@ -2235,6 +2250,11 @@ export interface components {
              * @enum {string}
              */
             provider: "anthropic" | "openai" | "openai_compatible";
+            /**
+             * Wire Api
+             * @description Только для совместимого провайдера; не задан — chat_completions
+             */
+            wire_api?: ("chat_completions" | "responses") | null;
         };
         /** LlmCredentialList */
         LlmCredentialList: {

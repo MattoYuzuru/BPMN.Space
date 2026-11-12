@@ -14,9 +14,10 @@ from app.llm.capabilities import (
     json_output_tokens,
     wire_effort,
 )
-from app.llm.client import PROVIDER_COMPATIBLE, LlmClient, LlmConfig
+from app.llm.client import PROVIDER_COMPATIBLE, WIRE_RESPONSES, LlmClient, LlmConfig
 from app.llm.openai import OpenAIClient
 from app.llm.openai_compatible import OpenAICompatibleClient
+from app.llm.openai_responses import OpenAIResponsesClient
 from app.llm.pipeline import LlmPipeline
 
 
@@ -37,6 +38,14 @@ def build_client(
             return AnthropicClient(config, http_client=http)
         case "openai":
             return OpenAIClient(config, transport=transport)
+        case "openai_compatible" if config.wire_api == WIRE_RESPONSES:
+            # Протокол — свойство адреса (ADR-0013): шлюз подписки понимает только Responses.
+            return OpenAIResponsesClient(
+                config,
+                guard_host=user_supplied_url,
+                allowed_private_hosts=allowed_private_hosts,
+                transport=transport,
+            )
         case "openai_compatible" | "deepseek":
             return OpenAICompatibleClient(
                 config,

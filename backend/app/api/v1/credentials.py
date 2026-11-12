@@ -68,6 +68,7 @@ async def create_credential(
         label=body.label,
         api_key=body.api_key,
         base_url=body.base_url,
+        wire_api=body.wire_api,
         default_model=body.default_model,
         priority=body.priority,
         enabled=body.enabled,
